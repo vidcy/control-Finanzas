@@ -7,6 +7,11 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum CategoryType {
+  INCOME
+  EXPENSE
+}
+
 model User {
   id        String   @id @default(uuid())
   name      String
@@ -15,61 +20,31 @@ model User {
   currency  String   @default("PEN")
   createdAt DateTime @default(now())
 
-  categories Category[]
-  incomes    IncomeTransaction[]
-  expenses   ExpenseTransaction[]
+  categories   Category[]
+  transactions Transaction[]
 }
 
 model Category {
   id        String   @id @default(uuid())
   name      String
   type      CategoryType
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
   createdAt DateTime @default(now())
 
-  userId String
-  user   User @relation(fields: [userId], references: [id])
-
-  parentId String?
-  parent   Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
-  children Category[] @relation("CategoryHierarchy")
-
-  incomes  IncomeTransaction[]
-  expenses ExpenseTransaction[]
+  transactions Transaction[]
 }
 
-model IncomeTransaction {
-  id           String   @id @default(uuid())
-  date         DateTime
-  description  String?
-  amount       Float
-  currency     String
-  exchangeRate Float
-  amountPen    Float
-  createdAt    DateTime @default(now())
+model Transaction {
+  id          String   @id @default(uuid())
+  amount      Float
+  description String?
+  date        DateTime
+  createdAt   DateTime @default(now())
 
-  userId     String
-  user       User @relation(fields: [userId], references: [id])
-  categoryId String
-  category   Category @relation(fields: [categoryId], references: [id])
-}
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
 
-model ExpenseTransaction {
-  id           String   @id @default(uuid())
-  date         DateTime
-  description  String?
-  amount       Float
-  currency     String
-  exchangeRate Float
-  amountPen    Float
-  createdAt    DateTime @default(now())
-
-  userId     String
-  user       User @relation(fields: [userId], references: [id])
-  categoryId String
-  category   Category @relation(fields: [categoryId], references: [id])
-}
-
-enum CategoryType {
-  INCOME
-  EXPENSE
+  categoryId  String
+  category    Category @relation(fields: [categoryId], references: [id])
 }
