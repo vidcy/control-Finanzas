@@ -1,0 +1,75 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  password  String
+  currency  String   @default("PEN")
+  createdAt DateTime @default(now())
+
+  categories Category[]
+  incomes    IncomeTransaction[]
+  expenses   ExpenseTransaction[]
+}
+
+model Category {
+  id        String   @id @default(uuid())
+  name      String
+  type      CategoryType
+  createdAt DateTime @default(now())
+
+  userId String
+  user   User @relation(fields: [userId], references: [id])
+
+  parentId String?
+  parent   Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryHierarchy")
+
+  incomes  IncomeTransaction[]
+  expenses ExpenseTransaction[]
+}
+
+model IncomeTransaction {
+  id           String   @id @default(uuid())
+  date         DateTime
+  description  String?
+  amount       Float
+  currency     String
+  exchangeRate Float
+  amountPen    Float
+  createdAt    DateTime @default(now())
+
+  userId     String
+  user       User @relation(fields: [userId], references: [id])
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+}
+
+model ExpenseTransaction {
+  id           String   @id @default(uuid())
+  date         DateTime
+  description  String?
+  amount       Float
+  currency     String
+  exchangeRate Float
+  amountPen    Float
+  createdAt    DateTime @default(now())
+
+  userId     String
+  user       User @relation(fields: [userId], references: [id])
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+}
+
+enum CategoryType {
+  INCOME
+  EXPENSE
+}
