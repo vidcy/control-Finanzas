@@ -1,10 +1,15 @@
-import { Module } from '@nestjs/common';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
+import { Module } from '@nestjs/common'
+import { AuthModule } from './auth/auth.module'
+import { PrismaModule } from './prisma/prisma.module'
+import { UsersModule } from './users/users.module'
+import { PassportModule } from '@nestjs/passport'
 
 @Module({
-  imports: [],
-  controllers: [AppController],
-  providers: [AppService],
+  imports: [
+    PassportModule.register({ defaultStrategy: 'jwt' }), // 👈 CLAVE
+    AuthModule,
+    PrismaModule,
+    UsersModule,
+  ],
 })
-export class AppModule {}
+export class AppModule { }
