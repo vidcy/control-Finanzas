@@ -6,7 +6,7 @@ async function bootstrap() {
 
   // 🔥 SOLUCIÓN CORS COMPLETA (IMPORTANTE)
   app.enableCors({
-    origin: ['http://localhost:5173'], // frontend Vite
+    origin: "*", // frontend Vite
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
   });

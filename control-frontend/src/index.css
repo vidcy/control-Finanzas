@@ -1,17 +1,65 @@
 @import "tailwindcss";
 
-@keyframes gradientMove {
+@layer utilities {
+    .custom-scrollbar::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 10px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8;
+    }
 
+    .animation-delay-2000 {
+        animation-delay: 2s;
+    }
+    .animation-delay-4000 {
+        animation-delay: 4s;
+    }
+}
+
+@keyframes gradientMove {
     0%,
     100% {
         transform: scale(1);
     }
-
     50% {
         transform: scale(1.2);
     }
 }
 
+@keyframes blob {
+    0% { transform: translate(0px, 0px) scale(1); }
+    33% { transform: translate(30px, -50px) scale(1.1); }
+    66% { transform: translate(-20px, 20px) scale(0.9); }
+    100% { transform: translate(0px, 0px) scale(1); }
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 .animate-gradient {
     animation: gradientMove 15s ease infinite;
+}
+
+.animate-blob {
+    animation: blob 7s infinite;
+}
+
+.animate-fade-in-up {
+    animation: fadeInUp 0.5s ease-out forwards;
 }

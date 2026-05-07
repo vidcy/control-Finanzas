@@ -2,6 +2,11 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import LoginPage from "../pages/LoginPage";
 import DashboardPage from "../pages/DashboardPage";
 import { ProtectedRoute } from "../auth/ProtectedRouter";
+import UsersPage from "../pages/UserPage";
+import IncomePage from "../pages/IncomePage";
+import ExpensesPage from "../pages/ExpensesPage";
+import CategoriesPage from "../pages/CategoriesPage";
+import PendingPage from "../pages/PendingPage";
 
 export default function AppRoutes() {
     return (
@@ -9,18 +14,16 @@ export default function AppRoutes() {
             {/* ruta pública */}
             <Route path="/login" element={<LoginPage />} />
 
-            {/* ruta protegida */}
-            <Route
-                path="/dashboard"
-                element={
-                    <ProtectedRoute>
-                        <DashboardPage />
-                    </ProtectedRoute>
-                }
-            />
+            {/* rutas protegidas */}
+            <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+            <Route path="/income" element={<ProtectedRoute><IncomePage /></ProtectedRoute>} />
+            <Route path="/expenses" element={<ProtectedRoute><ExpensesPage /></ProtectedRoute>} />
+            <Route path="/categories" element={<ProtectedRoute><CategoriesPage /></ProtectedRoute>} />
+            <Route path="/pending" element={<ProtectedRoute><PendingPage /></ProtectedRoute>} />
+            <Route path="/users" element={<ProtectedRoute><UsersPage /></ProtectedRoute>} />
 
             {/* redirección automática */}
-            <Route path="*" element={<Navigate to="/login" />} />
+            <Route path="*" element={<Navigate to="/dashboard" />} />
         </Routes>
     );
 }

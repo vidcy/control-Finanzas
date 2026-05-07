@@ -8,26 +8,6 @@ export interface LoginResponse {
  * 🔐 LOGIN REAL
  * SOLO devuelve token si backend responde 200
  */
-export const loginRequest = async (
-    email: string,
-    password: string
-): Promise<LoginResponse> => {
-    console.log(email, password)
-    try {
-        const res = await axios.post("/auth/login", {
-            email,
-            password,
-        });
-
-        // 👇 SI LLEGAMOS AQUÍ = backend respondió 200 OK
-        return res.data;
-    } catch (error: any) {
-        // 👇 SI BACKEND RESPONDE 401 CAEMOS AQUÍ
-        throw new Error(
-            error?.response?.data?.message || "Credenciales incorrectas"
-        );
-    }
-};
 export const registerRequest = async (
     name: string,
     email: string,

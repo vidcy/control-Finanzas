@@ -10,18 +10,6 @@ export class AuthService {
         private jwtService: JwtService,
     ) { }
 
-    async register(name: string, email: string, password: string) {
-        const hashed = await bcrypt.hash(password, 10)
-
-        const user = await this.usersService.createUser({
-            name,
-            email,
-            password: hashed,
-        })
-
-        return this.generateToken(user.id, user.email)
-    }
-
     async login(email: string, password: string) {
         const user = await this.usersService.findByEmail(email)
 
@@ -29,8 +17,17 @@ export class AuthService {
 
         const isMatch = await bcrypt.compare(password, user.password)
         if (!isMatch) throw new UnauthorizedException('Password incorrecto')
-
-        return this.generateToken(user.id, user.email)
+        const payload = { sub: user.id, email: user.email };
+        const token = this.jwtService.sign(payload);
+        return {
+            message: 'Usuario logueado correctamente',
+            access_token: token,
+            user: {
+                id: user.id,
+                name: user.name,
+                email: user.email
+            }
+        };
     }
 
     private generateToken(userId: string, email: string) {

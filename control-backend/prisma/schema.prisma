@@ -6,6 +6,10 @@ datasource db {
   provider = "mysql"
   url      = env("DATABASE_URL")
 }
+enum Role {
+  USER
+  ADMIN
+}
 
 enum CategoryType {
   INCOME
@@ -15,8 +19,10 @@ enum CategoryType {
 model User {
   id        String   @id @default(uuid())
   name      String
+  lastName  String?
   email     String   @unique
   password  String
+  role      Role @default(USER)
   currency  String   @default("PEN")
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
