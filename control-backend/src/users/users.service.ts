@@ -15,8 +15,11 @@ export class UsersService {
         return this.prisma.user.create({
             data: {
                 name: data.name,
+                lastName: data.lastName,
                 email: data.email,
-                password: hashedPassword
+                password: hashedPassword,
+                role: data.role as "ADMIN" | "USER",
+
             }
         })
 
@@ -35,17 +38,17 @@ export class UsersService {
             where: { id }
         })
     }
-    async inactiveUser(id: string) {
-        const user = await this.prisma.user.update({
-            where: { id },
-            data: { isActive: false }
-        })
-        return user;
-    }
-    async activeUser(id: string) {
+    async activeUserRequest(id: string) {
         const user = await this.prisma.user.update({
             where: { id },
             data: { isActive: true }
+        })
+        return user;
+    }
+    async inactiveUserRequest(id: string) {
+        const user = await this.prisma.user.update({
+            where: { id },
+            data: { isActive: false }
         })
         return user;
     }

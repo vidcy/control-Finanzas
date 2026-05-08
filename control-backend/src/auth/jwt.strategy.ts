@@ -13,8 +13,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
 
     async validate(payload: any) {
-        // 🔥 ESTA FUNCION ES LA MAGIA
-        // Lo que retornes aquí se convierte en req.user
-        return payload;
+        return {
+            id: payload.sub,
+            email: payload.email,
+            role: payload.role, // 👈 CLAVE PARA ROLES
+        };
     }
 }

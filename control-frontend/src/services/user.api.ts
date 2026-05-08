@@ -1,4 +1,4 @@
-import axios from "./axios";
+import API from "./axios";
 
 export interface LoginResponse {
     access_token: string;
@@ -10,15 +10,21 @@ export interface LoginResponse {
  */
 export const registerRequest = async (
     name: string,
+    lastName: string,
     email: string,
-    password: string
+    password: string,
+    role?: string,
+    status?: boolean,
+
 ) => {
-    console.log(name, email, password)
     try {
-        const res = await axios.post("/auth/register", {
+        const res = await API.post("/users", {
             name,
+            lastName,
             email,
             password,
+            role,
+            isActive: status,
         });
 
         // 👇 SI LLEGAMOS AQUÍ = backend respondió 200 OK
@@ -32,7 +38,7 @@ export const registerRequest = async (
 };
 export const getUserRequest = async () => {
     try {
-        const res = await axios.get("/users/me");
+        const res = await API.get("/users/me");
         return res.data;
     } catch (error: any) {
         throw new Error(
@@ -42,7 +48,7 @@ export const getUserRequest = async () => {
 };
 export const updateUserRequest = async (id: string, data: any) => {
     try {
-        const res = await axios.put(`/users/${id}`, data);
+        const res = await API.patch(`/users/${id}`, data);
         return res.data;
     } catch (error: any) {
         throw new Error(
@@ -52,7 +58,7 @@ export const updateUserRequest = async (id: string, data: any) => {
 };
 export const inactiveUserRequest = async (id: string) => {
     try {
-        const res = await axios.patch(`/users/${id}/inactive`);
+        const res = await API.patch(`/users/${id}/inactive`);
         return res.data;
     } catch (error: any) {
         throw new Error(
@@ -62,7 +68,7 @@ export const inactiveUserRequest = async (id: string) => {
 };
 export const activeUserRequest = async (id: string) => {
     try {
-        const res = await axios.patch(`/users/${id}/active`);
+        const res = await API.patch(`/users/${id}/active`);
         return res.data;
     } catch (error: any) {
         throw new Error(
@@ -72,7 +78,7 @@ export const activeUserRequest = async (id: string) => {
 };
 export const listUsersRequest = async () => {
     try {
-        const res = await axios.get("/users");
+        const res = await API.get("/users");
         return res.data;
     } catch (error: any) {
         throw new Error(

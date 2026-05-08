@@ -5,8 +5,19 @@ import Axios from "axios";
  * 🌐 Creamos una instancia personalizada de axios
  * Esto sirve para no repetir la URL del backend en cada request
  */
-const axios = Axios.create({
+const API = Axios.create({
     baseURL: "http://localhost:3000", // backend NestJS
+});
+
+// 🔐 INTERCEPTOR JWT
+API.interceptors.request.use((config) => {
+    const token = localStorage.getItem("token");
+
+    if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+    }
+
+    return config;
 });
 
 /**
@@ -14,4 +25,4 @@ const axios = Axios.create({
  * Esto permite importarlo así:
  * import axios from "./axios"
  */
-export default axios;
+export default API;
