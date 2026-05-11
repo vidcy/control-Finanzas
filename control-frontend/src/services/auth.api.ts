@@ -1,6 +1,4 @@
-import { data } from "react-router-dom";
 import API from "./axios";
-import axios from "./axios";
 
 export interface LoginResponse {
     access_token: string;
@@ -17,7 +15,7 @@ export const loginRequest = async (
 ): Promise<LoginResponse> => {
     console.log(email, password)
     try {
-        const res = await axios.post("/auth/login", {
+        const res = await API.post("/auth/login", {
             email,
             password,
         });

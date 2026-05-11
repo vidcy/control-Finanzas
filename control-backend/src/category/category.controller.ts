@@ -32,7 +32,12 @@ export class CategoriesController {
     findAll(@Req() req) {
         return this.service.findAllByUser(req.user.id);
     }
-
+    // 🔹 Obtener una categoría por id, solo si es del usuario
+    @Get(':id')
+    findOne(@Req() req, @Param('id') id: string) {
+        return this.service.findOne(req.user.id, id);
+    }
+    // 🔹 Actualizar categoría
     @Put(':id')
     update(
         @Req() req,
@@ -45,5 +50,10 @@ export class CategoriesController {
     @Delete(':id')
     remove(@Req() req, @Param('id') id: string) {
         return this.service.remove(req.user.id, id);
+    }
+    @UseGuards(JwtAuthGuard)
+    @Post("seed-default")
+    async seed(@Req() req) {
+        return this.service.seedDefaultCategories(req.user.id);
     }
 }
