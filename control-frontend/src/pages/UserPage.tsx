@@ -138,7 +138,7 @@ export default function UserPage() {
                 lastName: u.lastName,
                 email: u.email,
                 role: u.role === "ADMIN" ? "ADMIN" : "USER",
-                status: u.isActive ? "ACTIVE" : "INACTIVE",
+                status: u.isActive ? "TRUE" : "FALSE",
             }));
             setUsers(formattedUsers);
         } catch (error) {
@@ -317,8 +317,8 @@ export default function UserPage() {
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Rol</label>
                                 <select className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 outline-none bg-white"
                                     value={formData.role} onChange={e => setFormData({ ...formData, role: e.target.value })}>
-                                    <option value="Usuario">Usuario</option>
-                                    <option value="Admin">Administrador</option>
+                                    <option value="USER">Usuario</option>
+                                    <option value="ADMIN">Administrador</option>
                                 </select>
                             </div>
                             <div>

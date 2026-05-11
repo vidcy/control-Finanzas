@@ -1,7 +1,10 @@
+import { data } from "react-router-dom";
+import API from "./axios";
 import axios from "./axios";
 
 export interface LoginResponse {
     access_token: string;
+    user: string;
 }
 
 /**
@@ -25,6 +28,54 @@ export const loginRequest = async (
         // 👇 SI BACKEND RESPONDE 401 CAEMOS AQUÍ
         throw new Error(
             error?.response?.data?.message || "Credenciales incorrectas"
+        );
+    }
+};
+
+
+export const forgotPasswordRequest = async (email: string) => {
+    try {
+        const res = await API.post("/auth/forgot-password", {
+            email,
+        });
+        return res.data;
+    } catch (error: any) {
+        throw new Error(
+            error?.response?.data?.message || "Error al enviar el correo"
+        );
+    }
+}
+export const resetPasswordRequest = async (
+    token: string | null,
+    newPassword: string
+) => {
+    console.log(token, newPassword)
+    try {
+        const res = await API.post("/auth/reset-password", {
+            token,
+            newPassword,
+        });
+        return res.data;
+    } catch (error: any) {
+        throw new Error(
+            error?.response?.data?.message || "Error al restablecer la contraseña"
+        );
+    }
+}
+export const changePasswordRequest = async (
+    currentPassword: string,
+    newPassword: string
+) => {
+    try {
+        const res = await API.post("/auth/change-password", {
+            currentPassword,   // 👈 ESTE NOMBRE ES CLAVE
+            newPassword,
+        });
+
+        return res.data;
+    } catch (error: any) {
+        throw new Error(
+            error?.response?.data?.message || "Error al cambiar contraseña"
         );
     }
 };

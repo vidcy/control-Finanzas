@@ -86,3 +86,18 @@ export const listUsersRequest = async () => {
         );
     }
 };
+export const getMeRequest = async () => {
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+        throw new Error("No hay token");
+    }
+
+    const res = await API.get("/users/me", {
+        headers: {
+            Authorization: `Bearer ${token}`
+        }
+    });
+
+    return res.data;
+};

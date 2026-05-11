@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import LoginPage from "../pages/LoginPage";
+import RecoverPasswordPage from "../pages/RecoverPasswordPage";
 import DashboardPage from "../pages/DashboardPage";
 import { ProtectedRoute } from "../auth/ProtectedRouter";
 import UsersPage from "../pages/UserPage";
@@ -13,6 +14,9 @@ export default function AppRoutes() {
         <Routes>
             {/* ruta pública */}
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/forgot-password" element={<RecoverPasswordPage />} />
+            <Route path="/reset-password" element={<RecoverPasswordPage />} />
+
 
             {/* rutas protegidas */}
             <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
@@ -20,7 +24,7 @@ export default function AppRoutes() {
             <Route path="/expenses" element={<ProtectedRoute><ExpensesPage /></ProtectedRoute>} />
             <Route path="/categories" element={<ProtectedRoute><CategoriesPage /></ProtectedRoute>} />
             <Route path="/pending" element={<ProtectedRoute><PendingPage /></ProtectedRoute>} />
-            <Route path="/users" element={<ProtectedRoute><UsersPage /></ProtectedRoute>} />
+            <Route path="/users" element={<ProtectedRoute role="ADMIN"><UsersPage /></ProtectedRoute>} />
 
             {/* redirección automática */}
             <Route path="*" element={<Navigate to="/dashboard" />} />

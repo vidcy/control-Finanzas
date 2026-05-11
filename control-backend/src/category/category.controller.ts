@@ -7,36 +7,43 @@ import {
     Param,
     Request,
     UseGuards,
+    Req,
+    Put,
 } from '@nestjs/common';
 import { CategoriesService } from './category.service';
 import { JwtAuthGuard } from 'src/auth/jwt.guard';
-
+import { CreateCategoryDto } from './create-category.dto';
+import { UpdateCategoryDto } from './update.category.dto';
 @UseGuards(JwtAuthGuard)
 @Controller('categories')
 export class CategoriesController {
-    constructor(private categoriesService: CategoriesService) { }
+    constructor(private readonly service: CategoriesService) { }
 
     // 🔹 Crear categoría
     @Post()
-    create(
-        @Body() body: { name: string; type: 'INCOME' | 'EXPENSE' },
-        @Request() req,
+    create(@Req() req,
+        @Body() dto: CreateCategoryDto
     ) {
-        const userId = req.user.sub;
-        return this.categoriesService.create(body.name, body.type, userId);
+        return this.service.create(req.user.id, dto);
     }
 
     // 🔹 Listar MIS categorías
     @Get()
-    findAll(@Request() req) {
-        const userId = req.user.sub;
-        return this.categoriesService.findAllByUser(userId);
+    findAll(@Req() req) {
+        return this.service.findAllByUser(req.user.id);
     }
 
-    // 🔹 Eliminar categoría
+    @Put(':id')
+    update(
+        @Req() req,
+        @Param('id') id: string,
+        @Body() dto: UpdateCategoryDto,
+    ) {
+        return this.service.update(req.user.id, id, dto);
+    }// 🔹 Eliminar categoría
+
     @Delete(':id')
-    remove(@Param('id') id: string, @Request() req) {
-        const userId = req.user.sub;
-        return this.categoriesService.remove(id, userId);
+    remove(@Req() req, @Param('id') id: string) {
+        return this.service.remove(req.user.id, id);
     }
 }

@@ -2,8 +2,11 @@ import { createContext, useContext, useState } from "react";
 import type { ReactNode } from "react";
 import { loginRequest } from "../services/auth.api";
 
+
 interface AuthContextType {
     token: string | null;
+    user: any;
+    setUser: (user: any) => void;
     login: (email: string, password: string) => Promise<boolean>;
     logout: () => void;
 }
@@ -15,7 +18,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const [token, setToken] = useState<string | null>(
         localStorage.getItem("token")
     );
-
+    const [user, setUser] = useState<any>(
+        JSON.parse(localStorage.getItem("user") || "null")
+    );
     /**
      * 🔐 LOGIN REAL
      * Devuelve true si fue correcto
@@ -28,7 +33,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             if (!data.access_token) throw new Error();
 
             localStorage.setItem("token", data.access_token);
+            localStorage.setItem("user", JSON.stringify(data.user));
             setToken(data.access_token);
+            setUser(data.user);
 
             return true; // 👈 LOGIN OK
         } catch (error) {
@@ -38,11 +45,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     const logout = () => {
         localStorage.removeItem("token");
+        localStorage.removeItem("user");
         setToken(null);
+        setUser(null);
     };
 
     return (
-        <AuthContext.Provider value={{ token, login, logout }}>
+        <AuthContext.Provider value={{ token, login, logout, user, setUser }}>
             {children}
         </AuthContext.Provider>
     );

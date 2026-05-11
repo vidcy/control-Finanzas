@@ -35,9 +35,19 @@ export class UsersService {
     }
     async findUser(id: string) {
         return this.prisma.user.findUnique({
-            where: { id }
+            where: { id },
+            select: {
+                id: true,
+                name: true,
+                password: true,
+                lastName: true,
+                email: true,
+                role: true,
+                isActive: true
+            }
         })
     }
+
     async activeUserRequest(id: string) {
         const user = await this.prisma.user.update({
             where: { id },
@@ -56,6 +66,20 @@ export class UsersService {
         return this.prisma.user.update({
             where: { id },
             data: data
+        })
+    }
+    async me(id: string) {
+        // console.log("🔥 PROFILE SERVICE ID:", id);
+        return this.prisma.user.findUnique({
+            where: { id },
+            select: {
+                id: true,
+                name: true,
+                lastName: true,
+                email: true,
+                role: true,
+                isActive: true
+            }
         })
     }
 

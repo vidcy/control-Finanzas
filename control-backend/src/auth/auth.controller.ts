@@ -16,6 +16,19 @@ export class AuthController {
             body.password,
         )
     }
+    @Post('forgot-password')
+    forgotPassword(@Body() body: { email: string }) {
+        return this.authService.forgotPassword(body.email);
+    }
+    @Post('reset-password')
+    resetPassword(@Body() body: { token: string, newPassword: string }) {
+        return this.authService.resetPassword(body.token, body.newPassword);
+    }
+    @UseGuards(JwtAuthGuard)
+    @Post('change-password')
+    changePassword(@Req() req, @Body() body: { currentPassword: string, newPassword: string }) {
+        return this.authService.changePassword(req.user['id'], body.currentPassword, body.newPassword);
+    }
     @UseGuards(JwtAuthGuard)
     @Get('profile')
     getProfile(@Req() req) {

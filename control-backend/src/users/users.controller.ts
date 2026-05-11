@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, UseGuards } from "@nestjs/common"
+import { Controller, Post, Body, Get, UseGuards, Req } from "@nestjs/common"
 import { UsersService } from "./users.service";
 import { JwtAuthGuard } from "src/auth/jwt.guard";
 import { Patch } from "@nestjs/common";
@@ -16,16 +16,23 @@ export class UsersController {
         return this.usersService.createUsers(body);
 
     }
+
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles('ADMIN')
     @Get()
-    listUser() {
-        console.log('ENTRÓ A USERS');
+    listUser(@Req() req) {
+        // console.log('USER EN REQUEST:', req.user);
         return this.usersService.listUser();
-
     }
-    @UseGuards(JwtAuthGuard, RolesGuard)
-    @Roles('ADMIN')
+    @UseGuards(JwtAuthGuard)
+    @Get('me')
+    getMe(@Req() req) {
+        console.log("🔥 ENTRO A /users/me");
+        console.log("USER:", req.user.id);
+        return this.usersService.me(req.user.id);
+    }
+
+    @UseGuards(JwtAuthGuard)
     @Get(':id')
     findUser(@Param('id') id: string) {
         return this.usersService.findUser(id);
@@ -48,5 +55,7 @@ export class UsersController {
     inactiveUserRequest(@Param('id') id: string) {
         return this.usersService.inactiveUserRequest(id);
     }
+
+
 
 }

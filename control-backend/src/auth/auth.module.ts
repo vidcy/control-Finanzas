@@ -8,9 +8,12 @@ import { JwtStrategy } from './jwt.strategy';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 
 import { UsersModule } from '../users/users.module';
+import { PrismaService } from 'src/prisma/prisma.service';
+import { MailModule } from 'src/mail/mail.module';
 
 @Module({
   imports: [
+    MailModule,
     UsersModule,
     PassportModule,
     JwtModule.registerAsync({
@@ -24,6 +27,7 @@ import { UsersModule } from '../users/users.module';
   ],
   controllers: [AuthController],
   providers: [
+    PrismaService,
     AuthService,
     JwtStrategy, // 👈 ESTA LINEA FALTABA CASI SEGURO
   ],
