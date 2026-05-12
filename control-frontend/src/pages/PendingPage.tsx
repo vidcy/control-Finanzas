@@ -2,6 +2,7 @@ import { useState } from "react";
 import Appshell from "../components/layout/Appshell";
 import Modal from "../components/ui/Modal";
 import { Plus, ArrowRightLeft, Check, X, ArrowUpRight, ArrowDownRight, Trash2 } from "lucide-react";
+import { toast } from "react-hot-toast";
 
 type PendingItem = {
     id: number; person: string; reason: string; amount: number; date: string; paid: boolean; type: "receivable" | "payable";
@@ -28,12 +29,20 @@ export default function PendingPage() {
     const payables = items.filter(i => i.type === "payable");
 
     const togglePaid = (id: number) => {
-        setItems(items.map(item => item.id === id ? { ...item, paid: !item.paid } : item));
+        setItems(items.map(item => {
+            if(item.id === id) {
+                const newStatus = !item.paid;
+                toast.success(newStatus ? "Marcado como pagado" : "Marcado como pendiente");
+                return { ...item, paid: newStatus };
+            }
+            return item;
+        }));
     };
 
     const handleDelete = (id: number) => {
         if(confirm("¿Seguro que deseas eliminar este registro?")) {
             setItems(items.filter(item => item.id !== id));
+            toast.success("Registro eliminado correctamente");
         }
     };
 
@@ -55,6 +64,7 @@ export default function PendingPage() {
             type: activeType
         };
         setItems([newItem, ...items]);
+        toast.success("Registro guardado exitosamente");
         setIsModalOpen(false);
     };
 

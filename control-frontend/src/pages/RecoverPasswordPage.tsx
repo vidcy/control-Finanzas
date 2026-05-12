@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Mail, Lock, ArrowLeft, ArrowRight, TrendingUp, CheckCircle2, ShieldCheck } from "lucide-react";
+import { toast } from "react-hot-toast";
 import { forgotPasswordRequest, resetPasswordRequest } from "../services/auth.api";
 
 type RecoverStep = "EMAIL" | "SUCCESS" | "RESET" | "DONE";
@@ -25,10 +26,11 @@ export default function RecoverPasswordPage() {
         // Simular petición al backend
         try {
             await forgotPasswordRequest(email);
+            toast.success("Enlace de recuperación enviado");
             setStep("SUCCESS");
         }
-        catch (error) {
-            alert("Error al enviar el correo")
+        catch (error: any) {
+            toast.error(error.message || "Error al enviar el correo");
         } finally {
             setIsLoading(false);
         }
@@ -43,15 +45,16 @@ export default function RecoverPasswordPage() {
     const handleResetPassword = async (e: React.FormEvent) => {
         e.preventDefault();
         if (newPassword !== confirmPassword) {
-            alert("Las contraseñas no coinciden");
+            toast.error("Las contraseñas no coinciden");
             return;
         }
         setIsLoading(true);
         try {
             await resetPasswordRequest(token, newPassword);
+            toast.success("Contraseña restablecida exitosamente");
             setStep("DONE");
-        } catch (error) {
-            alert("Error al restablecer la contraseña")
+        } catch (error: any) {
+            toast.error(error.message || "Error al restablecer la contraseña");
         } finally {
             setIsLoading(false);
         }

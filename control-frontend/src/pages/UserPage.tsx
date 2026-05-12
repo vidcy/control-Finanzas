@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Appshell from "../components/layout/Appshell";
 import Modal from "../components/ui/Modal";
 import { Users, Plus, Search, Edit2, ShieldAlert, CheckCircle, XCircle } from "lucide-react";
+import { toast } from "react-hot-toast";
 import { activeUserRequest, inactiveUserRequest, listUsersRequest, registerRequest, updateUserRequest } from "../services/user.api";
 
 type User = {
@@ -27,6 +28,7 @@ export default function UserPage() {
     // Modal States
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [isEditOpen, setIsEditOpen] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
 
     // Form States
     const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -45,6 +47,7 @@ export default function UserPage() {
 
     const handleSaveCreate = async (e: React.FormEvent) => {
         e.preventDefault();
+        setIsSaving(true);
         try {
             const payload = {
                 name: formData.name,
@@ -61,27 +64,21 @@ export default function UserPage() {
                 payload.role,
                 true
             );
+            toast.success("Usuario creado exitosamente");
             await fetchUsers();
             setIsCreateOpen(false);
-        } catch (err) {
+        } catch (err: any) {
             console.error("ERROR CREANDO USUARIO", err);
-            alert("Error al crear usuario, intente nuevamente");
+            toast.error(err.message || "Error al crear usuario");
+        } finally {
+            setIsSaving(false);
         }
-        const newUser: User = {
-            id: Date.now().toString(),
-            name: formData.name,
-            lastName: formData.lastName,
-            email: formData.email,
-            role: formData.role as "ADMIN" | "USER",
-            status: formData.isActive as "TRUE" | "FALSE",
-        };
-        setUsers([newUser, ...users]);
-        setIsCreateOpen(false);
     };
 
     const handleSaveEdit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!selectedUser) return;
+        setIsSaving(true);
         try {
             const payload: any = {
                 name: formData.name,
@@ -93,35 +90,36 @@ export default function UserPage() {
             }
             console.log("EDITANDO USUARIO", payload);
             await updateUserRequest(selectedUser.id, payload);
+            toast.success("Usuario actualizado correctamente");
             await fetchUsers();
             setIsEditOpen(false);
-        } catch (error) {
+        } catch (error: any) {
             console.error("ERROR EDITANDO USUARIO", error);
-            alert("Error al editar usuario, intente nuevamente");
+            toast.error(error.message || "Error al editar usuario");
+        } finally {
+            setIsSaving(false);
         }
-        await fetchUsers();
-        setIsEditOpen(false);
     };
 
     const toggleStatus = async (user: User) => {
         try {
             if (user.role === "ADMIN") {
-                alert("No se puede desactivar un usuario administrador");
+                toast.error("No se puede desactivar un usuario administrador");
                 return;
             }
             if (user.status == "TRUE") {
                 await inactiveUserRequest(user.id);
+                toast.success("Usuario desactivado");
             } else {
                 await activeUserRequest(user.id);
+                toast.success("Usuario activado");
             }
 
             await fetchUsers();
-        } catch (error) {
-            console.error("ERROR DESACTIVANDO USUARIO", error);
-            alert("Error al desactivar usuario, intente nuevamente");
+        } catch (error: any) {
+            console.error("ERROR CAMBIANDO ESTADO", error);
+            toast.error(error.message || "Error al cambiar estado");
         }
-
-
     };
 
     const filteredUsers = users.filter(u =>
@@ -286,7 +284,8 @@ export default function UserPage() {
                             <button type="button" onClick={() => setIsCreateOpen(false)} className="px-5 py-2.5 text-gray-600 font-medium hover:bg-gray-100 rounded-xl transition-colors">
                                 Cancelar
                             </button>
-                            <button type="submit" className="px-5 py-2.5 bg-purple-600 text-white font-medium hover:bg-purple-700 rounded-xl transition-colors shadow-sm">
+                            <button type="submit" disabled={isSaving} className="px-5 py-2.5 bg-purple-600 text-white font-medium hover:bg-purple-700 rounded-xl transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2">
+                                {isSaving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : null}
                                 Guardar Usuario
                             </button>
                         </div>
@@ -332,7 +331,8 @@ export default function UserPage() {
                             <button type="button" onClick={() => setIsEditOpen(false)} className="px-5 py-2.5 text-gray-600 font-medium hover:bg-gray-100 rounded-xl transition-colors">
                                 Cancelar
                             </button>
-                            <button type="submit" className="px-5 py-2.5 bg-blue-600 text-white font-medium hover:bg-blue-700 rounded-xl transition-colors shadow-sm">
+                            <button type="submit" disabled={isSaving} className="px-5 py-2.5 bg-blue-600 text-white font-medium hover:bg-blue-700 rounded-xl transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2">
+                                {isSaving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : null}
                                 Actualizar Datos
                             </button>
                         </div>

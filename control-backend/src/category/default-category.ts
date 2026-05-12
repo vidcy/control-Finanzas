@@ -5,27 +5,33 @@ export const defaultCategories = {
     ===================================================== */
     INCOME: [
 
-        // Sueldo principal
-        { name: "Sueldo", color: "bg-green-600", subcategories: [] },
 
-        // Capacitaciones brindadas a terceros
-        { name: "Capacitaciones Terceros", color: "bg-green-500", subcategories: [] },
 
-        // Intereses / dividendos / ganancias inversión
-        { name: "Rendimientos Inversiones", color: "bg-green-400", subcategories: [] },
+        // Sueldo principal (azul fuerte - estabilidad)
+        { name: "Sueldo", color: "bg-blue-600", subcategories: [] },
 
-        // Servicios profesionales
-        { name: "Asesorías", color: "bg-green-300", subcategories: [] },
+        // Capacitaciones (morado - conocimiento)
+        { name: "Capacitaciones Terceros", color: "bg-purple-500", subcategories: [] },
 
-        // Cashback / beneficios financieros
-        { name: "Beneficios Tarjeta de Crédito", color: "bg-green-200", subcategories: [] },
+        // Inversiones (amarillo dorado - dinero/ganancia)
+        { name: "Rendimientos Inversiones", color: "bg-yellow-500", subcategories: [] },
 
-        // Comisiones por ventas / servicios
-        { name: "Comisiones", color: "bg-green-700", subcategories: [] },
+        // Asesorías (indigo - profesional)
+        { name: "Asesorías", color: "bg-indigo-500", subcategories: [] },
 
-        // Ingresos adicionales
-        { name: "Ingreso Adicional 1", color: "bg-green-800", subcategories: [] },
-        { name: "Ingreso Adicional 2", color: "bg-green-900", subcategories: [] }
+        // Beneficios tarjeta (rosa - cashback / rewards)
+        { name: "Beneficios Tarjeta de Crédito", color: "bg-pink-500", subcategories: [] },
+
+        // Comisiones (naranja - ventas / energía)
+        { name: "Comisiones", color: "bg-orange-500", subcategories: [] },
+
+        // Ingresos adicionales (rojo - extra / irregular)
+        { name: "Ingreso Adicional 1", color: "bg-red-500", subcategories: [] },
+
+        // Segundo ingreso adicional (cyan - diferenciación)
+        { name: "Ingreso Adicional 2", color: "bg-cyan-500", subcategories: [] }
+
+
 
     ],
 

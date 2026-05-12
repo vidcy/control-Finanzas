@@ -2,6 +2,7 @@ import { useState } from "react";
 import Appshell from "../components/layout/Appshell";
 import Modal from "../components/ui/Modal";
 import { Plus, Search, TrendingUp, Edit2, Trash2, Calendar, DollarSign, RefreshCw } from "lucide-react";
+import { toast } from "react-hot-toast";
 
 type Income = {
     id: number; 
@@ -57,6 +58,7 @@ export default function IncomePage() {
     const handleDelete = (id: number) => {
         if(confirm("¿Estás seguro de eliminar este ingreso?")) {
             setIncomes(incomes.filter(inc => inc.id !== id));
+            toast.success("Ingreso eliminado correctamente.");
         }
     };
 
@@ -73,8 +75,10 @@ export default function IncomePage() {
 
         if (editingId) {
             setIncomes(incomes.map(inc => inc.id === editingId ? { ...inc, ...payload } : inc));
+            toast.success("Ingreso actualizado correctamente.");
         } else {
             setIncomes([{ ...payload, id: Date.now() }, ...incomes]);
+            toast.success("Ingreso registrado correctamente.");
         }
         setIsModalOpen(false);
     };
@@ -183,8 +187,8 @@ export default function IncomePage() {
                                             </td>
                                             <td className="p-4 pr-8 text-center">
                                                 <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-all scale-95 group-hover:scale-100">
-                                                    <button onClick={() => handleOpenEdit(inc)} className="p-2 bg-blue-50/80 text-blue-600 hover:bg-blue-500 hover:text-white rounded-xl transition-all shadow-sm"><Edit2 className="w-4 h-4" /></button>
-                                                    <button onClick={() => handleDelete(inc.id)} className="p-2 bg-rose-50/80 text-rose-600 hover:bg-rose-500 hover:text-white rounded-xl transition-all shadow-sm"><Trash2 className="w-4 h-4" /></button>
+                                                    <button title="Modificar ingreso" onClick={() => handleOpenEdit(inc)} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50/80 text-blue-600 hover:bg-blue-500 hover:text-white rounded-xl transition-all shadow-sm text-xs font-bold"><Edit2 className="w-3.5 h-3.5" /> Modificar</button>
+                                                    <button title="Eliminar ingreso" onClick={() => handleDelete(inc.id)} className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50/80 text-rose-600 hover:bg-rose-500 hover:text-white rounded-xl transition-all shadow-sm text-xs font-bold"><Trash2 className="w-3.5 h-3.5" /> Eliminar</button>
                                                 </div>
                                             </td>
                                         </tr>

@@ -46,8 +46,8 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
         { name: "Resumen", path: "/dashboard", icon: LayoutDashboard, color: "from-blue-400 to-blue-600", bgActive: "bg-blue-50 text-blue-700" },
         { name: "Ingresos", path: "/income", icon: TrendingUp, color: "from-emerald-400 to-emerald-600", bgActive: "bg-emerald-50 text-emerald-700" },
         { name: "Egresos", path: "/expenses", icon: TrendingDown, color: "from-rose-400 to-rose-600", bgActive: "bg-rose-50 text-rose-700" },
-        { name: "Categorías", path: "/categories", icon: Tags, color: "from-amber-400 to-amber-600", bgActive: "bg-amber-50 text-amber-700" },
         { name: "Cuentas Pendientes", path: "/pending", icon: ArrowRightLeft, color: "from-indigo-400 to-indigo-600", bgActive: "bg-indigo-50 text-indigo-700" },
+        { name: "Categorías", path: "/categories", icon: Tags, color: "from-amber-400 to-amber-600", bgActive: "bg-amber-50 text-amber-700" },
         ...(user?.role === "ADMIN" ? [{ name: "Usuarios", path: "/users", icon: Users, color: "from-purple-400 to-purple-600", bgActive: "bg-purple-50 text-purple-700" }] : []),
     ];
 

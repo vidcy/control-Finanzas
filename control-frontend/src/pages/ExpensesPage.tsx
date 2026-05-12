@@ -2,6 +2,7 @@ import { useState } from "react";
 import Appshell from "../components/layout/Appshell";
 import Modal from "../components/ui/Modal";
 import { Plus, Search, TrendingDown, Edit2, Trash2, Calendar, DollarSign, RefreshCw, Clock, CheckCircle } from "lucide-react";
+import { toast } from "react-hot-toast";
 
 type Expense = {
     id: number; 
@@ -78,6 +79,7 @@ export default function ExpensesPage() {
     const handleDelete = (id: number) => {
         if(confirm("¿Estás seguro de eliminar este egreso?")) {
             setExpenses(expenses.filter(exp => exp.id !== id));
+            toast.success("Egreso eliminado correctamente.");
         }
     };
 
@@ -97,8 +99,10 @@ export default function ExpensesPage() {
 
         if (editingId) {
             setExpenses(expenses.map(exp => exp.id === editingId ? { ...exp, ...payload } : exp));
+            toast.success("Egreso actualizado correctamente.");
         } else {
             setExpenses([{ ...payload, id: Date.now() }, ...expenses]);
+            toast.success("Egreso registrado correctamente.");
         }
         setIsModalOpen(false);
     };
@@ -216,8 +220,8 @@ export default function ExpensesPage() {
                                             </td>
                                             <td className="p-4 pr-8 text-center">
                                                 <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-all scale-95 group-hover:scale-100">
-                                                    <button onClick={() => handleOpenEdit(exp)} className="p-2 bg-blue-50/80 text-blue-600 hover:bg-blue-500 hover:text-white rounded-xl transition-all shadow-sm"><Edit2 className="w-4 h-4" /></button>
-                                                    <button onClick={() => handleDelete(exp.id)} className="p-2 bg-rose-50/80 text-rose-600 hover:bg-rose-500 hover:text-white rounded-xl transition-all shadow-sm"><Trash2 className="w-4 h-4" /></button>
+                                                    <button title="Modificar egreso" onClick={() => handleOpenEdit(exp)} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50/80 text-blue-600 hover:bg-blue-500 hover:text-white rounded-xl transition-all shadow-sm text-xs font-bold"><Edit2 className="w-3.5 h-3.5" /> Modificar</button>
+                                                    <button title="Eliminar egreso" onClick={() => handleDelete(exp.id)} className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50/80 text-rose-600 hover:bg-rose-500 hover:text-white rounded-xl transition-all shadow-sm text-xs font-bold"><Trash2 className="w-3.5 h-3.5" /> Eliminar</button>
                                                 </div>
                                             </td>
                                         </tr>

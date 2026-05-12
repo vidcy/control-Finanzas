@@ -6,95 +6,148 @@ datasource db {
   provider = "mysql"
   url      = env("DATABASE_URL")
 }
+
+// =========================
+// 👤 ROLES DEL SISTEMA
+// =========================
 enum Role {
   USER
   ADMIN
 }
 
+// =========================
+// 💰 TIPO DE TRANSACCIÓN
+// =========================
+enum TransactionType {
+  INCOME   // dinero que entra
+  EXPENSE  // dinero que sale
+}
 
+// =========================
+// 💳 MÉTODO DE PAGO
+// =========================
+enum PaymentMethod {
+  CASH
+  CARD
+  TRANSFER
+  YAPE
+  PLIN
+}
+
+// =========================
+// 📊 ESTADO FINANCIERO
+// =========================
+enum TransactionStatus {
+  PENDING   // por cobrar / por pagar
+  PAID      // pagado / cobrado
+  PARTIAL   // pago parcial
+  CANCELLED // anulado
+}
+// Monedas
+enum Currency {
+  PEN
+  USD
+}
+// =========================
+// 👤 USUARIO
+// =========================
 model User {
   id        String   @id @default(uuid())
-  name String
+  name      String
   lastName  String
   email     String   @unique
   password  String
   role      Role @default(USER)
   currency  String   @default("PEN")
   isActive  Boolean  @default(true)
-  resetToken        String?
-  resetTokenExpiry  DateTime?
+
+  resetToken       String?
+  resetTokenExpiry DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  
+
   categories   Category[]
   transactions Transaction[]
 }
 
+// =========================
+// 📂 CATEGORÍAS
+// =========================
 model Category {
-  id        String   @id @default(uuid())
-  name      String
-  type      TransactionType
-  color     String?
-  userId    String
-  user      User @relation(fields: [userId], references: [id])
+  id     String @id @default(uuid())
+  name   String
+  type   TransactionType
+  color  String?
 
-  // 🌳 Árbol categoría / subcategoría
-  parentId  String?
-  parent    Category?  @relation("CategoryToChildren", fields: [parentId], references: [id])
-  children  Category[] @relation("CategoryToChildren")
+  userId String
+  user   User @relation(fields: [userId], references: [id])
 
-  // 🔥 RELACIONES CON TRANSACCIONES (AQUÍ ESTABA EL ERROR)
+  // árbol categoría / subcategoría
+  parentId String?
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryTree")
+
   transactions    Transaction[] @relation("CategoryTransaction")
   subTransactions Transaction[] @relation("SubCategoryTransaction")
 
   createdAt DateTime @default(now())
 }
-enum TransactionType {
-  INCOME
-  EXPENSE
-}
-enum PaymentMethod {
-  CASH
-  CARD
-  TRANSFER
-}
 
+// =========================
+// 💰 TRANSACCIONES (NÚCLEO DEL SISTEMA)
+// =========================
 model Transaction {
-  id          String   @id @default(uuid())
 
-  type        TransactionType // INCOME | EXPENSE
+  // 🔑 ID
+  id String @id @default(uuid())
 
-  // 👤 Usuario dueño
-  userId      String
-  user        User @relation(fields: [userId], references: [id])
+  // 📌 INGRESO / EGRESO
+  type TransactionType
 
-  // 🟢 Categoría padre (SIEMPRE existe)
-  categoryId  String
-  category    Category @relation("CategoryTransaction", fields: [categoryId], references: [id])
+  // 📊 ESTADO (CLAVE PARA TUS 4 MÓDULOS)
+  status TransactionStatus @default(PENDING)
 
-  // 🟣 Subcategoría (OPCIONAL)
+  // 👤 USUARIO
+  userId String
+  user   User @relation(fields: [userId], references: [id])
+
+  // 🟢 CATEGORÍA
+  categoryId String
+  category   Category @relation("CategoryTransaction", fields: [categoryId], references: [id])
+
+  // 🟣 SUBCATEGORÍA
   subCategoryId String?
   subCategory   Category? @relation("SubCategoryTransaction", fields: [subCategoryId], references: [id])
 
-  // 📅 Fecha
-  date        DateTime
-  day         Int
-  month       Int
-  year        Int
+  // 📅 FECHA PRINCIPAL
+  date DateTime
 
-  // 💳 Método de pago
+  // 📅 FECHA DE VENCIMIENTO (CUENTAS PENDIENTES)
+  dueDate DateTime?
+
+  // 💳 MÉTODO DE PAGO
   paymentMethod PaymentMethod
 
+  // 📝 DESCRIPCIÓN
   description String?
-  amount      Float
-  currency    String
 
+  // 💰 MONTO
+  amount Float
+
+  // 💱 MONEDA
+  currency Currency
+
+  // 💵 TIPO DE CAMBIO
   exchangeRate Float?
-  amountSoles  Float
 
-  programmed   Boolean @default(false)
-  justified    Boolean @default(false)
+  // 🇵🇪 MONTO EN SOLES
+  amountSoles Float?
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  programmed Boolean @default(false)
+  justified Boolean @default(false)
+
+  // ⏱ CONTROL
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

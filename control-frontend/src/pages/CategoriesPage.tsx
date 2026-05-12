@@ -12,6 +12,7 @@ import {
     deleteSubcategoryRequest
 } from "../services/category.api";
 import { Tags, Plus, Search, Layers, CircleDollarSign, TrendingDown, Trash2 } from "lucide-react";
+import { toast } from "react-hot-toast";
 
 export default function CategoriesPage() {
     const [categories, setCategories] = useState<any[]>([]);
@@ -21,6 +22,7 @@ export default function CategoriesPage() {
     // Modal States
     const [isCatModalOpen, setIsCatModalOpen] = useState(false);
     const [isSubModalOpen, setIsSubModalOpen] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
         loadCategories()
@@ -55,9 +57,9 @@ export default function CategoriesPage() {
             console.log("✅ CATEGORÍAS BACKEND:", tree);
 
             setCategories(tree);
-        } catch (error) {
+        } catch (error: any) {
             console.error("❌ Error al cargar categorías:", error);
-            alert("Error al cargar categorías, intente nuevamente");
+            toast.error(error.message || "Error al cargar categorías");
         }
     };
     // Form States
@@ -77,7 +79,7 @@ export default function CategoriesPage() {
 
     const handleSaveCat = async (e: React.FormEvent) => {
         e.preventDefault();
-
+        setIsSaving(true);
         try {
             await createCategoryRequest({
                 name: catForm.name,
@@ -85,23 +87,28 @@ export default function CategoriesPage() {
                 color: catForm.color,
             });
 
+            toast.success("Categoría creada exitosamente");
             await loadCategories(); // 🔥 recarga desde DB
             setIsCatModalOpen(false);
 
-        } catch (error) {
+        } catch (error: any) {
             console.error("Error creando categoría:", error);
-            alert("Error al crear categoría, ya existe una categoría con ese nombre");
+            toast.error(error.message || "Error al crear categoría");
+        } finally {
+            setIsSaving(false);
         }
     };
 
     const handleDeleteCat = async (id: string) => {
+        if (!confirm("¿Está seguro de que desea eliminar la categoría y todas sus subcategorías?")) return;
         try {
             await deleteCategoryRequest(id);
+            toast.success("Categoría eliminada correctamente");
             await loadCategories(); // 🔥 recarga desde DB
             setIsCatModalOpen(false);
         } catch (error: any) {
             console.error("Error eliminando categoría:", error);
-            alert(error.message)
+            toast.error(error.message || "Error al eliminar categoría");
         }
     };
 
@@ -114,14 +121,23 @@ export default function CategoriesPage() {
     const handleSaveSub = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!selectedCatId) return;
-        await createSubcategoryRequest({
-            name: subForm.name,
-            parentId: selectedCatId,
-            type: activeTab.toUpperCase() as "INCOME" | "EXPENSE",
-            color: "bg-indigo-500",
-        });
-        await loadCategories();
-        setIsSubModalOpen(false);
+        setIsSaving(true);
+        try {
+            await createSubcategoryRequest({
+                name: subForm.name,
+                parentId: selectedCatId,
+                type: activeTab.toUpperCase() as "INCOME" | "EXPENSE",
+                color: "bg-indigo-500",
+            });
+            toast.success("Subcategoría creada correctamente");
+            await loadCategories();
+            setIsSubModalOpen(false);
+        } catch (error: any) {
+            console.error("Error creando subcategoría:", error);
+            toast.error(error.message || "Error al crear subcategoría");
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const handleDeleteSub = async (subId: string) => {
@@ -129,9 +145,10 @@ export default function CategoriesPage() {
 
         try {
             await deleteSubcategoryRequest(subId);
+            toast.success("Subcategoría eliminada correctamente");
             await loadCategories();
         } catch (error: any) {
-            alert(error.message)
+            toast.error(error.message || "Error al eliminar subcategoría");
         }
     };
 
@@ -248,7 +265,8 @@ export default function CategoriesPage() {
                         </div>
                         <div className="pt-4 flex justify-end gap-3 border-t border-gray-100 mt-6">
                             <button type="button" onClick={() => setIsCatModalOpen(false)} className="px-5 py-2.5 text-gray-600 font-medium hover:bg-gray-100 rounded-xl transition-colors">Cancelar</button>
-                            <button type="submit" className="px-5 py-2.5 bg-indigo-600 text-white font-medium hover:bg-indigo-700 rounded-xl transition-colors shadow-sm">
+                            <button type="submit" disabled={isSaving} className="px-5 py-2.5 bg-indigo-600 text-white font-medium hover:bg-indigo-700 rounded-xl transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2">
+                                {isSaving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : null}
                                 Guardar Categoría
                             </button>
                         </div>
@@ -264,7 +282,8 @@ export default function CategoriesPage() {
                         </div>
                         <div className="pt-4 flex justify-end gap-3 border-t border-gray-100 mt-6">
                             <button type="button" onClick={() => setIsSubModalOpen(false)} className="px-5 py-2.5 text-gray-600 font-medium hover:bg-gray-100 rounded-xl transition-colors">Cancelar</button>
-                            <button type="submit" className="px-5 py-2.5 bg-indigo-600 text-white font-medium hover:bg-indigo-700 rounded-xl transition-colors shadow-sm">
+                            <button type="submit" disabled={isSaving} className="px-5 py-2.5 bg-indigo-600 text-white font-medium hover:bg-indigo-700 rounded-xl transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2">
+                                {isSaving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : null}
                                 Guardar Subcategoría
                             </button>
                         </div>

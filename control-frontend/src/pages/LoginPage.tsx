@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { useNavigate, Link } from "react-router-dom";
 import { Mail, Lock, ArrowRight, TrendingUp, AlertCircle } from "lucide-react";
+import { toast } from "react-hot-toast";
 
 export default function LoginPage() {
     const { login } = useAuth(); // función login global
@@ -26,11 +27,12 @@ export default function LoginPage() {
         // 👇 SOLO NAVEGA SI LOGIN ES CORRECTO
         if (success) {
             console.log("Login correcto → dashboard");
-            console.log(JSON.parse(localStorage.getItem("user")!));
+            toast.success("¡Bienvenido de vuelta!");
             navigate("/dashboard");
         } else {
             console.log("Login incorrecto");
             setError("Credenciales incorrectas");
+            toast.error("Credenciales incorrectas");
         }
     };
 
