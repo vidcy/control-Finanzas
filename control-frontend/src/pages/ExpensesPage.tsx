@@ -1,42 +1,27 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Appshell from "../components/layout/Appshell";
 import Modal from "../components/ui/Modal";
 import { Plus, Search, TrendingDown, Edit2, Trash2, Calendar, DollarSign, RefreshCw, Clock, CheckCircle } from "lucide-react";
 import { toast } from "react-hot-toast";
+import { listCategoriesRequest } from "../services/category.api";
+import ConfirmModal from "../components/ui/ConfirmModal";
 
 type Expense = {
-    id: number; 
-    date: string; 
-    category: string; 
+    id: number;
+    date: string;
+    category: string;
+    categoryId?: string;
     subcategory: string;
-    description: string; 
-    amount: number; 
-    currency: "PEN" | "USD"; 
+    subCategoryId?: string;
+    description: string;
+    amount: number;
+    currency: "PEN" | "USD";
     exchangeRate: number;
     programmed: boolean;
     justified: boolean;
 };
 
-const expenseCategories = [
-    { name: "Impuestos", subcategories: ["Pago de impuestos", "Renta de 4ta", "Provisión de impuesto de renta", "Provisión de impuesto predial", "Otros impuestos"] },
-    { name: "Vivienda", subcategories: ["Pago de alquiler/hipoteca", "Mantenimiento", "Servicio doméstico", "Artículos de Aseo", "Electrodomésticos", "Reparación"] },
-    { name: "Servicios", subcategories: ["Agua", "Electricidad", "Internet", "Celular 01", "Celular 02", "Celular Familia", "Luz Casa Madre", "Internet Casa Madre"] },
-    { name: "Alimentación", subcategories: ["Carnes", "Verduras", "Mercado General", "Comida para Mascotas", "Salidas a comer familiares", "Delivery", "Snacks y cafés", "Bebidas no alcohólicas", "Gaseosas", "Licores", "Otros"] },
-    { name: "Transporte", subcategories: ["Combustible vehículo", "Mantenimiento", "Peaje", "Parqueadero", "Lavado", "SOAT", "Seguros", "Transporte Público", "Taxis", "Pasajes de familia", "Vuelos", "Buses Interprovinciales"] },
-    { name: "Gastos Personales", subcategories: ["Ropa", "Zapatillas", "Accesorios", "Peluquería", "Gimnasio", "Masajes", "Medicina", "Productos de Belleza", "Personal Trainer", "Dentista", "Varios"] },
-    { name: "Entretenimiento", subcategories: ["Cine", "Teatro", "Libros/revistas", "Fútbol / Deportes", "Suscripción a ligas de fútbol", "Salidas de hijos a fiestas", "Viajes de familia", "Vacaciones familiares", "Conciertos", "Salidas amigos"] },
-    { name: "Mascotas", subcategories: ["Alimento", "Veterinaria", "Medicamentos", "Guardería", "Peluquería", "Juguetes y accesorios", "Otros"] },
-    { name: "Seguros", subcategories: ["Vida", "Salud", "Hogar", "Seguro médico de viajes", "Otros"] },
-    { name: "Educación", subcategories: ["Pago de créditos educativos", "Matrícula / Pensión colegio", "Útiles", "Libros", "Uniformes", "Suscripción revistas / periódicos", "Clubes académicos / tertulias", "Cursos de idiomas", "Otros"] },
-    { name: "Ahorro Mensual", subcategories: ["Aporte / AFP / Fondo Mutuo", "Meta de Ahorro Mensual 10%", "Ahorro en cuenta AFP", "Compra de dólares"] },
-    { name: "Inversiones", subcategories: ["Fondos mutuos / Acciones", "Mensualidades", "Acciones", "Inversiones Personales", "Inversión en Terceros", "Otros"] },
-    { name: "Servicios Profesionales", subcategories: ["Contador", "Abogado", "Mensajero", "Asistente personal", "Ahorro programado", "Otros (suscripciones a revistas)", "Otros"] },
-    { name: "Pago de Créditos", subcategories: ["Crédito personal", "Tarjeta de crédito", "Abono a Tarjetas de Crédito", "Penalidades", "Otros"] },
-    { name: "Contribución", subcategories: ["Diezmos, ofrendas, iglesia", "Apoyo a fundaciones", "Donaciones varias", "Dadivas en la calle o semáforos", "Apoyo a otro tipo de causas", "Otros"] },
-    { name: "Contingencias", subcategories: ["Urgencias médicas no cubiertas", "Emergencias familiares", "Decisiones no programadas", "Otros"] },
-    { name: "Suscripciones", subcategories: ["Suscripción de Apple", "Netflix", "Zoom Premium", "Suscripción 1", "Suscripción 2"] },
-    { name: "Ocasiones Especiales", subcategories: ["Regalos Amigos", "Regalos Familia", "Aniversario"] }
-];
+// Removed static categories to use dynamic categories
 
 
 const mockExpenses: Expense[] = [
@@ -47,48 +32,101 @@ const mockExpenses: Expense[] = [
 export default function ExpensesPage() {
     const [expenses, setExpenses] = useState<Expense[]>(mockExpenses);
     const [searchTerm, setSearchTerm] = useState("");
-    
+    const [categories, setCategories] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingId, setEditingId] = useState<number | null>(null);
-    const [formData, setFormData] = useState({ 
-        date: "", category: "Vivienda", subcategory: "Pago de alquiler/hipoteca", description: "", amount: "", currency: "PEN" as "PEN"|"USD", exchangeRate: "1", programmed: false, justified: false
+    const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+    const [idToDelete, setIdToDelete] = useState<number | null>(null);
+
+    const [selectedCategoryId, setSelectedCategoryId] = useState("");
+    const [selectedSubCategoryId, setSelectedSubCategoryId] = useState("");
+
+    const [formData, setFormData] = useState({
+        date: new Date().toISOString().split('T')[0],
+        description: "",
+        amount: "",
+        currency: "PEN" as "PEN" | "USD",
+        exchangeRate: "1",
+        programmed: false,
+        justified: false
     });
 
-    const filtered = expenses.filter(exp => 
-        exp.description.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        exp.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        exp.subcategory.toLowerCase().includes(searchTerm.toLowerCase())
+    useEffect(() => {
+        setLoading(true);
+        listCategoriesRequest()
+            .then(data => setCategories(data))
+            .catch(err => toast.error("Error al cargar categorías"))
+            .finally(() => setLoading(false));
+    }, []);
+
+    const expenseCategories = (Array.isArray(categories) ? categories : []).filter(c => c.type === "EXPENSE" && !c.parentId);
+    const subCategories = (Array.isArray(categories) ? categories : []).filter(c => c.parentId === selectedCategoryId);
+    const hasSubcategories = subCategories.length > 0;
+
+    const filtered = (Array.isArray(expenses) ? expenses : []).filter(exp =>
+        (exp.description?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+        (exp.category?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+        (exp.subcategory?.toLowerCase() || "").includes(searchTerm.toLowerCase())
     );
 
     const handleOpenCreate = () => {
-        setFormData({ 
-            date: new Date().toISOString().split('T')[0], category: "Vivienda", subcategory: "Pago de alquiler/hipoteca", description: "", amount: "", currency: "PEN", exchangeRate: "1", programmed: false, justified: false
+        setFormData({
+            date: new Date().toISOString().split('T')[0],
+            description: "",
+            amount: "",
+            currency: "PEN",
+            exchangeRate: "1",
+            programmed: false,
+            justified: false
         });
+        setSelectedCategoryId("");
+        setSelectedSubCategoryId("");
         setEditingId(null);
         setIsModalOpen(true);
     };
 
     const handleOpenEdit = (exp: Expense) => {
-        setFormData({ 
-            date: exp.date, category: exp.category, subcategory: exp.subcategory, description: exp.description, amount: exp.amount.toString(), currency: exp.currency, exchangeRate: exp.exchangeRate.toString(), programmed: exp.programmed, justified: exp.justified
+        setFormData({
+            date: exp.date,
+            description: exp.description,
+            amount: exp.amount.toString(),
+            currency: exp.currency,
+            exchangeRate: exp.exchangeRate.toString(),
+            programmed: exp.programmed,
+            justified: exp.justified
         });
+        setSelectedCategoryId(exp.categoryId || "");
+        setSelectedSubCategoryId(exp.subCategoryId || "");
         setEditingId(exp.id);
         setIsModalOpen(true);
     };
 
     const handleDelete = (id: number) => {
-        if(confirm("¿Estás seguro de eliminar este egreso?")) {
-            setExpenses(expenses.filter(exp => exp.id !== id));
+        setIdToDelete(id);
+        setIsConfirmOpen(true);
+    };
+
+    const confirmDelete = () => {
+        if (idToDelete) {
+            setExpenses(expenses.filter(exp => exp.id !== idToDelete));
             toast.success("Egreso eliminado correctamente.");
+            setIdToDelete(null);
         }
     };
 
     const handleSave = (e: React.FormEvent) => {
         e.preventDefault();
+        const cat = categories.find(c => c.id === selectedCategoryId);
+        const sub = categories.find(c => c.id === selectedSubCategoryId);
+
         const payload = {
             date: formData.date,
-            category: formData.category,
-            subcategory: formData.subcategory,
+            category: cat?.name || "Sin categoría",
+            categoryId: selectedCategoryId,
+            subcategory: sub?.name || "Sin subcategoría",
+            subCategoryId: selectedSubCategoryId,
             description: formData.description,
             amount: Number(formData.amount),
             currency: formData.currency,
@@ -108,7 +146,7 @@ export default function ExpensesPage() {
     };
 
     const getDayMonthYear = (dateString: string) => {
-        if(!dateString) return { day: "-", month: "-", year: "-" };
+        if (!dateString) return { day: "-", month: "-", year: "-" };
         const d = new Date(dateString + "T00:00:00");
         return {
             day: d.getDate().toString().padStart(2, '0'),
@@ -120,7 +158,7 @@ export default function ExpensesPage() {
     return (
         <Appshell>
             <div className="flex flex-col gap-8 animate-fade-in-up pb-10">
-                
+
                 {/* HEADER */}
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 bg-white/40 backdrop-blur-xl border border-white/60 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
                     <div className="flex items-center gap-4">
@@ -141,9 +179,9 @@ export default function ExpensesPage() {
                         <div className="relative group">
                             <div className="absolute inset-0 bg-rose-200 rounded-2xl blur opacity-20 group-hover:opacity-40 transition-opacity"></div>
                             <Search className="w-5 h-5 text-rose-500 absolute left-4 top-1/2 transform -translate-y-1/2 z-10" />
-                            <input 
-                                type="text" 
-                                placeholder="Buscar egresos..." 
+                            <input
+                                type="text"
+                                placeholder="Buscar egresos..."
                                 className="relative z-10 pl-11 pr-4 py-3 bg-white/70 backdrop-blur-md border border-white rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/30 transition-all shadow-sm w-72 text-gray-700 font-medium placeholder-rose-300"
                                 value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
                             />
@@ -158,7 +196,7 @@ export default function ExpensesPage() {
                 <div className="bg-white/60 backdrop-blur-2xl rounded-[2rem] border border-white/80 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.05)] overflow-hidden relative">
                     <div className="absolute top-0 right-0 w-64 h-64 bg-rose-200/30 rounded-full blur-[80px] -z-10 pointer-events-none"></div>
                     <div className="absolute bottom-0 left-0 w-64 h-64 bg-red-200/20 rounded-full blur-[80px] -z-10 pointer-events-none"></div>
-                    
+
                     <div className="overflow-x-auto custom-scrollbar">
                         <table className="w-full text-left border-collapse min-w-[1400px]">
                             <thead>
@@ -182,17 +220,21 @@ export default function ExpensesPage() {
                                 {filtered.map((exp, index) => {
                                     const { day, month, year } = getDayMonthYear(exp.date);
                                     const montoSoles = exp.currency === "USD" ? exp.amount * exp.exchangeRate : exp.amount;
-                                    
+
                                     return (
                                         <tr key={exp.id} className="hover:bg-white/80 transition-colors group cursor-default">
                                             <td className="p-4 pl-8 text-sm font-bold text-rose-400">{index + 1}</td>
                                             <td className="p-4">
-                                                <span className="inline-flex items-center px-3 py-1 rounded-full bg-rose-100/50 text-rose-700 text-xs font-bold border border-rose-200/50 shadow-sm">
+                                                <span className="inline-flex items-center px-3 py-1 rounded-full bg-rose-100/50 text-rose-700 text-xs font-bold border border-rose-200/50 shadow-sm w-fit">
                                                     {exp.category}
                                                 </span>
                                             </td>
-                                            <td className="p-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                                                {exp.subcategory}
+                                            <td className="p-4">
+                                                <div className="flex flex-col gap-0.5">
+                                                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                                                        {exp.subcategory}
+                                                    </span>
+                                                </div>
                                             </td>
                                             <td className="p-4 text-center text-sm font-semibold text-gray-500">{day}</td>
                                             <td className="p-4 text-center text-sm font-semibold text-gray-500">{month}</td>
@@ -243,47 +285,58 @@ export default function ExpensesPage() {
                 <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingId ? "Editar Egreso" : "Registrar Nuevo Egreso"} maxWidth="max-w-4xl">
                     <form onSubmit={handleSave} className="space-y-6">
                         <div className="bg-rose-50/50 p-6 rounded-2xl border border-rose-100/50 grid grid-cols-1 md:grid-cols-3 gap-6">
-                            
-                            <div>
-                                <label className="block text-xs font-bold text-rose-800 uppercase tracking-wider mb-2">Categoría</label>
-                                <select className="w-full px-4 py-3 bg-white border border-rose-200 rounded-xl focus:ring-4 focus:ring-rose-500/20 outline-none text-gray-700 font-medium shadow-sm transition-all" 
-                                    value={formData.category} 
-                                    onChange={e => {
-                                        const newCat = e.target.value;
-                                        const catObj = expenseCategories.find(c => c.name === newCat);
-                                        const firstSub = catObj ? catObj.subcategories[0] : "";
-                                        setFormData({...formData, category: newCat, subcategory: firstSub});
-                                    }}>
-                                    {expenseCategories.map(cat => (
-                                        <option key={cat.name} value={cat.name}>{cat.name}</option>
-                                    ))}
-                                </select>
-                            </div>
 
-                            <div>
-                                <label className="block text-xs font-bold text-rose-800 uppercase tracking-wider mb-2">Subcategoría</label>
-                                <select className="w-full px-4 py-3 bg-white border border-rose-200 rounded-xl focus:ring-4 focus:ring-rose-500/20 outline-none text-gray-700 font-medium shadow-sm transition-all" 
-                                    value={formData.subcategory} 
-                                    onChange={e => setFormData({...formData, subcategory: e.target.value})}>
-                                    {expenseCategories.find(c => c.name === formData.category)?.subcategories.map(sub => (
-                                        <option key={sub} value={sub}>{sub}</option>
-                                    ))}
-                                </select>
+                            <div className={`md:col-span-3 grid grid-cols-1 ${hasSubcategories ? 'md:grid-cols-2' : ''} gap-6`}>
+                                <div>
+                                    <label className="block text-xs font-bold text-rose-800 uppercase tracking-wider mb-2">Categoría</label>
+                                    <select
+                                        required
+                                        className="w-full px-4 py-3 bg-white border border-rose-200 rounded-xl focus:ring-4 focus:ring-rose-500/20 outline-none text-gray-700 font-medium shadow-sm transition-all appearance-none"
+                                        value={selectedCategoryId}
+                                        onChange={e => {
+                                            setSelectedCategoryId(e.target.value);
+                                            setSelectedSubCategoryId("");
+                                        }}
+                                    >
+                                        <option value="">Seleccionar Categoría</option>
+                                        {expenseCategories.map(cat => (
+                                            <option key={cat.id} value={cat.id}>{cat.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+
+                                {hasSubcategories && (
+                                    <div className="animate-fade-in-up">
+                                        <label className="block text-xs font-bold text-rose-800 uppercase tracking-wider mb-2 text-indigo-600">Subcategoría</label>
+                                        <select
+                                            required
+                                            className="w-full px-4 py-3 bg-white border border-indigo-200 rounded-xl focus:ring-4 focus:ring-indigo-500/20 outline-none text-gray-700 font-medium shadow-sm transition-all appearance-none"
+                                            value={selectedSubCategoryId}
+                                            onChange={e => setSelectedSubCategoryId(e.target.value)}
+                                        >
+                                            <option value="">Seleccionar Subcategoría</option>
+                                            {subCategories.map(sub => (
+                                                <option key={sub.id} value={sub.id}>{sub.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
                             </div>
 
                             <div>
                                 <label className="block text-xs font-bold text-rose-800 uppercase tracking-wider mb-2">Fecha</label>
                                 <div className="relative">
                                     <Calendar className="w-5 h-5 text-rose-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
-                                    <input required type="date" className="w-full pl-10 pr-4 py-3 bg-white border border-rose-200 rounded-xl focus:ring-4 focus:ring-rose-500/20 outline-none text-gray-700 font-medium shadow-sm transition-all" 
-                                        value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} />
+                                    <input required type="date" className="w-full pl-10 pr-4 py-3 bg-white border border-rose-200 rounded-xl focus:ring-4 focus:ring-rose-500/20 outline-none text-gray-700 font-medium shadow-sm transition-all"
+                                        value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} />
                                 </div>
                             </div>
 
                             <div className="md:col-span-3">
                                 <label className="block text-xs font-bold text-rose-800 uppercase tracking-wider mb-2">Descripción</label>
-                                <input required type="text" placeholder="Detalle exacto del egreso..." className="w-full px-4 py-3 bg-white border border-rose-200 rounded-xl focus:ring-4 focus:ring-rose-500/20 outline-none text-gray-700 font-medium shadow-sm transition-all" 
-                                    value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} />
+                                <input required type="text" placeholder="Detalle exacto del egreso..." className="w-full px-4 py-3 bg-white border border-rose-200 rounded-xl focus:ring-4 focus:ring-rose-500/20 outline-none text-gray-700 font-medium shadow-sm transition-all"
+                                    value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} />
                             </div>
 
                             <div className="md:col-span-3 bg-white p-5 rounded-2xl border border-rose-100 shadow-sm grid grid-cols-1 md:grid-cols-3 gap-4 relative overflow-hidden">
@@ -292,14 +345,14 @@ export default function ExpensesPage() {
                                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Monto</label>
                                     <div className="relative">
                                         <DollarSign className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
-                                        <input required type="number" step="0.01" min="0" placeholder="0.00" className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-4 focus:ring-rose-500/20 outline-none text-gray-800 font-bold transition-all relative z-10" 
-                                            value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} />
+                                        <input required type="number" step="0.01" min="0" placeholder="0.00" className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-4 focus:ring-rose-500/20 outline-none text-gray-800 font-bold transition-all relative z-10"
+                                            value={formData.amount} onChange={e => setFormData({ ...formData, amount: e.target.value })} />
                                     </div>
                                 </div>
                                 <div>
                                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Moneda</label>
-                                    <select className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-4 focus:ring-rose-500/20 outline-none text-gray-700 font-bold transition-all relative z-10" 
-                                        value={formData.currency} onChange={e => setFormData({...formData, currency: e.target.value as "PEN"|"USD"})}>
+                                    <select className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-4 focus:ring-rose-500/20 outline-none text-gray-700 font-bold transition-all relative z-10"
+                                        value={formData.currency} onChange={e => setFormData({ ...formData, currency: e.target.value as "PEN" | "USD" })}>
                                         <option value="PEN">Soles (PEN)</option>
                                         <option value="USD">Dólares (USD)</option>
                                     </select>
@@ -308,12 +361,12 @@ export default function ExpensesPage() {
                                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Tipo de Cambio</label>
                                     <div className="relative">
                                         <RefreshCw className={`w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 z-20 ${formData.currency === 'USD' ? 'text-blue-500' : 'text-gray-300'}`} />
-                                        <input type="number" step="0.001" min="1" className={`w-full pl-10 pr-4 py-3 border rounded-xl outline-none font-bold transition-all relative z-10 ${formData.currency === 'USD' ? 'bg-blue-50 border-blue-200 text-blue-800 focus:ring-4 focus:ring-blue-500/20' : 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'}`} 
-                                            value={formData.exchangeRate} onChange={e => setFormData({...formData, exchangeRate: e.target.value})} disabled={formData.currency === 'PEN'} />
+                                        <input type="number" step="0.001" min="1" className={`w-full pl-10 pr-4 py-3 border rounded-xl outline-none font-bold transition-all relative z-10 ${formData.currency === 'USD' ? 'bg-blue-50 border-blue-200 text-blue-800 focus:ring-4 focus:ring-blue-500/20' : 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'}`}
+                                            value={formData.exchangeRate} onChange={e => setFormData({ ...formData, exchangeRate: e.target.value })} disabled={formData.currency === 'PEN'} />
                                     </div>
                                 </div>
                             </div>
-                            
+
                             {/* LIVE PREVIEW SECTION */}
                             <div className="md:col-span-3 flex flex-col md:flex-row gap-4 mt-2">
                                 <div className="flex-1 bg-gradient-to-r from-rose-500 to-red-500 p-4 rounded-2xl shadow-lg flex items-center justify-between text-white">
@@ -327,12 +380,12 @@ export default function ExpensesPage() {
                                     </div>
                                     <Calendar className="w-10 h-10 text-white/30" />
                                 </div>
-                                
+
                                 <div className="flex-1 bg-gradient-to-r from-gray-900 to-indigo-900 p-4 rounded-2xl shadow-lg flex items-center justify-between text-white">
                                     <div>
                                         <p className="text-xs text-indigo-200 font-bold uppercase tracking-wider mb-1">Monto Convertido a Soles</p>
                                         <div className="text-2xl font-black text-rose-400">
-                                            S/ {(Number(formData.amount || 0) * (formData.currency === 'USD' ? Number(formData.exchangeRate || 1) : 1)).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                            S/ {(Number(formData.amount || 0) * (formData.currency === 'USD' ? Number(formData.exchangeRate || 1) : 1)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                         </div>
                                     </div>
                                     <DollarSign className="w-10 h-10 text-white/20" />
@@ -342,13 +395,13 @@ export default function ExpensesPage() {
                             <div className="md:col-span-3 flex gap-6 mt-2">
                                 <label className="flex items-center gap-3 cursor-pointer group bg-white/60 px-4 py-2 rounded-xl border border-rose-100 hover:bg-white transition-all">
                                     <div className="relative flex items-center justify-center">
-                                        <input type="checkbox" className="peer w-5 h-5 text-rose-600 border-gray-300 rounded focus:ring-rose-500 focus:ring-2" checked={formData.programmed} onChange={e => setFormData({...formData, programmed: e.target.checked})} />
+                                        <input type="checkbox" className="peer w-5 h-5 text-rose-600 border-gray-300 rounded focus:ring-rose-500 focus:ring-2" checked={formData.programmed} onChange={e => setFormData({ ...formData, programmed: e.target.checked })} />
                                     </div>
                                     <span className="text-sm font-bold text-gray-700 group-hover:text-rose-700 transition-colors">Gasto Programado</span>
                                 </label>
                                 <label className="flex items-center gap-3 cursor-pointer group bg-white/60 px-4 py-2 rounded-xl border border-rose-100 hover:bg-white transition-all">
                                     <div className="relative flex items-center justify-center">
-                                        <input type="checkbox" className="peer w-5 h-5 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500 focus:ring-2" checked={formData.justified} onChange={e => setFormData({...formData, justified: e.target.checked})} />
+                                        <input type="checkbox" className="peer w-5 h-5 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500 focus:ring-2" checked={formData.justified} onChange={e => setFormData({ ...formData, justified: e.target.checked })} />
                                     </div>
                                     <span className="text-sm font-bold text-gray-700 group-hover:text-emerald-700 transition-colors">Con Justificante (Boleta/Factura)</span>
                                 </label>
@@ -364,6 +417,14 @@ export default function ExpensesPage() {
                         </div>
                     </form>
                 </Modal>
+
+                <ConfirmModal
+                    isOpen={isConfirmOpen}
+                    onClose={() => setIsConfirmOpen(false)}
+                    onConfirm={confirmDelete}
+                    title="Eliminar Egreso"
+                    message="¿Estás seguro de que deseas eliminar este registro de egreso? Esta acción no se puede deshacer."
+                />
             </div>
         </Appshell>
     );

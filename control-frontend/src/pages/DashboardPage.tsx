@@ -255,7 +255,7 @@ export default function DashboardPage() {
     });
 
     const monthlyBalances = monthlyIncomeTotals.map((inc, i) => inc - monthlyExpenseTotals[i]);
-    
+
     const grandTotalIncome = monthlyIncomeTotals.reduce((a, b) => a + b, 0);
     const grandTotalExpense = monthlyExpenseTotals.reduce((a, b) => a + b, 0);
     const grandTotalBalance = grandTotalIncome - grandTotalExpense;
@@ -266,14 +266,14 @@ export default function DashboardPage() {
 
     // Helpers UI
     const formatSoles = (val: number) => {
-        if(val === 0) return "-";
-        return val.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        if (val === 0) return "-";
+        return val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     };
 
     return (
         <Appshell>
             <div className="flex flex-col gap-8 animate-fade-in-up pb-10 max-w-full">
-                
+
                 {/* 1. SECCIÓN SUPERIOR: TARJETAS DE RESUMEN GLOBAL */}
                 <div className="flex flex-col md:flex-row items-center justify-between gap-6">
                     <div>
@@ -294,7 +294,7 @@ export default function DashboardPage() {
                         <div className="flex justify-between items-start relative z-10">
                             <div>
                                 <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Total Ingresos</p>
-                                <h3 className="text-3xl font-black text-emerald-600">S/ {grandTotalIncome.toLocaleString('en-US', {minimumFractionDigits: 2})}</h3>
+                                <h3 className="text-3xl font-black text-emerald-600">S/ {grandTotalIncome.toLocaleString('en-US', { minimumFractionDigits: 2 })}</h3>
                             </div>
                             <div className="p-3 bg-emerald-50 rounded-xl"><TrendingUp className="w-6 h-6 text-emerald-500" /></div>
                         </div>
@@ -306,7 +306,7 @@ export default function DashboardPage() {
                         <div className="flex justify-between items-start relative z-10">
                             <div>
                                 <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Total Egresos</p>
-                                <h3 className="text-3xl font-black text-rose-500">S/ {grandTotalExpense.toLocaleString('en-US', {minimumFractionDigits: 2})}</h3>
+                                <h3 className="text-3xl font-black text-rose-500">S/ {grandTotalExpense.toLocaleString('en-US', { minimumFractionDigits: 2 })}</h3>
                             </div>
                             <div className="p-3 bg-rose-50 rounded-xl"><TrendingDown className="w-6 h-6 text-rose-400" /></div>
                         </div>
@@ -318,7 +318,7 @@ export default function DashboardPage() {
                         <div className="flex justify-between items-start relative z-10">
                             <div>
                                 <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Saldo Anual Neto</p>
-                                <h3 className="text-3xl font-black text-blue-600">S/ {grandTotalBalance.toLocaleString('en-US', {minimumFractionDigits: 2})}</h3>
+                                <h3 className="text-3xl font-black text-blue-600">S/ {grandTotalBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}</h3>
                             </div>
                             <div className="p-3 bg-blue-50 rounded-xl"><Wallet className="w-6 h-6 text-blue-500" /></div>
                         </div>
@@ -336,7 +336,7 @@ export default function DashboardPage() {
                         {months.map((m, i) => {
                             const incHeight = maxMonthlyValue > 0 ? (monthlyIncomeTotals[i] / maxMonthlyValue) * 100 : 0;
                             const expHeight = maxMonthlyValue > 0 ? (monthlyExpenseTotals[i] / maxMonthlyValue) * 100 : 0;
-                            
+
                             return (
                                 <div key={`chart-${m}`} className="flex flex-col items-center flex-1 group">
                                     <div className="flex items-end justify-center w-full gap-1 h-full pb-3 border-b border-gray-100 relative">
@@ -359,7 +359,7 @@ export default function DashboardPage() {
 
                 {/* 3. SECCIÓN INFERIOR: TABLA DRILL-DOWN (ACORDEÓN) */}
                 <div className="bg-white rounded-3xl border border-gray-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden flex flex-col relative group/board">
-                    
+
                     <div className="bg-gray-50 px-6 py-5 flex justify-between items-center border-b border-gray-100">
                         <div className="font-black text-gray-800 text-lg flex items-center gap-2">
                             <Activity className="w-5 h-5 text-indigo-500" /> Detalle Estructural (Drill-Down)
@@ -388,7 +388,7 @@ export default function DashboardPage() {
                             </thead>
 
                             <tbody className="text-sm font-medium">
-                                
+
                                 {/* ====================== INGRESOS ====================== */}
                                 <tr className="bg-emerald-50/50 hover:bg-emerald-50 transition-colors cursor-pointer group" onClick={() => toggleCat('Ingresos')}>
                                     <td className="sticky left-0 bg-emerald-50/90 backdrop-blur-sm z-30 p-3 pl-4 border-r border-gray-100 text-emerald-800 shadow-[4px_0_10px_rgba(0,0,0,0.02)] flex items-center gap-2 font-black uppercase text-xs">
@@ -404,7 +404,7 @@ export default function DashboardPage() {
                                         S/ {formatSoles(grandTotalIncome)}
                                     </td>
                                 </tr>
-                                
+
                                 {expandedCats['Ingresos'] && INCOMES.map((inc, i) => {
                                     const rowTotal = inc.values.reduce((a, b) => a + b, 0);
                                     return (
@@ -443,7 +443,7 @@ export default function DashboardPage() {
                                             catMonthlyTotals[monthIdx] += v;
                                         });
                                     });
-                                    const catGrandTotal = catMonthlyTotals.reduce((a,b)=>a+b, 0);
+                                    const catGrandTotal = catMonthlyTotals.reduce((a, b) => a + b, 0);
                                     const isExpanded = expandedCats[`exp-${i}`];
 
                                     return (

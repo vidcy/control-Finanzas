@@ -13,6 +13,7 @@ import {
 } from "../services/category.api";
 import { Tags, Plus, Search, Layers, CircleDollarSign, TrendingDown, Trash2 } from "lucide-react";
 import { toast } from "react-hot-toast";
+import ConfirmModal from "../components/ui/ConfirmModal";
 
 export default function CategoriesPage() {
     const [categories, setCategories] = useState<any[]>([]);
@@ -23,6 +24,14 @@ export default function CategoriesPage() {
     const [isCatModalOpen, setIsCatModalOpen] = useState(false);
     const [isSubModalOpen, setIsSubModalOpen] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+
+    // Confirm Modal States
+    const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+    const [confirmConfig, setConfirmConfig] = useState({
+        title: "",
+        message: "",
+        onConfirm: () => { }
+    });
 
     useEffect(() => {
         loadCategories()
@@ -99,17 +108,22 @@ export default function CategoriesPage() {
         }
     };
 
-    const handleDeleteCat = async (id: string) => {
-        if (!confirm("¿Está seguro de que desea eliminar la categoría y todas sus subcategorías?")) return;
-        try {
-            await deleteCategoryRequest(id);
-            toast.success("Categoría eliminada correctamente");
-            await loadCategories(); // 🔥 recarga desde DB
-            setIsCatModalOpen(false);
-        } catch (error: any) {
-            console.error("Error eliminando categoría:", error);
-            toast.error(error.message || "Error al eliminar categoría");
-        }
+    const handleDeleteCat = (id: string) => {
+        setConfirmConfig({
+            title: "Eliminar Categoría",
+            message: "¿Está seguro de que desea eliminar la categoría y todas sus subcategorías? Esta acción es irreversible.",
+            onConfirm: async () => {
+                try {
+                    await deleteCategoryRequest(id);
+                    toast.success("Categoría eliminada correctamente");
+                    await loadCategories();
+                } catch (error: any) {
+                    console.error("Error eliminando categoría:", error);
+                    toast.error(error.message || "Error al eliminar categoría");
+                }
+            }
+        });
+        setIsConfirmOpen(true);
     };
 
     const handleOpenSubModal = (catId: string) => {
@@ -140,16 +154,21 @@ export default function CategoriesPage() {
         }
     };
 
-    const handleDeleteSub = async (subId: string) => {
-        if (!confirm("¿Está seguro de que desea eliminar la subcategoría?")) return;
-
-        try {
-            await deleteSubcategoryRequest(subId);
-            toast.success("Subcategoría eliminada correctamente");
-            await loadCategories();
-        } catch (error: any) {
-            toast.error(error.message || "Error al eliminar subcategoría");
-        }
+    const handleDeleteSub = (subId: string) => {
+        setConfirmConfig({
+            title: "Eliminar Subcategoría",
+            message: "¿Está seguro de que desea eliminar esta subcategoría?",
+            onConfirm: async () => {
+                try {
+                    await deleteSubcategoryRequest(subId);
+                    toast.success("Subcategoría eliminada correctamente");
+                    await loadCategories();
+                } catch (error: any) {
+                    toast.error(error.message || "Error al eliminar subcategoría");
+                }
+            }
+        });
+        setIsConfirmOpen(true);
     };
 
     return (
@@ -240,7 +259,7 @@ export default function CategoriesPage() {
                             </div>
 
                             {/* CARD FOOTER */}
-                            <button onClick={() => handleOpenSubModal(category.id)} className={`w-full py-2.5 rounded-xl border-2 border-dashed flex items-center justify-center gap-2 text-sm font-semibold transition-colors mt-auto shrink-0 ${activeTab === "income" ? "border-emerald-100 text-emerald-600 hover:bg-emerald-50 hover:border-emerald-200" : "border-rose-100 text-rose-600 hover:bg-rose-50 hover:border-rose-200"
+                            <button onClick={() => handleOpenSubModal(category.id)} className={`w-full py-2.5 rounded-xl border-2 border-dashed flex items-center justify-center gap-2 text-sm font-semibold transition-colors mt-auto shrink-0 ${activeTab === "INCOME" ? "border-emerald-100 text-emerald-600 hover:bg-emerald-50 hover:border-emerald-200" : "border-rose-100 text-rose-600 hover:bg-rose-50 hover:border-rose-200"
                                 }`}>
                                 <Plus className="w-4 h-4" /> Agregar Subcategoría
                             </button>
@@ -290,6 +309,13 @@ export default function CategoriesPage() {
                     </form>
                 </Modal>
 
+                <ConfirmModal
+                    isOpen={isConfirmOpen}
+                    onClose={() => setIsConfirmOpen(false)}
+                    onConfirm={confirmConfig.onConfirm}
+                    title={confirmConfig.title}
+                    message={confirmConfig.message}
+                />
             </div>
         </Appshell>
     );

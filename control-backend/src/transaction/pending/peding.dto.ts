@@ -4,10 +4,12 @@ import {
     IsString,
     IsNumber,
     IsDateString,
+    ValidateIf,
 } from "class-validator";
-import { TransactionType, PaymentMethod, Currency } from "@prisma/client";
+import { Type } from "class-transformer";
+import { TransactionType, PaymentMethod, Currency, TransactionStatus } from "@prisma/client";
 
-export class CreatePendingDto {
+export class CreatePendingTransactionDto {
     // 🟢 Tipo: INCOME (por cobrar) | EXPENSE (por pagar)
     @IsEnum(TransactionType)
     type: TransactionType;
@@ -37,6 +39,7 @@ export class CreatePendingDto {
     description?: string;
 
     // 💰 monto
+    @Type(() => Number)
     @IsNumber()
     amount: number;
 
@@ -45,7 +48,41 @@ export class CreatePendingDto {
     currency: Currency;
 
     // 💵 tipo de cambio (solo si USD)
+    @ValidateIf(o => o.currency === Currency.USD)
     @IsOptional()
     @IsNumber()
     exchangeRate?: number;
+}
+
+
+export class UpdatePendingTransactionDto {
+
+    @IsOptional()
+    @IsEnum(TransactionStatus)
+    status?: TransactionStatus;
+
+    @IsOptional()
+    @IsNumber()
+    amount?: number;
+
+    @IsOptional()
+    @IsString()
+    description?: string;
+
+    @IsOptional()
+    @IsDateString()
+    dueDate?: string;
+
+    @IsOptional()
+    @IsEnum(Currency)
+    currency?: Currency;
+
+    @IsOptional()
+    @IsNumber()
+    exchangeRate?: number;
+
+    @IsOptional()
+    @IsNumber()
+    amountSoles?: number;
+
 }
