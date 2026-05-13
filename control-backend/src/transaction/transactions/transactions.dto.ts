@@ -7,6 +7,7 @@ import {
   IsString,
   IsUUID,
   IsDateString,
+  IsBoolean,
 } from 'class-validator';
 
 export enum TransactionType {
@@ -72,7 +73,15 @@ export class CreateTransactionDto {
   amountSoles?: number;
 
   @IsOptional()
-  @IsEnum(TransactionStatus)
+  @IsBoolean()
+  justified?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  programmed?: boolean;
+
+  @IsOptional()
+  @IsString()
   status?: TransactionStatus;
 
   // 📝 descripción opcional
@@ -108,6 +117,14 @@ export class UpdateTransactionDto {
   @IsOptional()
   @IsEnum(PaymentMethod)
   paymentMethod?: PaymentMethod;
+
+  @IsOptional()
+  @IsBoolean()
+  justified?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  programmed?: boolean;
 
   @IsOptional()
   @IsNumber()

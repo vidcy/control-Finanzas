@@ -8,7 +8,7 @@ import { Currency, TransactionStatus, TransactionType } from '@prisma/client';
 import { type } from 'os';
 @Injectable()
 export class PendingTransactionService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
   async createPendingTransaction(
     userId: string,
     dto: CreatePendingTransactionDto,
@@ -17,19 +17,20 @@ export class PendingTransactionService {
     const amountSoles = isUSD
       ? dto.amount * (dto.exchangeRate || 1)
       : dto.amount;
+    console.log("SUBCATEGORY RECIBIDA:", dto.subCategoryId);
     return this.prisma.transaction.create({
       data: {
         userId,
         type: dto.type,
         categoryId: dto.categoryId,
-        subCategoryId: dto.subCategoryId,
+        subCategoryId: dto.subCategoryId ?? null,
         date: new Date(),
         dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
         paymentMethod: dto.paymentMethod || 'CASH',
         description: dto.description,
         amount: dto.amount,
         status: TransactionStatus.PENDING,
-        currency: dto.currency,
+        currency: dto.currency ?? Currency.PEN,
         exchangeRate: dto.exchangeRate,
         amountSoles,
       },
@@ -70,7 +71,7 @@ export class PendingTransactionService {
         ...(dto.amount && { amount: dto.amount }),
         ...(dto.description && { description: dto.description }),
         ...(dto.dueDate && { dueDate: new Date(dto.dueDate) }),
-        ...(dto.currency && { currency: dto.currency }),
+        ...(dto.currency && { currency: dto.currency ?? Currency.PEN }),
         ...(dto.exchangeRate && { exchangeRate: dto.exchangeRate }),
         ...(dto.amountSoles && { amountSoles }),
       },

@@ -8,25 +8,29 @@ import {
 } from './transactions.dto';
 @Injectable()
 export class TransactionService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   async createTransaction(userId: string, dto: CreateTransactionDto) {
     const isUSD = dto.currency == Currency.USD;
     const amountSoles = isUSD
       ? dto.amount * (dto.exchangeRate || 1)
       : dto.amount;
+
     return this.prisma.transaction.create({
+
       data: {
         userId: userId,
         type: dto.type,
         categoryId: dto.categoryId,
-        subCategoryId: dto.subCategoryId,
+        subCategoryId: dto.subCategoryId || null,
         date: new Date(dto.date),
         paymentMethod: dto.paymentMethod || 'CASH',
         description: dto.description,
         amount: dto.amount,
-        currency: dto.currency,
+        currency: dto.currency ?? Currency.PEN,
         exchangeRate: dto.exchangeRate,
+        justified: dto.justified,
+        programmed: dto.programmed,
         status: dto.status || TransactionStatus.PAID,
         amountSoles,
       },
@@ -73,6 +77,8 @@ export class TransactionService {
         description: dto.description,
         amount,
         currency,
+        justified: dto.justified,
+        programmed: dto.programmed,
         exchangeRate,
         amountSoles,
       },
