@@ -144,7 +144,7 @@ export default function PendingPage() {
         })),
       );
       setCategories(categoriesData);
-    } catch (error: any) {
+    } catch (error) {
       toast.error(error.message);
     } finally {
       setLoading(false);
@@ -207,7 +207,7 @@ export default function PendingPage() {
       ]);
       toast.success("Creado correctamente");
       setIsModalOpen(false);
-    } catch (error: any) {
+    } catch (error) {
       toast.error(error?.message || "Error al crear");
     } finally {
       setSaving(false);
@@ -228,7 +228,7 @@ export default function PendingPage() {
       toast.success(
         newStatus === "PAID" ? "Marcado como pagado" : "Marcado como pendiente",
       );
-    } catch (error: any) {
+    } catch (error) {
       toast.error("Error al actualizar estado");
     }
   };

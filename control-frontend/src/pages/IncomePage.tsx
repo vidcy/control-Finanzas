@@ -16,7 +16,7 @@ import {
   CreditCard,
   FileText,
   ChevronDown,
-  Wallet
+  Wallet,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { listCategoriesRequest } from "../services/category.api";
@@ -116,7 +116,7 @@ export default function IncomePage() {
           })),
       );
       setCategories(categoriesData);
-    } catch (error: any) {
+    } catch (error) {
       toast.error(error.message);
     } finally {
       setLoading(false);
@@ -182,7 +182,7 @@ export default function IncomePage() {
       }
       setIsModalOpen(false);
       loadData();
-    } catch (error: any) {
+    } catch (error) {
       toast.error(error.message);
     } finally {
       setSaving(false);
@@ -201,7 +201,7 @@ export default function IncomePage() {
       toast.success("Eliminado correctamente");
       setIsConfirmOpen(false);
       loadData();
-    } catch (error: any) {
+    } catch (error) {
       toast.error(error.message);
     }
   };
@@ -210,14 +210,20 @@ export default function IncomePage() {
     if (!dateStr) return "-";
     const date = new Date(dateStr);
     if (isNaN(date.getTime())) return "-";
-    const day = String(date.getUTCDate()).padStart(2, '0');
-    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(date.getUTCDate()).padStart(2, "0");
+    const month = String(date.getUTCMonth() + 1).padStart(2, "0");
     const year = date.getUTCFullYear();
     return `${day}-${month}-${year}`;
   };
 
   const getMethodBadge = (method: string) => {
-    const labels: any = { CASH: 'Efectivo', TRANSFER: 'Transf.', YAPE: 'Yape', PLIN: 'Plin', CARD: 'Tarjeta' };
+    const labels: any = {
+      CASH: "Efectivo",
+      TRANSFER: "Transf.",
+      YAPE: "Yape",
+      PLIN: "Plin",
+      CARD: "Tarjeta",
+    };
     return labels[method] || method;
   };
 
@@ -285,16 +291,26 @@ export default function IncomePage() {
                   <th className="p-6 text-right">Importe</th>
                   <th className="p-6 text-center">Divisa</th>
                   <th className="p-6 text-center">Cotización</th>
-                  <th className="p-6 text-right bg-emerald-500/5 text-emerald-700">Total (Soles)</th>
+                  <th className="p-6 text-right bg-emerald-500/5 text-emerald-700">
+                    Total (Soles)
+                  </th>
                   <th className="p-6 text-center pr-8">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-emerald-50">
                 {filtered.map((inc, index) => {
-                  const montoSoles = inc.currency === "USD" ? inc.amount * inc.exchangeRate : inc.amount;
+                  const montoSoles =
+                    inc.currency === "USD"
+                      ? inc.amount * inc.exchangeRate
+                      : inc.amount;
                   return (
-                    <tr key={inc.id} className="hover:bg-emerald-50/30 transition-all group">
-                      <td className="p-5 pl-8 text-xs font-black text-emerald-400">#{index + 1}</td>
+                    <tr
+                      key={inc.id}
+                      className="hover:bg-emerald-50/30 transition-all group"
+                    >
+                      <td className="p-5 pl-8 text-xs font-black text-emerald-400">
+                        #{index + 1}
+                      </td>
                       <td className="p-5">
                         <div className="flex flex-col gap-1">
                           <span className="inline-flex items-center px-3 py-1 rounded-xl bg-emerald-100 text-emerald-700 text-[10px] font-black uppercase tracking-tighter border border-emerald-200 shadow-sm w-fit">
@@ -313,32 +329,48 @@ export default function IncomePage() {
                         </span>
                       </td>
                       <td className="p-5 text-sm font-bold text-gray-700">
-                         <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-gray-100 shadow-sm w-fit">
-                           <Calendar className="w-3.5 h-3.5 text-emerald-500" />
-                           {formatDate(inc.date)}
-                         </div>
+                        <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-gray-100 shadow-sm w-fit">
+                          <Calendar className="w-3.5 h-3.5 text-emerald-500" />
+                          {formatDate(inc.date)}
+                        </div>
                       </td>
-                      <td className="p-5 text-sm font-bold text-gray-600 italic">"{inc.description}"</td>
+                      <td className="p-5 text-sm font-bold text-gray-600 italic">
+                        "{inc.description}"
+                      </td>
                       <td className="p-5 text-right text-sm font-black text-gray-800">
-                        {inc.currency === 'USD' ? '$' : 'S/'} {inc.amount.toLocaleString()}
+                        {inc.currency === "USD" ? "$" : "S/"}{" "}
+                        {inc.amount.toLocaleString()}
                       </td>
                       <td className="p-5 text-center">
-                        <span className={`text-[10px] font-black px-2 py-1 rounded-lg ${inc.currency === 'USD' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
+                        <span
+                          className={`text-[10px] font-black px-2 py-1 rounded-lg ${inc.currency === "USD" ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-500"}`}
+                        >
                           {inc.currency}
                         </span>
                       </td>
                       <td className="p-5 text-center text-xs font-black text-gray-400">
-                        {inc.currency === 'USD' ? inc.exchangeRate.toFixed(3) : '-'}
+                        {inc.currency === "USD"
+                          ? inc.exchangeRate.toFixed(3)
+                          : "-"}
                       </td>
                       <td className="p-5 text-right text-lg font-black text-emerald-600 bg-emerald-50/20">
-                        S/ {montoSoles.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        S/{" "}
+                        {montoSoles.toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                        })}
                       </td>
                       <td className="p-5 pr-8 text-center">
                         <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-all scale-95 group-hover:scale-100">
-                          <button onClick={() => handleOpenEdit(inc)} className="p-2.5 bg-white border border-gray-100 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all shadow-sm">
+                          <button
+                            onClick={() => handleOpenEdit(inc)}
+                            className="p-2.5 bg-white border border-gray-100 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all shadow-sm"
+                          >
                             <Edit2 className="w-4 h-4" />
                           </button>
-                          <button onClick={() => handleDelete(inc.id)} className="p-2.5 bg-white border border-gray-100 text-rose-600 hover:bg-rose-600 hover:text-white rounded-xl transition-all shadow-sm">
+                          <button
+                            onClick={() => handleDelete(inc.id)}
+                            className="p-2.5 bg-white border border-gray-100 text-rose-600 hover:bg-rose-600 hover:text-white rounded-xl transition-all shadow-sm"
+                          >
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
@@ -347,7 +379,14 @@ export default function IncomePage() {
                   );
                 })}
                 {filtered.length === 0 && (
-                  <tr><td colSpan={10} className="p-20 text-center text-gray-400 font-bold uppercase tracking-widest text-xs">Sin registros de ingresos</td></tr>
+                  <tr>
+                    <td
+                      colSpan={10}
+                      className="p-20 text-center text-gray-400 font-bold uppercase tracking-widest text-xs"
+                    >
+                      Sin registros de ingresos
+                    </td>
+                  </tr>
                 )}
               </tbody>
             </table>
@@ -355,9 +394,9 @@ export default function IncomePage() {
         </div>
 
         {/* MODAL REDISEÑADO - MÁS COMPACTO Y AMPLIO */}
-        <Modal 
-          isOpen={isModalOpen} 
-          onClose={() => setIsModalOpen(false)} 
+        <Modal
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
           title={editingId ? "Actualizar Ingreso" : "Nuevo Ingreso Operativo"}
           maxWidth="max-w-4xl"
         >
@@ -366,18 +405,35 @@ export default function IncomePage() {
               {/* Sección Clasificación */}
               <div className="bg-emerald-50/20 p-5 rounded-[2rem] border border-emerald-100/40 space-y-4">
                 <div className="flex items-center gap-2 mb-1">
-                  <div className="p-1.5 bg-emerald-100 rounded-lg text-emerald-600"><Tag className="w-3.5 h-3.5" /></div>
-                  <span className="text-[10px] font-black text-emerald-900 uppercase tracking-widest">Clasificación</span>
+                  <div className="p-1.5 bg-emerald-100 rounded-lg text-emerald-600">
+                    <Tag className="w-3.5 h-3.5" />
+                  </div>
+                  <span className="text-[10px] font-black text-emerald-900 uppercase tracking-widest">
+                    Clasificación
+                  </span>
                 </div>
-                
+
                 <div className="grid grid-cols-1 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">Categoría</label>
+                    <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                      Categoría
+                    </label>
                     <div className="relative">
-                      <select required className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all text-sm font-black text-gray-700 appearance-none shadow-sm"
-                        value={selectedCategoryId} onChange={e => { setSelectedCategoryId(e.target.value); setSelectedSubCategoryId(""); }}>
+                      <select
+                        required
+                        className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all text-sm font-black text-gray-700 appearance-none shadow-sm"
+                        value={selectedCategoryId}
+                        onChange={(e) => {
+                          setSelectedCategoryId(e.target.value);
+                          setSelectedSubCategoryId("");
+                        }}
+                      >
                         <option value="">Seleccionar...</option>
-                        {filteredCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        {filteredCategories.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
                       </select>
                       <ChevronDown className="w-4 h-4 text-gray-300 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
                     </div>
@@ -385,12 +441,24 @@ export default function IncomePage() {
 
                   {categoryHasSubcategories && (
                     <div className="space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-300">
-                      <label className="text-[9px] font-black text-emerald-600 uppercase tracking-widest ml-1">Subcategoría</label>
+                      <label className="text-[9px] font-black text-emerald-600 uppercase tracking-widest ml-1">
+                        Subcategoría
+                      </label>
                       <div className="relative">
-                        <select required className="w-full px-4 py-3 bg-white border border-emerald-100 rounded-xl outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all text-sm font-black text-gray-700 appearance-none shadow-sm"
-                          value={selectedSubCategoryId} onChange={e => setSelectedSubCategoryId(e.target.value)}>
+                        <select
+                          required
+                          className="w-full px-4 py-3 bg-white border border-emerald-100 rounded-xl outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all text-sm font-black text-gray-700 appearance-none shadow-sm"
+                          value={selectedSubCategoryId}
+                          onChange={(e) =>
+                            setSelectedSubCategoryId(e.target.value)
+                          }
+                        >
                           <option value="">Seleccionar...</option>
-                          {filteredSubCategories.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                          {filteredSubCategories.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name}
+                            </option>
+                          ))}
                         </select>
                         <ChevronDown className="w-4 h-4 text-emerald-400 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
                       </div>
@@ -402,21 +470,47 @@ export default function IncomePage() {
               {/* Sección Detalles */}
               <div className="bg-blue-50/20 p-5 rounded-[2rem] border border-blue-100/40 space-y-4">
                 <div className="flex items-center gap-2 mb-1">
-                  <div className="p-1.5 bg-blue-100 rounded-lg text-blue-600"><FileText className="w-3.5 h-3.5" /></div>
-                  <span className="text-[10px] font-black text-blue-900 uppercase tracking-widest">Detalles</span>
+                  <div className="p-1.5 bg-blue-100 rounded-lg text-blue-600">
+                    <FileText className="w-3.5 h-3.5" />
+                  </div>
+                  <span className="text-[10px] font-black text-blue-900 uppercase tracking-widest">
+                    Detalles
+                  </span>
                 </div>
 
                 <div className="grid grid-cols-1 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">Fecha</label>
-                    <input required type="date" className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
-                      value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} />
+                    <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                      Fecha
+                    </label>
+                    <input
+                      required
+                      type="date"
+                      className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
+                      value={formData.date}
+                      onChange={(e) =>
+                        setFormData({ ...formData, date: e.target.value })
+                      }
+                    />
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">Descripción</label>
-                    <input required type="text" placeholder="Ej. Venta de servicios..." className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
-                      value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} />
+                    <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                      Descripción
+                    </label>
+                    <input
+                      required
+                      type="text"
+                      placeholder="Ej. Venta de servicios..."
+                      className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
+                      value={formData.description}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          description: e.target.value,
+                        })
+                      }
+                    />
                   </div>
                 </div>
               </div>
@@ -428,22 +522,31 @@ export default function IncomePage() {
                 {/* Método de Pago */}
                 <div className="space-y-3">
                   <div className="flex items-center gap-2 mb-1">
-                    <div className="p-1.5 bg-indigo-100 rounded-lg text-indigo-600"><Wallet className="w-3.5 h-3.5" /></div>
-                    <span className="text-[10px] font-black text-indigo-900 uppercase tracking-widest">Método de Cobro</span>
+                    <div className="p-1.5 bg-indigo-100 rounded-lg text-indigo-600">
+                      <Wallet className="w-3.5 h-3.5" />
+                    </div>
+                    <span className="text-[10px] font-black text-indigo-900 uppercase tracking-widest">
+                      Método de Cobro
+                    </span>
                   </div>
                   <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
                     {[
-                      { id: 'CASH', label: 'Efectivo' },
-                      { id: 'TRANSFER', label: 'Transf.' },
-                      { id: 'YAPE', label: 'Yape' },
-                      { id: 'PLIN', label: 'Plin' },
-                      { id: 'CARD', label: 'Tarjeta' }
-                    ].map(method => (
+                      { id: "CASH", label: "Efectivo" },
+                      { id: "TRANSFER", label: "Transf." },
+                      { id: "YAPE", label: "Yape" },
+                      { id: "PLIN", label: "Plin" },
+                      { id: "CARD", label: "Tarjeta" },
+                    ].map((method) => (
                       <button
                         key={method.id}
                         type="button"
-                        onClick={() => setFormData({ ...formData, paymentMethod: method.id as any })}
-                        className={`py-2.5 rounded-xl text-[9px] font-black uppercase tracking-tighter border transition-all ${formData.paymentMethod === method.id ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-100 scale-105' : 'bg-white text-gray-400 border-gray-100 hover:border-indigo-200'}`}
+                        onClick={() =>
+                          setFormData({
+                            ...formData,
+                            paymentMethod: method.id as any,
+                          })
+                        }
+                        className={`py-2.5 rounded-xl text-[9px] font-black uppercase tracking-tighter border transition-all ${formData.paymentMethod === method.id ? "bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-100 scale-105" : "bg-white text-gray-400 border-gray-100 hover:border-indigo-200"}`}
                       >
                         {method.label}
                       </button>
@@ -454,27 +557,64 @@ export default function IncomePage() {
                 {/* Info Monetaria */}
                 <div className="space-y-4">
                   <div className="flex items-center gap-2 mb-1">
-                    <div className="p-1.5 bg-emerald-100 rounded-lg text-emerald-600"><CreditCard className="w-3.5 h-3.5" /></div>
-                    <span className="text-[10px] font-black text-emerald-900 uppercase tracking-widest">Información Monetaria</span>
+                    <div className="p-1.5 bg-emerald-100 rounded-lg text-emerald-600">
+                      <CreditCard className="w-3.5 h-3.5" />
+                    </div>
+                    <span className="text-[10px] font-black text-emerald-900 uppercase tracking-widest">
+                      Información Monetaria
+                    </span>
                   </div>
                   <div className="grid grid-cols-3 gap-3">
                     <div className="space-y-1">
-                      <label className="text-[8px] font-black text-gray-400 uppercase tracking-widest ml-1">Moneda</label>
-                      <select className="w-full px-3 py-2 bg-white border border-gray-100 rounded-lg outline-none text-[11px] font-black text-gray-700 appearance-none shadow-sm"
-                        value={formData.currency} onChange={e => setFormData({ ...formData, currency: e.target.value as any })}>
+                      <label className="text-[8px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                        Moneda
+                      </label>
+                      <select
+                        className="w-full px-3 py-2 bg-white border border-gray-100 rounded-lg outline-none text-[11px] font-black text-gray-700 appearance-none shadow-sm"
+                        value={formData.currency}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            currency: e.target.value as any,
+                          })
+                        }
+                      >
                         <option value="PEN">PEN</option>
                         <option value="USD">USD</option>
                       </select>
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[8px] font-black text-gray-400 uppercase tracking-widest ml-1">T.C.</label>
-                      <input type="number" step="0.001" disabled={formData.currency === 'PEN'} className={`w-full px-3 py-2 border rounded-lg outline-none text-[11px] font-black shadow-sm ${formData.currency === 'USD' ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-gray-50 border-gray-100 text-gray-400'}`}
-                        value={formData.exchangeRate} onChange={e => setFormData({ ...formData, exchangeRate: e.target.value })} />
+                      <label className="text-[8px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                        T.C.
+                      </label>
+                      <input
+                        type="number"
+                        step="0.001"
+                        disabled={formData.currency === "PEN"}
+                        className={`w-full px-3 py-2 border rounded-lg outline-none text-[11px] font-black shadow-sm ${formData.currency === "USD" ? "bg-blue-50 border-blue-200 text-blue-700" : "bg-gray-50 border-gray-100 text-gray-400"}`}
+                        value={formData.exchangeRate}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            exchangeRate: e.target.value,
+                          })
+                        }
+                      />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[8px] font-black text-emerald-600 uppercase tracking-widest ml-1">Importe</label>
-                      <input required type="number" step="0.01" className="w-full px-3 py-2 bg-white border-2 border-emerald-100 rounded-lg outline-none text-[11px] font-black text-gray-800 shadow-sm"
-                        value={formData.amount} onChange={e => setFormData({ ...formData, amount: e.target.value })} />
+                      <label className="text-[8px] font-black text-emerald-600 uppercase tracking-widest ml-1">
+                        Importe
+                      </label>
+                      <input
+                        required
+                        type="number"
+                        step="0.01"
+                        className="w-full px-3 py-2 bg-white border-2 border-emerald-100 rounded-lg outline-none text-[11px] font-black text-gray-800 shadow-sm"
+                        value={formData.amount}
+                        onChange={(e) =>
+                          setFormData({ ...formData, amount: e.target.value })
+                        }
+                      />
                     </div>
                   </div>
                 </div>
@@ -482,24 +622,54 @@ export default function IncomePage() {
             </div>
 
             <div className="flex justify-end items-center gap-4 pt-4">
-              <button type="button" onClick={() => setIsModalOpen(false)} className="px-6 py-3 text-gray-400 font-black uppercase text-[10px] tracking-widest hover:text-gray-600 transition-all">Cancelar</button>
-              <button type="submit" disabled={saving} className="px-10 py-3.5 bg-emerald-600 text-white font-black rounded-xl hover:bg-emerald-700 shadow-xl shadow-emerald-100 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2">
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                <span className="uppercase tracking-widest text-[10px]">{saving ? "Guardando..." : (editingId ? "Actualizar" : "Confirmar")}</span>
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="px-6 py-3 text-gray-400 font-black uppercase text-[10px] tracking-widest hover:text-gray-600 transition-all"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-10 py-3.5 bg-emerald-600 text-white font-black rounded-xl hover:bg-emerald-700 shadow-xl shadow-emerald-100 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
+              >
+                {saving ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4" />
+                )}
+                <span className="uppercase tracking-widest text-[10px]">
+                  {saving
+                    ? "Guardando..."
+                    : editingId
+                      ? "Actualizar"
+                      : "Confirmar"}
+                </span>
               </button>
             </div>
           </form>
         </Modal>
 
-        <ConfirmModal isOpen={isConfirmOpen} onClose={() => setIsConfirmOpen(false)} onConfirm={confirmDelete} title="Eliminar Ingreso" message="¿Estás seguro de que deseas eliminar este registro de ingreso permanentemente?" />
+        <ConfirmModal
+          isOpen={isConfirmOpen}
+          onClose={() => setIsConfirmOpen(false)}
+          onConfirm={confirmDelete}
+          title="Eliminar Ingreso"
+          message="¿Estás seguro de que deseas eliminar este registro de ingreso permanentemente?"
+        />
       </div>
-      
-      <style dangerouslySetInnerHTML={{ __html: `
+
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
         .custom-scrollbar::-webkit-scrollbar { height: 10px; width: 10px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #f8fafc; border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; border: 2px solid #f8fafc; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-      `}} />
+      `,
+        }}
+      />
     </Appshell>
   );
 }
