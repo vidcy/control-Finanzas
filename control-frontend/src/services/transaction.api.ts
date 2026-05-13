@@ -8,7 +8,7 @@ export const createTransactionRequest = async (data: {
   amount: number;
   date: string;
   dueDate?: string;
-  status: "PENDING" | "PAID";
+  status: "PAID";
   currency: "PEN" | "USD";
   exchangeRate?: number;
   paymentMethod: string;
@@ -26,7 +26,10 @@ export const createTransactionRequest = async (data: {
 
 export const getTransactionsRequest = async () => {
   try {
+    console.log("API URL:", import.meta.env.VITE_API_URL);
+    console.log("llamdo al api de transacciones");
     const res = await API.get("/transactions");
+    console.log("🔥 RAW API RESPONSE:", res);
     return res.data;
   } catch (error: any) {
     throw new Error(

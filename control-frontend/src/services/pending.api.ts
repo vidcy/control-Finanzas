@@ -6,7 +6,7 @@ export const listPendingTransactionsRequest = async () => {
   } catch (error: any) {
     throw new Error(
       error?.response?.data?.message ||
-        "Error al listar las transacciones pendientes",
+      "Error al listar las transacciones pendientes",
     );
   }
 };
@@ -18,7 +18,7 @@ export const createPendingTransactionRequest = async (data: {
   amount: number;
   date: string;
   dueDate?: string;
-  status: "PENDING" | "PAID";
+  status: "PENDING";
   currency: "PEN" | "USD";
   exchangeRate?: number;
   paymentMethod: string;
@@ -30,7 +30,7 @@ export const createPendingTransactionRequest = async (data: {
   } catch (error: any) {
     throw new Error(
       error?.response?.data?.message ||
-        "Error al crear la transacción pendiente",
+      "Error al crear la transacción pendiente",
     );
   }
 };
@@ -41,7 +41,7 @@ export const deletePendingTransactionRequest = async (id: string) => {
   } catch (error: any) {
     throw new Error(
       error?.response?.data?.message ||
-        "Error al eliminar la transacción pendiente",
+      "Error al eliminar la transacción pendiente",
     );
   }
 };
@@ -63,7 +63,7 @@ export const updatePendingTransactionRequest = async (
   } catch (error: any) {
     throw new Error(
       error?.response?.data?.message ||
-        "Error al actualizar la transacción pendiente",
+      "Error al actualizar la transacción pendiente",
     );
   }
 };

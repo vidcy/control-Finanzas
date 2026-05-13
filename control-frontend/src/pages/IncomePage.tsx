@@ -8,8 +8,6 @@ import {
   Edit2,
   Trash2,
   Calendar,
-  DollarSign,
-  RefreshCw,
   Loader2,
   CheckCircle2,
   Tag,
@@ -116,8 +114,9 @@ export default function IncomePage() {
           })),
       );
       setCategories(categoriesData);
-    } catch (error) {
-      toast.error(error.message);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Error al cargar ingresos";
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -182,8 +181,9 @@ export default function IncomePage() {
       }
       setIsModalOpen(false);
       loadData();
-    } catch (error) {
-      toast.error(error.message);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Error al guardar";
+      toast.error(message);
     } finally {
       setSaving(false);
     }
@@ -201,8 +201,9 @@ export default function IncomePage() {
       toast.success("Eliminado correctamente");
       setIsConfirmOpen(false);
       loadData();
-    } catch (error) {
-      toast.error(error.message);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Error al eliminar";
+      toast.error(message);
     }
   };
 

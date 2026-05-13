@@ -39,8 +39,9 @@ export default function RecoverPasswordPage() {
       await forgotPasswordRequest(email);
       toast.success("Enlace de recuperación enviado");
       setStep("SUCCESS");
-    } catch (error) {
-      toast.error(error.message || "Error al enviar el correo");
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Error al enviar el correo";
+      toast.error(message);
     } finally {
       setIsLoading(false);
     }
@@ -62,8 +63,9 @@ export default function RecoverPasswordPage() {
       await resetPasswordRequest(token, newPassword);
       toast.success("Contraseña restablecida exitosamente");
       setStep("DONE");
-    } catch (error) {
-      toast.error(error.message || "Error al restablecer la contraseña");
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Error al restablecer la contraseña";
+      toast.error(message);
     } finally {
       setIsLoading(false);
     }

@@ -41,7 +41,7 @@ export default function CategoriesPage() {
   const [confirmConfig, setConfirmConfig] = useState({
     title: "",
     message: "",
-    onConfirm: () => {},
+    onConfirm: () => { },
   });
 
   useEffect(() => {
@@ -71,8 +71,10 @@ export default function CategoriesPage() {
       const raw = Array.isArray(response) ? response : [];
       const tree = buildTree(raw);
       setCategories(tree);
-    } catch (error) {
-      toast.error(error.message || "Error al cargar categorías");
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : "Error al cargar categorías";
+      toast.error(message)
     } finally {
       setIsLoading(false);
     }
@@ -106,8 +108,10 @@ export default function CategoriesPage() {
       toast.success("Categoría creada exitosamente");
       await loadCategories();
       setIsCatModalOpen(false);
-    } catch (error) {
-      toast.error(error.message || "Error al crear categoría");
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : "Error al crear categoría";
+      toast.error(message)
     } finally {
       setIsSaving(false);
     }
@@ -123,8 +127,10 @@ export default function CategoriesPage() {
           await deleteCategoryRequest(id);
           toast.success("Categoría eliminada correctamente");
           await loadCategories();
-        } catch (error) {
-          toast.error(error.message || "Error al eliminar categoría");
+        } catch (error: unknown) {
+          const message =
+            error instanceof Error ? error.message : "Error al eliminar categoría";
+          toast.error(message)
         }
       },
     });
@@ -151,8 +157,10 @@ export default function CategoriesPage() {
       toast.success("Subcategoría creada correctamente");
       await loadCategories();
       setIsSubModalOpen(false);
-    } catch (error) {
-      toast.error(error.message || "Error al crear subcategoría");
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : "Error al crear la subcategoría";
+      toast.error(message)
     } finally {
       setIsSaving(false);
     }
@@ -167,8 +175,10 @@ export default function CategoriesPage() {
           await deleteSubcategoryRequest(subId);
           toast.success("Subcategoría eliminada correctamente");
           await loadCategories();
-        } catch (error) {
-          toast.error(error.message || "Error al eliminar subcategoría");
+        } catch (error: unknown) {
+          const message =
+            error instanceof Error ? error.message : "Error al eliminar la subcategoría";
+          toast.error(message)
         }
       },
     });

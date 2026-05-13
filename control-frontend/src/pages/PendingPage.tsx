@@ -2,7 +2,6 @@ import { useEffect, useState, useMemo } from "react";
 import Appshell from "../components/layout/Appshell";
 import Modal from "../components/ui/Modal";
 import {
-  Plus,
   ArrowRightLeft,
   Check,
   ArrowUpRight,
@@ -28,6 +27,12 @@ import {
 } from "../services/pending.api";
 import { listCategoriesRequest } from "../services/category.api";
 import ConfirmModal from "../components/ui/ConfirmModal";
+type Category = {
+  id: string;
+  name: string;
+  parentId?: string;
+  type?: "INCOME" | "EXPENSE";
+};
 
 type PendingItem = {
   id: string;
@@ -48,7 +53,7 @@ export default function PendingPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [categories, setCategories] = useState<any[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
 
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -73,13 +78,13 @@ export default function PendingPage() {
     () =>
       Array.isArray(items)
         ? items.filter(
-            (i) =>
-              i.type === "INCOME" &&
-              ((i.description?.toLowerCase() || "").includes(
-                searchTerm.toLowerCase(),
-              ) ||
-                (i.amount?.toString() || "").includes(searchTerm)),
-          )
+          (i) =>
+            i.type === "INCOME" &&
+            ((i.description?.toLowerCase() || "").includes(
+              searchTerm.toLowerCase(),
+            ) ||
+              (i.amount?.toString() || "").includes(searchTerm)),
+        )
         : [],
     [items, searchTerm],
   );
@@ -88,13 +93,13 @@ export default function PendingPage() {
     () =>
       Array.isArray(items)
         ? items.filter(
-            (i) =>
-              i.type === "EXPENSE" &&
-              ((i.description?.toLowerCase() || "").includes(
-                searchTerm.toLowerCase(),
-              ) ||
-                (i.amount?.toString() || "").includes(searchTerm)),
-          )
+          (i) =>
+            i.type === "EXPENSE" &&
+            ((i.description?.toLowerCase() || "").includes(
+              searchTerm.toLowerCase(),
+            ) ||
+              (i.amount?.toString() || "").includes(searchTerm)),
+        )
         : [],
     [items, searchTerm],
   );
@@ -144,8 +149,9 @@ export default function PendingPage() {
         })),
       );
       setCategories(categoriesData);
-    } catch (error) {
-      toast.error(error.message);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Error al cargar transacciones pendientes";
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -183,7 +189,7 @@ export default function PendingPage() {
       name: formData.description || formData.person,
       type: activeType,
       categoryId: selectedCategoryId,
-      subCategoryId: selectedSubCategoryId || null,
+      subCategoryId: selectedSubCategoryId || undefined,
       amount: Number(formData.amount),
       date: formData.date,
       dueDate: formData.date,
@@ -207,8 +213,9 @@ export default function PendingPage() {
       ]);
       toast.success("Creado correctamente");
       setIsModalOpen(false);
-    } catch (error) {
-      toast.error(error?.message || "Error al crear");
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Error al crear";
+      toast.error(message);
     } finally {
       setSaving(false);
     }
@@ -228,8 +235,9 @@ export default function PendingPage() {
       toast.success(
         newStatus === "PAID" ? "Marcado como pagado" : "Marcado como pendiente",
       );
-    } catch (error) {
-      toast.error("Error al actualizar estado");
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Error al actualizar estado";
+      toast.error(message);
     }
   };
 
@@ -245,8 +253,9 @@ export default function PendingPage() {
       setItems((prev) => prev.filter((item) => item.id !== idToDelete));
       toast.success("Transacción eliminada correctamente");
       setIdToDelete(null);
-    } catch (error) {
-      toast.error("Error al eliminar la transacción");
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Error al eliminar la transacción";
+      toast.error(message);
     }
   };
 
@@ -374,11 +383,10 @@ export default function PendingPage() {
                         <td className="p-6 text-center">
                           <button
                             onClick={() => togglePaid(item.id, item.status)}
-                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 mx-auto ${
-                              item.status === "PAID"
-                                ? "bg-emerald-500 text-white shadow-lg shadow-emerald-100"
-                                : "bg-amber-100 text-amber-700 hover:bg-amber-200"
-                            }`}
+                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 mx-auto ${item.status === "PAID"
+                              ? "bg-emerald-500 text-white shadow-lg shadow-emerald-100"
+                              : "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                              }`}
                           >
                             {item.status === "PAID" ? (
                               <Check className="w-3.5 h-3.5" />
@@ -489,11 +497,10 @@ export default function PendingPage() {
                         <td className="p-6 text-center">
                           <button
                             onClick={() => togglePaid(item.id, item.status)}
-                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 mx-auto ${
-                              item.status === "PAID"
-                                ? "bg-emerald-500 text-white shadow-lg shadow-emerald-100"
-                                : "bg-amber-100 text-amber-700 hover:bg-amber-200"
-                            }`}
+                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 mx-auto ${item.status === "PAID"
+                              ? "bg-emerald-500 text-white shadow-lg shadow-emerald-100"
+                              : "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                              }`}
                           >
                             {item.status === "PAID" ? (
                               <Check className="w-3.5 h-3.5" />

@@ -97,8 +97,9 @@ export default function UserPage() {
       toast.success("Usuario creado exitosamente");
       await fetchUsers();
       setIsCreateOpen(false);
-    } catch (err) {
-      toast.error(err.message || "Error al crear usuario");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Error al crear usuario";
+      toast.error(message);
     } finally {
       setIsSaving(false);
     }
@@ -121,8 +122,9 @@ export default function UserPage() {
       toast.success("Usuario actualizado correctamente");
       await fetchUsers();
       setIsEditOpen(false);
-    } catch (error) {
-      toast.error(error.message || "Error al editar usuario");
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Error al editar usuario";
+      toast.error(message);
     } finally {
       setIsSaving(false);
     }
@@ -142,8 +144,9 @@ export default function UserPage() {
         toast.success("Usuario activado");
       }
       await fetchUsers();
-    } catch (error) {
-      toast.error(error.message || "Error al cambiar estado");
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Error al cambiar estado";
+      toast.error(message);
     }
   };
 
@@ -160,8 +163,9 @@ export default function UserPage() {
         status: u.isActive ? "TRUE" : "FALSE",
       }));
       setUsers(formattedUsers);
-    } catch (error) {
-      toast.error("Error al cargar usuarios");
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Error al cargar usuarios";
+      toast.error(message);
     } finally {
       setLoading(false);
     }

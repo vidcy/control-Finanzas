@@ -8,14 +8,11 @@ import {
   Edit2,
   Trash2,
   Calendar,
-  DollarSign,
-  RefreshCw,
   Clock,
   CheckCircle,
   Loader2,
   CheckCircle2,
   Check,
-  AlertCircle,
   Tag,
   CreditCard,
   FileText,
@@ -70,9 +67,9 @@ export default function ExpensesPage() {
     amount: "",
     currency: "PEN" as "PEN" | "USD",
     exchangeRate: "1",
+    status: "PAID" as "PAID" | "PENDING",
     justified: false,
     programmed: false,
-    status: "PAID" as "PAID" | "PENDING",
     paymentMethod: "CASH" as "CASH" | "TRANSFER" | "YAPE" | "PLIN" | "CARD",
   });
 
@@ -128,8 +125,9 @@ export default function ExpensesPage() {
           })),
       );
       setCategories(categoriesData);
-    } catch (error) {
-      toast.error(error.message);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Error al cargar egresos";
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -143,10 +141,10 @@ export default function ExpensesPage() {
       amount: "",
       currency: "PEN",
       exchangeRate: "1",
-      justified: false,
-      programmed: false,
       status: "PAID",
       paymentMethod: "CASH",
+      justified: false,
+      programmed: false,
     });
     setSelectedCategoryId("");
     setSelectedSubCategoryId("");
@@ -161,10 +159,10 @@ export default function ExpensesPage() {
       amount: item.amount.toString(),
       currency: item.currency,
       exchangeRate: item.exchangeRate.toString(),
-      justified: item.justified,
-      programmed: item.programmed,
       status: item.status,
       paymentMethod: (item.paymentMethod as any) || "CASH",
+      justified: item.justified || false,
+      programmed: item.programmed || false,
     });
     setSelectedCategoryId(item.categoryId || "");
     setSelectedSubCategoryId(item.subCategoryId || "");
@@ -185,6 +183,8 @@ export default function ExpensesPage() {
       type: "EXPENSE",
       categoryId: selectedCategoryId,
       subCategoryId: selectedSubCategoryId || null,
+      justified: formData.justified,
+      programmed: formData.programmed,
     };
 
     setSaving(true);
@@ -198,8 +198,9 @@ export default function ExpensesPage() {
       }
       setIsModalOpen(false);
       loadData();
-    } catch (error) {
-      toast.error(error.message);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Error al guardar";
+      toast.error(message);
     } finally {
       setSaving(false);
     }
@@ -217,8 +218,9 @@ export default function ExpensesPage() {
       toast.success("Eliminado correctamente");
       setIsConfirmOpen(false);
       loadData();
-    } catch (error) {
-      toast.error(error.message);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Error al eliminar";
+      toast.error(message);
     }
   };
 

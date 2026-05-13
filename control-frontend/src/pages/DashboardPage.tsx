@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo } from "react";
 import Appshell from "../components/layout/Appshell";
-import { 
-    LayoutDashboard, Wallet, TrendingUp, TrendingDown, 
-    ChevronDown, ChevronRight, Calendar, BarChart3, 
-    Activity, Loader2, RefreshCcw, Maximize2, 
-    Eye, EyeOff, ArrowRight, MousePointer2 
+import {
+    LayoutDashboard, Wallet, TrendingUp, TrendingDown,
+    ChevronDown, ChevronRight, Calendar, BarChart3,
+    Activity, Loader2, RefreshCcw, Maximize2,
+    Eye, EyeOff, ArrowRight
 } from "lucide-react";
 import { getTransactionsRequest } from "../services/transaction.api";
 import { listCategoriesRequest } from "../services/category.api";
@@ -18,6 +18,12 @@ export default function DashboardPage() {
     const [loading, setLoading] = useState(true);
     const [expandedCats, setExpandedCats] = useState<Record<string, boolean>>({ 'Ingresos': true });
     const [showValues, setShowValues] = useState(true);
+    const safeTransactions = Array.isArray(transactions) ? transactions : [];
+    const normalizeTransactions = (data: any) => {
+        const t = data?.data ?? data?.transactions ?? data;
+
+        return Array.isArray(t) ? t : [];
+    };
 
     useEffect(() => {
         loadData();
@@ -30,10 +36,16 @@ export default function DashboardPage() {
                 getTransactionsRequest(),
                 listCategoriesRequest()
             ]);
+            console.log("🔥 RAW tData:", tData);
+            console.log("🔥 TYPEOF tData:", typeof tData);
+            console.log("🔥 IS ARRAY:", Array.isArray(tData));
+
             setTransactions(tData);
             setCategories(cData);
-        } catch (error) {
-            toast.error("Error al cargar datos del dashboard");
+        } catch (error: unknown) {
+            const message =
+                error instanceof Error ? error.message : "Error al cargar datos del dashboard";
+            toast.error(message)
         } finally {
             setLoading(false);
         }
@@ -59,7 +71,8 @@ export default function DashboardPage() {
         const incomeMap: Record<string, number[]> = {};
         const expenseMap: Record<string, { name: string, subcategories: Record<string, number[]> }> = {};
 
-        transactions.forEach(t => {
+
+        safeTransactions.forEach(t => {
             const date = new Date(t.date);
             const month = isNaN(date.getTime()) ? 0 : date.getUTCMonth();
             const amount = Number(t.amount || 0) * (t.currency === 'USD' ? Number(t.exchangeRate || 1) : 1);
@@ -73,7 +86,7 @@ export default function DashboardPage() {
                 mExpense[month] += amount;
                 const catName = t.category?.name || (typeof t.category === 'string' ? t.category : "Otros Gastos");
                 const subName = t.subCategory?.name || (typeof t.subCategory === 'string' ? t.subCategory : "General");
-                
+
                 if (!expenseMap[catName]) {
                     expenseMap[catName] = { name: catName, subcategories: {} };
                 }
@@ -90,11 +103,11 @@ export default function DashboardPage() {
             subcategories: Object.entries(cat.subcategories).map(([name, values]) => ({ name, values }))
         }));
 
-        return { 
-            incomeRows: iRows, 
-            expenseRows: eRows, 
-            monthlyIncomeTotals: mIncome, 
-            monthlyExpenseTotals: mExpense 
+        return {
+            incomeRows: iRows,
+            expenseRows: eRows,
+            monthlyIncomeTotals: mIncome,
+            monthlyExpenseTotals: mExpense
         };
     }, [transactions]);
 
@@ -124,7 +137,7 @@ export default function DashboardPage() {
     return (
         <Appshell>
             <div className="flex flex-col gap-10 animate-fade-in-up pb-20">
-                
+
                 {/* HEADER */}
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 p-8 bg-white/40 backdrop-blur-xl border border-white/60 rounded-[3rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] relative overflow-hidden">
                     <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"></div>
@@ -145,14 +158,14 @@ export default function DashboardPage() {
                     </div>
 
                     <div className="flex items-center gap-3">
-                        <button 
+                        <button
                             onClick={() => setShowValues(!showValues)}
                             className="p-3 bg-white border border-gray-100 rounded-2xl text-gray-500 hover:text-indigo-600 hover:border-indigo-200 transition-all shadow-sm"
                             title={showValues ? "Ocultar montos" : "Mostrar montos"}
                         >
                             {showValues ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                         </button>
-                        <button 
+                        <button
                             onClick={loadData}
                             className="flex items-center gap-2 bg-indigo-50 text-indigo-600 px-6 py-3.5 rounded-2xl font-black hover:bg-indigo-100 transition-all text-sm"
                         >
@@ -227,7 +240,7 @@ export default function DashboardPage() {
                 {/* CHART SECTION */}
                 <div className="bg-white rounded-[3.5rem] p-12 shadow-[0_30px_70px_rgba(0,0,0,0.03)] border border-gray-50 flex flex-col relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-[40rem] h-[40rem] bg-indigo-50/20 rounded-full blur-[120px] -z-10 translate-x-1/2 -translate-y-1/2"></div>
-                    
+
                     <div className="flex flex-col md:flex-row md:items-center justify-between mb-16 gap-6">
                         <div className="flex items-center gap-4">
                             <div className="w-14 h-14 bg-gradient-to-tr from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-100">
@@ -271,7 +284,7 @@ export default function DashboardPage() {
                                 return (
                                     <div key={`chart-v2-${m}`} className="flex flex-col items-center flex-1 h-full group/bar relative">
                                         <div className="flex items-end justify-center w-full gap-1.5 md:gap-3 h-full relative group-hover/bar:z-20">
-                                            
+
                                             <div className="absolute bottom-full mb-6 opacity-0 group-hover/bar:opacity-100 transition-all duration-500 transform translate-y-4 group-hover/bar:translate-y-0 pointer-events-none z-30">
                                                 <div className="bg-gray-900/95 backdrop-blur-md text-white p-5 rounded-3xl shadow-2xl border border-white/10 w-48 overflow-hidden relative">
                                                     <div className={`absolute top-0 left-0 w-full h-1 ${isPositive ? 'bg-emerald-500' : 'bg-rose-500'}`}></div>
@@ -296,14 +309,14 @@ export default function DashboardPage() {
                                                 <div className="w-4 h-4 bg-gray-900 rotate-45 mx-auto -mt-2 shadow-2xl"></div>
                                             </div>
 
-                                            <div 
-                                                className="w-full max-w-[14px] bg-gradient-to-t from-emerald-600 to-emerald-400 rounded-full transition-all duration-1000 ease-out shadow-lg shadow-emerald-200/40 relative overflow-hidden group-hover/bar:scale-x-125" 
+                                            <div
+                                                className="w-full max-w-[14px] bg-gradient-to-t from-emerald-600 to-emerald-400 rounded-full transition-all duration-1000 ease-out shadow-lg shadow-emerald-200/40 relative overflow-hidden group-hover/bar:scale-x-125"
                                                 style={{ height: `${Math.max(incHeight, 2)}%` }}
                                             >
                                                 <div className="absolute inset-0 bg-gradient-to-t from-transparent via-white/20 to-transparent translate-y-full animate-[shimmer_3s_infinite]"></div>
                                             </div>
-                                            <div 
-                                                className="w-full max-w-[14px] bg-gradient-to-t from-rose-600 to-rose-400 rounded-full transition-all duration-1000 ease-out delay-100 shadow-lg shadow-rose-200/40 relative overflow-hidden group-hover/bar:scale-x-125" 
+                                            <div
+                                                className="w-full max-w-[14px] bg-gradient-to-t from-rose-600 to-rose-400 rounded-full transition-all duration-1000 ease-out delay-100 shadow-lg shadow-rose-200/40 relative overflow-hidden group-hover/bar:scale-x-125"
                                                 style={{ height: `${Math.max(expHeight, 2)}%` }}
                                             >
                                                 <div className="absolute inset-0 bg-gradient-to-t from-transparent via-white/20 to-transparent translate-y-full animate-[shimmer_3s_infinite_0.5s]"></div>
@@ -487,8 +500,9 @@ export default function DashboardPage() {
                 </div>
 
             </div>
-            
-            <style dangerouslySetInnerHTML={{ __html: `
+
+            <style dangerouslySetInnerHTML={{
+                __html: `
                 @keyframes shimmer { 0% { transform: translateY(100%); } 100% { transform: translateY(-100%); } }
                 .custom-scrollbar-premium::-webkit-scrollbar { height: 16px; width: 16px; }
                 .custom-scrollbar-premium::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 20px; }

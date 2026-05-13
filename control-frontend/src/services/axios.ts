@@ -6,7 +6,8 @@ import Axios from "axios";
  * Esto sirve para no repetir la URL del backend en cada request
  */
 const API = Axios.create({
-  baseURL: "import.meta.env.VITE_API_URL", // backend NestJS
+  baseURL: import.meta.env.VITE_API_URL,
+  // console.log("BASE URL:", import.meta.env.VITE_API_URL);
 });
 
 // 🔐 INTERCEPTOR JWT
