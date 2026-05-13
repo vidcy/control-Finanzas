@@ -25,8 +25,16 @@ import {
 import { toast } from "react-hot-toast";
 import ConfirmModal from "../components/ui/ConfirmModal";
 
+type Category = {
+  id: string;
+  name: string;
+  type: "INCOME" | "EXPENSE";
+  color?: string;
+  parentId?: string | null;
+  children?: Category[];
+};
 export default function CategoriesPage() {
-  const [categories, setCategories] = useState<any[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [activeTab, setActiveTab] = useState<"INCOME" | "EXPENSE">("INCOME");
   const [searchTerm, setSearchTerm] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -48,12 +56,12 @@ export default function CategoriesPage() {
     loadCategories();
   }, []);
 
-  const buildTree = (data: any[]) => {
+  const buildTree = (data: Category[]) => {
     const map = new Map();
     data.forEach((item) => {
       map.set(item.id, { ...item, children: [] });
     });
-    const roots: any[] = [];
+    const roots: Category[] = [];
     data.forEach((item) => {
       if (item.parentId) {
         map.get(item.parentId)?.children.push(map.get(item.id));
@@ -289,7 +297,7 @@ export default function CategoriesPage() {
 
                 {/* SCROLLABLE SUBCATEGORIES LIST - FIXED HEIGHT FOR CONSISTENCY */}
                 <div className="space-y-3 mb-6 h-64 overflow-y-auto custom-scrollbar pr-3">
-                  {category.children?.map((sub) => (
+                  {category.children?.map((sub: Category) => (
                     <div
                       key={sub.id}
                       className="flex items-center justify-between p-4 rounded-2xl bg-gray-50/50 border border-gray-100/50 group/sub hover:bg-white hover:shadow-md hover:border-indigo-100 transition-all cursor-default"

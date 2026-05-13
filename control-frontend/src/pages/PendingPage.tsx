@@ -62,7 +62,7 @@ export default function PendingPage() {
   const [activeType, setActiveType] = useState<"INCOME" | "EXPENSE">("INCOME");
 
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
-  const [selectedSubCategoryId, setSelectedSubCategoryId] = useState("");
+  const [selectedSubCategoryId, setSelectedSubCategoryId] = useState<string | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -189,7 +189,7 @@ export default function PendingPage() {
       name: formData.description || formData.person,
       type: activeType,
       categoryId: selectedCategoryId,
-      subCategoryId: selectedSubCategoryId || undefined,
+      subCategoryId: selectedSubCategoryId ?? "",
       amount: Number(formData.amount),
       date: formData.date,
       dueDate: formData.date,
