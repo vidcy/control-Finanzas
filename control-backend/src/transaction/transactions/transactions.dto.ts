@@ -1,114 +1,119 @@
 // src/transaction/transactions/dto/create-transaction.dto.ts
 
-import { IsEnum, IsNumber, IsOptional, IsString, IsUUID, IsDateString } from 'class-validator';
+import {
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  IsDateString,
+} from 'class-validator';
 
 export enum TransactionType {
-    INCOME = 'INCOME',
-    EXPENSE = 'EXPENSE',
+  INCOME = 'INCOME',
+  EXPENSE = 'EXPENSE',
 }
 
 export enum TransactionStatus {
-    PAID = 'PAID',
+  PAID = 'PAID',
 }
 
 export enum Currency {
-    PEN = 'PEN',
-    USD = 'USD',
+  PEN = 'PEN',
+  USD = 'USD',
 }
 
 export enum PaymentMethod {
-    CASH = 'CASH',
-    TRANSFER = 'TRANSFER',
-    YAPE = 'YAPE',
-    PLIN = 'PLIN',
-    CARD = 'CARD',
+  CASH = 'CASH',
+  TRANSFER = 'TRANSFER',
+  YAPE = 'YAPE',
+  PLIN = 'PLIN',
+  CARD = 'CARD',
 }
 
 export class CreateTransactionDto {
-    // 👇 nombre corto del movimiento (Ej: "Sueldo Mayo")
-    // 👇 ingreso o egreso
-    @IsEnum(TransactionType)
-    type: TransactionType;
+  // 👇 nombre corto del movimiento (Ej: "Sueldo Mayo")
+  // 👇 ingreso o egreso
+  @IsEnum(TransactionType)
+  type: TransactionType;
 
-    // 👇 categoría padre (OBLIGATORIA)
-    @IsUUID()
-    categoryId: string;
+  // 👇 categoría padre (OBLIGATORIA)
+  @IsUUID()
+  categoryId: string;
 
-    // 👇 subcategoría (OPCIONAL 💥 muy importante)
-    @IsOptional()
-    @IsUUID()
-    subCategoryId?: string;
+  // 👇 subcategoría (OPCIONAL 💥 muy importante)
+  @IsOptional()
+  @IsUUID()
+  subCategoryId?: string;
 
-    // 💰 monto en moneda original
-    @IsNumber()
-    amount: number;
+  // 💰 monto en moneda original
+  @IsNumber()
+  amount: number;
 
-    // 💱 moneda usada
-    @IsEnum(Currency)
-    currency: Currency;
+  // 💱 moneda usada
+  @IsEnum(Currency)
+  currency: Currency;
 
-    // 💱 tipo de cambio (solo si USD)
-    @IsOptional()
-    @IsNumber()
-    exchangeRate?: number;
+  // 💱 tipo de cambio (solo si USD)
+  @IsOptional()
+  @IsNumber()
+  exchangeRate?: number;
 
-    // 📅 fecha del movimiento
-    @IsDateString()
-    date: string;
+  // 📅 fecha del movimiento
+  @IsDateString()
+  date: string;
 
-    // 💳 método de pago
-    @IsEnum(PaymentMethod)
-    paymentMethod: PaymentMethod;
+  // 💳 método de pago
+  @IsEnum(PaymentMethod)
+  paymentMethod: PaymentMethod;
 
-    @IsNumber()
-    @IsOptional()
-    amountSoles?: number;
+  @IsNumber()
+  @IsOptional()
+  amountSoles?: number;
 
-    @IsOptional()
-    @IsEnum(TransactionStatus)
-    status?: TransactionStatus;
+  @IsOptional()
+  @IsEnum(TransactionStatus)
+  status?: TransactionStatus;
 
-    // 📝 descripción opcional
-    @IsOptional()
-    @IsString()
-    description?: string;
+  // 📝 descripción opcional
+  @IsOptional()
+  @IsString()
+  description?: string;
 }
 export class UpdateTransactionDto {
+  @IsOptional()
+  @IsUUID()
+  categoryId?: string;
 
+  @IsOptional()
+  @IsUUID()
+  subCategoryId?: string;
 
-    @IsOptional()
-    @IsUUID()
-    categoryId?: string;
+  @IsOptional()
+  @IsNumber()
+  amount?: number;
 
-    @IsOptional()
-    @IsUUID()
-    subCategoryId?: string;
+  @IsOptional()
+  @IsEnum(Currency)
+  currency?: Currency;
 
-    @IsOptional()
-    @IsNumber()
-    amount?: number;
+  @IsOptional()
+  @IsNumber()
+  exchangeRate?: number;
 
-    @IsOptional()
-    @IsEnum(Currency)
-    currency?: Currency;
+  @IsOptional()
+  @IsDateString()
+  date?: string;
 
-    @IsOptional()
-    @IsNumber()
-    exchangeRate?: number;
+  @IsOptional()
+  @IsEnum(PaymentMethod)
+  paymentMethod?: PaymentMethod;
 
-    @IsOptional()
-    @IsDateString()
-    date?: string;
+  @IsOptional()
+  @IsNumber()
+  amountSoles?: number;
 
-    @IsOptional()
-    @IsEnum(PaymentMethod)
-    paymentMethod?: PaymentMethod;
-
-    @IsOptional()
-    @IsNumber()
-    amountSoles?: number;
-
-    @IsOptional()
-    @IsString()
-    description?: string;
+  @IsOptional()
+  @IsString()
+  description?: string;
 }

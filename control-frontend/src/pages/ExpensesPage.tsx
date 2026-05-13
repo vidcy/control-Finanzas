@@ -1,431 +1,568 @@
 import { useState, useEffect } from "react";
 import Appshell from "../components/layout/Appshell";
 import Modal from "../components/ui/Modal";
-import { Plus, Search, TrendingDown, Edit2, Trash2, Calendar, DollarSign, RefreshCw, Clock, CheckCircle } from "lucide-react";
+import {
+  Plus,
+  Search,
+  TrendingDown,
+  Edit2,
+  Trash2,
+  Calendar,
+  DollarSign,
+  RefreshCw,
+  Clock,
+  CheckCircle,
+  Loader2,
+  CheckCircle2,
+  Check,
+  AlertCircle,
+  Tag,
+  CreditCard,
+  FileText,
+  ChevronDown,
+  Wallet
+} from "lucide-react";
 import { toast } from "react-hot-toast";
 import { listCategoriesRequest } from "../services/category.api";
 import ConfirmModal from "../components/ui/ConfirmModal";
+import {
+  createTransactionRequest,
+  deleteTransactionRequest,
+  getTransactionsRequest,
+  updateTransactionRequest,
+} from "../services/transaction.api";
 
 type Expense = {
-    id: number;
-    date: string;
-    category: string;
-    categoryId?: string;
-    subcategory: string;
-    subCategoryId?: string;
-    description: string;
-    amount: number;
-    currency: "PEN" | "USD";
-    exchangeRate: number;
-    programmed: boolean;
-    justified: boolean;
+  id: string;
+  date: string;
+  category: string;
+  categoryId?: string;
+  subCategory?: string;
+  subCategoryId?: string;
+  description: string;
+  amount: number;
+  currency: "PEN" | "USD";
+  exchangeRate: number;
+  justified: boolean;
+  programmed: boolean;
+  status: "PENDING" | "PAID";
+  paymentMethod: string;
 };
 
-// Removed static categories to use dynamic categories
-
-
-const mockExpenses: Expense[] = [
-    { id: 1, date: "2026-01-10", category: "Vivienda", subcategory: "Pago de alquiler/hipoteca", description: "Alquiler Enero", amount: 1500, currency: "PEN", exchangeRate: 1, programmed: true, justified: true },
-    { id: 2, date: "2026-01-12", category: "Alimentación", subcategory: "Mercado General", description: "Compras Supermercado", amount: 150, currency: "USD", exchangeRate: 3.82, programmed: false, justified: true },
-];
-
 export default function ExpensesPage() {
-    const [expenses, setExpenses] = useState<Expense[]>(mockExpenses);
-    const [searchTerm, setSearchTerm] = useState("");
-    const [categories, setCategories] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
+  const [items, setItems] = useState<Expense[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [categories, setCategories] = useState<any[]>([]);
 
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [editingId, setEditingId] = useState<number | null>(null);
-    const [isConfirmOpen, setIsConfirmOpen] = useState(false);
-    const [idToDelete, setIdToDelete] = useState<number | null>(null);
+  // Modal states
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [idToDelete, setIdToDelete] = useState<string | null>(null);
 
-    const [selectedCategoryId, setSelectedCategoryId] = useState("");
-    const [selectedSubCategoryId, setSelectedSubCategoryId] = useState("");
+  const [selectedCategoryId, setSelectedCategoryId] = useState("");
+  const [selectedSubCategoryId, setSelectedSubCategoryId] = useState("");
 
-    const [formData, setFormData] = useState({
-        date: new Date().toISOString().split('T')[0],
-        description: "",
-        amount: "",
-        currency: "PEN" as "PEN" | "USD",
-        exchangeRate: "1",
-        programmed: false,
-        justified: false
+  const [formData, setFormData] = useState({
+    date: new Date().toISOString().split("T")[0],
+    description: "",
+    amount: "",
+    currency: "PEN" as "PEN" | "USD",
+    exchangeRate: "1",
+    justified: false,
+    programmed: false,
+    status: "PAID" as "PAID" | "PENDING",
+    paymentMethod: "CASH" as "CASH" | "TRANSFER" | "YAPE" | "PLIN" | "CARD",
+  });
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const filteredCategories = (
+    Array.isArray(categories) ? categories : []
+  ).filter((c) => c.type === "EXPENSE" && !c.parentId);
+
+  const filteredSubCategories = (
+    Array.isArray(categories) ? categories : []
+  ).filter((c) => c.parentId === selectedCategoryId);
+
+  const hasSubcategories = filteredSubCategories.length > 0;
+
+  const filtered = (Array.isArray(items) ? items : []).filter(
+    (exp) =>
+      (exp.description?.toLowerCase() || "").includes(
+        searchTerm.toLowerCase(),
+      ) ||
+      (exp.category?.toLowerCase() || "").includes(searchTerm.toLowerCase()),
+  );
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [transactionsData, categoriesData] = await Promise.all([
+        getTransactionsRequest(),
+        listCategoriesRequest(),
+      ]);
+      setItems(
+        transactionsData
+          .filter((t: any) => t.type === "EXPENSE")
+          .map((t: any) => ({
+            id: t.id,
+            description: t.description ?? "",
+            amount: t.amount,
+            date: t.date,
+            category: t.category?.name ?? "Otros",
+            categoryId: t.categoryId,
+            subCategory: t.subCategory?.name ?? "",
+            subCategoryId: t.subCategoryId,
+            currency: t.currency || "PEN",
+            exchangeRate: t.exchangeRate || 1,
+            justified: t.justified || false,
+            programmed: t.programmed || false,
+            status: t.status || "PAID",
+            paymentMethod: t.paymentMethod || "CASH",
+          })),
+      );
+      setCategories(categoriesData);
+    } catch (error: any) {
+      toast.error(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOpenCreate = () => {
+    setEditingId(null);
+    setFormData({
+      date: new Date().toISOString().split("T")[0],
+      description: "",
+      amount: "",
+      currency: "PEN",
+      exchangeRate: "1",
+      justified: false,
+      programmed: false,
+      status: "PAID",
+      paymentMethod: "CASH",
     });
+    setSelectedCategoryId("");
+    setSelectedSubCategoryId("");
+    setIsModalOpen(true);
+  };
 
-    useEffect(() => {
-        setLoading(true);
-        listCategoriesRequest()
-            .then(data => setCategories(data))
-            .catch(err => toast.error("Error al cargar categorías"))
-            .finally(() => setLoading(false));
-    }, []);
+  const handleOpenEdit = (item: Expense) => {
+    setEditingId(item.id);
+    setFormData({
+      date: item.date.split("T")[0],
+      description: item.description,
+      amount: item.amount.toString(),
+      currency: item.currency,
+      exchangeRate: item.exchangeRate.toString(),
+      justified: item.justified,
+      programmed: item.programmed,
+      status: item.status,
+      paymentMethod: (item.paymentMethod as any) || "CASH",
+    });
+    setSelectedCategoryId(item.categoryId || "");
+    setSelectedSubCategoryId(item.subCategoryId || "");
+    setIsModalOpen(true);
+  };
 
-    const expenseCategories = (Array.isArray(categories) ? categories : []).filter(c => c.type === "EXPENSE" && !c.parentId);
-    const subCategories = (Array.isArray(categories) ? categories : []).filter(c => c.parentId === selectedCategoryId);
-    const hasSubcategories = subCategories.length > 0;
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCategoryId) return toast.error("Selecciona una categoría");
+    if (hasSubcategories && !selectedSubCategoryId)
+      return toast.error("Selecciona una subcategoría");
 
-    const filtered = (Array.isArray(expenses) ? expenses : []).filter(exp =>
-        (exp.description?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
-        (exp.category?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
-        (exp.subcategory?.toLowerCase() || "").includes(searchTerm.toLowerCase())
-    );
-
-    const handleOpenCreate = () => {
-        setFormData({
-            date: new Date().toISOString().split('T')[0],
-            description: "",
-            amount: "",
-            currency: "PEN",
-            exchangeRate: "1",
-            programmed: false,
-            justified: false
-        });
-        setSelectedCategoryId("");
-        setSelectedSubCategoryId("");
-        setEditingId(null);
-        setIsModalOpen(true);
+    const payload = {
+      ...formData,
+      name: formData.description || "Egreso",
+      amount: Number(formData.amount),
+      exchangeRate: Number(formData.exchangeRate),
+      type: "EXPENSE",
+      categoryId: selectedCategoryId,
+      subCategoryId: selectedSubCategoryId || null,
     };
 
-    const handleOpenEdit = (exp: Expense) => {
-        setFormData({
-            date: exp.date,
-            description: exp.description,
-            amount: exp.amount.toString(),
-            currency: exp.currency,
-            exchangeRate: exp.exchangeRate.toString(),
-            programmed: exp.programmed,
-            justified: exp.justified
-        });
-        setSelectedCategoryId(exp.categoryId || "");
-        setSelectedSubCategoryId(exp.subCategoryId || "");
-        setEditingId(exp.id);
-        setIsModalOpen(true);
-    };
+    setSaving(true);
+    try {
+      if (editingId) {
+        await updateTransactionRequest(editingId, payload as any);
+        toast.success("Actualizado correctamente");
+      } else {
+        await createTransactionRequest(payload as any);
+        toast.success("Creado correctamente");
+      }
+      setIsModalOpen(false);
+      loadData();
+    } catch (error: any) {
+      toast.error(error.message);
+    } finally {
+      setSaving(false);
+    }
+  };
 
-    const handleDelete = (id: number) => {
-        setIdToDelete(id);
-        setIsConfirmOpen(true);
-    };
+  const handleDelete = (id: string) => {
+    setIdToDelete(id);
+    setIsConfirmOpen(true);
+  };
 
-    const confirmDelete = () => {
-        if (idToDelete) {
-            setExpenses(expenses.filter(exp => exp.id !== idToDelete));
-            toast.success("Egreso eliminado correctamente.");
-            setIdToDelete(null);
-        }
-    };
+  const confirmDelete = async () => {
+    if (!idToDelete) return;
+    try {
+      await deleteTransactionRequest(idToDelete);
+      toast.success("Eliminado correctamente");
+      setIsConfirmOpen(false);
+      loadData();
+    } catch (error: any) {
+      toast.error(error.message);
+    }
+  };
 
-    const handleSave = (e: React.FormEvent) => {
-        e.preventDefault();
-        const cat = categories.find(c => c.id === selectedCategoryId);
-        const sub = categories.find(c => c.id === selectedSubCategoryId);
+  const formatDate = (dateStr: string) => {
+    if (!dateStr) return "-";
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return "-";
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const year = date.getUTCFullYear();
+    return `${day}-${month}-${year}`;
+  };
 
-        const payload = {
-            date: formData.date,
-            category: cat?.name || "Sin categoría",
-            categoryId: selectedCategoryId,
-            subcategory: sub?.name || "Sin subcategoría",
-            subCategoryId: selectedSubCategoryId,
-            description: formData.description,
-            amount: Number(formData.amount),
-            currency: formData.currency,
-            exchangeRate: Number(formData.exchangeRate),
-            programmed: formData.programmed,
-            justified: formData.justified
-        };
+  const getMethodBadge = (method: string) => {
+    const labels: any = { CASH: 'Efectivo', TRANSFER: 'Transf.', YAPE: 'Yape', PLIN: 'Plin', CARD: 'Tarjeta' };
+    return labels[method] || method;
+  };
 
-        if (editingId) {
-            setExpenses(expenses.map(exp => exp.id === editingId ? { ...exp, ...payload } : exp));
-            toast.success("Egreso actualizado correctamente.");
-        } else {
-            setExpenses([{ ...payload, id: Date.now() }, ...expenses]);
-            toast.success("Egreso registrado correctamente.");
-        }
-        setIsModalOpen(false);
-    };
-
-    const getDayMonthYear = (dateString: string) => {
-        if (!dateString) return { day: "-", month: "-", year: "-" };
-        const d = new Date(dateString + "T00:00:00");
-        return {
-            day: d.getDate().toString().padStart(2, '0'),
-            month: (d.getMonth() + 1).toString().padStart(2, '0'),
-            year: d.getFullYear().toString()
-        };
-    };
-
+  if (loading) {
     return (
-        <Appshell>
-            <div className="flex flex-col gap-8 animate-fade-in-up pb-10">
-
-                {/* HEADER */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 bg-white/40 backdrop-blur-xl border border-white/60 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
-                    <div className="flex items-center gap-4">
-                        <div className="p-4 bg-gradient-to-br from-rose-400 to-rose-600 rounded-2xl shadow-lg shadow-rose-200">
-                            <TrendingDown className="w-8 h-8 text-white" />
-                        </div>
-                        <div>
-                            <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-rose-600 to-red-800">
-                                Registro de Egresos
-                            </h1>
-                            <p className="text-sm text-rose-800/70 mt-1 font-medium">
-                                Monitorea tus salidas de dinero al detalle para un control absoluto.
-                            </p>
-                        </div>
-                    </div>
-
-                    <div className="flex items-center gap-4">
-                        <div className="relative group">
-                            <div className="absolute inset-0 bg-rose-200 rounded-2xl blur opacity-20 group-hover:opacity-40 transition-opacity"></div>
-                            <Search className="w-5 h-5 text-rose-500 absolute left-4 top-1/2 transform -translate-y-1/2 z-10" />
-                            <input
-                                type="text"
-                                placeholder="Buscar egresos..."
-                                className="relative z-10 pl-11 pr-4 py-3 bg-white/70 backdrop-blur-md border border-white rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/30 transition-all shadow-sm w-72 text-gray-700 font-medium placeholder-rose-300"
-                                value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-                            />
-                        </div>
-                        <button onClick={handleOpenCreate} className="relative group overflow-hidden flex items-center gap-2 bg-rose-500 hover:bg-rose-600 text-white px-6 py-3 rounded-2xl font-bold shadow-lg shadow-rose-200 hover:shadow-rose-300 transition-all transform hover:-translate-y-0.5">
-                            <Plus className="w-5 h-5" /> Nuevo Egreso
-                        </button>
-                    </div>
-                </div>
-
-                {/* TABLE CARD */}
-                <div className="bg-white/60 backdrop-blur-2xl rounded-[2rem] border border-white/80 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.05)] overflow-hidden relative">
-                    <div className="absolute top-0 right-0 w-64 h-64 bg-rose-200/30 rounded-full blur-[80px] -z-10 pointer-events-none"></div>
-                    <div className="absolute bottom-0 left-0 w-64 h-64 bg-red-200/20 rounded-full blur-[80px] -z-10 pointer-events-none"></div>
-
-                    <div className="overflow-x-auto custom-scrollbar">
-                        <table className="w-full text-left border-collapse min-w-[1400px]">
-                            <thead>
-                                <tr className="bg-gradient-to-r from-rose-50/50 to-red-50/50 border-b border-rose-100/50 text-[10px] font-bold uppercase tracking-widest text-rose-800">
-                                    <th className="p-5 pl-8 rounded-tl-3xl">N°</th>
-                                    <th className="p-5">Categoría</th>
-                                    <th className="p-5">Subcategoría</th>
-                                    <th className="p-5 text-center">Día</th>
-                                    <th className="p-5 text-center">Mes</th>
-                                    <th className="p-5 text-center">Año</th>
-                                    <th className="p-5 w-48">Descripción</th>
-                                    <th className="p-5 text-center">Estados</th>
-                                    <th className="p-5 text-right">Monto</th>
-                                    <th className="p-5 text-center">Moneda</th>
-                                    <th className="p-5 text-center">T.C.</th>
-                                    <th className="p-5 text-right text-rose-600 bg-rose-50/50">Monto Soles</th>
-                                    <th className="p-5 text-center pr-8 rounded-tr-3xl">Acciones</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-rose-50/50">
-                                {filtered.map((exp, index) => {
-                                    const { day, month, year } = getDayMonthYear(exp.date);
-                                    const montoSoles = exp.currency === "USD" ? exp.amount * exp.exchangeRate : exp.amount;
-
-                                    return (
-                                        <tr key={exp.id} className="hover:bg-white/80 transition-colors group cursor-default">
-                                            <td className="p-4 pl-8 text-sm font-bold text-rose-400">{index + 1}</td>
-                                            <td className="p-4">
-                                                <span className="inline-flex items-center px-3 py-1 rounded-full bg-rose-100/50 text-rose-700 text-xs font-bold border border-rose-200/50 shadow-sm w-fit">
-                                                    {exp.category}
-                                                </span>
-                                            </td>
-                                            <td className="p-4">
-                                                <div className="flex flex-col gap-0.5">
-                                                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                                                        {exp.subcategory}
-                                                    </span>
-                                                </div>
-                                            </td>
-                                            <td className="p-4 text-center text-sm font-semibold text-gray-500">{day}</td>
-                                            <td className="p-4 text-center text-sm font-semibold text-gray-500">{month}</td>
-                                            <td className="p-4 text-center text-sm font-semibold text-gray-500">{year}</td>
-                                            <td className="p-4 text-sm text-gray-700 font-medium">
-                                                {exp.description}
-                                            </td>
-                                            <td className="p-4">
-                                                <div className="flex items-center justify-center gap-1 flex-col">
-                                                    {exp.programmed && <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-blue-600 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-md w-full justify-center"><Clock className="w-2.5 h-2.5" /> Prog</span>}
-                                                    {exp.justified ? <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-md w-full justify-center"><CheckCircle className="w-2.5 h-2.5" /> Just</span> : <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-amber-600 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-md w-full justify-center">Pend.</span>}
-                                                </div>
-                                            </td>
-                                            <td className="p-4 text-right text-sm font-black text-gray-800">
-                                                {exp.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                                            </td>
-                                            <td className="p-4 text-center">
-                                                <span className={`text-xs font-bold px-2 py-1 rounded-md ${exp.currency === 'USD' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}`}>
-                                                    {exp.currency}
-                                                </span>
-                                            </td>
-                                            <td className="p-4 text-center text-sm font-medium text-gray-500">{exp.currency === 'USD' ? exp.exchangeRate.toFixed(3) : '-'}</td>
-                                            <td className="p-4 text-right text-base font-black text-rose-600 bg-rose-50/30">
-                                                S/ {montoSoles.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                                            </td>
-                                            <td className="p-4 pr-8 text-center">
-                                                <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-all scale-95 group-hover:scale-100">
-                                                    <button title="Modificar egreso" onClick={() => handleOpenEdit(exp)} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50/80 text-blue-600 hover:bg-blue-500 hover:text-white rounded-xl transition-all shadow-sm text-xs font-bold"><Edit2 className="w-3.5 h-3.5" /> Modificar</button>
-                                                    <button title="Eliminar egreso" onClick={() => handleDelete(exp.id)} className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50/80 text-rose-600 hover:bg-rose-500 hover:text-white rounded-xl transition-all shadow-sm text-xs font-bold"><Trash2 className="w-3.5 h-3.5" /> Eliminar</button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                                {filtered.length === 0 && (
-                                    <tr>
-                                        <td colSpan={13} className="p-12 text-center text-gray-400 font-medium">
-                                            No se encontraron egresos.
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                {/* MODAL FORMULARIO */}
-                <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingId ? "Editar Egreso" : "Registrar Nuevo Egreso"} maxWidth="max-w-4xl">
-                    <form onSubmit={handleSave} className="space-y-6">
-                        <div className="bg-rose-50/50 p-6 rounded-2xl border border-rose-100/50 grid grid-cols-1 md:grid-cols-3 gap-6">
-
-                            <div className={`md:col-span-3 grid grid-cols-1 ${hasSubcategories ? 'md:grid-cols-2' : ''} gap-6`}>
-                                <div>
-                                    <label className="block text-xs font-bold text-rose-800 uppercase tracking-wider mb-2">Categoría</label>
-                                    <select
-                                        required
-                                        className="w-full px-4 py-3 bg-white border border-rose-200 rounded-xl focus:ring-4 focus:ring-rose-500/20 outline-none text-gray-700 font-medium shadow-sm transition-all appearance-none"
-                                        value={selectedCategoryId}
-                                        onChange={e => {
-                                            setSelectedCategoryId(e.target.value);
-                                            setSelectedSubCategoryId("");
-                                        }}
-                                    >
-                                        <option value="">Seleccionar Categoría</option>
-                                        {expenseCategories.map(cat => (
-                                            <option key={cat.id} value={cat.id}>{cat.name}</option>
-                                        ))}
-                                    </select>
-                                </div>
-
-
-                                {hasSubcategories && (
-                                    <div className="animate-fade-in-up">
-                                        <label className="block text-xs font-bold text-rose-800 uppercase tracking-wider mb-2 text-indigo-600">Subcategoría</label>
-                                        <select
-                                            required
-                                            className="w-full px-4 py-3 bg-white border border-indigo-200 rounded-xl focus:ring-4 focus:ring-indigo-500/20 outline-none text-gray-700 font-medium shadow-sm transition-all appearance-none"
-                                            value={selectedSubCategoryId}
-                                            onChange={e => setSelectedSubCategoryId(e.target.value)}
-                                        >
-                                            <option value="">Seleccionar Subcategoría</option>
-                                            {subCategories.map(sub => (
-                                                <option key={sub.id} value={sub.id}>{sub.name}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                )}
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-bold text-rose-800 uppercase tracking-wider mb-2">Fecha</label>
-                                <div className="relative">
-                                    <Calendar className="w-5 h-5 text-rose-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
-                                    <input required type="date" className="w-full pl-10 pr-4 py-3 bg-white border border-rose-200 rounded-xl focus:ring-4 focus:ring-rose-500/20 outline-none text-gray-700 font-medium shadow-sm transition-all"
-                                        value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} />
-                                </div>
-                            </div>
-
-                            <div className="md:col-span-3">
-                                <label className="block text-xs font-bold text-rose-800 uppercase tracking-wider mb-2">Descripción</label>
-                                <input required type="text" placeholder="Detalle exacto del egreso..." className="w-full px-4 py-3 bg-white border border-rose-200 rounded-xl focus:ring-4 focus:ring-rose-500/20 outline-none text-gray-700 font-medium shadow-sm transition-all"
-                                    value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} />
-                            </div>
-
-                            <div className="md:col-span-3 bg-white p-5 rounded-2xl border border-rose-100 shadow-sm grid grid-cols-1 md:grid-cols-3 gap-4 relative overflow-hidden">
-                                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-rose-50/30 to-transparent pointer-events-none"></div>
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Monto</label>
-                                    <div className="relative">
-                                        <DollarSign className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
-                                        <input required type="number" step="0.01" min="0" placeholder="0.00" className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-4 focus:ring-rose-500/20 outline-none text-gray-800 font-bold transition-all relative z-10"
-                                            value={formData.amount} onChange={e => setFormData({ ...formData, amount: e.target.value })} />
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Moneda</label>
-                                    <select className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-4 focus:ring-rose-500/20 outline-none text-gray-700 font-bold transition-all relative z-10"
-                                        value={formData.currency} onChange={e => setFormData({ ...formData, currency: e.target.value as "PEN" | "USD" })}>
-                                        <option value="PEN">Soles (PEN)</option>
-                                        <option value="USD">Dólares (USD)</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Tipo de Cambio</label>
-                                    <div className="relative">
-                                        <RefreshCw className={`w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 z-20 ${formData.currency === 'USD' ? 'text-blue-500' : 'text-gray-300'}`} />
-                                        <input type="number" step="0.001" min="1" className={`w-full pl-10 pr-4 py-3 border rounded-xl outline-none font-bold transition-all relative z-10 ${formData.currency === 'USD' ? 'bg-blue-50 border-blue-200 text-blue-800 focus:ring-4 focus:ring-blue-500/20' : 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'}`}
-                                            value={formData.exchangeRate} onChange={e => setFormData({ ...formData, exchangeRate: e.target.value })} disabled={formData.currency === 'PEN'} />
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* LIVE PREVIEW SECTION */}
-                            <div className="md:col-span-3 flex flex-col md:flex-row gap-4 mt-2">
-                                <div className="flex-1 bg-gradient-to-r from-rose-500 to-red-500 p-4 rounded-2xl shadow-lg flex items-center justify-between text-white">
-                                    <div>
-                                        <p className="text-xs text-rose-100 font-bold uppercase tracking-wider mb-1">Extracción Automática</p>
-                                        <div className="flex gap-4 font-black text-lg">
-                                            <div className="bg-black/20 px-3 py-1 rounded-lg">Día: {formData.date ? formData.date.split('-')[2] : '-'}</div>
-                                            <div className="bg-black/20 px-3 py-1 rounded-lg">Mes: {formData.date ? formData.date.split('-')[1] : '-'}</div>
-                                            <div className="bg-black/20 px-3 py-1 rounded-lg">Año: {formData.date ? formData.date.split('-')[0] : '-'}</div>
-                                        </div>
-                                    </div>
-                                    <Calendar className="w-10 h-10 text-white/30" />
-                                </div>
-
-                                <div className="flex-1 bg-gradient-to-r from-gray-900 to-indigo-900 p-4 rounded-2xl shadow-lg flex items-center justify-between text-white">
-                                    <div>
-                                        <p className="text-xs text-indigo-200 font-bold uppercase tracking-wider mb-1">Monto Convertido a Soles</p>
-                                        <div className="text-2xl font-black text-rose-400">
-                                            S/ {(Number(formData.amount || 0) * (formData.currency === 'USD' ? Number(formData.exchangeRate || 1) : 1)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                        </div>
-                                    </div>
-                                    <DollarSign className="w-10 h-10 text-white/20" />
-                                </div>
-                            </div>
-
-                            <div className="md:col-span-3 flex gap-6 mt-2">
-                                <label className="flex items-center gap-3 cursor-pointer group bg-white/60 px-4 py-2 rounded-xl border border-rose-100 hover:bg-white transition-all">
-                                    <div className="relative flex items-center justify-center">
-                                        <input type="checkbox" className="peer w-5 h-5 text-rose-600 border-gray-300 rounded focus:ring-rose-500 focus:ring-2" checked={formData.programmed} onChange={e => setFormData({ ...formData, programmed: e.target.checked })} />
-                                    </div>
-                                    <span className="text-sm font-bold text-gray-700 group-hover:text-rose-700 transition-colors">Gasto Programado</span>
-                                </label>
-                                <label className="flex items-center gap-3 cursor-pointer group bg-white/60 px-4 py-2 rounded-xl border border-rose-100 hover:bg-white transition-all">
-                                    <div className="relative flex items-center justify-center">
-                                        <input type="checkbox" className="peer w-5 h-5 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500 focus:ring-2" checked={formData.justified} onChange={e => setFormData({ ...formData, justified: e.target.checked })} />
-                                    </div>
-                                    <span className="text-sm font-bold text-gray-700 group-hover:text-emerald-700 transition-colors">Con Justificante (Boleta/Factura)</span>
-                                </label>
-                            </div>
-
-                        </div>
-
-                        <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
-                            <button type="button" onClick={() => setIsModalOpen(false)} className="px-6 py-3 text-gray-600 font-bold hover:bg-gray-100 rounded-xl transition-colors">Cancelar</button>
-                            <button type="submit" className="px-8 py-3 bg-gradient-to-r from-rose-500 to-red-600 text-white font-bold rounded-xl shadow-lg shadow-rose-200 hover:shadow-rose-400 hover:-translate-y-0.5 transition-all">
-                                {editingId ? "Actualizar Egreso" : "Guardar Egreso"}
-                            </button>
-                        </div>
-                    </form>
-                </Modal>
-
-                <ConfirmModal
-                    isOpen={isConfirmOpen}
-                    onClose={() => setIsConfirmOpen(false)}
-                    onConfirm={confirmDelete}
-                    title="Eliminar Egreso"
-                    message="¿Estás seguro de que deseas eliminar este registro de egreso? Esta acción no se puede deshacer."
-                />
-            </div>
-        </Appshell>
+      <Appshell>
+        <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
+          <Loader2 className="w-12 h-12 text-rose-500 animate-spin" />
+          <p className="text-gray-500 font-bold">Cargando egresos...</p>
+        </div>
+      </Appshell>
     );
+  }
+
+  return (
+    <Appshell>
+      <div className="flex flex-col gap-8 animate-fade-in-up pb-10">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 p-8 bg-white/40 backdrop-blur-xl border border-white/60 rounded-[2.5rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-rose-400 via-pink-500 to-rose-600"></div>
+          <div className="flex items-center gap-5">
+            <div className="p-4 bg-gradient-to-br from-rose-500 to-rose-700 rounded-2xl shadow-xl shadow-rose-100">
+              <TrendingDown className="w-8 h-8 text-white" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-gray-900 to-gray-600">
+                Gestión de Egresos
+              </h1>
+              <p className="text-sm text-gray-500 mt-1 font-semibold flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+                Control detallado de salidas de dinero
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <div className="relative group">
+              <Search className="w-5 h-5 text-gray-400 absolute left-4 top-1/2 transform -translate-y-1/2 transition-colors group-focus-within:text-rose-500" />
+              <input
+                type="text"
+                placeholder="Buscar egreso..."
+                className="pl-11 pr-4 py-3 bg-white/70 backdrop-blur-md border border-white rounded-2xl text-sm focus:outline-none focus:ring-4 focus:ring-rose-500/10 transition-all shadow-sm w-72 text-gray-700 font-bold placeholder-gray-400"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+            <button
+              onClick={handleOpenCreate}
+              className="flex items-center gap-2 bg-gradient-to-r from-rose-600 to-rose-800 text-white px-6 py-3.5 rounded-2xl font-black shadow-lg shadow-rose-200 hover:-translate-y-1 transition-all active:scale-95 text-sm"
+            >
+              <Plus className="w-5 h-5" /> Nuevo Egreso
+            </button>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-[0_20px_60px_-10px_rgba(0,0,0,0.05)] overflow-hidden">
+          <div className="overflow-x-auto custom-scrollbar">
+            <table className="w-full text-left border-collapse min-w-[1300px]">
+              <thead>
+                <tr className="bg-gradient-to-r from-rose-50 to-red-50 border-b border-rose-100 text-[11px] font-black uppercase tracking-widest text-rose-900">
+                  <th className="p-6 pl-8">Ref.</th>
+                  <th className="p-6">Categoría</th>
+                  <th className="p-6 text-center">Método</th>
+                  <th className="p-6">Fecha</th>
+                  <th className="p-6">Descripción</th>
+                  <th className="p-6 text-center">Estado / Flags</th>
+                  <th className="p-6 text-right">Importe</th>
+                  <th className="p-6 text-center">Divisa</th>
+                  <th className="p-6 text-center">Cotización</th>
+                  <th className="p-6 text-right bg-rose-500/5 text-rose-700">Total (Soles)</th>
+                  <th className="p-6 text-center pr-8">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-rose-50">
+                {filtered.map((exp, index) => {
+                  const montoSoles = exp.currency === "USD" ? exp.amount * exp.exchangeRate : exp.amount;
+                  return (
+                    <tr key={exp.id} className="hover:bg-rose-50/30 transition-all group">
+                      <td className="p-5 pl-8 text-xs font-black text-rose-400">#{index + 1}</td>
+                      <td className="p-5">
+                        <div className="flex flex-col gap-1">
+                          <span className="inline-flex items-center px-3 py-1 rounded-xl bg-rose-100 text-rose-700 text-[10px] font-black uppercase tracking-tighter border border-rose-200 shadow-sm w-fit">
+                            {exp.category}
+                          </span>
+                          {exp.subCategory && (
+                            <span className="text-[9px] text-rose-600/60 font-black ml-1 uppercase tracking-widest">
+                              {exp.subCategory}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-5 text-center">
+                        <span className="px-3 py-1 rounded-lg bg-gray-50 text-gray-500 text-[9px] font-black uppercase border border-gray-100 tracking-tighter shadow-sm">
+                          {getMethodBadge(exp.paymentMethod)}
+                        </span>
+                      </td>
+                      <td className="p-5 text-sm font-bold text-gray-700">
+                         <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-gray-100 shadow-sm w-fit">
+                           <Calendar className="w-3.5 h-3.5 text-rose-500" />
+                           {formatDate(exp.date)}
+                         </div>
+                      </td>
+                      <td className="p-5 text-sm font-bold text-gray-600 italic">"{exp.description}"</td>
+                      <td className="p-5">
+                        <div className="flex flex-col gap-1.5 items-center">
+                          {exp.justified && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-700 text-[9px] font-black uppercase tracking-widest border border-emerald-200">
+                              <Check className="w-3 h-3" /> Justificado
+                            </span>
+                          )}
+                          {exp.programmed && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-100 text-amber-700 text-[9px] font-black uppercase tracking-widest border border-amber-200">
+                              <Clock className="w-3 h-3" /> Programado
+                            </span>
+                          )}
+                          {!exp.justified && !exp.programmed && (
+                            <span className="px-2.5 py-1 rounded-lg bg-gray-100 text-gray-400 text-[9px] font-black uppercase tracking-widest border border-gray-200">
+                              Ordinario
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-5 text-right text-sm font-black text-gray-800">
+                        {exp.currency === 'USD' ? '$' : 'S/'} {exp.amount.toLocaleString()}
+                      </td>
+                      <td className="p-5 text-center">
+                        <span className={`text-[10px] font-black px-2 py-1 rounded-lg ${exp.currency === 'USD' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
+                          {exp.currency}
+                        </span>
+                      </td>
+                      <td className="p-5 text-center text-xs font-black text-gray-400">
+                        {exp.currency === 'USD' ? exp.exchangeRate.toFixed(3) : '-'}
+                      </td>
+                      <td className="p-5 text-right text-lg font-black text-rose-600 bg-rose-50/20">
+                        S/ {montoSoles.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="p-5 pr-8 text-center">
+                        <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-all scale-95 group-hover:scale-100">
+                          <button onClick={() => handleOpenEdit(exp)} className="p-2.5 bg-white border border-gray-100 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all shadow-sm">
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => handleDelete(exp.id)} className="p-2.5 bg-white border border-gray-100 text-rose-600 hover:bg-rose-600 hover:text-white rounded-xl transition-all shadow-sm">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {filtered.length === 0 && (
+                  <tr><td colSpan={11} className="p-20 text-center text-gray-400 font-bold uppercase tracking-widest text-xs">Sin registros de egresos</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* MODAL REDISEÑADO - MÁS COMPACTO Y AMPLIO */}
+        <Modal 
+          isOpen={isModalOpen} 
+          onClose={() => setIsModalOpen(false)} 
+          title={editingId ? "Actualizar Egreso" : "Nuevo Egreso Registrado"}
+          maxWidth="max-w-4xl"
+        >
+          <form onSubmit={handleSave} className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Sección Clasificación */}
+              <div className="bg-rose-50/20 p-5 rounded-[2rem] border border-rose-100/40 space-y-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="p-1.5 bg-rose-100 rounded-lg text-rose-600"><Tag className="w-3.5 h-3.5" /></div>
+                  <span className="text-[10px] font-black text-rose-900 uppercase tracking-widest">Clasificación</span>
+                </div>
+                
+                <div className="grid grid-cols-1 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">Categoría</label>
+                    <div className="relative">
+                      <select required className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-rose-500/10 focus:border-rose-500 transition-all text-sm font-black text-gray-700 appearance-none shadow-sm"
+                        value={selectedCategoryId} onChange={e => { setSelectedCategoryId(e.target.value); setSelectedSubCategoryId(""); }}>
+                        <option value="">Seleccionar...</option>
+                        {filteredCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                      <ChevronDown className="w-4 h-4 text-gray-300 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </div>
+                  </div>
+
+                  {hasSubcategories && (
+                    <div className="space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-300">
+                      <label className="text-[9px] font-black text-rose-600 uppercase tracking-widest ml-1">Subcategoría</label>
+                      <div className="relative">
+                        <select required className="w-full px-4 py-3 bg-white border border-rose-100 rounded-xl outline-none focus:ring-4 focus:ring-rose-500/10 focus:border-rose-500 transition-all text-sm font-black text-gray-700 appearance-none shadow-sm"
+                          value={selectedSubCategoryId} onChange={e => setSelectedSubCategoryId(e.target.value)}>
+                          <option value="">Seleccionar...</option>
+                          {filteredSubCategories.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        </select>
+                        <ChevronDown className="w-4 h-4 text-rose-400 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Sección Detalles */}
+              <div className="bg-amber-50/20 p-5 rounded-[2rem] border border-amber-100/40 space-y-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="p-1.5 bg-amber-100 rounded-lg text-amber-600"><FileText className="w-3.5 h-3.5" /></div>
+                  <span className="text-[10px] font-black text-amber-900 uppercase tracking-widest">Detalles</span>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">Fecha</label>
+                    <input required type="date" className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-rose-500/10 focus:border-rose-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
+                      value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">Descripción</label>
+                    <input required type="text" placeholder="Ej. Pago de suministros..." className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-rose-500/10 focus:border-rose-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
+                      value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Flags de Estado - Compactos */}
+            <div className="bg-gray-50/30 p-5 rounded-[2rem] border border-gray-100/60">
+              <div className="flex flex-col md:flex-row gap-6 items-center justify-center">
+                <label className="flex items-center gap-3 cursor-pointer group">
+                  <div className="relative">
+                    <input type="checkbox" className="sr-only peer" checked={formData.justified} onChange={e => setFormData({ ...formData, justified: e.target.checked })} />
+                    <div className="w-9 h-5 bg-gray-200 rounded-full peer peer-checked:bg-emerald-500 transition-all after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white shadow-sm"></div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className={`w-3.5 h-3.5 transition-colors ${formData.justified ? 'text-emerald-500' : 'text-gray-300'}`} />
+                    <span className={`text-[9px] font-black uppercase tracking-widest ${formData.justified ? 'text-emerald-700' : 'text-gray-400'}`}>Gasto Justificado</span>
+                  </div>
+                </label>
+
+                <label className="flex items-center gap-3 cursor-pointer group">
+                  <div className="relative">
+                    <input type="checkbox" className="sr-only peer" checked={formData.programmed} onChange={e => setFormData({ ...formData, programmed: e.target.checked })} />
+                    <div className="w-9 h-5 bg-gray-200 rounded-full peer peer-checked:bg-amber-500 transition-all after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white shadow-sm"></div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Clock className={`w-3.5 h-3.5 transition-colors ${formData.programmed ? 'text-amber-500' : 'text-gray-300'}`} />
+                    <span className={`text-[9px] font-black uppercase tracking-widest ${formData.programmed ? 'text-amber-700' : 'text-gray-400'}`}>Gasto Programado</span>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            {/* Sección Método y Moneda */}
+            <div className="bg-gray-50/50 p-6 rounded-[2rem] border border-gray-100 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {/* Método de Pago */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="p-1.5 bg-indigo-100 rounded-lg text-indigo-600"><Wallet className="w-3.5 h-3.5" /></div>
+                    <span className="text-[10px] font-black text-indigo-900 uppercase tracking-widest">Método de Pago</span>
+                  </div>
+                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                    {[
+                      { id: 'CASH', label: 'Efectivo' },
+                      { id: 'TRANSFER', label: 'Transf.' },
+                      { id: 'YAPE', label: 'Yape' },
+                      { id: 'PLIN', label: 'Plin' },
+                      { id: 'CARD', label: 'Tarjeta' }
+                    ].map(method => (
+                      <button
+                        key={method.id}
+                        type="button"
+                        onClick={() => setFormData({ ...formData, paymentMethod: method.id as any })}
+                        className={`py-2.5 rounded-xl text-[9px] font-black uppercase tracking-tighter border transition-all ${formData.paymentMethod === method.id ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-100 scale-105' : 'bg-white text-gray-400 border-gray-100 hover:border-indigo-200'}`}
+                      >
+                        {method.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Info Financiera */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="p-1.5 bg-rose-100 rounded-lg text-rose-600"><CreditCard className="w-3.5 h-3.5" /></div>
+                    <span className="text-[10px] font-black text-rose-900 uppercase tracking-widest">Información Financiera</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[8px] font-black text-gray-400 uppercase tracking-widest ml-1">Moneda</label>
+                      <select className="w-full px-3 py-2 bg-white border border-gray-100 rounded-lg outline-none text-[11px] font-black text-gray-700 appearance-none shadow-sm"
+                        value={formData.currency} onChange={e => setFormData({ ...formData, currency: e.target.value as any })}>
+                        <option value="PEN">PEN</option>
+                        <option value="USD">USD</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[8px] font-black text-gray-400 uppercase tracking-widest ml-1">T.C.</label>
+                      <input type="number" step="0.001" disabled={formData.currency === 'PEN'} className={`w-full px-3 py-2 border rounded-lg outline-none text-[11px] font-black shadow-sm ${formData.currency === 'USD' ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-gray-50 border-gray-100 text-gray-400'}`}
+                        value={formData.exchangeRate} onChange={e => setFormData({ ...formData, exchangeRate: e.target.value })} />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[8px] font-black text-rose-600 uppercase tracking-widest ml-1">Importe</label>
+                      <input required type="number" step="0.01" className="w-full px-3 py-2 bg-white border-2 border-rose-100 rounded-lg outline-none text-[11px] font-black text-gray-800 shadow-sm"
+                        value={formData.amount} onChange={e => setFormData({ ...formData, amount: e.target.value })} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end items-center gap-4 pt-4">
+              <button type="button" onClick={() => setIsModalOpen(false)} className="px-6 py-3 text-gray-400 font-black uppercase text-[10px] tracking-widest hover:text-gray-600 transition-all">Cancelar</button>
+              <button type="submit" disabled={saving} className="px-10 py-3.5 bg-rose-600 text-white font-black rounded-xl hover:bg-rose-700 shadow-xl shadow-rose-100 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2">
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                <span className="uppercase tracking-widest text-[10px]">{saving ? "Guardando..." : (editingId ? "Actualizar" : "Confirmar")}</span>
+              </button>
+            </div>
+          </form>
+        </Modal>
+
+        <ConfirmModal isOpen={isConfirmOpen} onClose={() => setIsConfirmOpen(false)} onConfirm={confirmDelete} title="Eliminar Egreso" message="¿Estás seguro de que deseas eliminar este registro de gasto permanentemente?" />
+      </div>
+      
+      <style dangerouslySetInnerHTML={{ __html: `
+        .custom-scrollbar::-webkit-scrollbar { height: 10px; width: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f8fafc; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; border: 2px solid #f8fafc; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+      `}} />
+    </Appshell>
+  );
 }
