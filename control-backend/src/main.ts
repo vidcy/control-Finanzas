@@ -4,27 +4,18 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // 🔥 SOLUCIÓN CORS COMPLETA (IMPORTANTE)
   const allowedOrigins = [
-    'http://localhost:5173', // dev local
-    'https://mifront-production.up.railway.app', // producción
+    'http://localhost:5173',
+    'https://mifront-production.up.railway.app',
   ];
 
   app.enableCors({
-    origin: (origin, callback) => {
-      // permitir requests sin origin (postman, mobile apps)
-      if (!origin) return callback(null, true);
-
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-
-      return callback(new Error('Not allowed by CORS'));
-    },
+    origin: allowedOrigins,   // ⭐ CAMBIO CLAVE
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS', // ⭐⭐ CLAVE
+    allowedHeaders: 'Content-Type, Accept, Authorization', // ⭐⭐ CLAVE
     credentials: true,
   });
 
-  const port = process.env.PORT || 3000;
-  await app.listen(port, '0.0.0.0'); // ⭐ ESTA ES LA CLAVE
+  await app.listen(process.env.PORT || 3000, '0.0.0.0');
 }
 bootstrap();
