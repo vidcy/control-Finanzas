@@ -61,8 +61,8 @@ export default function PendingPage() {
   const [idToDelete, setIdToDelete] = useState<string | null>(null);
   const [activeType, setActiveType] = useState<"INCOME" | "EXPENSE">("INCOME");
 
-  const [selectedCategoryId, setSelectedCategoryId] = useState("");
-  const [selectedSubCategoryId, setSelectedSubCategoryId] = useState<string | null>(null);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
+  const [selectedSubCategoryId, setSelectedSubCategoryId] = useState<string>("");
 
   // Form state
   const [formData, setFormData] = useState({
@@ -561,7 +561,7 @@ export default function PendingPage() {
                   <select
                     required
                     className="w-full px-5 py-4 bg-white border border-gray-100 rounded-[1.5rem] outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-sm font-black text-gray-700 shadow-sm appearance-none"
-                    value={selectedCategoryId ?? ""}
+                    value={selectedCategoryId || ""}
                     onChange={(e) => {
                       setSelectedCategoryId(e.target.value);
                       setSelectedSubCategoryId("");
@@ -584,7 +584,7 @@ export default function PendingPage() {
                     <select
                       required
                       className="w-full px-5 py-4 bg-white border border-indigo-100 rounded-[1.5rem] outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-sm font-black text-gray-700 shadow-sm appearance-none"
-                      value={selectedSubCategoryId ?? ""}
+                      value={selectedSubCategoryId || ""}
                       onChange={(e) => setSelectedSubCategoryId(e.target.value)}
                     >
                       <option value="">Seleccionar Subcategoría</option>
