@@ -1,7 +1,7 @@
 import { type ReactNode, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
-import { LayoutDashboard, TrendingUp, TrendingDown, Tags, ArrowRightLeft, Users, LogOut, Bell, Key, ShieldCheck, CheckCircle2, UserCircle, Settings } from "lucide-react";
+import { LayoutDashboard, TrendingUp, TrendingDown, Tags, ArrowRightLeft, Users, LogOut, Bell, Key, ShieldCheck, CheckCircle2, Settings } from "lucide-react";
 import Modal from "../ui/Modal";
 import { changePasswordRequest } from "../../services/auth.api";
 
@@ -37,8 +37,10 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
             // Cerrar mensaje de éxito después de un tiempo
             setTimeout(() => setPasswordChanged(false), 3000);
 
-        } catch (error) {
-            alert(error.message);
+        } catch (error: unknown) {
+            const message =
+                error instanceof Error ? error.message : "Error desconocido";
+            alert(message);
         };
     }
 

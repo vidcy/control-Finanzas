@@ -14,16 +14,11 @@ const months = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Set", "
 
 export default function DashboardPage() {
     const [transactions, setTransactions] = useState<any[]>([]);
-    const [categories, setCategories] = useState<any[]>([]);
+    const [, setCategories] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [expandedCats, setExpandedCats] = useState<Record<string, boolean>>({ 'Ingresos': true });
     const [showValues, setShowValues] = useState(true);
     const safeTransactions = Array.isArray(transactions) ? transactions : [];
-    const normalizeTransactions = (data: any) => {
-        const t = data?.data ?? data?.transactions ?? data;
-
-        return Array.isArray(t) ? t : [];
-    };
 
     useEffect(() => {
         loadData();
