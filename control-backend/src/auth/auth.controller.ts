@@ -1,4 +1,4 @@
-import { Controller, Post, Body } from '@nestjs/common'
+import { Controller, Post, Body, Options } from '@nestjs/common'
 import { AuthService } from './auth.service'
 
 import { UseGuards, Get, Req } from '@nestjs/common'
@@ -8,6 +8,11 @@ import { JwtAuthGuard } from './jwt.guard'
 @Controller('auth')
 export class AuthController {
     constructor(private authService: AuthService) { }
+    // Agrega esto para manejar la petición OPTIONS
+    @Options('login')
+    handlePreflight() {
+        return 'OK';
+    }
 
     @Post('login')
     login(@Body() body: any) {
