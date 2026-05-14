@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Options } from '@nestjs/common'
+import { Controller, Post, Body, Options, Header } from '@nestjs/common'
 import { AuthService } from './auth.service'
 
 import { UseGuards, Get, Req } from '@nestjs/common'
@@ -9,11 +9,15 @@ import { JwtAuthGuard } from './jwt.guard'
 export class AuthController {
     constructor(private authService: AuthService) { }
     // Agrega esto para manejar la petición OPTIONS
+
     @Options('login')
+    @Header('Access-Control-Allow-Origin', 'https://mifront-production.up.railway.app')
+    @Header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')
+    @Header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+    @Header('Access-Control-Allow-Credentials', 'true')
     handlePreflight() {
         return 'OK';
     }
-
     @Post('login')
     login(@Body() body: any) {
         return this.authService.login(
