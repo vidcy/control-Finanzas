@@ -14,7 +14,7 @@ async function bootstrap() {
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
   });
-  await app.listen(process.env.PORT || 3002, '0.0.0.0');
+  await app.listen(process.env.PORT || 3000, '0.0.0.0');
   console.log("🔥 BACKEND ACTIVO EN RAILWAY");
 }
 
