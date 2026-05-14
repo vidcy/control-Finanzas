@@ -176,9 +176,7 @@ export class CategoriesService {
             where: { userId }
         });
 
-        if (existing) {
-            throw new BadRequestException("El usuario ya tiene categorías creadas");
-        }
+        if (existing) return { message: "ya inicializado" };
 
         // 2️⃣ recorrer tipos INCOME / EXPENSE
         for (const type of ["INCOME", "EXPENSE"] as const) {

@@ -8,7 +8,7 @@ export class UsersService {
   constructor(
     private prisma: PrismaService,
     private categoryService: CategoriesService,
-  ) {}
+  ) { }
   async createUsers(data: any) {
     const existingUser = await this.findByEmail(data.email);
     if (existingUser) {
