@@ -1,20 +1,16 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { CorsMiddleware } from './middlewares/cors.middleware';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
 
 
-  app.enableCors({
-    origin: [
-      'https://mifront-production.up.railway.app'
-    ],
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true,
-  });
+  // Registra el middleware global de CORS
+  app.use(new CorsMiddleware().use);
+
   app.set('trust proxy', 1);
 
   app.use((req, res, next) => {
