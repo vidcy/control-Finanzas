@@ -23,7 +23,7 @@ export class PendingTransactionService {
         userId,
         type: dto.type,
         categoryId: dto.categoryId,
-        subCategoryId: dto.subCategoryId ?? null,
+        subCategoryId: dto.subCategoryId || null,
         date: new Date(),
         dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
         paymentMethod: dto.paymentMethod || 'CASH',
@@ -57,23 +57,31 @@ export class PendingTransactionService {
     });
   }
   async updatePendingTransaction(id: string, dto: UpdatePendingTransactionDto) {
-    const isUSD = dto.currency === Currency.USD;
-    const amountSoles = dto.amount
-      ? isUSD
-        ? dto.amount * (dto.exchangeRate || 1)
-        : dto.amount
-      : undefined;
+    const existingTransaction = await this.getPendingTransactionDetails(id);
+    if (!existingTransaction) {
+      throw new Error('Transaccion no encontrada');
+    }
+    const currency = dto.currency ?? existingTransaction.currency;
+    const amount = dto.amount ?? existingTransaction.amount;
+    const exchangeRate = dto.exchangeRate ?? existingTransaction.exchangeRate;
+    let amountSoles = existingTransaction.amountSoles;
 
+    if (dto.amount || dto.currency || dto.exchangeRate) {
+      const isUSD = currency === Currency.USD;
+      amountSoles = isUSD ? amount * (exchangeRate || 1) : amount;
+    }
     return this.prisma.transaction.update({
       where: { id },
       data: {
-        ...(dto.status && { status: dto.status }),
-        ...(dto.amount && { amount: dto.amount }),
-        ...(dto.description && { description: dto.description }),
-        ...(dto.dueDate && { dueDate: new Date(dto.dueDate) }),
-        ...(dto.currency && { currency: dto.currency ?? Currency.PEN }),
-        ...(dto.exchangeRate && { exchangeRate: dto.exchangeRate }),
-        ...(dto.amountSoles && { amountSoles }),
+        categoryId: dto.categoryId,
+        subCategoryId: dto.subCategoryId,
+        date: dto.date,
+        description: dto.description,
+        amount,
+        status: dto.status,
+        currency,
+        exchangeRate,
+        amountSoles,
       },
     });
   }

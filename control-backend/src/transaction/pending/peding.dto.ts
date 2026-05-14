@@ -65,8 +65,20 @@ export class UpdatePendingTransactionDto {
   status?: TransactionStatus;
 
   @IsOptional()
+  @IsString()
+  categoryId?: string;
+
+  @IsOptional()
+  @IsString()
+  subCategoryId?: string;
+
+  @IsOptional()
   @IsNumber()
   amount?: number;
+
+  @IsOptional()
+  @IsDateString()
+  date?: string;
 
   @IsOptional()
   @IsString()
