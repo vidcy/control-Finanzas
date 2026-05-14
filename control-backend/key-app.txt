@@ -1,1 +1,5 @@
 contraseña de aplicación: uiqt kcpp himj imzw
+
+ /*"prisma": {
+    "seed": "ts-node prisma/seed.ts"
+  },*/
