@@ -3,3 +3,8 @@ contraseña de aplicación: uiqt kcpp himj imzw
  /*"prisma": {
     "seed": "ts-node prisma/seed.ts"
   },*/
+
+
+  npx prisma migrate dev --name add_transactions-12-05-2026-v1
+
+  npx prisma db seed

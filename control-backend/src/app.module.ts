@@ -7,6 +7,7 @@ import { CategoriesModule } from './category/category.module';
 import { ConfigModule } from '@nestjs/config';
 import { PendingTransactionModule } from './transaction/pending/peding.module';
 import { TransactionsModule } from './transaction/transactions/transactions.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { TransactionsModule } from './transaction/transactions/transactions.modu
     AuthModule,
     PendingTransactionModule,
     TransactionsModule,
+    NotificationsModule,
     PrismaModule,
     UsersModule,
     CategoriesModule,
@@ -22,4 +24,4 @@ import { TransactionsModule } from './transaction/transactions/transactions.modu
     }),
   ],
 })
-export class AppModule {}
+export class AppModule { }

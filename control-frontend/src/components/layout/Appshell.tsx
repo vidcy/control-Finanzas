@@ -1,7 +1,8 @@
 import { type ReactNode, useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
-import { LayoutDashboard, TrendingUp, TrendingDown, Tags, ArrowRightLeft, Users, LogOut, Bell, Key, ShieldCheck, CheckCircle2, Settings, Menu, X } from "lucide-react";
+import { LayoutDashboard, TrendingUp, TrendingDown, Tags, ArrowRightLeft, Users, LogOut, Key, ShieldCheck, CheckCircle2, Settings, Menu, X } from "lucide-react";
+import NotificationDropdown from "./NotificationDropdown";
 import Modal from "../ui/Modal";
 import { changePasswordRequest } from "../../services/auth.api";
 
@@ -69,7 +70,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
 
             {/* MOBILE OVERLAY */}
             {isMobileMenuOpen && (
-                <div 
+                <div
                     className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm z-[90] lg:hidden transition-opacity"
                     onClick={() => setIsMobileMenuOpen(false)}
                 />
@@ -93,7 +94,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                             <p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Control Total</p>
                         </div>
                     </div>
-                    <button 
+                    <button
                         onClick={() => setIsMobileMenuOpen(false)}
                         className="lg:hidden p-2 text-gray-400 hover:text-gray-900"
                     >
@@ -168,7 +169,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                 {/* TOPBAR */}
                 <header className="h-20 bg-white/40 backdrop-blur-xl border-b border-white/50 flex items-center justify-between px-6 lg:px-8 z-20">
                     <div className="flex items-center gap-4">
-                        <button 
+                        <button
                             onClick={() => setIsMobileMenuOpen(true)}
                             className="lg:hidden p-2.5 bg-white border border-gray-100 rounded-xl text-gray-600 shadow-sm"
                         >
@@ -183,10 +184,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                     </div>
 
                     <div className="flex items-center gap-3 lg:gap-4">
-                        <button className="relative p-2.5 bg-white/80 rounded-full hover:bg-white text-gray-500 hover:text-indigo-600 transition-all shadow-sm border border-gray-100">
-                            <Bell className="w-5 h-5" />
-                            <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
-                        </button>
+                        <NotificationDropdown />
                     </div>
                 </header>
 

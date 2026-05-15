@@ -69,6 +69,23 @@ model User {
 
   categories   Category[]
   transactions Transaction[]
+  notifications Notification[]
+}
+
+// =========================
+// 🔔 NOTIFICACIONES
+// =========================
+model Notification {
+  id          String   @id @default(uuid())
+  title       String
+  description String
+  link        String
+  read        Boolean  @default(false)
+  
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  
+  createdAt   DateTime @default(now())
 }
 
 // =========================
