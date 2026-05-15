@@ -17,6 +17,7 @@ import {
   Calendar,
   RefreshCw,
   Activity,
+  Edit2,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import {
@@ -36,16 +37,18 @@ type Category = {
 
 type PendingItem = {
   id: string;
-  description?: string;
-  amount: number;
   date: string;
-  dueDate?: string;
-  status: "PENDING" | "PAID";
-  type: "INCOME" | "EXPENSE";
-  category?: { name: string };
-  subCategory?: { name: string };
+  category: string;
+  categoryId?: string;
+  subCategory?: string;
+  subCategoryId?: string;
+  name?: string;
+  description: string;
+  amount: number;
   currency: "PEN" | "USD";
   exchangeRate: number;
+  type: "INCOME" | "EXPENSE";
+  status: "PENDING" | "PAID";
 };
 
 export default function PendingPage() {
@@ -66,12 +69,12 @@ export default function PendingPage() {
 
   // Form state
   const [formData, setFormData] = useState({
-    amount: "",
-    description: "",
+    date: new Date().toISOString().split("T")[0],
     person: "",
+    description: "",
+    amount: "",
     currency: "PEN" as "PEN" | "USD",
     exchangeRate: "1",
-    date: new Date().toISOString().split("T")[0],
   });
 
   const receivables = useMemo(
@@ -134,19 +137,26 @@ export default function PendingPage() {
         listCategoriesRequest(),
       ]);
       setItems(
-        transactionsData.map((t: any) => ({
-          id: t.id,
-          description: t.description ?? "",
-          amount: t.amount,
-          date: t.date,
-          dueDate: t.dueDate ?? undefined,
-          status: t.status,
-          type: t.type,
-          category: t.category,
-          subCategory: t.subCategory,
-          currency: t.currency || "PEN",
-          exchangeRate: t.exchangeRate || 1,
-        })),
+        transactionsData.map((t: any) => {
+          // 🛡️ Fallback: Si 'name' viene nulo o no existe (por migración pendiente), usamos 'description'
+          // Pero si 'name' existe, lo priorizamos
+          return {
+            id: t.id,
+            name: t.name || "",
+            description: t.description || "",
+            amount: t.amount,
+            date: t.date,
+            dueDate: t.dueDate ?? undefined,
+            status: t.status,
+            type: t.type,
+            category: t.category?.name ?? "Otros",
+            categoryId: t.categoryId || t.category?.id || "",
+            subCategory: t.subCategory?.name ?? "",
+            subCategoryId: t.subCategoryId || t.subCategory?.id || "",
+            currency: t.currency || "PEN",
+            exchangeRate: t.exchangeRate || 1,
+          };
+        }),
       );
       setCategories(categoriesData);
     } catch (error: unknown) {
@@ -156,19 +166,37 @@ export default function PendingPage() {
       setLoading(false);
     }
   };
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const handleOpenModal = (type: "INCOME" | "EXPENSE") => {
+    setEditingId(null);
     setActiveType(type);
     setFormData({
       amount: "",
-      description: "",
       person: "",
+      description: "",
       currency: "PEN",
       exchangeRate: "1",
       date: new Date().toISOString().split("T")[0],
     });
     setSelectedCategoryId("");
     setSelectedSubCategoryId("");
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEdit = (item: PendingItem) => {
+    setEditingId(item.id);
+    setActiveType(item.type);
+    setFormData({
+      date: item.date.split("T")[0],
+      person: item.name || "",
+      description: item.description,
+      amount: item.amount.toString(),
+      currency: item.currency,
+      exchangeRate: item.exchangeRate.toString(),
+    });
+    setSelectedCategoryId(item.categoryId || "");
+    setSelectedSubCategoryId(item.subCategoryId || "");
     setIsModalOpen(true);
   };
 
@@ -185,41 +213,61 @@ export default function PendingPage() {
       return;
     }
 
-    const payload = {
-      name: formData.description || formData.person,
-      type: activeType,
-      categoryId: selectedCategoryId,
-      subCategoryId: selectedSubCategoryId ?? "",
+    if (!formData.person.trim()) {
+      toast.error("Ingresa el nombre del deudor/acreedor");
+      return;
+    }
+
+    if (!formData.description.trim()) {
+      toast.error("Ingresa una descripción del motivo");
+      return;
+    }
+
+    if (!formData.amount || Number(formData.amount) <= 0) {
+      toast.error("Ingresa un monto válido");
+      return;
+    }
+
+    if (formData.currency === "USD" && (!formData.exchangeRate || Number(formData.exchangeRate) <= 0)) {
+      toast.error("Ingresa un tipo de cambio válido");
+      return;
+    }
+
+    const payload: any = {
+      name: formData.person.trim(),
+      description: formData.description.trim(),
       amount: Number(formData.amount),
-      date: formData.date,
-      dueDate: formData.date,
-      status: "PENDING" as const,
-      currency: formData.currency,
       exchangeRate: Number(formData.exchangeRate),
-      paymentMethod: "CASH",
-      description: `${formData.person} - ${formData.description}`,
+      categoryId: selectedCategoryId,
+      subCategoryId: selectedSubCategoryId || null,
+      status: "PENDING",
+      currency: formData.currency,
+      date: formData.date,
+      type: activeType, // El tipo es necesario para la creación y no estorba en la actualización
     };
+
+    console.log("Enviando payload a la API:", payload);
 
     setSaving(true);
     try {
-      const result = await createPendingTransactionRequest(payload);
-      setItems((prev) => [
-        ...prev,
-        {
-          ...result,
-          currency: result.currency || "PEN",
-          exchangeRate: result.exchangeRate || 1,
-        },
-      ]);
-      toast.success("Creado correctamente");
+      if (editingId) {
+        await updatePendingTransactionRequest(editingId, payload as any);
+        toast.success("Actualizado correctamente");
+      } else {
+        await createPendingTransactionRequest(payload as any);
+        toast.success("Creado correctamente");
+      }
       setIsModalOpen(false);
+      loadData();
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Error al crear";
+      const message = error instanceof Error ? error.message : "Error al guardar";
       toast.error(message);
     } finally {
       setSaving(false);
     }
   };
+
+
 
   const togglePaid = async (id: string, currentStatus: "PENDING" | "PAID") => {
     const newStatus: "PENDING" | "PAID" =
@@ -349,9 +397,12 @@ export default function PendingPage() {
                       >
                         <td className="p-6 pl-8">
                           <div className="font-bold text-gray-800 text-sm">
-                            {item.description}
+                            {item.name || "Sin nombre"}
                           </div>
-                          <div className="text-[10px] text-gray-400 font-black mt-1 uppercase">
+                          <div className="text-[10px] text-gray-500 font-bold mt-1 italic">
+                            "{item.description}"
+                          </div>
+                          <div className="text-[10px] text-indigo-400 font-black mt-2 uppercase tracking-tighter">
                             {item.date?.split("T")[0]}
                           </div>
                         </td>
@@ -397,12 +448,20 @@ export default function PendingPage() {
                           </button>
                         </td>
                         <td className="p-6 pr-8 text-center">
-                          <button
-                            onClick={() => handleDelete(item.id)}
-                            className="p-2 text-gray-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          <div className="flex justify-center gap-2">
+                            <button
+                              onClick={() => handleOpenEdit(item)}
+                              className="p-2.5 bg-white border border-gray-100 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all shadow-sm"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(item.id)}
+                              className="p-2 text-gray-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -463,9 +522,12 @@ export default function PendingPage() {
                       >
                         <td className="p-6 pl-8">
                           <div className="font-bold text-gray-800 text-sm">
-                            {item.description}
+                            {item.name || "Sin nombre"}
                           </div>
-                          <div className="text-[10px] text-gray-400 font-black mt-1 uppercase">
+                          <div className="text-[10px] text-gray-500 font-bold mt-1 italic">
+                            "{item.description}"
+                          </div>
+                          <div className="text-[10px] text-rose-400 font-black mt-2 uppercase tracking-tighter">
                             {item.date?.split("T")[0]}
                           </div>
                         </td>
@@ -512,6 +574,12 @@ export default function PendingPage() {
                         </td>
                         <td className="p-6 pr-8 text-center">
                           <button
+                            onClick={() => handleOpenEdit(item)}
+                            className="p-2.5 bg-white border border-gray-100 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all shadow-sm"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
                             onClick={() => handleDelete(item.id)}
                             className="p-2 text-gray-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
                           >
@@ -540,9 +608,9 @@ export default function PendingPage() {
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
           title={
-            activeType === "INCOME"
-              ? "Nueva Cuenta por Cobrar"
-              : "Nueva Cuenta por Pagar"
+            editingId
+              ? `Actualizar Cuenta por ${activeType === "INCOME" ? "Cobrar" : "Pagar"}`
+              : `Nueva Cuenta por ${activeType === "INCOME" ? "Cobrar" : "Pagar"}`
           }
           maxWidth="max-w-4xl"
         >
@@ -741,7 +809,7 @@ export default function PendingPage() {
                 ) : (
                   <CheckCircle2 className="w-5 h-5" />
                 )}
-                {saving ? "Guardando..." : "Confirmar Registro"}
+                {saving ? "Guardando..." : editingId ? "Actualizar Registro" : "Confirmar Registro"}
               </button>
             </div>
           </form>

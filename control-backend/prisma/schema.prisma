@@ -129,6 +129,9 @@ model Transaction {
   // 💳 MÉTODO DE PAGO
   paymentMethod PaymentMethod
 
+  // 📝 NOMBRE (PERSONA/DEUDOR/ACREEDOR)
+  name String?
+
   // 📝 DESCRIPCIÓN
   description String?
 

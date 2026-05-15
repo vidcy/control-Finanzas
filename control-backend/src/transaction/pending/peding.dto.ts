@@ -28,6 +28,9 @@ export class CreatePendingTransactionDto {
   @IsString()
   subCategoryId?: string;
 
+  @IsDateString()
+  date: string;
+
   // 📅 Fecha de vencimiento (clave en cuentas pendientes)
   @IsOptional()
   @IsDateString()
@@ -37,6 +40,11 @@ export class CreatePendingTransactionDto {
   @IsOptional()
   @IsEnum(PaymentMethod)
   paymentMethod?: PaymentMethod;
+
+  // 👤 nombre (persona/deudor/acreedor)
+  @IsOptional()
+  @IsString()
+  name?: string;
 
   // 📝 descripción
   @IsOptional()
@@ -79,6 +87,10 @@ export class UpdatePendingTransactionDto {
   @IsOptional()
   @IsDateString()
   date?: string;
+
+  @IsOptional()
+  @IsString()
+  name?: string;
 
   @IsOptional()
   @IsString()

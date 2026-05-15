@@ -38,6 +38,10 @@ export class CreateTransactionDto {
   @IsEnum(TransactionType)
   type: TransactionType;
 
+  @IsOptional()
+  @IsString()
+  status?: TransactionStatus;
+
   // 👇 categoría padre (OBLIGATORIA)
   @IsUUID()
   categoryId: string;
@@ -46,6 +50,28 @@ export class CreateTransactionDto {
   @IsOptional()
   @IsUUID()
   subCategoryId?: string;
+
+  // 📅 fecha
+  @IsDateString()
+  date: string;
+
+  // 📅 fecha de vencimiento
+  @IsDateString()
+  @IsOptional()
+  dueDate?: string;
+
+  // 💳 método de pago
+  @IsEnum(PaymentMethod)
+  paymentMethod: PaymentMethod;
+
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  // 📝 descripción opcional
+  @IsOptional()
+  @IsString()
+  description?: string;
 
   // 💰 monto en moneda original
   @IsNumber()
@@ -60,14 +86,6 @@ export class CreateTransactionDto {
   @IsNumber()
   exchangeRate?: number;
 
-  // 📅 fecha del movimiento
-  @IsDateString()
-  date: string;
-
-  // 💳 método de pago
-  @IsEnum(PaymentMethod)
-  paymentMethod: PaymentMethod;
-
   @IsNumber()
   @IsOptional()
   amountSoles?: number;
@@ -80,14 +98,7 @@ export class CreateTransactionDto {
   @IsBoolean()
   programmed?: boolean;
 
-  @IsOptional()
-  @IsString()
-  status?: TransactionStatus;
 
-  // 📝 descripción opcional
-  @IsOptional()
-  @IsString()
-  description?: string;
 }
 export class UpdateTransactionDto {
   @IsOptional()
@@ -129,6 +140,10 @@ export class UpdateTransactionDto {
   @IsOptional()
   @IsNumber()
   amountSoles?: number;
+
+  @IsOptional()
+  @IsString()
+  name?: string;
 
   @IsOptional()
   @IsString()

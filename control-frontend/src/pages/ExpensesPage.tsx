@@ -44,6 +44,7 @@ type Expense = {
   programmed: boolean;
   status: "PENDING" | "PAID";
   paymentMethod: string;
+  person: "";
 };
 
 export default function ExpensesPage() {
@@ -174,6 +175,10 @@ export default function ExpensesPage() {
     if (!selectedCategoryId) return toast.error("Selecciona una categoría");
     if (hasSubcategories && !selectedSubCategoryId)
       return toast.error("Selecciona una subcategoría");
+    if (!formData.description.trim()) return toast.error("Ingresa una descripción");
+    if (!formData.amount || Number(formData.amount) <= 0) return toast.error("Ingresa un monto válido");
+    if (formData.currency === "USD" && (!formData.exchangeRate || Number(formData.exchangeRate) <= 0))
+      return toast.error("Ingresa un tipo de cambio válido");
 
     const payload = {
       ...formData,

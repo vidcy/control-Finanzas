@@ -17,11 +17,9 @@ export const createPendingTransactionRequest = async (data: {
   subCategoryId: string;
   amount: number;
   date: string;
-  dueDate?: string;
   status: "PENDING";
   currency: "PEN" | "USD";
   exchangeRate?: number;
-  paymentMethod: string;
   description?: string;
 }) => {
   try {
@@ -48,13 +46,17 @@ export const deletePendingTransactionRequest = async (id: string) => {
 export const updatePendingTransactionRequest = async (
   id: string,
   data: {
+    name?: string;
     status?: "PENDING" | "PAID";
     amount?: number;
     description?: string;
+    date?: string;
     dueDate?: string;
     currency?: "PEN" | "USD";
     exchangeRate?: number;
     amountSoles?: number;
+    categoryId?: string;
+    subCategoryId?: string;
   },
 ) => {
   try {
