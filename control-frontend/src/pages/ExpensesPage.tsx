@@ -7,12 +7,10 @@ import {
   TrendingDown,
   Edit2,
   Trash2,
-  Calendar,
   Clock,
   CheckCircle,
   Loader2,
   CheckCircle2,
-  Check,
   Tag,
   CreditCard,
   FileText,
@@ -451,14 +449,14 @@ export default function ExpensesPage() {
 
                   <div className="bg-rose-50/30 p-4 rounded-2xl border border-rose-100/50 flex justify-between items-center">
                     <div>
-                       <p className="text-[9px] font-black text-rose-900/40 uppercase tracking-widest mb-1">Gasto en Soles</p>
-                       <p className="text-xl font-black text-rose-600">S/ {montoSoles.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                      <p className="text-[9px] font-black text-rose-900/40 uppercase tracking-widest mb-1">Gasto en Soles</p>
+                      <p className="text-xl font-black text-rose-600">S/ {montoSoles.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
                     </div>
                     <div className="text-right">
-                       <p className="text-[10px] font-bold text-gray-400 mb-1">{exp.currency} {exp.currency === "USD" ? `(T.C: ${exp.exchangeRate})` : ""}</p>
-                       <p className="text-sm font-black text-gray-600">
-                         {exp.currency === "USD" ? "$" : "S/"} {exp.amount.toLocaleString()}
-                       </p>
+                      <p className="text-[10px] font-bold text-gray-400 mb-1">{exp.currency} {exp.currency === "USD" ? `(T.C: ${exp.exchangeRate})` : ""}</p>
+                      <p className="text-sm font-black text-gray-600">
+                        {exp.currency === "USD" ? "$" : "S/"} {exp.amount.toLocaleString()}
+                      </p>
                     </div>
                   </div>
                 </div>
