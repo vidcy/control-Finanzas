@@ -7,7 +7,6 @@ import {
   TrendingUp,
   Edit2,
   Trash2,
-  Calendar,
   Loader2,
   CheckCircle2,
   Tag,
@@ -381,7 +380,7 @@ export default function IncomePage() {
               const montoSoles = inc.currency === "USD" ? inc.amount * inc.exchangeRate : inc.amount;
               const categoryName = typeof inc.category === 'object' ? (inc.category as any).name : inc.category || "Otros";
               const subCategoryName = typeof inc.subCategory === 'object' ? (inc.subCategory as any).name : inc.subCategory;
-              
+
               return (
                 <div key={inc.id} className="p-6 space-y-4">
                   <div className="flex justify-between items-start">
@@ -421,14 +420,14 @@ export default function IncomePage() {
 
                   <div className="bg-emerald-50/30 p-4 rounded-2xl border border-emerald-100/50 flex justify-between items-center">
                     <div>
-                       <p className="text-[9px] font-black text-emerald-900/40 uppercase tracking-widest mb-1">Total Percibido</p>
-                       <p className="text-xl font-black text-emerald-600">S/ {montoSoles.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                      <p className="text-[9px] font-black text-emerald-900/40 uppercase tracking-widest mb-1">Total Percibido</p>
+                      <p className="text-xl font-black text-emerald-600">S/ {montoSoles.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
                     </div>
                     <div className="text-right">
-                       <p className="text-[10px] font-bold text-gray-400 mb-1">{inc.currency} {inc.currency === "USD" ? `(T.C: ${inc.exchangeRate})` : ""}</p>
-                       <p className="text-sm font-black text-gray-600">
-                         {inc.currency === "USD" ? "$" : "S/"} {inc.amount.toLocaleString()}
-                       </p>
+                      <p className="text-[10px] font-bold text-gray-400 mb-1">{inc.currency} {inc.currency === "USD" ? `(T.C: ${inc.exchangeRate})` : ""}</p>
+                      <p className="text-sm font-black text-gray-600">
+                        {inc.currency === "USD" ? "$" : "S/"} {inc.amount.toLocaleString()}
+                      </p>
                     </div>
                   </div>
                 </div>
