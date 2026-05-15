@@ -258,19 +258,20 @@ export default function DashboardPage() {
                         </div>
                     </div>
 
-                    <div className="relative h-80 w-full group">
-                        <div className="absolute inset-0 flex flex-col justify-between pointer-events-none pr-4">
-                            {[1, 0.75, 0.5, 0.25, 0].map(p => (
-                                <div key={p} className="w-full flex items-center gap-4">
-                                    <span className="text-[9px] font-black text-gray-300 w-16 text-right">
-                                        S/ {(maxMonthlyValue * p).toLocaleString()}
-                                    </span>
-                                    <div className="flex-1 border-t border-gray-100/80 border-dashed"></div>
-                                </div>
-                            ))}
-                        </div>
+                    <div className="overflow-x-auto custom-scrollbar-premium pb-4 -mx-2 px-2 md:mx-0 md:px-0">
+                        <div className="relative h-80 min-w-[700px] md:min-w-full w-full group">
+                            <div className="absolute inset-0 flex flex-col justify-between pointer-events-none pr-4">
+                                {[1, 0.75, 0.5, 0.25, 0].map(p => (
+                                    <div key={p} className="w-full flex items-center gap-4">
+                                        <span className="text-[9px] font-black text-gray-400 w-16 text-right sticky left-0 z-10 bg-white/90 backdrop-blur-sm py-1 pr-2 rounded-r-lg">
+                                            S/ {(maxMonthlyValue * p).toLocaleString()}
+                                        </span>
+                                        <div className="flex-1 border-t border-gray-100/80 border-dashed"></div>
+                                    </div>
+                                ))}
+                            </div>
 
-                        <div className="absolute inset-0 left-20 flex justify-between items-end gap-3 md:gap-6 pb-2">
+                            <div className="absolute inset-0 left-20 flex justify-between items-end gap-3 md:gap-6 pb-2">
                             {months.map((m, i) => {
                                 const incHeight = (monthlyIncomeTotals[i] / maxMonthlyValue) * 100;
                                 const expHeight = (monthlyExpenseTotals[i] / maxMonthlyValue) * 100;
@@ -327,42 +328,43 @@ export default function DashboardPage() {
                             })}
                         </div>
                     </div>
+                    </div>
                 </div>
 
                 {/* DESGLOSE ESTRUCTURAL */}
-                <div className="bg-white rounded-[3.5rem] shadow-[0_30px_80px_rgba(0,0,0,0.04)] border border-gray-100 overflow-hidden flex flex-col">
-                    <div className="p-10 flex flex-col md:flex-row md:items-center justify-between gap-6 bg-gradient-to-b from-gray-50/50 to-white">
+                <div className="bg-white rounded-[2rem] shadow-[0_30px_80px_rgba(0,0,0,0.04)] border border-gray-100 overflow-hidden flex flex-col">
+                    <div className="p-6 md:p-8 flex flex-col md:flex-row md:items-center justify-between gap-6 bg-gradient-to-b from-gray-50/50 to-white">
                         <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-100 animate-bounce-slow">
-                                <Maximize2 className="w-6 h-6 text-white" />
+                            <div className="w-10 h-10 md:w-12 md:h-12 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-100 animate-bounce-slow">
+                                <Maximize2 className="w-5 h-5 md:w-6 md:h-6 text-white" />
                             </div>
                             <div>
-                                <h2 className="text-2xl font-black text-gray-800 tracking-tight">Estructura Detallada por Meses</h2>
+                                <h2 className="text-xl md:text-2xl font-black text-gray-800 tracking-tight">Estructura Detallada por Meses</h2>
                                 <p className="text-[10px] text-gray-400 font-black uppercase tracking-[0.2em] mt-1 flex items-center gap-2">
-                                    <ArrowRight className="w-3 h-3 animate-pulse" /> Desliza para navegar entre meses
+                                    <ArrowRight className="w-3 h-3 animate-pulse" /> Desliza para navegar
                                 </p>
                             </div>
                         </div>
                         <div className="flex gap-3">
-                            <button onClick={expandAll} className="px-5 py-2.5 bg-indigo-50 text-indigo-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-100 transition-all border border-indigo-100">Expandir Todo</button>
-                            <button onClick={collapseAll} className="px-5 py-2.5 text-gray-400 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-100 transition-all">Contraer</button>
+                            <button onClick={expandAll} className="px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-100 transition-all border border-indigo-100">Expandir Todo</button>
+                            <button onClick={collapseAll} className="px-4 py-2 text-gray-400 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-100 transition-all">Contraer</button>
                         </div>
                     </div>
 
                     <div className="relative">
                         <div className="overflow-x-auto custom-scrollbar-premium">
-                            <table className="w-full text-left border-collapse min-w-[1600px]">
+                            <table className="w-full text-left border-collapse min-w-[1400px]">
                                 <thead>
                                     <tr className="bg-gradient-to-r from-gray-50 to-white border-b border-gray-100">
-                                        <th className="sticky left-0 bg-white/95 backdrop-blur-md z-40 p-2 md:p-6 pl-2 md:pl-10 text-[8px] md:text-[10px] font-black uppercase tracking-wider md:tracking-[0.25em] w-20 md:w-80 border-r border-gray-100 shadow-[10px_0_20px_-10px_rgba(0,0,0,0.1)] text-gray-500">
+                                        <th className="sticky left-0 bg-white/95 backdrop-blur-md z-40 p-3 md:p-4 pl-4 md:pl-8 text-[9px] md:text-[11px] font-black uppercase tracking-wider md:tracking-[0.2em] w-32 md:w-64 border-r border-gray-100 shadow-[10px_0_20px_-10px_rgba(0,0,0,0.1)] text-gray-500">
                                             Clasificación
                                         </th>
                                         {months.map(m => (
-                                            <th key={m} className="p-2 md:p-6 text-center text-[9px] md:text-[11px] font-black uppercase tracking-widest border-r border-gray-50 text-gray-400 w-16 md:w-32">
+                                            <th key={m} className="p-3 md:p-4 text-center text-[10px] md:text-xs font-black uppercase tracking-widest border-r border-gray-50 text-gray-400 w-20 md:w-28">
                                                 {m}
                                             </th>
                                         ))}
-                                        <th className="p-2 md:p-6 text-right text-[9px] md:text-[11px] font-black uppercase tracking-widest w-24 md:w-40 bg-indigo-50/50 text-indigo-600">
+                                        <th className="p-3 md:p-4 text-right text-[10px] md:text-xs font-black uppercase tracking-widest w-28 md:w-36 bg-indigo-50/50 text-indigo-600">
                                             Total Anual
                                         </th>
                                     </tr>
@@ -370,15 +372,15 @@ export default function DashboardPage() {
                                 <tbody className="divide-y divide-gray-50">
                                     {/* SECCIÓN INGRESOS */}
                                     <tr className="bg-gradient-to-r from-emerald-400 to-teal-500 group">
-                                        <td className="sticky left-0 bg-gradient-to-r from-emerald-400 to-teal-500 z-30 p-2 md:p-6 pl-2 md:pl-10 border-r border-emerald-300 text-white font-black uppercase text-[9px] md:text-xs tracking-[0.05em] md:tracking-[0.2em] shadow-[10px_0_20px_-5px_rgba(16,185,129,0.3)] flex items-center gap-1 md:gap-3 overflow-hidden">
-                                            <TrendingUp className="w-3 h-3 md:w-5 md:h-5 flex-shrink-0" /> <span className="truncate">INGRESOS</span>
+                                        <td className="sticky left-0 bg-gradient-to-r from-emerald-400 to-teal-500 z-30 p-3 md:p-4 pl-4 md:pl-8 border-r border-emerald-300 text-white font-black uppercase text-[10px] md:text-xs tracking-[0.1em] shadow-[10px_0_20px_-5px_rgba(16,185,129,0.3)] flex items-center gap-2 overflow-hidden">
+                                            <TrendingUp className="w-4 h-4 md:w-5 md:h-5 flex-shrink-0" /> <span className="truncate">INGRESOS</span>
                                         </td>
                                         {monthlyIncomeTotals.map((tot, i) => (
-                                            <td key={`inc-tot-${i}`} className="p-2 md:p-6 text-center font-black text-white/90 text-[10px] md:text-sm border-r border-white/10 group-hover:bg-black/5 transition-colors">
+                                            <td key={`inc-tot-${i}`} className="p-3 md:p-4 text-center font-black text-white/90 text-[10px] md:text-sm border-r border-white/10 group-hover:bg-black/5 transition-colors">
                                                 {formatSoles(tot)}
                                             </td>
                                         ))}
-                                        <td className="p-2 md:p-6 text-right font-black bg-emerald-700 text-white text-sm md:text-lg">
+                                        <td className="p-3 md:p-4 text-right font-black bg-emerald-700 text-white text-xs md:text-base">
                                             S/ {formatSoles(grandTotalIncome)}
                                         </td>
                                     </tr>
@@ -387,16 +389,16 @@ export default function DashboardPage() {
                                         const rowTotal = inc.values.reduce((a, b) => a + b, 0);
                                         return (
                                             <tr key={`inc-row-${i}`} className="border-b border-gray-50 hover:bg-emerald-50/30 transition-colors group">
-                                                <td className="sticky left-0 bg-white/95 backdrop-blur-md group-hover:bg-emerald-50/20 z-20 p-2 md:p-5 pl-4 md:pl-16 border-r border-gray-100 text-gray-700 font-bold text-[9px] md:text-xs shadow-[8px_0_15px_-5px_rgba(0,0,0,0.05)] flex items-center gap-1.5 md:gap-4 overflow-hidden">
-                                                    <div className="w-1.5 h-1.5 md:w-2.5 md:h-2.5 rounded-full bg-emerald-400 shadow-lg shadow-emerald-100 flex-shrink-0"></div>
+                                                <td className="sticky left-0 bg-white/95 backdrop-blur-md group-hover:bg-emerald-50/20 z-20 p-2 md:p-3 pl-6 md:pl-12 border-r border-gray-100 text-gray-700 font-bold text-[10px] md:text-xs shadow-[8px_0_15px_-5px_rgba(0,0,0,0.05)] flex items-center gap-2 overflow-hidden">
+                                                    <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-lg shadow-emerald-100 flex-shrink-0"></div>
                                                     <span className="truncate" title={inc.name}>{inc.name}</span>
                                                 </td>
                                                 {inc.values.map((v, j) => (
-                                                    <td key={`inc-v-${j}`} className="p-2 md:p-5 text-center text-gray-500 font-bold text-[9px] md:text-[11px] border-r border-gray-100/50">
+                                                    <td key={`inc-v-${j}`} className="p-2 md:p-3 text-center text-gray-600 font-bold text-[10px] md:text-[11px] border-r border-gray-100/50">
                                                         {formatSoles(v)}
                                                     </td>
                                                 ))}
-                                                <td className="p-2 md:p-5 text-right font-black text-emerald-700 text-[9px] md:text-[11px] bg-emerald-50/20">
+                                                <td className="p-2 md:p-3 text-right font-black text-emerald-700 text-[10px] md:text-[11px] bg-emerald-50/20">
                                                     {formatSoles(rowTotal)}
                                                 </td>
                                             </tr>
@@ -405,15 +407,15 @@ export default function DashboardPage() {
 
                                     {/* SECCIÓN EGRESOS */}
                                     <tr className="bg-gradient-to-r from-purple-400 to-pink-500 group">
-                                        <td className="sticky left-0 bg-gradient-to-r from-purple-400 to-pink-500 z-30 p-2 md:p-6 pl-2 md:pl-10 border-r border-purple-300 text-white font-black uppercase text-[9px] md:text-xs tracking-[0.05em] md:tracking-[0.2em] shadow-[10px_0_20px_-5px_rgba(168,85,247,0.3)] flex items-center gap-1 md:gap-3 overflow-hidden">
-                                            <TrendingDown className="w-3 h-3 md:w-5 md:h-5 flex-shrink-0" /> <span className="truncate">EGRESOS</span>
+                                        <td className="sticky left-0 bg-gradient-to-r from-purple-400 to-pink-500 z-30 p-3 md:p-4 pl-4 md:pl-8 border-r border-purple-300 text-white font-black uppercase text-[10px] md:text-xs tracking-[0.1em] shadow-[10px_0_20px_-5px_rgba(168,85,247,0.3)] flex items-center gap-2 overflow-hidden">
+                                            <TrendingDown className="w-4 h-4 md:w-5 md:h-5 flex-shrink-0" /> <span className="truncate">EGRESOS</span>
                                         </td>
                                         {monthlyExpenseTotals.map((tot, i) => (
-                                            <td key={`exp-tot-${i}`} className="p-2 md:p-6 text-center font-black text-white/90 text-[10px] md:text-sm border-r border-white/10 group-hover:bg-black/5 transition-colors">
+                                            <td key={`exp-tot-${i}`} className="p-3 md:p-4 text-center font-black text-white/90 text-[10px] md:text-sm border-r border-white/10 group-hover:bg-black/5 transition-colors">
                                                 {formatSoles(tot)}
                                             </td>
                                         ))}
-                                        <td className="p-2 md:p-6 text-right font-black bg-purple-700 text-white text-sm md:text-lg">
+                                        <td className="p-3 md:p-4 text-right font-black bg-purple-700 text-white text-xs md:text-base">
                                             S/ {formatSoles(grandTotalExpense)}
                                         </td>
                                     </tr>
@@ -429,18 +431,18 @@ export default function DashboardPage() {
                                         return (
                                             <React.Fragment key={`exp-cat-f2-${i}`}>
                                                 <tr className="border-b border-gray-100 hover:bg-purple-50/10 transition-colors cursor-pointer group" onClick={() => toggleCat(`exp-${i}`)}>
-                                                    <td className="sticky left-0 bg-white/95 backdrop-blur-md group-hover:bg-purple-50/5 z-20 p-2 md:p-5 pl-2 md:pl-10 font-black text-gray-800 text-[9px] md:text-xs uppercase border-r border-gray-100 shadow-[8px_0_15px_-5px_rgba(0,0,0,0.05)] flex items-center justify-between transition-colors pr-2 md:pr-6">
-                                                        <div className="flex items-center gap-1 md:gap-3 overflow-hidden">
-                                                            {isExpanded ? <ChevronDown className="w-3 h-3 md:w-5 md:h-5 text-purple-500 flex-shrink-0" /> : <ChevronRight className="w-3 h-3 md:w-5 md:h-5 text-gray-300 flex-shrink-0" />}
-                                                            <span className="truncate w-[60px] md:w-auto" title={cat.category}>{cat.category}</span>
+                                                    <td className="sticky left-0 bg-white/95 backdrop-blur-md group-hover:bg-purple-50/5 z-20 p-2 md:p-3 pl-4 md:pl-8 font-black text-gray-800 text-[10px] md:text-xs uppercase border-r border-gray-100 shadow-[8px_0_15px_-5px_rgba(0,0,0,0.05)] flex items-center justify-between transition-colors pr-2 md:pr-4">
+                                                        <div className="flex items-center gap-2 overflow-hidden">
+                                                            {isExpanded ? <ChevronDown className="w-4 h-4 text-purple-500 flex-shrink-0" /> : <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0" />}
+                                                            <span className="truncate" title={cat.category}>{cat.category}</span>
                                                         </div>
                                                     </td>
                                                     {catMonthlyTotals.map((tot, j) => (
-                                                        <td key={`cat-tot-v2-${j}`} className={`p-2 md:p-5 text-center text-[9px] md:text-[11px] font-black border-r border-gray-100/50 ${tot > 0 ? 'text-gray-800' : 'text-gray-300'}`}>
+                                                        <td key={`cat-tot-v2-${j}`} className={`p-2 md:p-3 text-center text-[10px] md:text-[11px] font-black border-r border-gray-100/50 ${tot > 0 ? 'text-gray-800' : 'text-gray-400'}`}>
                                                             {formatSoles(tot)}
                                                         </td>
                                                     ))}
-                                                    <td className="p-2 md:p-5 text-right font-black text-purple-600 text-[9px] md:text-xs bg-purple-50/10">
+                                                    <td className="p-2 md:p-3 text-right font-black text-purple-600 text-[10px] md:text-xs bg-purple-50/10">
                                                         {formatSoles(catGrandTotal)}
                                                     </td>
                                                 </tr>
@@ -449,16 +451,16 @@ export default function DashboardPage() {
                                                     const rowTotal = sub.values.reduce((a, b) => a + b, 0);
                                                     return (
                                                         <tr key={`exp-sub-v2-${j}`} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
-                                                            <td className="sticky left-0 bg-gray-50/90 backdrop-blur-md z-10 p-1.5 md:p-4 pl-6 md:pl-20 border-r border-gray-100 text-gray-500 font-bold text-[8px] md:text-[10px] shadow-[8px_0_15px_-5px_rgba(0,0,0,0.02)] flex items-center gap-1 md:gap-3 overflow-hidden">
-                                                                <div className="w-1 h-1 md:w-2 md:h-2 rounded-full bg-purple-300 shadow-sm flex-shrink-0"></div>
-                                                                <span className="truncate w-[65px] md:w-auto" title={sub.name}>{sub.name}</span>
+                                                            <td className="sticky left-0 bg-gray-50/90 backdrop-blur-md z-10 p-1.5 md:p-2 pl-8 md:pl-14 border-r border-gray-100 text-gray-600 font-bold text-[9px] md:text-[10px] shadow-[8px_0_15px_-5px_rgba(0,0,0,0.02)] flex items-center gap-2 overflow-hidden">
+                                                                <div className="w-1.5 h-1.5 rounded-full bg-purple-300 shadow-sm flex-shrink-0"></div>
+                                                                <span className="truncate" title={sub.name}>{sub.name}</span>
                                                             </td>
                                                             {sub.values.map((v, k) => (
-                                                                <td key={`exp-v-v2-${k}`} className="p-1.5 md:p-4 text-center text-gray-400 font-bold text-[8px] md:text-[10px] border-r border-gray-50/50">
+                                                                <td key={`exp-v-v2-${k}`} className="p-1.5 md:p-2 text-center text-gray-500 font-medium text-[9px] md:text-[10px] border-r border-gray-50/50">
                                                                     {formatSoles(v)}
                                                                 </td>
                                                             ))}
-                                                            <td className="p-1.5 md:p-4 text-right font-black text-purple-400 text-[8px] md:text-[10px] bg-purple-50/5">
+                                                            <td className="p-1.5 md:p-2 text-right font-black text-purple-500 text-[9px] md:text-[10px] bg-purple-50/5">
                                                                     {formatSoles(rowTotal)}
                                                             </td>
                                                         </tr>
@@ -470,15 +472,15 @@ export default function DashboardPage() {
 
                                     {/* BALANCE NETO FINAL */}
                                     <tr className={`border-t-4 border-white text-white shadow-[0_-20px_60px_rgba(0,0,0,0.2)] ${grandTotalBalance >= 0 ? 'bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-600' : 'bg-gradient-to-r from-rose-600 via-pink-600 to-orange-600'}`}>
-                                        <td className={`sticky left-0 z-40 p-3 md:p-8 pl-2 md:pl-10 font-black uppercase tracking-[0.05em] md:tracking-[0.4em] text-[10px] md:text-sm border-r border-white/20 shadow-[15px_0_35px_rgba(0,0,0,0.4)] ${grandTotalBalance >= 0 ? 'bg-emerald-600' : 'bg-rose-600'} flex items-center overflow-hidden`}>
+                                        <td className={`sticky left-0 z-40 p-4 md:p-6 pl-4 md:pl-8 font-black uppercase tracking-[0.1em] md:tracking-[0.2em] text-[10px] md:text-sm border-r border-white/20 shadow-[15px_0_35px_rgba(0,0,0,0.4)] ${grandTotalBalance >= 0 ? 'bg-emerald-600' : 'bg-rose-600'} flex items-center overflow-hidden`}>
                                             <span className="truncate">BALANCE NETO</span>
                                         </td>
                                         {monthlyBalances.map((bal, i) => (
-                                            <td key={`bal-f2-${i}`} className={`p-3 md:p-8 text-center font-black text-[11px] md:text-lg border-r border-white/10 ${bal >= 0 ? 'bg-white/5' : 'bg-black/5 text-white/50'}`}>
+                                            <td key={`bal-f2-${i}`} className={`p-4 md:p-6 text-center font-black text-[11px] md:text-sm border-r border-white/10 ${bal >= 0 ? 'bg-white/10' : 'bg-black/10 text-white/70'}`}>
                                                 {formatSoles(bal)}
                                             </td>
                                         ))}
-                                        <td className={`p-3 md:p-8 text-right font-black text-sm md:text-2xl ${grandTotalBalance >= 0 ? 'bg-emerald-900/50' : 'bg-rose-900/50'}`}>
+                                        <td className={`p-4 md:p-6 text-right font-black text-sm md:text-xl ${grandTotalBalance >= 0 ? 'bg-emerald-900/50' : 'bg-rose-900/50'}`}>
                                             S/ {formatSoles(grandTotalBalance)}
                                         </td>
                                     </tr>
