@@ -41,6 +41,7 @@ CREATE TABLE `Transaction` (
     `date` DATETIME(3) NOT NULL,
     `dueDate` DATETIME(3) NULL,
     `paymentMethod` ENUM('CASH', 'CARD', 'TRANSFER', 'YAPE', 'PLIN') NOT NULL,
+    `name` VARCHAR(191) NULL,
     `description` VARCHAR(191) NULL,
     `amount` DOUBLE NOT NULL,
     `currency` ENUM('PEN', 'USD') NOT NULL,
