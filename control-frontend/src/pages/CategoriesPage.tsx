@@ -197,7 +197,7 @@ export default function CategoriesPage() {
     <Appshell>
       <div className="flex flex-col gap-8 animate-fade-in-up pb-10">
         {/* HEADER */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 p-8 bg-white/40 backdrop-blur-xl border border-white/60 rounded-[2.5rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] relative overflow-hidden">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 md:p-8 bg-white/40 backdrop-blur-xl border border-white/60 rounded-[2rem] md:rounded-[2.5rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-400 via-purple-500 to-pink-400"></div>
           <div className="flex items-center gap-5">
             <div className="p-4 bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-2xl shadow-xl shadow-indigo-100">
@@ -214,13 +214,13 @@ export default function CategoriesPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="relative group">
               <Search className="w-5 h-5 text-gray-400 absolute left-4 top-1/2 transform -translate-y-1/2 transition-colors group-focus-within:text-indigo-500" />
               <input
                 type="text"
                 placeholder="Buscar categoría..."
-                className="pl-11 pr-4 py-3 bg-white/70 backdrop-blur-md border border-white rounded-2xl text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all shadow-sm w-72 text-gray-700 font-bold placeholder-gray-400"
+                className="pl-11 pr-4 py-3 bg-white/70 backdrop-blur-md border border-white rounded-2xl text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all shadow-sm w-full md:w-72 text-gray-700 font-bold placeholder-gray-400"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
@@ -235,16 +235,16 @@ export default function CategoriesPage() {
         </div>
 
         {/* TABS VIBRANTES */}
-        <div className="flex gap-4 self-start bg-white/50 backdrop-blur-md p-2 rounded-[2rem] border border-white shadow-sm">
+        <div className="flex flex-wrap gap-2 sm:gap-4 self-start bg-white/50 backdrop-blur-md p-2 rounded-[2rem] border border-white shadow-sm">
           <button
             onClick={() => setActiveTab("INCOME")}
-            className={`flex items-center gap-3 px-8 py-3 rounded-[1.5rem] text-xs font-black uppercase tracking-widest transition-all ${activeTab === "INCOME" ? "bg-emerald-500 text-white shadow-lg shadow-emerald-200 scale-105" : "text-gray-400 hover:text-emerald-600 hover:bg-emerald-50"}`}
+            className={`flex items-center justify-center flex-1 sm:flex-none gap-2 sm:gap-3 px-5 py-2.5 sm:px-8 sm:py-3 rounded-[1.5rem] text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all ${activeTab === "INCOME" ? "bg-emerald-500 text-white shadow-lg shadow-emerald-200 scale-105" : "text-gray-400 hover:text-emerald-600 hover:bg-emerald-50"}`}
           >
             <CircleDollarSign className="w-4 h-4" /> Ingresos
           </button>
           <button
             onClick={() => setActiveTab("EXPENSE")}
-            className={`flex items-center gap-3 px-8 py-3 rounded-[1.5rem] text-xs font-black uppercase tracking-widest transition-all ${activeTab === "EXPENSE" ? "bg-rose-500 text-white shadow-lg shadow-rose-200 scale-105" : "text-gray-400 hover:text-rose-600 hover:bg-rose-50"}`}
+            className={`flex items-center justify-center flex-1 sm:flex-none gap-2 sm:gap-3 px-5 py-2.5 sm:px-8 sm:py-3 rounded-[1.5rem] text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all ${activeTab === "EXPENSE" ? "bg-rose-500 text-white shadow-lg shadow-rose-200 scale-105" : "text-gray-400 hover:text-rose-600 hover:bg-rose-50"}`}
           >
             <TrendingDown className="w-4 h-4" /> Egresos
           </button>

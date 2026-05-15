@@ -181,7 +181,7 @@ export default function UserPage() {
     <Appshell>
       <div className="flex flex-col gap-8 animate-fade-in-up pb-10">
         {/* HEADER */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 p-8 bg-white/40 backdrop-blur-xl border border-white/60 rounded-[2.5rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] relative overflow-hidden">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 md:p-8 bg-white/40 backdrop-blur-xl border border-white/60 rounded-[2rem] md:rounded-[2.5rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-400 via-violet-500 to-indigo-400"></div>
           <div className="flex items-center gap-5">
             <div className="p-4 bg-gradient-to-br from-purple-500 to-purple-700 rounded-2xl shadow-xl shadow-purple-100">
@@ -198,13 +198,13 @@ export default function UserPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="relative group">
               <Search className="w-5 h-5 text-gray-400 absolute left-4 top-1/2 transform -translate-y-1/2 transition-colors group-focus-within:text-purple-500" />
               <input
                 type="text"
                 placeholder="Buscar usuario..."
-                className="pl-11 pr-4 py-3 bg-white/70 backdrop-blur-md border border-white rounded-2xl text-sm focus:outline-none focus:ring-4 focus:ring-purple-500/10 transition-all shadow-sm w-72 text-gray-700 font-bold placeholder-gray-400"
+                className="pl-11 pr-4 py-3 bg-white/70 backdrop-blur-md border border-white rounded-2xl text-sm focus:outline-none focus:ring-4 focus:ring-purple-500/10 transition-all shadow-sm w-full md:w-72 text-gray-700 font-bold placeholder-gray-400"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
@@ -220,7 +220,8 @@ export default function UserPage() {
 
         {/* TABLE CARD */}
         <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-[0_20px_60px_-10px_rgba(0,0,0,0.05)] overflow-hidden">
-          <div className="overflow-x-auto">
+          {/* VISTA ESCRITORIO: TABLA */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-gray-50/50 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-100">
@@ -297,19 +298,62 @@ export default function UserPage() {
                     </tr>
                   ))
                 )}
-                {!loading && filteredUsers.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="p-20 text-center">
-                      <Search className="w-12 h-12 text-gray-100 mx-auto mb-4" />
-                      <p className="text-sm text-gray-400 font-bold uppercase tracking-widest">
-                        No se encontraron usuarios
-                      </p>
-                    </td>
-                  </tr>
-                )}
               </tbody>
             </table>
           </div>
+
+          {/* VISTA MÓVIL: CARDS */}
+          <div className="md:hidden divide-y divide-gray-100">
+            {loading ? (
+              <div className="p-20 text-center">
+                <Loader2 className="w-10 h-10 text-purple-500 animate-spin mx-auto mb-4" />
+              </div>
+            ) : (
+              filteredUsers.map((user) => (
+                <div key={user.id} className="p-6 space-y-4">
+                  <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-500 to-indigo-600 flex items-center justify-center text-white font-black text-lg shadow-lg shadow-purple-100">
+                        {user.name.charAt(0)}{user.lastName.charAt(0)}
+                      </div>
+                      <div>
+                        <h3 className="font-black text-gray-800 text-base">{user.name} {user.lastName}</h3>
+                        <p className="text-xs text-gray-400 font-medium">{user.email}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleOpenEdit(user)}
+                      className="p-3 bg-white border border-gray-100 text-purple-600 rounded-xl shadow-sm"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-4 pt-2">
+                    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider ${user.role === "ADMIN" ? "bg-indigo-100 text-indigo-700" : "bg-gray-100 text-gray-600"}`}>
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      {user.role}
+                    </span>
+                    <button
+                      onClick={() => toggleStatus(user)}
+                      className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-xl transition-all ${user.status === "TRUE" ? "bg-emerald-500 text-white" : "bg-rose-100 text-rose-600"}`}
+                    >
+                      {user.status === "TRUE" ? "Activo" : "Inactivo"}
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+          {/* EMPTY STATE */}
+          {!loading && filteredUsers.length === 0 && (
+            <div className="p-20 text-center">
+              <Search className="w-12 h-12 text-gray-100 mx-auto mb-4" />
+              <p className="text-sm text-gray-400 font-bold uppercase tracking-widest">
+                No se encontraron usuarios
+              </p>
+            </div>
+          )}
         </div>
 
         {/* MODAL CREAR USUARIO */}

@@ -264,7 +264,7 @@ export default function ExpensesPage() {
   return (
     <Appshell>
       <div className="flex flex-col gap-8 animate-fade-in-up pb-10">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 p-8 bg-white/40 backdrop-blur-xl border border-white/60 rounded-[2.5rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] relative overflow-hidden">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 md:p-8 bg-white/40 backdrop-blur-xl border border-white/60 rounded-[2rem] md:rounded-[2.5rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-rose-400 via-pink-500 to-rose-600"></div>
           <div className="flex items-center gap-5">
             <div className="p-4 bg-gradient-to-br from-rose-500 to-rose-700 rounded-2xl shadow-xl shadow-rose-100">
@@ -281,13 +281,13 @@ export default function ExpensesPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="relative group">
               <Search className="w-5 h-5 text-gray-400 absolute left-4 top-1/2 transform -translate-y-1/2 transition-colors group-focus-within:text-rose-500" />
               <input
                 type="text"
                 placeholder="Buscar egreso..."
-                className="pl-11 pr-4 py-3 bg-white/70 backdrop-blur-md border border-white rounded-2xl text-sm focus:outline-none focus:ring-4 focus:ring-rose-500/10 transition-all shadow-sm w-72 text-gray-700 font-bold placeholder-gray-400"
+                className="pl-11 pr-4 py-3 bg-white/70 backdrop-blur-md border border-white rounded-2xl text-sm focus:outline-none focus:ring-4 focus:ring-rose-500/10 transition-all shadow-sm w-full md:w-72 text-gray-700 font-bold placeholder-gray-400"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
@@ -302,139 +302,176 @@ export default function ExpensesPage() {
         </div>
 
         <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-[0_20px_60px_-10px_rgba(0,0,0,0.05)] overflow-hidden">
-          <div className="overflow-x-auto custom-scrollbar">
-            <table className="w-full text-left border-collapse min-w-[1300px]">
+          {/* VISTA ESCRITORIO: TABLA */}
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full text-left border-collapse min-w-[1200px]">
               <thead>
-                <tr className="bg-gradient-to-r from-rose-50 to-red-50 border-b border-rose-100 text-[11px] font-black uppercase tracking-widest text-rose-900">
-                  <th className="p-6 pl-8">Ref.</th>
-                  <th className="p-6">Categoría</th>
-                  <th className="p-6 text-center">Método</th>
-                  <th className="p-6">Fecha</th>
-                  <th className="p-6">Descripción</th>
-                  <th className="p-6 text-center">Estado / Flags</th>
-                  <th className="p-6 text-right">Importe</th>
-                  <th className="p-6 text-center">Divisa</th>
-                  <th className="p-6 text-center">Cotización</th>
-                  <th className="p-6 text-right bg-rose-500/5 text-rose-700">
-                    Total (Soles)
-                  </th>
-                  <th className="p-6 text-center pr-8">Acciones</th>
+                <tr className="bg-gray-50/50 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-100">
+                  <th className="p-5 pl-8">Categoría / Sub</th>
+                  <th className="p-5 text-center">Pago</th>
+                  <th className="p-5">Fecha</th>
+                  <th className="p-5">Descripción</th>
+                  <th className="p-5 text-center">Tags</th>
+                  <th className="p-5 text-right">Monto Original</th>
+                  <th className="p-5 text-center">Moneda</th>
+                  <th className="p-5 text-center">T.C</th>
+                  <th className="p-5 text-right">Monto Soles</th>
+                  <th className="p-5 pr-8 text-center">Acciones</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-rose-50">
-                {filtered.map((exp, index) => {
+              <tbody className="divide-y divide-gray-50/50">
+                {filtered.map((exp) => {
                   const montoSoles =
                     exp.currency === "USD"
                       ? exp.amount * exp.exchangeRate
                       : exp.amount;
+                  const categoryName = typeof exp.category === 'object' ? (exp.category as any).name : exp.category || "Otros";
+                  const subCategoryName = typeof exp.subCategory === 'object' ? (exp.subCategory as any).name : exp.subCategory;
+
                   return (
                     <tr
                       key={exp.id}
-                      className="hover:bg-rose-50/30 transition-all group"
+                      className="group transition-all hover:bg-gray-50/50"
                     >
-                      <td className="p-5 pl-8 text-xs font-black text-rose-400">
-                        #{index + 1}
-                      </td>
-                      <td className="p-5">
-                        <div className="flex flex-col gap-1">
-                          <span className="inline-flex items-center px-3 py-1 rounded-xl bg-rose-100 text-rose-700 text-[10px] font-black uppercase tracking-tighter border border-rose-200 shadow-sm w-fit">
-                            {exp.category}
-                          </span>
-                          {exp.subCategory && (
-                            <span className="text-[9px] text-rose-600/60 font-black ml-1 uppercase tracking-widest">
-                              {exp.subCategory}
-                            </span>
-                          )}
+                      <td className="p-5 pl-8">
+                        <div className="font-black text-gray-800 text-sm">
+                          {categoryName}
                         </div>
+                        {subCategoryName && (
+                          <div className="text-[10px] text-rose-500 font-black mt-0.5 uppercase tracking-tighter">
+                            {subCategoryName}
+                          </div>
+                        )}
                       </td>
                       <td className="p-5 text-center">
                         <span className="px-3 py-1 rounded-lg bg-gray-50 text-gray-500 text-[9px] font-black uppercase border border-gray-100 tracking-tighter shadow-sm">
                           {getMethodBadge(exp.paymentMethod)}
                         </span>
                       </td>
-                      <td className="p-5 text-sm font-bold text-gray-700">
-                        <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-gray-100 shadow-sm w-fit">
-                          <Calendar className="w-3.5 h-3.5 text-rose-500" />
-                          {formatDate(exp.date)}
-                        </div>
+                      <td className="p-5 text-sm font-bold text-gray-600">
+                        {formatDate(exp.date)}
                       </td>
-                      <td className="p-5 text-sm font-bold text-gray-600 italic">
-                        "{exp.description}"
+                      <td className="p-5 text-sm font-bold text-gray-600">
+                        {exp.description}
                       </td>
-                      <td className="p-5">
-                        <div className="flex flex-col gap-1.5 items-center">
+                      <td className="p-5 text-center">
+                        <div className="flex gap-1 justify-center">
                           {exp.justified && (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-700 text-[9px] font-black uppercase tracking-widest border border-emerald-200">
-                              <Check className="w-3 h-3" /> Justificado
+                            <span className="px-2 py-1 bg-emerald-50 text-emerald-600 rounded-md text-[8px] font-black uppercase border border-emerald-100">
+                              Just.
                             </span>
                           )}
                           {exp.programmed && (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-100 text-amber-700 text-[9px] font-black uppercase tracking-widest border border-amber-200">
-                              <Clock className="w-3 h-3" /> Programado
-                            </span>
-                          )}
-                          {!exp.justified && !exp.programmed && (
-                            <span className="px-2.5 py-1 rounded-lg bg-gray-100 text-gray-400 text-[9px] font-black uppercase tracking-widest border border-gray-200">
-                              Ordinario
+                            <span className="px-2 py-1 bg-amber-50 text-amber-600 rounded-md text-[8px] font-black uppercase border border-amber-100">
+                              Prog.
                             </span>
                           )}
                         </div>
                       </td>
-                      <td className="p-5 text-right text-sm font-black text-gray-800">
-                        {exp.currency === "USD" ? "$" : "S/"}{" "}
-                        {exp.amount.toLocaleString()}
+                      <td className="p-5 text-right font-black text-gray-700">
+                        {exp.currency === "USD" ? "$" : "S/"} {exp.amount.toLocaleString()}
                       </td>
                       <td className="p-5 text-center">
-                        <span
-                          className={`text-[10px] font-black px-2 py-1 rounded-lg ${exp.currency === "USD" ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-500"}`}
-                        >
+                        <span className="text-[10px] font-black bg-gray-100 text-gray-500 px-2 py-1 rounded-md">
                           {exp.currency}
                         </span>
                       </td>
-                      <td className="p-5 text-center text-xs font-black text-gray-400">
-                        {exp.currency === "USD"
-                          ? exp.exchangeRate.toFixed(3)
-                          : "-"}
+                      <td className="p-5 text-center text-xs font-bold text-gray-400">
+                        {exp.currency === "USD" ? (exp.exchangeRate || 1).toFixed(2) : "-"}
                       </td>
-                      <td className="p-5 text-right text-lg font-black text-rose-600 bg-rose-50/20">
-                        S/{" "}
-                        {montoSoles.toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                        })}
+                      <td className="p-5 text-right font-black text-rose-600">
+                        S/ {montoSoles.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </td>
                       <td className="p-5 pr-8 text-center">
-                        <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-all scale-95 group-hover:scale-100">
+                        <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button
                             onClick={() => handleOpenEdit(exp)}
-                            className="p-2.5 bg-white border border-gray-100 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all shadow-sm"
+                            className="p-2 bg-blue-50 text-blue-600 rounded-lg"
                           >
-                            <Edit2 className="w-4 h-4" />
+                            <Edit2 className="w-3.5 h-3.5" />
                           </button>
                           <button
                             onClick={() => handleDelete(exp.id)}
-                            className="p-2.5 bg-white border border-gray-100 text-rose-600 hover:bg-rose-600 hover:text-white rounded-xl transition-all shadow-sm"
+                            className="p-2 bg-rose-50 text-rose-600 rounded-lg"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </td>
                     </tr>
                   );
                 })}
-                {filtered.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={11}
-                      className="p-20 text-center text-gray-400 font-bold uppercase tracking-widest text-xs"
-                    >
-                      Sin registros de egresos
-                    </td>
-                  </tr>
-                )}
               </tbody>
             </table>
           </div>
-        </div>
+
+          {/* VISTA MÓVIL: CARDS */}
+          <div className="md:hidden divide-y divide-gray-100">
+            {filtered.map((exp) => {
+              const montoSoles = exp.currency === "USD" ? exp.amount * exp.exchangeRate : exp.amount;
+              const categoryName = typeof exp.category === 'object' ? (exp.category as any).name : exp.category || "Otros";
+              const subCategoryName = typeof exp.subCategory === 'object' ? (exp.subCategory as any).name : exp.subCategory;
+
+              return (
+                <div key={exp.id} className="p-6 space-y-4">
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1">
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        <span className="text-[10px] font-black text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-100 uppercase tracking-widest">
+                          {categoryName}
+                        </span>
+                        {subCategoryName && (
+                          <span className="text-[10px] font-bold text-gray-400 bg-gray-50 px-2 py-0.5 rounded-md border border-gray-100 uppercase">
+                            {subCategoryName}
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="font-black text-gray-800 text-sm mt-1">
+                        {exp.description || "Sin descripción"}
+                      </h3>
+                      <p className="text-[10px] text-gray-400 font-bold mt-1 uppercase">
+                        {formatDate(exp.date)} • {getMethodBadge(exp.paymentMethod)}
+                      </p>
+                    </div>
+                    <div className="flex gap-2 ml-4">
+                      <button
+                        onClick={() => handleOpenEdit(exp)}
+                        className="p-2.5 bg-white border border-gray-200 text-blue-600 rounded-xl shadow-sm active:scale-95"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(exp.id)}
+                        className="p-2.5 bg-white border border-gray-200 text-rose-600 rounded-xl shadow-sm active:scale-95"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="bg-rose-50/30 p-4 rounded-2xl border border-rose-100/50 flex justify-between items-center">
+                    <div>
+                       <p className="text-[9px] font-black text-rose-900/40 uppercase tracking-widest mb-1">Gasto en Soles</p>
+                       <p className="text-xl font-black text-rose-600">S/ {montoSoles.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                    </div>
+                    <div className="text-right">
+                       <p className="text-[10px] font-bold text-gray-400 mb-1">{exp.currency} {exp.currency === "USD" ? `(T.C: ${exp.exchangeRate})` : ""}</p>
+                       <p className="text-sm font-black text-gray-600">
+                         {exp.currency === "USD" ? "$" : "S/"} {exp.amount.toLocaleString()}
+                       </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>{/* end md:hidden mobile cards */}
+
+          {filtered.length === 0 && (
+            <div className="p-20 text-center text-gray-400 font-bold uppercase tracking-widest text-xs">
+              Sin registros de egresos
+            </div>
+          )}
+        </div>{/* end bg-white outer container */}
 
         {/* MODAL REDISEÑADO - MÁS COMPACTO Y AMPLIO */}
         <Modal
@@ -761,17 +798,6 @@ export default function ExpensesPage() {
           message="¿Estás seguro de que deseas eliminar este registro de gasto permanentemente?"
         />
       </div>
-
-      <style
-        dangerouslySetInnerHTML={{
-          __html: `
-        .custom-scrollbar::-webkit-scrollbar { height: 10px; width: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: #f8fafc; border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; border: 2px solid #f8fafc; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-      `,
-        }}
-      />
     </Appshell>
   );
 }

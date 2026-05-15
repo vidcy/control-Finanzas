@@ -246,7 +246,7 @@ export default function IncomePage() {
   return (
     <Appshell>
       <div className="flex flex-col gap-8 animate-fade-in-up pb-10">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 p-8 bg-white/40 backdrop-blur-xl border border-white/60 rounded-[2.5rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] relative overflow-hidden">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 md:p-8 bg-white/40 backdrop-blur-xl border border-white/60 rounded-[2rem] md:rounded-[2.5rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-400 via-teal-500 to-emerald-600"></div>
           <div className="flex items-center gap-5">
             <div className="p-4 bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-2xl shadow-xl shadow-emerald-100">
@@ -263,13 +263,13 @@ export default function IncomePage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="relative group">
               <Search className="w-5 h-5 text-gray-400 absolute left-4 top-1/2 transform -translate-y-1/2 transition-colors group-focus-within:text-emerald-500" />
               <input
                 type="text"
                 placeholder="Buscar ingreso..."
-                className="pl-11 pr-4 py-3 bg-white/70 backdrop-blur-md border border-white rounded-2xl text-sm focus:outline-none focus:ring-4 focus:ring-emerald-500/10 transition-all shadow-sm w-72 text-gray-700 font-bold placeholder-gray-400"
+                className="pl-11 pr-4 py-3 bg-white/70 backdrop-blur-md border border-white rounded-2xl text-sm focus:outline-none focus:ring-4 focus:ring-emerald-500/10 transition-all shadow-sm w-full md:w-72 text-gray-700 font-bold placeholder-gray-400"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
@@ -284,7 +284,7 @@ export default function IncomePage() {
         </div>
 
         <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-[0_20px_60px_-10px_rgba(0,0,0,0.05)] overflow-hidden">
-          <div className="overflow-x-auto custom-scrollbar">
+          <div className="hidden md:block overflow-x-auto custom-scrollbar">
             <table className="w-full text-left border-collapse min-w-[1300px]">
               <thead>
                 <tr className="bg-gradient-to-r from-emerald-50 to-teal-50 border-b border-emerald-100 text-[11px] font-black uppercase tracking-widest text-emerald-900">
@@ -319,11 +319,11 @@ export default function IncomePage() {
                       <td className="p-5">
                         <div className="flex flex-col gap-1">
                           <span className="inline-flex items-center px-3 py-1 rounded-xl bg-emerald-100 text-emerald-700 text-[10px] font-black uppercase tracking-tighter border border-emerald-200 shadow-sm w-fit">
-                            {inc.category}
+                            {typeof inc.category === 'object' ? (inc.category as any).name : inc.category || "Otros"}
                           </span>
-                          {inc.subCategory && (
+                          {(typeof inc.subCategory === 'object' ? (inc.subCategory as any).name : inc.subCategory) && (
                             <span className="text-[9px] text-emerald-600/60 font-black ml-1 uppercase tracking-widest">
-                              {inc.subCategory}
+                              {typeof inc.subCategory === 'object' ? (inc.subCategory as any).name : inc.subCategory}
                             </span>
                           )}
                         </div>
@@ -333,48 +333,36 @@ export default function IncomePage() {
                           {getMethodBadge(inc.paymentMethod)}
                         </span>
                       </td>
-                      <td className="p-5 text-sm font-bold text-gray-700">
-                        <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-gray-100 shadow-sm w-fit">
-                          <Calendar className="w-3.5 h-3.5 text-emerald-500" />
-                          {formatDate(inc.date)}
-                        </div>
+                      <td className="p-5 text-sm font-bold text-gray-500">
+                        {formatDate(inc.date)}
                       </td>
-                      <td className="p-5 text-sm font-bold text-gray-600 italic">
+                      <td className="p-5 text-sm font-medium text-gray-600 italic">
                         "{inc.description}"
                       </td>
                       <td className="p-5 text-right text-sm font-black text-gray-800">
                         {inc.currency === "USD" ? "$" : "S/"}{" "}
                         {inc.amount.toLocaleString()}
                       </td>
-                      <td className="p-5 text-center">
-                        <span
-                          className={`text-[10px] font-black px-2 py-1 rounded-lg ${inc.currency === "USD" ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-500"}`}
-                        >
-                          {inc.currency}
-                        </span>
+                      <td className="p-5 text-center text-xs font-black text-gray-400">
+                        {inc.currency}
                       </td>
                       <td className="p-5 text-center text-xs font-black text-gray-400">
-                        {inc.currency === "USD"
-                          ? inc.exchangeRate.toFixed(3)
-                          : "-"}
+                        {inc.currency === "USD" ? (inc.exchangeRate || 1).toFixed(3) : "-"}
                       </td>
-                      <td className="p-5 text-right text-lg font-black text-emerald-600 bg-emerald-50/20">
-                        S/{" "}
-                        {montoSoles.toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                        })}
+                      <td className="p-5 text-right text-lg font-black text-emerald-600">
+                        S/ {montoSoles.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </td>
                       <td className="p-5 pr-8 text-center">
-                        <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-all scale-95 group-hover:scale-100">
+                        <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-all">
                           <button
                             onClick={() => handleOpenEdit(inc)}
-                            className="p-2.5 bg-white border border-gray-100 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all shadow-sm"
+                            className="p-2 bg-gray-100 text-blue-600 hover:bg-blue-600 hover:text-white rounded-lg transition-all"
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleDelete(inc.id)}
-                            className="p-2.5 bg-white border border-gray-100 text-rose-600 hover:bg-rose-600 hover:text-white rounded-xl transition-all shadow-sm"
+                            className="p-2 bg-gray-100 text-rose-600 hover:bg-rose-600 hover:text-white rounded-lg transition-all"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -383,19 +371,76 @@ export default function IncomePage() {
                     </tr>
                   );
                 })}
-                {filtered.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={10}
-                      className="p-20 text-center text-gray-400 font-bold uppercase tracking-widest text-xs"
-                    >
-                      Sin registros de ingresos
-                    </td>
-                  </tr>
-                )}
               </tbody>
             </table>
           </div>
+
+          {/* VISTA MÓVIL: CARDS */}
+          <div className="md:hidden divide-y divide-gray-100">
+            {filtered.map((inc) => {
+              const montoSoles = inc.currency === "USD" ? inc.amount * inc.exchangeRate : inc.amount;
+              const categoryName = typeof inc.category === 'object' ? (inc.category as any).name : inc.category || "Otros";
+              const subCategoryName = typeof inc.subCategory === 'object' ? (inc.subCategory as any).name : inc.subCategory;
+              
+              return (
+                <div key={inc.id} className="p-6 space-y-4">
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1">
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100 uppercase tracking-widest">
+                          {categoryName}
+                        </span>
+                        {subCategoryName && (
+                          <span className="text-[10px] font-bold text-gray-400 bg-gray-50 px-2 py-0.5 rounded-md border border-gray-100 uppercase">
+                            {subCategoryName}
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="font-black text-gray-800 text-sm mt-1">
+                        {inc.description || "Sin descripción"}
+                      </h3>
+                      <p className="text-[10px] text-gray-400 font-bold mt-1 uppercase">
+                        {formatDate(inc.date)} • {getMethodBadge(inc.paymentMethod)}
+                      </p>
+                    </div>
+                    <div className="flex gap-2 ml-4">
+                      <button
+                        onClick={() => handleOpenEdit(inc)}
+                        className="p-2.5 bg-white border border-gray-200 text-blue-600 rounded-xl shadow-sm active:scale-95"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(inc.id)}
+                        className="p-2.5 bg-white border border-gray-200 text-rose-600 rounded-xl shadow-sm active:scale-95"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="bg-emerald-50/30 p-4 rounded-2xl border border-emerald-100/50 flex justify-between items-center">
+                    <div>
+                       <p className="text-[9px] font-black text-emerald-900/40 uppercase tracking-widest mb-1">Total Percibido</p>
+                       <p className="text-xl font-black text-emerald-600">S/ {montoSoles.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                    </div>
+                    <div className="text-right">
+                       <p className="text-[10px] font-bold text-gray-400 mb-1">{inc.currency} {inc.currency === "USD" ? `(T.C: ${inc.exchangeRate})` : ""}</p>
+                       <p className="text-sm font-black text-gray-600">
+                         {inc.currency === "USD" ? "$" : "S/"} {inc.amount.toLocaleString()}
+                       </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {filtered.length === 0 && (
+            <div className="p-20 text-center text-gray-400 font-bold uppercase tracking-widest text-xs">
+              Sin registros de ingresos
+            </div>
+          )}
         </div>
 
         {/* MODAL REDISEÑADO - MÁS COMPACTO Y AMPLIO */}
@@ -663,18 +708,8 @@ export default function IncomePage() {
           title="Eliminar Ingreso"
           message="¿Estás seguro de que deseas eliminar este registro de ingreso permanentemente?"
         />
+        <style dangerouslySetInnerHTML={{ __html: '.custom-scrollbar::-webkit-scrollbar{height:10px;width:10px}.custom-scrollbar::-webkit-scrollbar-track{background:#f8fafc;border-radius:10px}.custom-scrollbar::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:10px;border:2px solid #f8fafc}.custom-scrollbar::-webkit-scrollbar-thumb:hover{background:#94a3b8}' }} />
       </div>
-
-      <style
-        dangerouslySetInnerHTML={{
-          __html: `
-        .custom-scrollbar::-webkit-scrollbar { height: 10px; width: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: #f8fafc; border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; border: 2px solid #f8fafc; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-      `,
-        }}
-      />
     </Appshell>
   );
 }

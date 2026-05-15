@@ -134,7 +134,7 @@ export default function DashboardPage() {
             <div className="flex flex-col gap-10 animate-fade-in-up pb-20">
 
                 {/* HEADER */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 p-8 bg-white/40 backdrop-blur-xl border border-white/60 rounded-[3rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] relative overflow-hidden">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 md:p-8 bg-white/40 backdrop-blur-xl border border-white/60 rounded-[2rem] md:rounded-[3rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] relative overflow-hidden">
                     <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"></div>
                     <div className="flex items-center gap-6">
                         <div className="p-4 bg-gradient-to-br from-indigo-600 to-indigo-800 rounded-2xl shadow-xl shadow-indigo-100 relative group overflow-hidden">
@@ -152,7 +152,7 @@ export default function DashboardPage() {
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
                         <button
                             onClick={() => setShowValues(!showValues)}
                             className="p-3 bg-white border border-gray-100 rounded-2xl text-gray-500 hover:text-indigo-600 hover:border-indigo-200 transition-all shadow-sm"
@@ -233,7 +233,7 @@ export default function DashboardPage() {
                 </div>
 
                 {/* CHART SECTION */}
-                <div className="bg-white rounded-[3.5rem] p-12 shadow-[0_30px_70px_rgba(0,0,0,0.03)] border border-gray-50 flex flex-col relative overflow-hidden">
+                <div className="bg-white rounded-[2rem] md:rounded-[3.5rem] p-6 md:p-12 shadow-[0_30px_70px_rgba(0,0,0,0.03)] border border-gray-50 flex flex-col relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-[40rem] h-[40rem] bg-indigo-50/20 rounded-full blur-[120px] -z-10 translate-x-1/2 -translate-y-1/2"></div>
 
                     <div className="flex flex-col md:flex-row md:items-center justify-between mb-16 gap-6">

@@ -322,7 +322,7 @@ export default function PendingPage() {
     <Appshell>
       <div className="flex flex-col gap-8 animate-fade-in-up pb-10">
         {/* HEADER */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 p-8 bg-white/40 backdrop-blur-xl border border-white/60 rounded-[2.5rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] relative overflow-hidden">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 md:p-8 bg-white/40 backdrop-blur-xl border border-white/60 rounded-[2rem] md:rounded-[2.5rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-400 via-indigo-500 to-rose-400"></div>
           <div className="flex items-center gap-5">
             <div className="p-4 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl shadow-xl shadow-indigo-100">
@@ -339,13 +339,13 @@ export default function PendingPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="relative group">
               <Search className="w-5 h-5 text-gray-400 absolute left-4 top-1/2 transform -translate-y-1/2 transition-colors group-focus-within:text-indigo-500" />
               <input
                 type="text"
                 placeholder="Buscar transacción..."
-                className="pl-11 pr-4 py-3 bg-white/70 backdrop-blur-md border border-white rounded-2xl text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all shadow-sm w-72 text-gray-700 font-bold placeholder-gray-400"
+                className="pl-11 pr-4 py-3 bg-white/70 backdrop-blur-md border border-white rounded-2xl text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all shadow-sm w-full md:w-72 text-gray-700 font-bold placeholder-gray-400"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
@@ -356,7 +356,7 @@ export default function PendingPage() {
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-10">
           {/* RECEIVABLES */}
           <div className="flex flex-col gap-6">
-            <div className="flex items-center justify-between bg-gradient-to-r from-emerald-500 to-teal-600 p-6 rounded-[2.5rem] text-white shadow-xl shadow-emerald-100">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-gradient-to-r from-emerald-500 to-teal-600 p-6 rounded-[2rem] md:rounded-[2.5rem] text-white shadow-xl shadow-emerald-100">
               <div className="flex items-center gap-4">
                 <div className="p-3 bg-white/20 rounded-2xl">
                   <ArrowUpRight className="w-7 h-7" />
@@ -370,14 +370,15 @@ export default function PendingPage() {
               </div>
               <button
                 onClick={() => handleOpenModal("INCOME")}
-                className="bg-white text-emerald-600 hover:bg-emerald-50 px-6 py-3 rounded-2xl transition-all font-black shadow-lg text-sm"
+                className="bg-white text-emerald-600 hover:bg-emerald-50 px-6 py-3 rounded-2xl transition-all font-black shadow-lg text-sm w-full sm:w-auto"
               >
                 + Nuevo Cobro
               </button>
             </div>
 
             <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-[0_20px_50px_rgba(0,0,0,0.03)] overflow-hidden">
-              <div className="overflow-x-auto">
+              {/* DESKTOP TABLE VIEW */}
+              <div className="hidden md:block overflow-x-auto">
                 <table className="w-full text-left border-collapse min-w-[600px]">
                   <thead>
                     <tr className="bg-gray-50/50 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-100">
@@ -468,6 +469,77 @@ export default function PendingPage() {
                   </tbody>
                 </table>
               </div>
+
+              {/* MOBILE CARD VIEW */}
+              <div className="md:hidden divide-y divide-gray-100">
+                {receivables.map((item) => (
+                  <div key={item.id} className={`p-6 space-y-4 ${item.status === "PAID" ? "opacity-60" : ""}`}>
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h3 className="font-black text-gray-900 text-base leading-tight">
+                          {item.name || "Sin nombre"}
+                        </h3>
+                        <p className="text-xs text-gray-500 font-medium italic mt-1 leading-relaxed">
+                          "{item.description}"
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => togglePaid(item.id, item.status)}
+                        className={`p-2 rounded-xl ${item.status === "PAID" ? "bg-emerald-100 text-emerald-600" : "bg-amber-100 text-amber-600"}`}
+                      >
+                        {item.status === "PAID" ? <Check className="w-5 h-5" /> : <Clock className="w-5 h-5" />}
+                      </button>
+                    </div>
+
+                    <div className="flex justify-between items-end bg-gray-50/50 p-4 rounded-2xl border border-gray-100/50">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                           <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">En Soles</span>
+                           <div className="h-px flex-1 bg-gray-200 w-8"></div>
+                        </div>
+                        <p className="text-xl font-black text-emerald-600">
+                          S/ {(item.amount * (item.currency === "USD" ? item.exchangeRate : 1)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">
+                          Monto Original
+                        </p>
+                        <p className="text-sm font-black text-gray-600">
+                          {item.currency === "USD" ? "$" : "S/"} {item.amount.toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2">
+                       <div className="flex items-center gap-2">
+                          <div className="px-2.5 py-1 bg-white border border-gray-100 rounded-lg shadow-sm">
+                             <span className="text-[10px] font-black text-gray-500 uppercase tracking-tighter">{item.date?.split("T")[0]}</span>
+                          </div>
+                          {item.currency === "USD" && (
+                            <span className="text-[9px] font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
+                              T.C: {item.exchangeRate}
+                            </span>
+                          )}
+                       </div>
+                       <div className="flex gap-2">
+                         <button
+                           onClick={() => handleOpenEdit(item)}
+                           className="p-3 bg-white border border-gray-200 text-blue-600 rounded-xl shadow-sm active:scale-95 transition-all"
+                         >
+                           <Edit2 className="w-4 h-4" />
+                         </button>
+                         <button
+                           onClick={() => handleDelete(item.id)}
+                           className="p-3 bg-white border border-gray-200 text-rose-500 rounded-xl shadow-sm active:scale-95 transition-all"
+                         >
+                           <Trash2 className="w-4 h-4" />
+                         </button>
+                       </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
               {receivables.length === 0 && (
                 <div className="p-20 text-center">
                   <ArrowUpRight className="w-12 h-12 text-gray-100 mx-auto mb-4" />
@@ -481,7 +553,7 @@ export default function PendingPage() {
 
           {/* PAYABLES */}
           <div className="flex flex-col gap-6">
-            <div className="flex items-center justify-between bg-gradient-to-r from-rose-500 to-red-600 p-6 rounded-[2.5rem] text-white shadow-xl shadow-rose-100">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-gradient-to-r from-rose-500 to-red-600 p-6 rounded-[2rem] md:rounded-[2.5rem] text-white shadow-xl shadow-rose-100">
               <div className="flex items-center gap-4">
                 <div className="p-3 bg-white/20 rounded-2xl">
                   <ArrowDownRight className="w-7 h-7" />
@@ -495,14 +567,15 @@ export default function PendingPage() {
               </div>
               <button
                 onClick={() => handleOpenModal("EXPENSE")}
-                className="bg-white text-rose-600 hover:bg-rose-50 px-6 py-3 rounded-2xl transition-all font-black shadow-lg text-sm"
+                className="bg-white text-rose-600 hover:bg-rose-50 px-6 py-3 rounded-2xl transition-all font-black shadow-lg text-sm w-full sm:w-auto"
               >
                 + Nuevo Pago
               </button>
             </div>
 
             <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-[0_20px_50px_rgba(0,0,0,0.03)] overflow-hidden">
-              <div className="overflow-x-auto">
+              {/* DESKTOP TABLE VIEW */}
+              <div className="hidden md:block overflow-x-auto">
                 <table className="w-full text-left border-collapse min-w-[600px]">
                   <thead>
                     <tr className="bg-gray-50/50 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-100">
@@ -573,35 +646,100 @@ export default function PendingPage() {
                           </button>
                         </td>
                         <td className="p-6 pr-8 text-center">
-                          <button
-                            onClick={() => handleOpenEdit(item)}
-                            className="p-2.5 bg-white border border-gray-100 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all shadow-sm"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(item.id)}
-                            className="p-2 text-gray-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          <div className="flex justify-center gap-2">
+                            <button
+                              onClick={() => handleOpenEdit(item)}
+                              className="p-2.5 bg-white border border-gray-100 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all shadow-sm"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(item.id)}
+                              className="p-2 text-gray-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              {payables.length === 0 && (
-                <div className="p-20 text-center">
-                  <ArrowDownRight className="w-12 h-12 text-gray-100 mx-auto mb-4" />
-                  <p className="text-sm text-gray-400 font-bold uppercase tracking-widest">
-                    Sin deudas pendientes
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+
+              {/* MOBILE CARD VIEW */}
+              <div className="md:hidden divide-y divide-gray-100">
+                {payables.map((item) => (
+                  <div key={item.id} className={`p-6 space-y-4 ${item.status === "PAID" ? "opacity-60" : ""}`}>
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h3 className="font-black text-gray-900 text-base leading-tight">
+                          {item.name || "Sin nombre"}
+                        </h3>
+                        <p className="text-xs text-gray-500 font-medium italic mt-1 leading-relaxed">
+                          "{item.description}"
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => togglePaid(item.id, item.status)}
+                        className={`p-2 rounded-xl ${item.status === "PAID" ? "bg-emerald-100 text-emerald-600" : "bg-amber-100 text-amber-600"}`}
+                      >
+                        {item.status === "PAID" ? <Check className="w-5 h-5" /> : <Clock className="w-5 h-5" />}
+                      </button>
+                    </div>
+
+                    <div className="flex justify-between items-end bg-gray-50/50 p-4 rounded-2xl border border-gray-100/50">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                           <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">En Soles</span>
+                           <div className="h-px flex-1 bg-gray-200 w-8"></div>
+                        </div>
+                        <p className="text-xl font-black text-rose-600">
+                          S/ {(item.amount * (item.currency === "USD" ? item.exchangeRate : 1)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">
+                          Monto Original
+                        </p>
+                        <p className="text-sm font-black text-gray-600">
+                          {item.currency === "USD" ? "$" : "S/"} {item.amount.toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2">
+                       <div className="flex items-center gap-2">
+                          <div className="px-2.5 py-1 bg-white border border-gray-100 rounded-lg shadow-sm">
+                             <span className="text-[10px] font-black text-gray-500 uppercase tracking-tighter">{item.date?.split("T")[0]}</span>
+                          </div>
+                          {item.currency === "USD" && (
+                            <span className="text-[9px] font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
+                              T.C: {item.exchangeRate}
+                            </span>
+                          )}
+                       </div>
+                       <div className="flex gap-2">
+                         <button
+                           onClick={() => handleOpenEdit(item)}
+                           className="p-3 bg-white border border-gray-200 text-blue-600 rounded-xl shadow-sm active:scale-95 transition-all"
+                         >
+                           <Edit2 className="w-4 h-4" />
+                         </button>
+                         <button
+                           onClick={() => handleDelete(item.id)}
+                           className="p-3 bg-white border border-gray-200 text-rose-500 rounded-xl shadow-sm active:scale-95 transition-all"
+                         >
+                           <Trash2 className="w-4 h-4" />
+                         </button>
+                       </div>
+                    </div>
+                  </div>
+                ))}
+              </div>{/* end md:hidden mobile cards */}
+            </div>{/* end bg-white payables container */}
+          </div>{/* end payables flex col */}
+        </div>{/* end grid xl:grid-cols-2 */}
 
         {/* MODAL */}
         <Modal
