@@ -65,7 +65,8 @@ export default function PendingPage() {
   const [activeType, setActiveType] = useState<"INCOME" | "EXPENSE">("INCOME");
 
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
-  const [selectedSubCategoryId, setSelectedSubCategoryId] = useState<string>("");
+  const [selectedSubCategoryId, setSelectedSubCategoryId] =
+    useState<string>("");
 
   // Form state
   const [formData, setFormData] = useState({
@@ -81,30 +82,40 @@ export default function PendingPage() {
     () =>
       Array.isArray(items)
         ? items.filter(
-          (i) =>
-            i.type === "INCOME" &&
-            ((i.description?.toLowerCase() || "").includes(
-              searchTerm.toLowerCase(),
-            ) ||
-              (i.amount?.toString() || "").includes(searchTerm)),
-        )
+            (i) =>
+              i.type === "INCOME" &&
+              ((i.description?.toLowerCase() || "").includes(
+                searchTerm.toLowerCase(),
+              ) ||
+                (i.amount?.toString() || "").includes(searchTerm)),
+          )
         : [],
     [items, searchTerm],
+  );
+
+  const receivablesTotal = useMemo(
+    () => receivables.reduce((acc, item) => acc + item.amount, 0),
+    [receivables],
   );
 
   const payables = useMemo(
     () =>
       Array.isArray(items)
         ? items.filter(
-          (i) =>
-            i.type === "EXPENSE" &&
-            ((i.description?.toLowerCase() || "").includes(
-              searchTerm.toLowerCase(),
-            ) ||
-              (i.amount?.toString() || "").includes(searchTerm)),
-        )
+            (i) =>
+              i.type === "EXPENSE" &&
+              ((i.description?.toLowerCase() || "").includes(
+                searchTerm.toLowerCase(),
+              ) ||
+                (i.amount?.toString() || "").includes(searchTerm)),
+          )
         : [],
     [items, searchTerm],
+  );
+
+  const payablesTotal = useMemo(
+    () => payables.reduce((acc, item) => acc + item.amount, 0),
+    [payables],
   );
 
   const filteredCategories = useMemo(
@@ -160,7 +171,10 @@ export default function PendingPage() {
       );
       setCategories(categoriesData);
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Error al cargar transacciones pendientes";
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Error al cargar transacciones pendientes";
       toast.error(message);
     } finally {
       setLoading(false);
@@ -228,7 +242,10 @@ export default function PendingPage() {
       return;
     }
 
-    if (formData.currency === "USD" && (!formData.exchangeRate || Number(formData.exchangeRate) <= 0)) {
+    if (
+      formData.currency === "USD" &&
+      (!formData.exchangeRate || Number(formData.exchangeRate) <= 0)
+    ) {
       toast.error("Ingresa un tipo de cambio válido");
       return;
     }
@@ -260,14 +277,13 @@ export default function PendingPage() {
       setIsModalOpen(false);
       loadData();
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Error al guardar";
+      const message =
+        error instanceof Error ? error.message : "Error al guardar";
       toast.error(message);
     } finally {
       setSaving(false);
     }
   };
-
-
 
   const togglePaid = async (id: string, currentStatus: "PENDING" | "PAID") => {
     const newStatus: "PENDING" | "PAID" =
@@ -284,7 +300,8 @@ export default function PendingPage() {
         newStatus === "PAID" ? "Marcado como pagado" : "Marcado como pendiente",
       );
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Error al actualizar estado";
+      const message =
+        error instanceof Error ? error.message : "Error al actualizar estado";
       toast.error(message);
     }
   };
@@ -302,7 +319,10 @@ export default function PendingPage() {
       toast.success("Transacción eliminada correctamente");
       setIdToDelete(null);
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Error al eliminar la transacción";
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Error al eliminar la transacción";
       toast.error(message);
     }
   };
@@ -366,6 +386,7 @@ export default function PendingPage() {
                   <p className="text-[10px] text-emerald-100 font-black uppercase tracking-widest opacity-80">
                     Dinero a tu favor
                   </p>
+                  <h2 className="text-xl font-black">S/ {receivablesTotal}</h2>
                 </div>
               </div>
               <button
@@ -435,10 +456,11 @@ export default function PendingPage() {
                         <td className="p-6 text-center">
                           <button
                             onClick={() => togglePaid(item.id, item.status)}
-                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 mx-auto ${item.status === "PAID"
-                              ? "bg-emerald-500 text-white shadow-lg shadow-emerald-100"
-                              : "bg-amber-100 text-amber-700 hover:bg-amber-200"
-                              }`}
+                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 mx-auto ${
+                              item.status === "PAID"
+                                ? "bg-emerald-500 text-white shadow-lg shadow-emerald-100"
+                                : "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                            }`}
                           >
                             {item.status === "PAID" ? (
                               <Check className="w-3.5 h-3.5" />
@@ -473,7 +495,10 @@ export default function PendingPage() {
               {/* MOBILE CARD VIEW */}
               <div className="md:hidden divide-y divide-gray-100">
                 {receivables.map((item) => (
-                  <div key={item.id} className={`p-6 space-y-4 ${item.status === "PAID" ? "opacity-60" : ""}`}>
+                  <div
+                    key={item.id}
+                    className={`p-6 space-y-4 ${item.status === "PAID" ? "opacity-60" : ""}`}
+                  >
                     <div className="flex justify-between items-start">
                       <div>
                         <h3 className="font-black text-gray-900 text-base leading-tight">
@@ -487,18 +512,30 @@ export default function PendingPage() {
                         onClick={() => togglePaid(item.id, item.status)}
                         className={`p-2 rounded-xl ${item.status === "PAID" ? "bg-emerald-100 text-emerald-600" : "bg-amber-100 text-amber-600"}`}
                       >
-                        {item.status === "PAID" ? <Check className="w-5 h-5" /> : <Clock className="w-5 h-5" />}
+                        {item.status === "PAID" ? (
+                          <Check className="w-5 h-5" />
+                        ) : (
+                          <Clock className="w-5 h-5" />
+                        )}
                       </button>
                     </div>
 
                     <div className="flex justify-between items-end bg-gray-50/50 p-4 rounded-2xl border border-gray-100/50">
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
-                           <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">En Soles</span>
-                           <div className="h-px flex-1 bg-gray-200 w-8"></div>
+                          <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">
+                            En Soles
+                          </span>
+                          <div className="h-px flex-1 bg-gray-200 w-8"></div>
                         </div>
                         <p className="text-xl font-black text-emerald-600">
-                          S/ {(item.amount * (item.currency === "USD" ? item.exchangeRate : 1)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          S/{" "}
+                          {(
+                            item.amount *
+                            (item.currency === "USD" ? item.exchangeRate : 1)
+                          ).toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                          })}
                         </p>
                       </div>
                       <div className="text-right">
@@ -506,36 +543,39 @@ export default function PendingPage() {
                           Monto Original
                         </p>
                         <p className="text-sm font-black text-gray-600">
-                          {item.currency === "USD" ? "$" : "S/"} {item.amount.toLocaleString()}
+                          {item.currency === "USD" ? "$" : "S/"}{" "}
+                          {item.amount.toLocaleString()}
                         </p>
                       </div>
                     </div>
 
                     <div className="flex items-center justify-between pt-2">
-                       <div className="flex items-center gap-2">
-                          <div className="px-2.5 py-1 bg-white border border-gray-100 rounded-lg shadow-sm">
-                             <span className="text-[10px] font-black text-gray-500 uppercase tracking-tighter">{item.date?.split("T")[0]}</span>
-                          </div>
-                          {item.currency === "USD" && (
-                            <span className="text-[9px] font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
-                              T.C: {item.exchangeRate}
-                            </span>
-                          )}
-                       </div>
-                       <div className="flex gap-2">
-                         <button
-                           onClick={() => handleOpenEdit(item)}
-                           className="p-3 bg-white border border-gray-200 text-blue-600 rounded-xl shadow-sm active:scale-95 transition-all"
-                         >
-                           <Edit2 className="w-4 h-4" />
-                         </button>
-                         <button
-                           onClick={() => handleDelete(item.id)}
-                           className="p-3 bg-white border border-gray-200 text-rose-500 rounded-xl shadow-sm active:scale-95 transition-all"
-                         >
-                           <Trash2 className="w-4 h-4" />
-                         </button>
-                       </div>
+                      <div className="flex items-center gap-2">
+                        <div className="px-2.5 py-1 bg-white border border-gray-100 rounded-lg shadow-sm">
+                          <span className="text-[10px] font-black text-gray-500 uppercase tracking-tighter">
+                            {item.date?.split("T")[0]}
+                          </span>
+                        </div>
+                        {item.currency === "USD" && (
+                          <span className="text-[9px] font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
+                            T.C: {item.exchangeRate}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleOpenEdit(item)}
+                          className="p-3 bg-white border border-gray-200 text-blue-600 rounded-xl shadow-sm active:scale-95 transition-all"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(item.id)}
+                          className="p-3 bg-white border border-gray-200 text-rose-500 rounded-xl shadow-sm active:scale-95 transition-all"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -563,6 +603,7 @@ export default function PendingPage() {
                   <p className="text-[10px] text-rose-100 font-black uppercase tracking-widest opacity-80">
                     Dinero que debes
                   </p>
+                  <h2 className="text-xl font-black">S/ {payablesTotal}</h2>
                 </div>
               </div>
               <button
@@ -632,10 +673,11 @@ export default function PendingPage() {
                         <td className="p-6 text-center">
                           <button
                             onClick={() => togglePaid(item.id, item.status)}
-                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 mx-auto ${item.status === "PAID"
-                              ? "bg-emerald-500 text-white shadow-lg shadow-emerald-100"
-                              : "bg-amber-100 text-amber-700 hover:bg-amber-200"
-                              }`}
+                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 mx-auto ${
+                              item.status === "PAID"
+                                ? "bg-emerald-500 text-white shadow-lg shadow-emerald-100"
+                                : "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                            }`}
                           >
                             {item.status === "PAID" ? (
                               <Check className="w-3.5 h-3.5" />
@@ -663,6 +705,16 @@ export default function PendingPage() {
                         </td>
                       </tr>
                     ))}
+                    {payables.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="p-20 text-center">
+                          <ArrowDownRight className="w-12 h-12 text-gray-100 mx-auto mb-4" />
+                          <p className="text-sm text-gray-400 font-bold uppercase tracking-widest">
+                            Sin pagos pendientes
+                          </p>
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -670,7 +722,10 @@ export default function PendingPage() {
               {/* MOBILE CARD VIEW */}
               <div className="md:hidden divide-y divide-gray-100">
                 {payables.map((item) => (
-                  <div key={item.id} className={`p-6 space-y-4 ${item.status === "PAID" ? "opacity-60" : ""}`}>
+                  <div
+                    key={item.id}
+                    className={`p-6 space-y-4 ${item.status === "PAID" ? "opacity-60" : ""}`}
+                  >
                     <div className="flex justify-between items-start">
                       <div>
                         <h3 className="font-black text-gray-900 text-base leading-tight">
@@ -684,18 +739,30 @@ export default function PendingPage() {
                         onClick={() => togglePaid(item.id, item.status)}
                         className={`p-2 rounded-xl ${item.status === "PAID" ? "bg-emerald-100 text-emerald-600" : "bg-amber-100 text-amber-600"}`}
                       >
-                        {item.status === "PAID" ? <Check className="w-5 h-5" /> : <Clock className="w-5 h-5" />}
+                        {item.status === "PAID" ? (
+                          <Check className="w-5 h-5" />
+                        ) : (
+                          <Clock className="w-5 h-5" />
+                        )}
                       </button>
                     </div>
 
                     <div className="flex justify-between items-end bg-gray-50/50 p-4 rounded-2xl border border-gray-100/50">
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
-                           <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">En Soles</span>
-                           <div className="h-px flex-1 bg-gray-200 w-8"></div>
+                          <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">
+                            En Soles
+                          </span>
+                          <div className="h-px flex-1 bg-gray-200 w-8"></div>
                         </div>
                         <p className="text-xl font-black text-rose-600">
-                          S/ {(item.amount * (item.currency === "USD" ? item.exchangeRate : 1)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          S/{" "}
+                          {(
+                            item.amount *
+                            (item.currency === "USD" ? item.exchangeRate : 1)
+                          ).toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                          })}
                         </p>
                       </div>
                       <div className="text-right">
@@ -703,43 +770,50 @@ export default function PendingPage() {
                           Monto Original
                         </p>
                         <p className="text-sm font-black text-gray-600">
-                          {item.currency === "USD" ? "$" : "S/"} {item.amount.toLocaleString()}
+                          {item.currency === "USD" ? "$" : "S/"}{" "}
+                          {item.amount.toLocaleString()}
                         </p>
                       </div>
                     </div>
 
                     <div className="flex items-center justify-between pt-2">
-                       <div className="flex items-center gap-2">
-                          <div className="px-2.5 py-1 bg-white border border-gray-100 rounded-lg shadow-sm">
-                             <span className="text-[10px] font-black text-gray-500 uppercase tracking-tighter">{item.date?.split("T")[0]}</span>
-                          </div>
-                          {item.currency === "USD" && (
-                            <span className="text-[9px] font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
-                              T.C: {item.exchangeRate}
-                            </span>
-                          )}
-                       </div>
-                       <div className="flex gap-2">
-                         <button
-                           onClick={() => handleOpenEdit(item)}
-                           className="p-3 bg-white border border-gray-200 text-blue-600 rounded-xl shadow-sm active:scale-95 transition-all"
-                         >
-                           <Edit2 className="w-4 h-4" />
-                         </button>
-                         <button
-                           onClick={() => handleDelete(item.id)}
-                           className="p-3 bg-white border border-gray-200 text-rose-500 rounded-xl shadow-sm active:scale-95 transition-all"
-                         >
-                           <Trash2 className="w-4 h-4" />
-                         </button>
-                       </div>
+                      <div className="flex items-center gap-2">
+                        <div className="px-2.5 py-1 bg-white border border-gray-100 rounded-lg shadow-sm">
+                          <span className="text-[10px] font-black text-gray-500 uppercase tracking-tighter">
+                            {item.date?.split("T")[0]}
+                          </span>
+                        </div>
+                        {item.currency === "USD" && (
+                          <span className="text-[9px] font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
+                            T.C: {item.exchangeRate}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleOpenEdit(item)}
+                          className="p-3 bg-white border border-gray-200 text-blue-600 rounded-xl shadow-sm active:scale-95 transition-all"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(item.id)}
+                          className="p-3 bg-white border border-gray-200 text-rose-500 rounded-xl shadow-sm active:scale-95 transition-all"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
-              </div>{/* end md:hidden mobile cards */}
-            </div>{/* end bg-white payables container */}
-          </div>{/* end payables flex col */}
-        </div>{/* end grid xl:grid-cols-2 */}
+              </div>
+              {/* end md:hidden mobile cards */}
+            </div>
+            {/* end bg-white payables container */}
+          </div>
+          {/* end payables flex col */}
+        </div>
+        {/* end grid xl:grid-cols-2 */}
 
         {/* MODAL */}
         <Modal
@@ -947,7 +1021,11 @@ export default function PendingPage() {
                 ) : (
                   <CheckCircle2 className="w-5 h-5" />
                 )}
-                {saving ? "Guardando..." : editingId ? "Actualizar Registro" : "Confirmar Registro"}
+                {saving
+                  ? "Guardando..."
+                  : editingId
+                    ? "Actualizar Registro"
+                    : "Confirmar Registro"}
               </button>
             </div>
           </form>
