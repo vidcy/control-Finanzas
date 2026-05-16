@@ -8,7 +8,7 @@ import {
 } from './transactions.dto';
 @Injectable()
 export class TransactionService {
-  constructor(private prisma: PrismaService) { }
+  constructor(private prisma: PrismaService) {}
 
   async createTransaction(userId: string, dto: CreateTransactionDto) {
     const isUSD = dto.currency == Currency.USD;
@@ -17,7 +17,6 @@ export class TransactionService {
       : dto.amount;
 
     return this.prisma.transaction.create({
-
       data: {
         userId: userId,
         type: dto.type,
