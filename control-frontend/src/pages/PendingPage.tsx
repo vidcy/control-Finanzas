@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import Appshell from "../components/layout/Appshell";
 import Modal from "../components/ui/Modal";
 import {
@@ -59,11 +59,17 @@ export default function PendingPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [categories, setCategories] = useState<Category[]>([]);
 
+  const receivablesRef = useRef<HTMLDivElement | null>(null);
+  const payablesRef = useRef<HTMLDivElement | null>(null);
+
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [idToDelete, setIdToDelete] = useState<string | null>(null);
   const [activeType, setActiveType] = useState<"INCOME" | "EXPENSE">("INCOME");
+
+  const [showAllReceivables, setShowAllReceivables] = useState(false);
+  const [showAllPayables, setShowAllPayables] = useState(false);
 
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
   const [selectedSubCategoryId, setSelectedSubCategoryId] =
@@ -118,6 +124,11 @@ export default function PendingPage() {
     () => payables.reduce((acc, item) => acc + item.amount, 0),
     [payables],
   );
+  const visibleReceivables = showAllReceivables
+    ? receivables
+    : receivables.slice(0, 2);
+
+  const visiblePayables = showAllPayables ? payables : payables.slice(0, 2);
 
   const filteredCategories = useMemo(
     () =>
@@ -398,7 +409,10 @@ export default function PendingPage() {
               </button>
             </div>
 
-            <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-[0_20px_50px_rgba(0,0,0,0.03)] overflow-hidden">
+            <div
+              ref={receivablesRef}
+              className="bg-white rounded-[2.5rem] border border-gray-100 shadow-[0_20px_50px_rgba(0,0,0,0.03)] overflow-hidden"
+            >
               {/* DESKTOP TABLE VIEW */}
               <div className="hidden md:block overflow-x-auto">
                 <table className="w-full text-left border-collapse min-w-[600px]">
@@ -505,7 +519,7 @@ export default function PendingPage() {
 
               {/* MOBILE CARD VIEW */}
               <div className="md:hidden divide-y divide-gray-100">
-                {receivables.map((item) => (
+                {visibleReceivables.map((item) => (
                   <div
                     key={item.id}
                     className={`p-6 space-y-4 ${item.status === "PAID" ? "opacity-60" : ""}`}
@@ -590,6 +604,31 @@ export default function PendingPage() {
                     </div>
                   </div>
                 ))}
+                {receivables.length > 2 && (
+                  <div className="sticky bottom-4 flex justify-center py-4 bg-gradient-to-t from-white via-white/95 to-transparent">
+                    <button
+                      onClick={() => {
+                        if (showAllReceivables) {
+                          setShowAllReceivables(false);
+
+                          setTimeout(() => {
+                            receivablesRef.current?.scrollIntoView({
+                              behavior: "smooth",
+                              block: "start",
+                            });
+                          }, 0);
+                        } else {
+                          setShowAllReceivables(true);
+                        }
+                      }}
+                      className="px-5 py-3 bg-white border border-gray-200 shadow-xl rounded-full text-sm font-black text-gray-700 active:scale-95"
+                    >
+                      {showAllReceivables
+                        ? "Mostrar menos"
+                        : `Mostrar ${receivables.length - 2} más`}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -617,7 +656,10 @@ export default function PendingPage() {
               </button>
             </div>
 
-            <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-[0_20px_50px_rgba(0,0,0,0.03)] overflow-hidden">
+            <div
+              ref={payablesRef}
+              className="bg-white rounded-[2.5rem] border border-gray-100 shadow-[0_20px_50px_rgba(0,0,0,0.03)] overflow-hidden"
+            >
               {/* DESKTOP TABLE VIEW */}
               <div className="hidden md:block overflow-x-auto">
                 <table className="w-full text-left border-collapse min-w-[600px]">
@@ -724,7 +766,7 @@ export default function PendingPage() {
 
               {/* MOBILE CARD VIEW */}
               <div className="md:hidden divide-y divide-gray-100">
-                {payables.map((item) => (
+                {visiblePayables.map((item) => (
                   <div
                     key={item.id}
                     className={`p-6 space-y-4 ${item.status === "PAID" ? "opacity-60" : ""}`}
@@ -809,6 +851,31 @@ export default function PendingPage() {
                     </div>
                   </div>
                 ))}
+                {payables.length > 2 && (
+                  <div className="sticky bottom-4 flex justify-center py-4 bg-gradient-to-t from-white via-white/95 to-transparent">
+                    <button
+                      onClick={() => {
+                        if (showAllPayables) {
+                          setShowAllPayables(false);
+
+                          setTimeout(() => {
+                            payablesRef.current?.scrollIntoView({
+                              behavior: "smooth",
+                              block: "start",
+                            });
+                          }, 0);
+                        } else {
+                          setShowAllPayables(true);
+                        }
+                      }}
+                      className="px-5 py-3 bg-white border border-gray-200 shadow-xl rounded-full text-sm font-black text-gray-700 active:scale-95"
+                    >
+                      {showAllPayables
+                        ? "Mostrar menos"
+                        : `Mostrar ${payables.length - 2} más`}
+                    </button>
+                  </div>
+                )}
               </div>
               {/* end md:hidden mobile cards */}
             </div>
