@@ -277,10 +277,6 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
             </div>
           </div>
 
-          <div className="flex items-center gap-3 lg:gap-4">
-            <NotificationDropdown />
-          </div>
-
           {canInstall && (
             <button
               onClick={async () => {
@@ -299,6 +295,10 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
               Instalar app
             </button>
           )}
+
+          <div className="flex items-center gap-3 lg:gap-4">
+            <NotificationDropdown />
+          </div>
         </header>
 
         {/* CONTENT */}
