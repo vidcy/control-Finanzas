@@ -19,7 +19,6 @@ import {
   Activity,
   Edit2,
   ArrowUpLeft,
-  ArrowDownLeft,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import {
