@@ -2,13 +2,15 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { Injectable } from '@nestjs/common';
 import {
   CreatePendingTransactionDto,
+  MarkAsPaidDto,
   UpdatePendingTransactionDto,
 } from './peding.dto';
 import { Currency, TransactionStatus, TransactionType } from '@prisma/client';
 import { type } from 'os';
+import { MarkAsPendingDto } from '../transactions/transactions.dto';
 @Injectable()
 export class PendingTransactionService {
-  constructor(private prisma: PrismaService) { }
+  constructor(private prisma: PrismaService) {}
   async createPendingTransaction(
     userId: string,
     dto: CreatePendingTransactionDto,
@@ -17,7 +19,7 @@ export class PendingTransactionService {
     const amountSoles = isUSD
       ? dto.amount * (dto.exchangeRate || 1)
       : dto.amount;
-    console.log("SUBCATEGORY RECIBIDA:", dto.subCategoryId);
+    console.log('SUBCATEGORY RECIBIDA:', dto.subCategoryId);
     return this.prisma.transaction.create({
       data: {
         userId,
@@ -92,11 +94,11 @@ export class PendingTransactionService {
       where: { id },
     });
   }
-  async markPendingTransactionAsPaid(id: string) {
+  async markTransactionAsPaid(id: string, dto: MarkAsPaidDto) {
     return this.prisma.transaction.update({
       where: { id },
       data: {
-        status: TransactionStatus.PAID,
+        status: dto.status,
       },
     });
   }

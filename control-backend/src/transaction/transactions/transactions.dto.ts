@@ -17,6 +17,7 @@ export enum TransactionType {
 
 export enum TransactionStatus {
   PAID = 'PAID',
+  PENDING = 'PENDING',
 }
 
 export enum Currency {
@@ -97,8 +98,6 @@ export class CreateTransactionDto {
   @IsOptional()
   @IsBoolean()
   programmed?: boolean;
-
-
 }
 export class UpdateTransactionDto {
   @IsOptional()
@@ -148,4 +147,9 @@ export class UpdateTransactionDto {
   @IsOptional()
   @IsString()
   description?: string;
+}
+
+export class MarkAsPendingDto {
+  @IsEnum(TransactionStatus)
+  status: TransactionStatus;
 }

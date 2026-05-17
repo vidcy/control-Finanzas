@@ -16,6 +16,7 @@ import {
   FileText,
   ChevronDown,
   Wallet,
+  ArrowUpRight,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { listCategoriesRequest } from "../services/category.api";
@@ -24,6 +25,7 @@ import {
   createTransactionRequest,
   deleteTransactionRequest,
   getTransactionsRequest,
+  markAsPaidRequest,
   updateTransactionRequest,
 } from "../services/transaction.api";
 
@@ -42,7 +44,6 @@ type Expense = {
   programmed: boolean;
   status: "PENDING" | "PAID";
   paymentMethod: string;
-  person: "";
 };
 
 export default function ExpensesPage() {
@@ -125,7 +126,8 @@ export default function ExpensesPage() {
       );
       setCategories(categoriesData);
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Error al cargar egresos";
+      const message =
+        error instanceof Error ? error.message : "Error al cargar egresos";
       toast.error(message);
     } finally {
       setLoading(false);
@@ -173,9 +175,14 @@ export default function ExpensesPage() {
     if (!selectedCategoryId) return toast.error("Selecciona una categoría");
     if (hasSubcategories && !selectedSubCategoryId)
       return toast.error("Selecciona una subcategoría");
-    if (!formData.description.trim()) return toast.error("Ingresa una descripción");
-    if (!formData.amount || Number(formData.amount) <= 0) return toast.error("Ingresa un monto válido");
-    if (formData.currency === "USD" && (!formData.exchangeRate || Number(formData.exchangeRate) <= 0))
+    if (!formData.description.trim())
+      return toast.error("Ingresa una descripción");
+    if (!formData.amount || Number(formData.amount) <= 0)
+      return toast.error("Ingresa un monto válido");
+    if (
+      formData.currency === "USD" &&
+      (!formData.exchangeRate || Number(formData.exchangeRate) <= 0)
+    )
       return toast.error("Ingresa un tipo de cambio válido");
 
     const payload = {
@@ -202,13 +209,29 @@ export default function ExpensesPage() {
       setIsModalOpen(false);
       loadData();
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Error al guardar";
+      const message =
+        error instanceof Error ? error.message : "Error al guardar";
       toast.error(message);
     } finally {
       setSaving(false);
     }
   };
 
+  const handleStatus = async (exp: Expense) => {
+    try {
+      await markAsPaidRequest(exp.id, {
+        status: exp.status === "PAID" ? "PENDING" : "PAID",
+      });
+      toast.success("Actualizado correctamente");
+      loadData();
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : "Error al enviar a pendiente";
+      toast.error(message);
+    } finally {
+      setSaving(false);
+    }
+  };
   const handleDelete = (id: string) => {
     setIdToDelete(id);
     setIsConfirmOpen(true);
@@ -222,7 +245,8 @@ export default function ExpensesPage() {
       setIsConfirmOpen(false);
       loadData();
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Error al eliminar";
+      const message =
+        error instanceof Error ? error.message : "Error al eliminar";
       toast.error(message);
     }
   };
@@ -323,13 +347,19 @@ export default function ExpensesPage() {
                     exp.currency === "USD"
                       ? exp.amount * exp.exchangeRate
                       : exp.amount;
-                  const categoryName = typeof exp.category === 'object' ? (exp.category as any).name : exp.category || "Otros";
-                  const subCategoryName = typeof exp.subCategory === 'object' ? (exp.subCategory as any).name : exp.subCategory;
+                  const categoryName =
+                    typeof exp.category === "object"
+                      ? (exp.category as any).name
+                      : exp.category || "Otros";
+                  const subCategoryName =
+                    typeof exp.subCategory === "object"
+                      ? (exp.subCategory as any).name
+                      : exp.subCategory;
 
                   return (
                     <tr
                       key={exp.id}
-                      className="group transition-all hover:bg-gray-50/50"
+                      className="transition-all hover:bg-gray-50/50"
                     >
                       <td className="p-5 pl-8">
                         <div className="font-black text-gray-800 text-sm">
@@ -367,7 +397,8 @@ export default function ExpensesPage() {
                         </div>
                       </td>
                       <td className="p-5 text-right font-black text-gray-700">
-                        {exp.currency === "USD" ? "$" : "S/"} {exp.amount.toLocaleString()}
+                        {exp.currency === "USD" ? "$" : "S/"}{" "}
+                        {exp.amount.toLocaleString()}
                       </td>
                       <td className="p-5 text-center">
                         <span className="text-[10px] font-black bg-gray-100 text-gray-500 px-2 py-1 rounded-md">
@@ -375,25 +406,77 @@ export default function ExpensesPage() {
                         </span>
                       </td>
                       <td className="p-5 text-center text-xs font-bold text-gray-400">
-                        {exp.currency === "USD" ? (exp.exchangeRate || 1).toFixed(2) : "-"}
+                        {exp.currency === "USD"
+                          ? (exp.exchangeRate || 1).toFixed(2)
+                          : "-"}
                       </td>
                       <td className="p-5 text-right font-black text-rose-600">
-                        S/ {montoSoles.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        S/{" "}
+                        {montoSoles.toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                        })}
                       </td>
                       <td className="p-5 pr-8 text-center">
-                        <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => handleOpenEdit(exp)}
-                            className="p-2 bg-blue-50 text-blue-600 rounded-lg"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(exp.id)}
-                            className="p-2 bg-rose-50 text-rose-600 rounded-lg"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                        <div className="flex gap-2 ml-4">
+                          {/* Editar */}
+                          <div className="relative group">
+                            <button
+                              title="Editar"
+                              onClick={() => handleOpenEdit(exp)}
+                              className="p-2.5 bg-white border border-gray-200 text-blue-600 rounded-xl shadow-sm active:scale-95"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+
+                            <span
+                              className="hidden group-hover:block absolute left-1/2 -translate-x-1/2
+  bottom-14 z-50 whitespace-nowrap rounded-full px-3 py-1
+  text-xs font-medium text-white shadow-lg
+  bg-gradient-to-r from-pink-400 via-violet-500 to-cyan-400"
+                            >
+                              Editar
+                            </span>
+                          </div>
+
+                          {/* Eliminar */}
+                          <div className="relative group">
+                            <button
+                              title="Eliminar"
+                              onClick={() => handleDelete(exp.id)}
+                              className="p-2.5 bg-white border border-gray-200 text-rose-600 rounded-xl shadow-sm active:scale-95"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+
+                            <span
+                              className="hidden group-hover:block absolute left-1/2 -translate-x-1/2
+  bottom-14 z-50 whitespace-nowrap rounded-full px-3 py-1
+  text-xs font-medium text-white shadow-lg
+  bg-gradient-to-r from-pink-400 via-violet-500 to-cyan-400"
+                            >
+                              Eliminar
+                            </span>
+                          </div>
+
+                          {/* Devolver */}
+                          <div className="relative group">
+                            <button
+                              title="Devolver a pendientes"
+                              onClick={() => handleStatus(exp)}
+                              className="p-2.5 bg-white border border-gray-200 text-gray-600 rounded-xl shadow-sm active:scale-95"
+                            >
+                              <ArrowUpRight className="w-4 h-4" />
+                            </button>
+
+                            <span
+                              className="hidden group-hover:block absolute left-1/2 -translate-x-1/2
+  bottom-14 z-50 whitespace-nowrap rounded-full px-3 py-1
+  text-xs font-medium text-white shadow-lg
+  bg-gradient-to-r from-pink-400 via-violet-500 to-cyan-400"
+                            >
+                              Devolver
+                            </span>
+                          </div>
                         </div>
                       </td>
                     </tr>
@@ -406,9 +489,18 @@ export default function ExpensesPage() {
           {/* VISTA MÓVIL: CARDS */}
           <div className="md:hidden divide-y divide-gray-100">
             {filtered.map((exp) => {
-              const montoSoles = exp.currency === "USD" ? exp.amount * exp.exchangeRate : exp.amount;
-              const categoryName = typeof exp.category === 'object' ? (exp.category as any).name : exp.category || "Otros";
-              const subCategoryName = typeof exp.subCategory === 'object' ? (exp.subCategory as any).name : exp.subCategory;
+              const montoSoles =
+                exp.currency === "USD"
+                  ? exp.amount * exp.exchangeRate
+                  : exp.amount;
+              const categoryName =
+                typeof exp.category === "object"
+                  ? (exp.category as any).name
+                  : exp.category || "Otros";
+              const subCategoryName =
+                typeof exp.subCategory === "object"
+                  ? (exp.subCategory as any).name
+                  : exp.subCategory;
 
               return (
                 <div key={exp.id} className="p-6 space-y-4">
@@ -428,48 +520,111 @@ export default function ExpensesPage() {
                         {exp.description || "Sin descripción"}
                       </h3>
                       <p className="text-[10px] text-gray-400 font-bold mt-1 uppercase">
-                        {formatDate(exp.date)} • {getMethodBadge(exp.paymentMethod)}
+                        {formatDate(exp.date)} •{" "}
+                        {getMethodBadge(exp.paymentMethod)}
                       </p>
                     </div>
                     <div className="flex gap-2 ml-4">
-                      <button
-                        onClick={() => handleOpenEdit(exp)}
-                        className="p-2.5 bg-white border border-gray-200 text-blue-600 rounded-xl shadow-sm active:scale-95"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(exp.id)}
-                        className="p-2.5 bg-white border border-gray-200 text-rose-600 rounded-xl shadow-sm active:scale-95"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {/* Editar */}
+                      <div className="relative group">
+                        <button
+                          title="Editar"
+                          onClick={() => handleOpenEdit(exp)}
+                          className="p-2.5 bg-white border border-gray-200 text-blue-600 rounded-xl shadow-sm active:scale-95"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+
+                        <span
+                          className="hidden group-hover:block absolute left-1/2 -translate-x-1/2
+  bottom-14 z-50 whitespace-nowrap rounded-full px-3 py-1
+  text-xs font-medium text-white shadow-lg
+  bg-gradient-to-r from-pink-400 via-violet-500 to-cyan-400"
+                        >
+                          Editar
+                        </span>
+                      </div>
+
+                      {/* Eliminar */}
+                      <div className="relative group">
+                        <button
+                          title="Eliminar"
+                          onClick={() => handleDelete(exp.id)}
+                          className="p-2.5 bg-white border border-gray-200 text-rose-600 rounded-xl shadow-sm active:scale-95"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+
+                        <span
+                          className="hidden group-hover:block absolute left-1/2 -translate-x-1/2
+  bottom-14 z-50 whitespace-nowrap rounded-full px-3 py-1
+  text-xs font-medium text-white shadow-lg
+  bg-gradient-to-r from-pink-400 via-violet-500 to-cyan-400"
+                        >
+                          Eliminar
+                        </span>
+                      </div>
+
+                      {/* Devolver */}
+                      <div className="relative group">
+                        <button
+                          title="Devolver a pendientes"
+                          onClick={() => handleStatus(exp)}
+                          className="p-2.5 bg-white border border-gray-200 text-gray-600 rounded-xl shadow-sm active:scale-95"
+                        >
+                          <ArrowUpRight className="w-4 h-4" />
+                        </button>
+
+                        <span
+                          className="hidden group-hover:block absolute left-1/2 -translate-x-1/2
+  bottom-14 z-50 whitespace-nowrap rounded-full px-3 py-1
+  text-xs font-medium text-white shadow-lg
+  bg-gradient-to-r from-pink-400 via-violet-500 to-cyan-400"
+                        >
+                          Devolver
+                        </span>
+                      </div>
                     </div>
                   </div>
 
                   <div className="bg-rose-50/30 p-4 rounded-2xl border border-rose-100/50 flex justify-between items-center">
                     <div>
-                      <p className="text-[9px] font-black text-rose-900/40 uppercase tracking-widest mb-1">Gasto en Soles</p>
-                      <p className="text-xl font-black text-rose-600">S/ {montoSoles.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                      <p className="text-[9px] font-black text-rose-900/40 uppercase tracking-widest mb-1">
+                        Gasto en Soles
+                      </p>
+                      <p className="text-xl font-black text-rose-600">
+                        S/{" "}
+                        {montoSoles.toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                        })}
+                      </p>
                     </div>
                     <div className="text-right">
-                      <p className="text-[10px] font-bold text-gray-400 mb-1">{exp.currency} {exp.currency === "USD" ? `(T.C: ${exp.exchangeRate})` : ""}</p>
+                      <p className="text-[10px] font-bold text-gray-400 mb-1">
+                        {exp.currency}{" "}
+                        {exp.currency === "USD"
+                          ? `(T.C: ${exp.exchangeRate})`
+                          : ""}
+                      </p>
                       <p className="text-sm font-black text-gray-600">
-                        {exp.currency === "USD" ? "$" : "S/"} {exp.amount.toLocaleString()}
+                        {exp.currency === "USD" ? "$" : "S/"}{" "}
+                        {exp.amount.toLocaleString()}
                       </p>
                     </div>
                   </div>
                 </div>
               );
             })}
-          </div>{/* end md:hidden mobile cards */}
+          </div>
+          {/* end md:hidden mobile cards */}
 
           {filtered.length === 0 && (
             <div className="p-20 text-center text-gray-400 font-bold uppercase tracking-widest text-xs">
               Sin registros de egresos
             </div>
           )}
-        </div>{/* end bg-white outer container */}
+        </div>
+        {/* end bg-white outer container */}
 
         {/* MODAL REDISEÑADO - MÁS COMPACTO Y AMPLIO */}
         <Modal
@@ -762,14 +917,14 @@ export default function ExpensesPage() {
               <button
                 type="button"
                 onClick={() => setIsModalOpen(false)}
-                className="px-6 py-3 text-gray-400 font-black uppercase text-[10px] tracking-widest hover:text-gray-600 transition-all"
+                className="px-5 py-3 text-gray-400 font-black uppercase text-[10px] tracking-widest hover:text-gray-600 transition-all"
               >
                 Cancelar
               </button>
               <button
                 type="submit"
                 disabled={saving}
-                className="px-10 py-3.5 bg-rose-600 text-white font-black rounded-xl hover:bg-rose-700 shadow-xl shadow-rose-100 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
+                className="px-6 py-3.5 bg-rose-600 text-white font-black rounded-xl hover:bg-rose-700 shadow-xl shadow-rose-100 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
               >
                 {saving ? (
                   <Loader2 className="w-4 h-4 animate-spin" />

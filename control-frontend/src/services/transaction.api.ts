@@ -90,3 +90,16 @@ export const deleteTransactionRequest = async (id: string) => {
     );
   }
 };
+export const markAsPaidRequest = async (
+  id: string,
+  data: { status: "PENDING" | "PAID" },
+) => {
+  try {
+    const res = await API.patch(`/transactions/${id}/mark-pending`, data);
+    return res.data;
+  } catch (error: any) {
+    throw new Error(
+      error?.response?.data?.message || "Error al Mover a cuentas pendientes",
+    );
+  }
+};

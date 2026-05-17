@@ -14,6 +14,7 @@ import {
   FileText,
   ChevronDown,
   Wallet,
+  ArrowUpRight,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { listCategoriesRequest } from "../services/category.api";
@@ -22,6 +23,7 @@ import {
   createTransactionRequest,
   deleteTransactionRequest,
   getTransactionsRequest,
+  markAsPaidRequest,
   updateTransactionRequest,
 } from "../services/transaction.api";
 
@@ -35,6 +37,7 @@ type Income = {
   description: string;
   amount: number;
   currency: "PEN" | "USD";
+  status: "PENDING" | "PAID";
   exchangeRate: number;
   paymentMethod: string;
 };
@@ -109,12 +112,14 @@ export default function IncomePage() {
             subCategoryId: t.subCategoryId,
             currency: t.currency || "PEN",
             exchangeRate: t.exchangeRate || 1,
+            status: t.status || "PAID",
             paymentMethod: t.paymentMethod || "TRANSFER",
           })),
       );
       setCategories(categoriesData);
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Error al cargar ingresos";
+      const message =
+        error instanceof Error ? error.message : "Error al cargar ingresos";
       toast.error(message);
     } finally {
       setLoading(false);
@@ -158,9 +163,14 @@ export default function IncomePage() {
     if (!selectedCategoryId) return toast.error("Selecciona una categoría");
     if (categoryHasSubcategories && !selectedSubCategoryId)
       return toast.error("Selecciona una subcategoría");
-    if (!formData.description.trim()) return toast.error("Ingresa una descripción");
-    if (!formData.amount || Number(formData.amount) <= 0) return toast.error("Ingresa un monto válido");
-    if (formData.currency === "USD" && (!formData.exchangeRate || Number(formData.exchangeRate) <= 0))
+    if (!formData.description.trim())
+      return toast.error("Ingresa una descripción");
+    if (!formData.amount || Number(formData.amount) <= 0)
+      return toast.error("Ingresa un monto válido");
+    if (
+      formData.currency === "USD" &&
+      (!formData.exchangeRate || Number(formData.exchangeRate) <= 0)
+    )
       return toast.error("Ingresa un tipo de cambio válido");
 
     const payload = {
@@ -185,7 +195,24 @@ export default function IncomePage() {
       setIsModalOpen(false);
       loadData();
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Error al guardar";
+      const message =
+        error instanceof Error ? error.message : "Error al guardar";
+      toast.error(message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleStatus = async (inc: Income) => {
+    try {
+      await markAsPaidRequest(inc.id, {
+        status: inc.status === "PAID" ? "PENDING" : "PAID",
+      });
+      toast.success("Actualizado correctamente");
+      loadData();
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : "Error al enviar a pendiente";
       toast.error(message);
     } finally {
       setSaving(false);
@@ -205,7 +232,8 @@ export default function IncomePage() {
       setIsConfirmOpen(false);
       loadData();
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Error al eliminar";
+      const message =
+        error instanceof Error ? error.message : "Error al eliminar";
       toast.error(message);
     }
   };
@@ -310,7 +338,7 @@ export default function IncomePage() {
                   return (
                     <tr
                       key={inc.id}
-                      className="hover:bg-emerald-50/30 transition-all group"
+                      className="hover:bg-emerald-50/30 transition-all"
                     >
                       <td className="p-5 pl-8 text-xs font-black text-emerald-400">
                         #{index + 1}
@@ -318,11 +346,17 @@ export default function IncomePage() {
                       <td className="p-5">
                         <div className="flex flex-col gap-1">
                           <span className="inline-flex items-center px-3 py-1 rounded-xl bg-emerald-100 text-emerald-700 text-[10px] font-black uppercase tracking-tighter border border-emerald-200 shadow-sm w-fit">
-                            {typeof inc.category === 'object' ? (inc.category as any).name : inc.category || "Otros"}
+                            {typeof inc.category === "object"
+                              ? (inc.category as any).name
+                              : inc.category || "Otros"}
                           </span>
-                          {(typeof inc.subCategory === 'object' ? (inc.subCategory as any).name : inc.subCategory) && (
+                          {(typeof inc.subCategory === "object"
+                            ? (inc.subCategory as any).name
+                            : inc.subCategory) && (
                             <span className="text-[9px] text-emerald-600/60 font-black ml-1 uppercase tracking-widest">
-                              {typeof inc.subCategory === 'object' ? (inc.subCategory as any).name : inc.subCategory}
+                              {typeof inc.subCategory === "object"
+                                ? (inc.subCategory as any).name
+                                : inc.subCategory}
                             </span>
                           )}
                         </div>
@@ -346,25 +380,77 @@ export default function IncomePage() {
                         {inc.currency}
                       </td>
                       <td className="p-5 text-center text-xs font-black text-gray-400">
-                        {inc.currency === "USD" ? (inc.exchangeRate || 1).toFixed(3) : "-"}
+                        {inc.currency === "USD"
+                          ? (inc.exchangeRate || 1).toFixed(3)
+                          : "-"}
                       </td>
                       <td className="p-5 text-right text-lg font-black text-emerald-600">
-                        S/ {montoSoles.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        S/{" "}
+                        {montoSoles.toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                        })}
                       </td>
                       <td className="p-5 pr-8 text-center">
-                        <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-all">
-                          <button
-                            onClick={() => handleOpenEdit(inc)}
-                            className="p-2 bg-gray-100 text-blue-600 hover:bg-blue-600 hover:text-white rounded-lg transition-all"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(inc.id)}
-                            className="p-2 bg-gray-100 text-rose-600 hover:bg-rose-600 hover:text-white rounded-lg transition-all"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                        <div className="flex gap-2 ml-4">
+                          {/* Editar */}
+                          <div className="relative group">
+                            <button
+                              title="Editar"
+                              onClick={() => handleOpenEdit(inc)}
+                              className="p-2.5 bg-white border border-gray-200 text-blue-600 rounded-xl shadow-sm active:scale-95"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+
+                            <span
+                              className="hidden group-hover:block absolute left-1/2 -translate-x-1/2
+  bottom-14 z-50 whitespace-nowrap rounded-full px-3 py-1
+  text-xs font-medium text-white shadow-lg
+  bg-gradient-to-r from-pink-400 via-violet-500 to-cyan-400"
+                            >
+                              Editar
+                            </span>
+                          </div>
+
+                          {/* Eliminar */}
+                          <div className="relative group">
+                            <button
+                              title="Eliminar"
+                              onClick={() => handleDelete(inc.id)}
+                              className="p-2.5 bg-white border border-gray-200 text-rose-600 rounded-xl shadow-sm active:scale-95"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+
+                            <span
+                              className="hidden group-hover:block absolute left-1/2 -translate-x-1/2
+  bottom-14 z-50 whitespace-nowrap rounded-full px-3 py-1
+  text-xs font-medium text-white shadow-lg
+  bg-gradient-to-r from-pink-400 via-violet-500 to-cyan-400"
+                            >
+                              Eliminar
+                            </span>
+                          </div>
+
+                          {/* Devolver */}
+                          <div className="relative group">
+                            <button
+                              title="Devolver a pendientes"
+                              onClick={() => handleStatus(inc)}
+                              className="p-2.5 bg-white border border-gray-200 text-gray-600 rounded-xl shadow-sm active:scale-95"
+                            >
+                              <ArrowUpRight className="w-4 h-4" />
+                            </button>
+
+                            <span
+                              className="hidden group-hover:block absolute left-1/2 -translate-x-1/2
+  bottom-14 z-50 whitespace-nowrap rounded-full px-3 py-1
+  text-xs font-medium text-white shadow-lg
+  bg-gradient-to-r from-pink-400 via-violet-500 to-cyan-400"
+                            >
+                              Devolver
+                            </span>
+                          </div>
                         </div>
                       </td>
                     </tr>
@@ -377,9 +463,18 @@ export default function IncomePage() {
           {/* VISTA MÓVIL: CARDS */}
           <div className="md:hidden divide-y divide-gray-100">
             {filtered.map((inc) => {
-              const montoSoles = inc.currency === "USD" ? inc.amount * inc.exchangeRate : inc.amount;
-              const categoryName = typeof inc.category === 'object' ? (inc.category as any).name : inc.category || "Otros";
-              const subCategoryName = typeof inc.subCategory === 'object' ? (inc.subCategory as any).name : inc.subCategory;
+              const montoSoles =
+                inc.currency === "USD"
+                  ? inc.amount * inc.exchangeRate
+                  : inc.amount;
+              const categoryName =
+                typeof inc.category === "object"
+                  ? (inc.category as any).name
+                  : inc.category || "Otros";
+              const subCategoryName =
+                typeof inc.subCategory === "object"
+                  ? (inc.subCategory as any).name
+                  : inc.subCategory;
 
               return (
                 <div key={inc.id} className="p-6 space-y-4">
@@ -399,34 +494,95 @@ export default function IncomePage() {
                         {inc.description || "Sin descripción"}
                       </h3>
                       <p className="text-[10px] text-gray-400 font-bold mt-1 uppercase">
-                        {formatDate(inc.date)} • {getMethodBadge(inc.paymentMethod)}
+                        {formatDate(inc.date)} •{" "}
+                        {getMethodBadge(inc.paymentMethod)}
                       </p>
                     </div>
                     <div className="flex gap-2 ml-4">
-                      <button
-                        onClick={() => handleOpenEdit(inc)}
-                        className="p-2.5 bg-white border border-gray-200 text-blue-600 rounded-xl shadow-sm active:scale-95"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(inc.id)}
-                        className="p-2.5 bg-white border border-gray-200 text-rose-600 rounded-xl shadow-sm active:scale-95"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {/* Editar */}
+                      <div className="relative group">
+                        <button
+                          title="Editar"
+                          onClick={() => handleOpenEdit(inc)}
+                          className="p-2.5 bg-white border border-gray-200 text-blue-600 rounded-xl shadow-sm active:scale-95"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+
+                        <span
+                          className="hidden group-hover:block absolute left-1/2 -translate-x-1/2
+  bottom-14 z-50 whitespace-nowrap rounded-full px-3 py-1
+  text-xs font-medium text-white shadow-lg
+  bg-gradient-to-r from-pink-400 via-violet-500 to-cyan-400"
+                        >
+                          Editar
+                        </span>
+                      </div>
+
+                      {/* Eliminar */}
+                      <div className="relative group">
+                        <button
+                          title="Eliminar"
+                          onClick={() => handleDelete(inc.id)}
+                          className="p-2.5 bg-white border border-gray-200 text-rose-600 rounded-xl shadow-sm active:scale-95"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+
+                        <span
+                          className="hidden group-hover:block absolute left-1/2 -translate-x-1/2
+  bottom-14 z-50 whitespace-nowrap rounded-full px-3 py-1
+  text-xs font-medium text-white shadow-lg
+  bg-gradient-to-r from-pink-400 via-violet-500 to-cyan-400"
+                        >
+                          Eliminar
+                        </span>
+                      </div>
+
+                      {/* Devolver */}
+                      <div className="relative group">
+                        <button
+                          title="Devolver a pendientes"
+                          onClick={() => handleStatus(inc)}
+                          className="p-2.5 bg-white border border-gray-200 text-gray-600 rounded-xl shadow-sm active:scale-95"
+                        >
+                          <ArrowUpRight className="w-4 h-4" />
+                        </button>
+
+                        <span
+                          className="hidden group-hover:block absolute left-1/2 -translate-x-1/2
+  bottom-14 z-50 whitespace-nowrap rounded-full px-3 py-1
+  text-xs font-medium text-white shadow-lg
+  bg-gradient-to-r from-pink-400 via-violet-500 to-cyan-400"
+                        >
+                          Devolver
+                        </span>
+                      </div>
                     </div>
                   </div>
 
                   <div className="bg-emerald-50/30 p-4 rounded-2xl border border-emerald-100/50 flex justify-between items-center">
                     <div>
-                      <p className="text-[9px] font-black text-emerald-900/40 uppercase tracking-widest mb-1">Total Percibido</p>
-                      <p className="text-xl font-black text-emerald-600">S/ {montoSoles.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                      <p className="text-[9px] font-black text-emerald-900/40 uppercase tracking-widest mb-1">
+                        Total Percibido
+                      </p>
+                      <p className="text-xl font-black text-emerald-600">
+                        S/{" "}
+                        {montoSoles.toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                        })}
+                      </p>
                     </div>
                     <div className="text-right">
-                      <p className="text-[10px] font-bold text-gray-400 mb-1">{inc.currency} {inc.currency === "USD" ? `(T.C: ${inc.exchangeRate})` : ""}</p>
+                      <p className="text-[10px] font-bold text-gray-400 mb-1">
+                        {inc.currency}{" "}
+                        {inc.currency === "USD"
+                          ? `(T.C: ${inc.exchangeRate})`
+                          : ""}
+                      </p>
                       <p className="text-sm font-black text-gray-600">
-                        {inc.currency === "USD" ? "$" : "S/"} {inc.amount.toLocaleString()}
+                        {inc.currency === "USD" ? "$" : "S/"}{" "}
+                        {inc.amount.toLocaleString()}
                       </p>
                     </div>
                   </div>
@@ -674,14 +830,14 @@ export default function IncomePage() {
               <button
                 type="button"
                 onClick={() => setIsModalOpen(false)}
-                className="px-6 py-3 text-gray-400 font-black uppercase text-[10px] tracking-widest hover:text-gray-600 transition-all"
+                className="px-5 py-3 text-gray-400 font-black uppercase text-[10px] tracking-widest hover:text-gray-600 transition-all"
               >
                 Cancelar
               </button>
               <button
                 type="submit"
                 disabled={saving}
-                className="px-10 py-3.5 bg-emerald-600 text-white font-black rounded-xl hover:bg-emerald-700 shadow-xl shadow-emerald-100 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
+                className="px-6 py-3.5 bg-emerald-600 text-white font-black rounded-xl hover:bg-emerald-700 shadow-xl shadow-emerald-100 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
               >
                 {saving ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -707,7 +863,12 @@ export default function IncomePage() {
           title="Eliminar Ingreso"
           message="¿Estás seguro de que deseas eliminar este registro de ingreso permanentemente?"
         />
-        <style dangerouslySetInnerHTML={{ __html: '.custom-scrollbar::-webkit-scrollbar{height:10px;width:10px}.custom-scrollbar::-webkit-scrollbar-track{background:#f8fafc;border-radius:10px}.custom-scrollbar::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:10px;border:2px solid #f8fafc}.custom-scrollbar::-webkit-scrollbar-thumb:hover{background:#94a3b8}' }} />
+        <style
+          dangerouslySetInnerHTML={{
+            __html:
+              ".custom-scrollbar::-webkit-scrollbar{height:10px;width:10px}.custom-scrollbar::-webkit-scrollbar-track{background:#f8fafc;border-radius:10px}.custom-scrollbar::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:10px;border:2px solid #f8fafc}.custom-scrollbar::-webkit-scrollbar-thumb:hover{background:#94a3b8}",
+          }}
+        />
       </div>
     </Appshell>
   );

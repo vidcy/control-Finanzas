@@ -18,6 +18,8 @@ import {
   RefreshCw,
   Activity,
   Edit2,
+  ArrowUpLeft,
+  ArrowDownLeft,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import {
@@ -488,6 +490,16 @@ export default function PendingPage() {
                         </td>
                       </tr>
                     ))}
+                    {receivables.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="p-20 text-center">
+                          <ArrowUpLeft className="w-12 h-12 text-gray-100 mx-auto mb-4" />
+                          <p className="text-sm text-gray-400 font-bold uppercase tracking-widest">
+                            Sin cuentas por cobrar
+                          </p>
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -580,14 +592,6 @@ export default function PendingPage() {
                   </div>
                 ))}
               </div>
-              {receivables.length === 0 && (
-                <div className="p-20 text-center">
-                  <ArrowUpRight className="w-12 h-12 text-gray-100 mx-auto mb-4" />
-                  <p className="text-sm text-gray-400 font-bold uppercase tracking-widest">
-                    Sin cobros pendientes
-                  </p>
-                </div>
-              )}
             </div>
           </div>
 
@@ -708,9 +712,9 @@ export default function PendingPage() {
                     {payables.length === 0 && (
                       <tr>
                         <td colSpan={6} className="p-20 text-center">
-                          <ArrowDownRight className="w-12 h-12 text-gray-100 mx-auto mb-4" />
+                          <ArrowUpRight className="w-12 h-12 text-gray-100 mx-auto mb-4 " />
                           <p className="text-sm text-gray-400 font-bold uppercase tracking-widest">
-                            Sin pagos pendientes
+                            Sin cuentas por pagar
                           </p>
                         </td>
                       </tr>
@@ -1003,18 +1007,18 @@ export default function PendingPage() {
               </div>
             </div>
 
-            <div className="flex justify-end gap-4">
+            <div className="flex justify-end gap-4 ">
               <button
                 type="button"
                 onClick={() => setIsModalOpen(false)}
-                className="px-8 py-4 text-gray-400 font-black uppercase text-xs tracking-widest hover:text-gray-600 transition-all"
+                className="px-0 py-6 text-gray-400 font-black uppercase text-xs tracking-widest hover:text-gray-600 transition-all"
               >
                 Cancelar
               </button>
               <button
                 type="submit"
                 disabled={saving}
-                className={`px-10 py-4 text-white font-black rounded-[1.5rem] transition-all shadow-xl hover:-translate-y-1 active:scale-95 disabled:opacity-50 flex items-center gap-2 ${activeType === "INCOME" ? "bg-emerald-500 shadow-emerald-200" : "bg-rose-500 shadow-rose-200"}`}
+                className={`px-6 py-4 text-white font-black rounded-[1.5rem] transition-all shadow-xl hover:-translate-y-1 active:scale-95 disabled:opacity-50 flex items-center gap-2 ${activeType === "INCOME" ? "bg-emerald-500 shadow-emerald-200" : "bg-rose-500 shadow-rose-200"}`}
               >
                 {saving ? (
                   <Loader2 className="w-5 h-5 animate-spin" />

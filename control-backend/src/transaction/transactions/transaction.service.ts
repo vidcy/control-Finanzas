@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import {
   CreateTransactionDto,
   Currency,
+  MarkAsPendingDto,
   TransactionStatus,
   UpdateTransactionDto,
 } from './transactions.dto';
@@ -88,6 +89,18 @@ export class TransactionService {
   async deleteTransaction(id: string) {
     return this.prisma.transaction.delete({
       where: { id },
+    });
+  }
+  async markTransactionAsPending(id: string, dto: MarkAsPendingDto) {
+    const existingTransaction = await this.findById(id);
+    if (!existingTransaction) {
+      throw new Error('Transaccion no encontrada');
+    }
+    return this.prisma.transaction.update({
+      where: { id },
+      data: {
+        status: dto.status,
+      },
     });
   }
 }

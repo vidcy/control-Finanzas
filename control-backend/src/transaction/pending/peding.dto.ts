@@ -112,3 +112,8 @@ export class UpdatePendingTransactionDto {
   @IsNumber()
   amountSoles?: number;
 }
+
+export class MarkAsPaidDto {
+  @IsEnum(TransactionStatus)
+  status: TransactionStatus;
+}

@@ -11,7 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
-import { CreatePendingTransactionDto } from './peding.dto';
+import { CreatePendingTransactionDto, MarkAsPaidDto } from './peding.dto';
 import { TransactionType } from '@prisma/client';
 import { JwtAuthGuard } from 'src/auth/jwt.guard';
 import { PendingTransactionService } from './pending.service';
@@ -54,8 +54,8 @@ export class PendingTransactionController {
     return this.service.deletePendingTransaction(id);
   }
   @UseGuards(JwtAuthGuard)
-  @Patch(':id/pay')
-  markAsPaid(@Param('id') id: string) {
-    return this.service.markPendingTransactionAsPaid(id);
+  @Patch(':id/mark-paid')
+  markAsPaid(@Req() req, @Param('id') id: string, @Body() dto: MarkAsPaidDto) {
+    return this.service.markTransactionAsPaid(id, dto);
   }
 }

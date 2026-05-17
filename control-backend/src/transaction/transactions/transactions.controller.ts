@@ -1,7 +1,11 @@
 import { Controller, Param, Req } from '@nestjs/common';
 import { TransactionService } from './transaction.service';
 import { Body, Post, Get, Patch, Delete } from '@nestjs/common';
-import { CreateTransactionDto, UpdateTransactionDto } from './transactions.dto';
+import {
+  CreateTransactionDto,
+  MarkAsPendingDto,
+  UpdateTransactionDto,
+} from './transactions.dto';
 import { AuthGuard } from '@nestjs/passport';
 import { UseGuards } from '@nestjs/common';
 
@@ -37,5 +41,15 @@ export class TransactionController {
   @Delete(':id')
   deleteTransaction(@Req() req, @Param('id') id: string) {
     return this.transactionService.deleteTransaction(id);
+  }
+
+  @UseGuards(AuthGuard('jwt'))
+  @Patch(':id/mark-pending')
+  markAsPending(
+    @Req() req,
+    @Param('id') id: string,
+    @Body() dto: MarkAsPendingDto,
+  ) {
+    return this.transactionService.markTransactionAsPending(id, dto);
   }
 }
