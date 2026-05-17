@@ -17,6 +17,7 @@ import {
   ChevronDown,
   Wallet,
   ArrowUpRight,
+  RotateCcw,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { listCategoriesRequest } from "../services/category.api";
@@ -57,6 +58,8 @@ export default function ExpensesPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [idToDelete, setIdToDelete] = useState<string | null>(null);
+  const [idStatus, setStatus] = useState<string | null>(null);
+  const [idToReturn, setIdToReturn] = useState<string | null>(null);
 
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
   const [selectedSubCategoryId, setSelectedSubCategoryId] = useState("");
@@ -217,21 +220,6 @@ export default function ExpensesPage() {
     }
   };
 
-  const handleStatus = async (exp: Expense) => {
-    try {
-      await markAsPaidRequest(exp.id, {
-        status: exp.status === "PAID" ? "PENDING" : "PAID",
-      });
-      toast.success("Actualizado correctamente");
-      loadData();
-    } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : "Error al enviar a pendiente";
-      toast.error(message);
-    } finally {
-      setSaving(false);
-    }
-  };
   const handleDelete = (id: string) => {
     setIdToDelete(id);
     setIsConfirmOpen(true);
@@ -248,6 +236,27 @@ export default function ExpensesPage() {
       const message =
         error instanceof Error ? error.message : "Error al eliminar";
       toast.error(message);
+    }
+  };
+  const handleStatus = async (id: string, status: string) => {
+    setIdToReturn(id);
+    setStatus(status);
+    setIsConfirmOpen(true);
+  };
+  const confirmReturn = async () => {
+    if (!idToReturn) return;
+    try {
+      await markAsPaidRequest(idToReturn, {
+        status: idStatus === "PAID" ? "PENDING" : "PAID",
+      });
+      toast.success("Actualizado correctamente");
+      loadData();
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : "Error al enviar a pendiente";
+      toast.error(message);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -462,7 +471,7 @@ export default function ExpensesPage() {
                           <div className="relative group">
                             <button
                               title="Devolver a pendientes"
-                              onClick={() => handleStatus(exp)}
+                              onClick={() => handleStatus(exp.id, exp.status)}
                               className="p-2.5 bg-white border border-gray-200 text-gray-600 rounded-xl shadow-sm active:scale-95"
                             >
                               <ArrowUpRight className="w-4 h-4" />
@@ -569,7 +578,7 @@ export default function ExpensesPage() {
                       <div className="relative group">
                         <button
                           title="Devolver a pendientes"
-                          onClick={() => handleStatus(exp)}
+                          onClick={() => handleStatus(exp.id, exp.status)}
                           className="p-2.5 bg-white border border-gray-200 text-gray-600 rounded-xl shadow-sm active:scale-95"
                         >
                           <ArrowUpRight className="w-4 h-4" />
@@ -719,6 +728,7 @@ export default function ExpensesPage() {
                     <input
                       required
                       type="date"
+                      max={new Date().toISOString().split("T")[0]}
                       className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-rose-500/10 focus:border-rose-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
                       value={formData.date}
                       onChange={(e) =>
@@ -949,6 +959,16 @@ export default function ExpensesPage() {
           onConfirm={confirmDelete}
           title="Eliminar Egreso"
           message="¿Estás seguro de que deseas eliminar este registro de gasto permanentemente?"
+        />
+        <ConfirmModal
+          isOpen={isConfirmOpen}
+          onClose={() => setIsConfirmOpen(false)}
+          onConfirm={confirmReturn}
+          title="Devolver egreso"
+          message="¿Estás seguro de que deseas devolver este registro a cuentas por Pagar?"
+          confirmText="Devolver"
+          buttonIcon={<RotateCcw className="w-5 h-5" />}
+          variant="info"
         />
       </div>
     </Appshell>

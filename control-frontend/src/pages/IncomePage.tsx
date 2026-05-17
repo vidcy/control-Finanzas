@@ -15,6 +15,7 @@ import {
   ChevronDown,
   Wallet,
   ArrowUpRight,
+  RotateCcw,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { listCategoriesRequest } from "../services/category.api";
@@ -53,6 +54,8 @@ export default function IncomePage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [idToDelete, setIdToDelete] = useState<string | null>(null);
+  const [idtoReturn, setIdToReturn] = useState<string | null>(null);
+  const [idStatus, setStatus] = useState<string | null>(null);
 
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
   const [selectedSubCategoryId, setSelectedSubCategoryId] = useState("");
@@ -204,9 +207,16 @@ export default function IncomePage() {
   };
 
   const handleStatus = async (inc: Income) => {
+    setIdToReturn(inc.id);
+    setStatus(inc.status);
+    setIsConfirmOpen(true);
+  };
+
+  const confirmReturn = async () => {
+    if (!idtoReturn) return;
     try {
-      await markAsPaidRequest(inc.id, {
-        status: inc.status === "PAID" ? "PENDING" : "PAID",
+      await markAsPaidRequest(idtoReturn, {
+        status: idStatus === "PAID" ? "PENDING" : "PAID",
       });
       toast.success("Actualizado correctamente");
       loadData();
@@ -691,6 +701,7 @@ export default function IncomePage() {
                     <input
                       required
                       type="date"
+                      max={new Date().toISOString().split("T")[0]}
                       className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
                       value={formData.date}
                       onChange={(e) =>
@@ -862,6 +873,16 @@ export default function IncomePage() {
           onConfirm={confirmDelete}
           title="Eliminar Ingreso"
           message="¿Estás seguro de que deseas eliminar este registro de ingreso permanentemente?"
+        />
+        <ConfirmModal
+          isOpen={isConfirmOpen}
+          onClose={() => setIsConfirmOpen(false)}
+          onConfirm={confirmReturn}
+          title="Devolver Ingreso"
+          message={`¿Estás seguro de que deseas devolver este registro a cuentas por cobrar?`}
+          confirmText="Devolver"
+          buttonIcon={<RotateCcw className="w-5 h-5" />}
+          variant="info"
         />
         <style
           dangerouslySetInnerHTML={{

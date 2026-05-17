@@ -906,6 +906,7 @@ export default function PendingPage() {
                   <input
                     required
                     type="date"
+                    min={new Date().toISOString().split("T")[0]}
                     className="w-full px-5 py-4 bg-white border border-gray-100 rounded-[1.5rem] outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
                     value={formData.date}
                     onChange={(e) =>
