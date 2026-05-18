@@ -8,7 +8,7 @@ import { RolesGuard } from 'src/auth/role.guard';
 
 @Controller('users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) { }
+  constructor(private readonly usersService: UsersService) {}
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   @Post()
@@ -26,8 +26,8 @@ export class UsersController {
   @UseGuards(JwtAuthGuard)
   @Get('me')
   getMe(@Req() req) {
-    console.log('🔥 ENTRO A /users/me');
-    console.log('USER:', req.user.id);
+    // console.log('🔥 ENTRO A /users/me');
+    //console.log('USER:', req.user.id);
     return this.usersService.me(req.user.id);
   }
 
