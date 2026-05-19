@@ -90,7 +90,7 @@ export const deleteTransactionRequest = async (id: string) => {
     );
   }
 };
-export const markAsPaidRequest = async (
+export const markAsPendingRequest = async (
   id: string,
   data: { status: "PENDING" | "PAID" },
 ) => {

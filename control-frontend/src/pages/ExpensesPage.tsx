@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Appshell from "../components/layout/Appshell";
 import Modal from "../components/ui/Modal";
 import {
@@ -26,7 +26,7 @@ import {
   createTransactionRequest,
   deleteTransactionRequest,
   getTransactionsRequest,
-  markAsPaidRequest,
+  markAsPendingRequest,
   updateTransactionRequest,
 } from "../services/transaction.api";
 
@@ -64,8 +64,43 @@ export default function ExpensesPage() {
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
   const [selectedSubCategoryId, setSelectedSubCategoryId] = useState("");
 
+  const [expensesPage, setExpensesPage] = useState(1);
+
+  const ITEMS_PER_PAGE = 4;
+
+  const expenseTotalPages = Math.ceil(items.length / ITEMS_PER_PAGE);
+
+  const getPages = (totalPages: number) => {
+    if (totalPages <= 6) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+
+    const pages = [];
+    pages.push(1);
+    if (expensesPage > 2) pages.push("...");
+    pages.push(expensesPage);
+    if (expensesPage < totalPages - 1) pages.push("...");
+    pages.push(totalPages);
+
+    return pages;
+  };
+
+  const expensesDesktop = useMemo(() => {
+    const start = (expensesPage - 1) * ITEMS_PER_PAGE;
+    const end = start + ITEMS_PER_PAGE;
+    return items.slice(start, end);
+  }, [items, expensesPage]);
+
+  const today = new Date();
+  const localDate =
+    today.getFullYear() +
+    "-" +
+    String(today.getMonth() + 1).padStart(2, "0") +
+    "-" +
+    String(today.getDate()).padStart(2, "0");
+
   const [formData, setFormData] = useState({
-    date: new Date().toISOString().split("T")[0],
+    date: localDate,
     description: "",
     amount: "",
     currency: "PEN" as "PEN" | "USD",
@@ -140,7 +175,7 @@ export default function ExpensesPage() {
   const handleOpenCreate = () => {
     setEditingId(null);
     setFormData({
-      date: new Date().toISOString().split("T")[0],
+      date: localDate,
       description: "",
       amount: "",
       currency: "PEN",
@@ -173,8 +208,30 @@ export default function ExpensesPage() {
     setIsModalOpen(true);
   };
 
+  const [dateError, setDateError] = useState<string>("");
+
+  const validateDate = (dateValue: string) => {
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+
+    const [y, m, d] = dateValue.split("-");
+    const fecha = new Date(Number(y), Number(m) - 1, Number(d));
+
+    if (fecha > hoy) {
+      setDateError("La fecha no puede ser mayor a hoy");
+      return false;
+    }
+
+    setDateError("");
+    return true;
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validateDate(formData.date)) {
+      toast.error("Fecha inválida");
+      return;
+    }
     if (!selectedCategoryId) return toast.error("Selecciona una categoría");
     if (hasSubcategories && !selectedSubCategoryId)
       return toast.error("Selecciona una subcategoría");
@@ -246,7 +303,7 @@ export default function ExpensesPage() {
   const confirmReturn = async () => {
     if (!idToReturn) return;
     try {
-      await markAsPaidRequest(idToReturn, {
+      await markAsPendingRequest(idToReturn, {
         status: idStatus === "PAID" ? "PENDING" : "PAID",
       });
       toast.success("Actualizado correctamente");
@@ -351,7 +408,7 @@ export default function ExpensesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50/50">
-                {filtered.map((exp) => {
+                {expensesDesktop.map((exp) => {
                   const montoSoles =
                     exp.currency === "USD"
                       ? exp.amount * exp.exchangeRate
@@ -493,6 +550,60 @@ export default function ExpensesPage() {
                 })}
               </tbody>
             </table>
+            <div className="flex justify-center items-center gap-2 py-4 border-t border-gray-100 bg-white">
+              {/* IR AL INICIO */}
+              <button
+                onClick={() => setExpensesPage(1)}
+                disabled={expensesPage === 1}
+                className="px-3 py-1 text-sm font-black disabled:opacity-30"
+              >
+                « Inicio
+              </button>
+
+              {/* ATRÁS */}
+              <button
+                onClick={() => setExpensesPage((p) => Math.max(p - 1, 1))}
+                disabled={expensesPage === 1}
+                className="px-3 py-1 text-sm font-black disabled:opacity-30"
+              >
+                ‹ Atrás
+              </button>
+
+              {/* NÚMEROS */}
+              {getPages(expenseTotalPages).map((page) => (
+                <button
+                  key={page}
+                  onClick={() => setExpensesPage(page)}
+                  className={`px-3 py-1 text-sm font-black rounded-lg transition-all ${
+                    expensesPage === page
+                      ? "bg-black text-white"
+                      : "text-gray-500 hover:bg-gray-100"
+                  }`}
+                >
+                  {page}
+                </button>
+              ))}
+
+              {/* SIGUIENTE */}
+              <button
+                onClick={() =>
+                  setExpensesPage((p) => Math.min(p + 1, expenseTotalPages))
+                }
+                disabled={expensesPage === expenseTotalPages}
+                className="px-3 py-1 text-sm font-black disabled:opacity-30"
+              >
+                Siguiente ›
+              </button>
+
+              {/* IR AL FINAL */}
+              <button
+                onClick={() => setExpensesPage(expenseTotalPages)}
+                disabled={expensesPage === expenseTotalPages}
+                className="px-3 py-1 text-sm font-black disabled:opacity-30"
+              >
+                Fin »
+              </button>
+            </div>
           </div>
 
           {/* VISTA MÓVIL: CARDS */}
@@ -728,13 +839,22 @@ export default function ExpensesPage() {
                     <input
                       required
                       type="date"
-                      max={new Date().toISOString().split("T")[0]}
+                      max={localDate}
                       className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-rose-500/10 focus:border-rose-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
                       value={formData.date}
-                      onChange={(e) =>
-                        setFormData({ ...formData, date: e.target.value })
-                      }
+                      onChange={(e) => {
+                        const value = e.target.value;
+
+                        setFormData({ ...formData, date: value });
+
+                        validateDate(value);
+                      }}
                     />
+                    {dateError && (
+                      <p className="text-xs font-bold text-rose-500 mt-1">
+                        {dateError}
+                      </p>
+                    )}
                   </div>
 
                   <div className="space-y-1.5">

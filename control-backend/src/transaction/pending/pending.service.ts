@@ -99,6 +99,7 @@ export class PendingTransactionService {
       where: { id },
       data: {
         status: dto.status,
+        paidAt: new Date(),
       },
     });
   }

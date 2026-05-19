@@ -143,6 +143,8 @@ model Transaction {
   // 📅 FECHA DE VENCIMIENTO (CUENTAS PENDIENTES)
   dueDate DateTime?
 
+  paidAt DateTime?
+
   // 💳 MÉTODO DE PAGO
   paymentMethod PaymentMethod
 

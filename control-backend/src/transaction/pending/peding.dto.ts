@@ -36,6 +36,11 @@ export class CreatePendingTransactionDto {
   @IsDateString()
   dueDate?: string;
 
+  // 📅 Fecha de pago (clave en cuentas pendientes)
+  @IsOptional()
+  @IsDateString()
+  paidAt?: string;
+
   // 💳 método de pago (opcional en deuda)
   @IsOptional()
   @IsEnum(PaymentMethod)
@@ -87,6 +92,11 @@ export class UpdatePendingTransactionDto {
   @IsOptional()
   @IsDateString()
   date?: string;
+
+  // 📅 Fecha de pago (clave en cuentas pendientes)
+  @IsOptional()
+  @IsDateString()
+  paidAt?: string;
 
   @IsOptional()
   @IsString()

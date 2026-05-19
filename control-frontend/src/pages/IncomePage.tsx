@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Appshell from "../components/layout/Appshell";
 import Modal from "../components/ui/Modal";
 import {
@@ -24,8 +24,8 @@ import {
   createTransactionRequest,
   deleteTransactionRequest,
   getTransactionsRequest,
-  markAsPaidRequest,
   updateTransactionRequest,
+  markAsPendingRequest,
 } from "../services/transaction.api";
 
 type Income = {
@@ -60,8 +60,18 @@ export default function IncomePage() {
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
   const [selectedSubCategoryId, setSelectedSubCategoryId] = useState("");
 
+  const [incomePage, setIncomePage] = useState(1);
+
+  const today = new Date();
+  const localDate =
+    today.getFullYear() +
+    "-" +
+    String(today.getMonth() + 1).padStart(2, "0") +
+    "-" +
+    String(today.getDate()).padStart(2, "0");
+
   const [formData, setFormData] = useState({
-    date: new Date().toISOString().split("T")[0],
+    date: localDate,
     description: "",
     amount: "",
     currency: "PEN" as "PEN" | "USD",
@@ -79,6 +89,7 @@ export default function IncomePage() {
   const filteredSubCategories = (
     Array.isArray(categories) ? categories : []
   ).filter((c) => c.parentId === selectedCategoryId);
+  const ITEMS_PER_PAGE = 4;
 
   const categoryHasSubcategories = filteredSubCategories.length > 0;
 
@@ -89,6 +100,18 @@ export default function IncomePage() {
       ) ||
       (inc.category?.toLowerCase() || "").includes(searchTerm.toLowerCase()),
   );
+
+  const incomeTotalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE);
+
+  const getPages = (total: number) => {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  };
+
+  const incomeDesktop = useMemo(() => {
+    const start = (incomePage - 1) * ITEMS_PER_PAGE;
+    const end = start + ITEMS_PER_PAGE;
+    return filtered.slice(start, end);
+  }, [filtered, incomePage]);
 
   useEffect(() => {
     loadData();
@@ -132,7 +155,7 @@ export default function IncomePage() {
   const handleOpenCreate = () => {
     setEditingId(null);
     setFormData({
-      date: new Date().toISOString().split("T")[0],
+      date: localDate,
       description: "",
       amount: "",
       currency: "PEN",
@@ -160,9 +183,30 @@ export default function IncomePage() {
     setSelectedSubCategoryId(item.subCategoryId || "");
     setIsModalOpen(true);
   };
+  const [dateError, setDateError] = useState<string>("");
+
+  const validateDate = (dateValue: string) => {
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+
+    const [y, m, d] = dateValue.split("-");
+    const fecha = new Date(Number(y), Number(m) - 1, Number(d));
+
+    if (fecha > hoy) {
+      setDateError("La fecha no puede ser mayor a hoy");
+      return false;
+    }
+
+    setDateError("");
+    return true;
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validateDate(formData.date)) {
+      toast.error("Fecha inválida");
+      return;
+    }
     if (!selectedCategoryId) return toast.error("Selecciona una categoría");
     if (categoryHasSubcategories && !selectedSubCategoryId)
       return toast.error("Selecciona una subcategoría");
@@ -215,7 +259,7 @@ export default function IncomePage() {
   const confirmReturn = async () => {
     if (!idtoReturn) return;
     try {
-      await markAsPaidRequest(idtoReturn, {
+      await markAsPendingRequest(idtoReturn, {
         status: idStatus === "PAID" ? "PENDING" : "PAID",
       });
       toast.success("Actualizado correctamente");
@@ -340,7 +384,7 @@ export default function IncomePage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-emerald-50">
-                {filtered.map((inc, index) => {
+                {incomeDesktop.map((inc, index) => {
                   const montoSoles =
                     inc.currency === "USD"
                       ? inc.amount * inc.exchangeRate
@@ -468,6 +512,60 @@ export default function IncomePage() {
                 })}
               </tbody>
             </table>
+            <div className="flex justify-center items-center gap-2 py-4 border-t border-gray-100 bg-white">
+              {/* IR AL INICIO */}
+              <button
+                onClick={() => setIncomePage(1)}
+                disabled={incomePage === 1}
+                className="px-3 py-1 text-sm font-black disabled:opacity-30"
+              >
+                « Inicio
+              </button>
+
+              {/* ATRÁS */}
+              <button
+                onClick={() => setIncomePage((p) => Math.max(p - 1, 1))}
+                disabled={incomePage === 1}
+                className="px-3 py-1 text-sm font-black disabled:opacity-30"
+              >
+                ‹ Atrás
+              </button>
+
+              {/* NÚMEROS */}
+              {getPages(incomeTotalPages).map((page) => (
+                <button
+                  key={page}
+                  onClick={() => setIncomePage(page)}
+                  className={`px-3 py-1 text-sm font-black rounded-lg transition-all ${
+                    incomePage === page
+                      ? "bg-black text-white"
+                      : "text-gray-500 hover:bg-gray-100"
+                  }`}
+                >
+                  {page}
+                </button>
+              ))}
+
+              {/* SIGUIENTE */}
+              <button
+                onClick={() =>
+                  setIncomePage((p) => Math.min(p + 1, incomeTotalPages))
+                }
+                disabled={incomePage === incomeTotalPages}
+                className="px-3 py-1 text-sm font-black disabled:opacity-30"
+              >
+                Siguiente ›
+              </button>
+
+              {/* IR AL FINAL */}
+              <button
+                onClick={() => setIncomePage(incomeTotalPages)}
+                disabled={incomePage === incomeTotalPages}
+                className="px-3 py-1 text-sm font-black disabled:opacity-30"
+              >
+                Fin »
+              </button>
+            </div>
           </div>
 
           {/* VISTA MÓVIL: CARDS */}
@@ -701,13 +799,22 @@ export default function IncomePage() {
                     <input
                       required
                       type="date"
-                      max={new Date().toISOString().split("T")[0]}
+                      max={localDate}
                       className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
                       value={formData.date}
-                      onChange={(e) =>
-                        setFormData({ ...formData, date: e.target.value })
-                      }
+                      onChange={(e) => {
+                        const value = e.target.value;
+
+                        setFormData({ ...formData, date: value });
+
+                        validateDate(value);
+                      }}
                     />
+                    {dateError && (
+                      <p className="text-xs font-bold text-rose-500 mt-1">
+                        {dateError}
+                      </p>
+                    )}
                   </div>
 
                   <div className="space-y-1.5">

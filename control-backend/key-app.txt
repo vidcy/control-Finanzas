@@ -7,4 +7,6 @@ contraseña de aplicación: uiqt kcpp himj imzw
 
   npx prisma migrate dev --name add_transactions-12-05-2026-v1
 
-  npx prisma db seed
+  npx prisma db see
+
+  npx prisma migrate dev --name add-paid-at

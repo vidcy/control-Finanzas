@@ -29,6 +29,7 @@ import {
 } from "../services/pending.api";
 import { listCategoriesRequest } from "../services/category.api";
 import ConfirmModal from "../components/ui/ConfirmModal";
+import { markAsPaidRequest } from "../services/pending.api";
 type Category = {
   id: string;
   name: string;
@@ -71,13 +72,26 @@ export default function PendingPage() {
   const [showAllReceivables, setShowAllReceivables] = useState(false);
   const [showAllPayables, setShowAllPayables] = useState(false);
 
+  const [receivablesPage, setReceivablesPage] = useState(1);
+  const [payablesPage, setPayablesPage] = useState(1);
+
+  const ITEMS_PER_PAGE = 4;
+
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
   const [selectedSubCategoryId, setSelectedSubCategoryId] =
     useState<string>("");
 
+  const today = new Date();
+  const localDate =
+    today.getFullYear() +
+    "-" +
+    String(today.getMonth() + 1).padStart(2, "0") +
+    "-" +
+    String(today.getDate()).padStart(2, "0");
+
   // Form state
   const [formData, setFormData] = useState({
-    date: new Date().toISOString().split("T")[0],
+    date: localDate,
     person: "",
     description: "",
     amount: "",
@@ -119,6 +133,22 @@ export default function PendingPage() {
         : [],
     [items, searchTerm],
   );
+
+  const receivablesTotalPages = Math.ceil(receivables.length / ITEMS_PER_PAGE);
+  const payablesTotalPages = Math.ceil(payables.length / ITEMS_PER_PAGE);
+  const getPages = (total: number) => {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  };
+  const payablesDesktop = useMemo(() => {
+    const start = (payablesPage - 1) * ITEMS_PER_PAGE;
+    const end = start + ITEMS_PER_PAGE;
+    return payables.slice(start, end);
+  }, [payables, payablesPage]);
+  const receivablesDesktop = useMemo(() => {
+    const start = (receivablesPage - 1) * ITEMS_PER_PAGE;
+    const end = start + ITEMS_PER_PAGE;
+    return receivables.slice(start, end);
+  }, [receivables, receivablesPage]);
 
   const payablesTotal = useMemo(
     () => payables.reduce((acc, item) => acc + item.amount, 0),
@@ -203,7 +233,7 @@ export default function PendingPage() {
       description: "",
       currency: "PEN",
       exchangeRate: "1",
-      date: new Date().toISOString().split("T")[0],
+      date: localDate,
     });
     setSelectedCategoryId("");
     setSelectedSubCategoryId("");
@@ -226,8 +256,31 @@ export default function PendingPage() {
     setIsModalOpen(true);
   };
 
+  const [dateError, setDateError] = useState<string>("");
+
+  const validateDate = (dateValue: string) => {
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+
+    const [y, m, d] = dateValue.split("-");
+    const fecha = new Date(Number(y), Number(m) - 1, Number(d));
+
+    if (fecha < hoy) {
+      setDateError("La fecha no puede ser menor a hoy");
+      return false;
+    }
+
+    setDateError("");
+    return true;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!validateDate(formData.date)) {
+      toast.error("Fecha inválida");
+      return;
+    }
 
     if (!selectedCategoryId) {
       toast.error("Selecciona una categoría");
@@ -302,7 +355,7 @@ export default function PendingPage() {
       currentStatus === "PENDING" ? "PAID" : "PENDING";
 
     try {
-      await updatePendingTransactionRequest(id, { status: newStatus });
+      await markAsPaidRequest(id, { status: newStatus });
       setItems((prev) =>
         prev.map((item) =>
           item.id === id ? { ...item, status: newStatus } : item,
@@ -418,7 +471,7 @@ export default function PendingPage() {
                 <table className="w-full text-left border-collapse min-w-[600px]">
                   <thead>
                     <tr className="bg-gray-50/50 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-100">
-                      <th className="p-6 pl-8">Deudor / Detalle</th>
+                      <th className="p-6 pl-8 w-[50px]">Deudor / Detalle</th>
                       <th className="p-6">Moneda</th>
                       <th className="p-6 text-right">Monto</th>
                       <th className="p-6 text-right">En Soles</th>
@@ -427,7 +480,7 @@ export default function PendingPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50/50">
-                    {receivables.map((item) => (
+                    {receivablesDesktop.map((item) => (
                       <tr
                         key={item.id}
                         className={`transition-all group hover:bg-gray-50/50 ${item.status === "PAID" ? "opacity-50 grayscale-[0.5]" : ""}`}
@@ -515,6 +568,64 @@ export default function PendingPage() {
                     )}
                   </tbody>
                 </table>
+                <div className="flex justify-center items-center gap-2 py-4 border-t border-gray-100 bg-white">
+                  {/* IR AL INICIO */}
+                  <button
+                    onClick={() => setReceivablesPage(1)}
+                    disabled={receivablesPage === 1}
+                    className="px-3 py-1 text-sm font-black disabled:opacity-30"
+                  >
+                    « Inicio
+                  </button>
+
+                  {/* ATRÁS */}
+                  <button
+                    onClick={() =>
+                      setReceivablesPage((p) => Math.max(p - 1, 1))
+                    }
+                    disabled={receivablesPage === 1}
+                    className="px-3 py-1 text-sm font-black disabled:opacity-30"
+                  >
+                    ‹ Atrás
+                  </button>
+
+                  {/* NÚMEROS */}
+                  {getPages(receivablesTotalPages).map((page) => (
+                    <button
+                      key={page}
+                      onClick={() => setReceivablesPage(page)}
+                      className={`px-3 py-1 text-sm font-black rounded-lg transition-all ${
+                        receivablesPage === page
+                          ? "bg-black text-white"
+                          : "text-gray-500 hover:bg-gray-100"
+                      }`}
+                    >
+                      {page}
+                    </button>
+                  ))}
+
+                  {/* SIGUIENTE */}
+                  <button
+                    onClick={() =>
+                      setReceivablesPage((p) =>
+                        Math.min(p + 1, receivablesTotalPages),
+                      )
+                    }
+                    disabled={receivablesPage === receivablesTotalPages}
+                    className="px-3 py-1 text-sm font-black disabled:opacity-30"
+                  >
+                    Siguiente ›
+                  </button>
+
+                  {/* IR AL FINAL */}
+                  <button
+                    onClick={() => setReceivablesPage(receivablesTotalPages)}
+                    disabled={receivablesPage === receivablesTotalPages}
+                    className="px-3 py-1 text-sm font-black disabled:opacity-30"
+                  >
+                    Fin »
+                  </button>
+                </div>
               </div>
 
               {/* MOBILE CARD VIEW */}
@@ -674,7 +785,7 @@ export default function PendingPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50/50">
-                    {payables.map((item) => (
+                    {payablesDesktop.map((item) => (
                       <tr
                         key={item.id}
                         className={`transition-all group hover:bg-gray-50/50 ${item.status === "PAID" ? "opacity-50 grayscale-[0.5]" : ""}`}
@@ -762,6 +873,62 @@ export default function PendingPage() {
                     )}
                   </tbody>
                 </table>
+                <div className="flex justify-center items-center gap-2 py-4 border-t border-gray-100 bg-white">
+                  {/* IR AL INICIO */}
+                  <button
+                    onClick={() => setPayablesPage(1)}
+                    disabled={payablesPage === 1}
+                    className="px-3 py-1 text-sm font-black disabled:opacity-30"
+                  >
+                    « Inicio
+                  </button>
+
+                  {/* ATRÁS */}
+                  <button
+                    onClick={() => setPayablesPage((p) => Math.max(p - 1, 1))}
+                    disabled={payablesPage === 1}
+                    className="px-3 py-1 text-sm font-black disabled:opacity-30"
+                  >
+                    ‹ Atrás
+                  </button>
+
+                  {/* NÚMEROS */}
+                  {getPages(payablesTotalPages).map((page) => (
+                    <button
+                      key={page}
+                      onClick={() => setPayablesPage(page)}
+                      className={`px-3 py-1 text-sm font-black rounded-lg transition-all ${
+                        payablesPage === page
+                          ? "bg-black text-white"
+                          : "text-gray-500 hover:bg-gray-100"
+                      }`}
+                    >
+                      {page}
+                    </button>
+                  ))}
+
+                  {/* SIGUIENTE */}
+                  <button
+                    onClick={() =>
+                      setPayablesPage((p) =>
+                        Math.min(p + 1, payablesTotalPages),
+                      )
+                    }
+                    disabled={payablesPage === payablesTotalPages}
+                    className="px-3 py-1 text-sm font-black disabled:opacity-30"
+                  >
+                    Siguiente ›
+                  </button>
+
+                  {/* IR AL FINAL */}
+                  <button
+                    onClick={() => setPayablesPage(payablesTotalPages)}
+                    disabled={payablesPage === payablesTotalPages}
+                    className="px-3 py-1 text-sm font-black disabled:opacity-30"
+                  >
+                    Fin »
+                  </button>
+                </div>
               </div>
 
               {/* MOBILE CARD VIEW */}
@@ -973,13 +1140,22 @@ export default function PendingPage() {
                   <input
                     required
                     type="date"
-                    min={new Date().toISOString().split("T")[0]}
+                    min={localDate}
                     className="w-full px-5 py-4 bg-white border border-gray-100 rounded-[1.5rem] outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
                     value={formData.date}
-                    onChange={(e) =>
-                      setFormData({ ...formData, date: e.target.value })
-                    }
+                    onChange={(e) => {
+                      const value = e.target.value;
+
+                      setFormData({ ...formData, date: value });
+
+                      validateDate(value);
+                    }}
                   />
+                  {dateError && (
+                    <p className="text-xs font-bold text-rose-500 mt-1">
+                      {dateError}
+                    </p>
+                  )}
                 </div>
               </div>
 
