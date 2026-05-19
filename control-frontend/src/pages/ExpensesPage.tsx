@@ -29,10 +29,18 @@ import {
   markAsPendingRequest,
   updateTransactionRequest,
 } from "../services/transaction.api";
+import {
+  getPeruTodayInputStr,
+  utcToPeruInputDate,
+  peruInputDateToUtcISO,
+  formatPeruDate,
+  formatPeruTime,
+} from "../utils/date.utils";
 
 type Expense = {
   id: string;
   date: string;
+  paidAt?: string;
   category: string;
   categoryId?: string;
   subCategory?: string;
@@ -91,16 +99,11 @@ export default function ExpensesPage() {
     return items.slice(start, end);
   }, [items, expensesPage]);
 
-  const today = new Date();
-  const localDate =
-    today.getFullYear() +
-    "-" +
-    String(today.getMonth() + 1).padStart(2, "0") +
-    "-" +
-    String(today.getDate()).padStart(2, "0");
+  const localDate = getPeruTodayInputStr();
 
   const [formData, setFormData] = useState({
     date: localDate,
+    paidAt: localDate,
     description: "",
     amount: "",
     currency: "PEN" as "PEN" | "USD",
@@ -150,6 +153,7 @@ export default function ExpensesPage() {
             description: t.description ?? "",
             amount: t.amount,
             date: t.date,
+            paidAt: t.paidAt ?? undefined,
             category: t.category?.name ?? "Otros",
             categoryId: t.categoryId,
             subCategory: t.subCategory?.name ?? "",
@@ -176,6 +180,7 @@ export default function ExpensesPage() {
     setEditingId(null);
     setFormData({
       date: localDate,
+      paidAt: localDate,
       description: "",
       amount: "",
       currency: "PEN",
@@ -193,7 +198,8 @@ export default function ExpensesPage() {
   const handleOpenEdit = (item: Expense) => {
     setEditingId(item.id);
     setFormData({
-      date: item.date.split("T")[0],
+      date: utcToPeruInputDate(item.date),
+      paidAt: item.paidAt ? utcToPeruInputDate(item.paidAt) : localDate,
       description: item.description,
       amount: item.amount.toString(),
       currency: item.currency,
@@ -209,26 +215,32 @@ export default function ExpensesPage() {
   };
 
   const [dateError, setDateError] = useState<string>("");
+  const [paidAtError, setPaidAtError] = useState<string>("");
 
-  const validateDate = (dateValue: string) => {
-    const hoy = new Date();
-    hoy.setHours(0, 0, 0, 0);
+  const validateDates = (dateVal: string, paidAtVal: string) => {
+    const todayPeruStr = getPeruTodayInputStr();
+    let valid = true;
 
-    const [y, m, d] = dateValue.split("-");
-    const fecha = new Date(Number(y), Number(m) - 1, Number(d));
-
-    if (fecha > hoy) {
+    if (dateVal > todayPeruStr) {
       setDateError("La fecha no puede ser mayor a hoy");
-      return false;
+      valid = false;
+    } else {
+      setDateError("");
     }
 
-    setDateError("");
-    return true;
+    if (paidAtVal > todayPeruStr) {
+      setPaidAtError("La fecha de pago no puede ser mayor a hoy");
+      valid = false;
+    } else {
+      setPaidAtError("");
+    }
+
+    return valid;
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validateDate(formData.date)) {
+    if (!validateDates(formData.date, formData.paidAt)) {
       toast.error("Fecha inválida");
       return;
     }
@@ -245,8 +257,11 @@ export default function ExpensesPage() {
     )
       return toast.error("Ingresa un tipo de cambio válido");
 
+    const originalItem = editingId ? items.find((i) => i.id === editingId) : undefined;
     const payload = {
       ...formData,
+      date: peruInputDateToUtcISO(formData.date, originalItem?.date),
+      paidAt: peruInputDateToUtcISO(formData.paidAt, originalItem?.paidAt),
       name: formData.description || "Egreso",
       amount: Number(formData.amount),
       exchangeRate: Number(formData.exchangeRate),
@@ -318,13 +333,7 @@ export default function ExpensesPage() {
   };
 
   const formatDate = (dateStr: string) => {
-    if (!dateStr) return "-";
-    const date = new Date(dateStr);
-    if (isNaN(date.getTime())) return "-";
-    const day = String(date.getUTCDate()).padStart(2, "0");
-    const month = String(date.getUTCMonth() + 1).padStart(2, "0");
-    const year = date.getUTCFullYear();
-    return `${day}-${month}-${year}`;
+    return formatPeruDate(dateStr);
   };
 
   const getMethodBadge = (method: string) => {
@@ -397,7 +406,7 @@ export default function ExpensesPage() {
                 <tr className="bg-gray-50/50 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-100">
                   <th className="p-5 pl-8">Categoría / Sub</th>
                   <th className="p-5 text-center">Pago</th>
-                  <th className="p-5">Fecha</th>
+                  <th className="p-5">F. Pago</th>
                   <th className="p-5">Descripción</th>
                   <th className="p-5 text-center">Tags</th>
                   <th className="p-5 text-right">Monto Original</th>
@@ -442,8 +451,17 @@ export default function ExpensesPage() {
                           {getMethodBadge(exp.paymentMethod)}
                         </span>
                       </td>
-                      <td className="p-5 text-sm font-bold text-gray-600">
-                        {formatDate(exp.date)}
+                      <td className="p-5 text-sm font-bold text-gray-600 relative group cursor-help">
+                        <span>{exp.paidAt ? formatDate(exp.paidAt) : "-"}</span>
+                        {exp.paidAt && (
+                          <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:flex flex-col items-center z-50">
+                            <div className="bg-slate-900 text-white text-[11px] font-black py-2 px-3 rounded-xl shadow-xl border border-slate-800 flex items-center gap-1.5 whitespace-nowrap">
+                              <Clock className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                              <span>{formatPeruTime(exp.paidAt)}</span>
+                            </div>
+                            <div className="w-2.5 h-2.5 bg-slate-900 rotate-45 -mt-1.5 border-r border-b border-slate-800"></div>
+                          </div>
+                        )}
                       </td>
                       <td className="p-5 text-sm font-bold text-gray-600">
                         {exp.description}
@@ -573,7 +591,7 @@ export default function ExpensesPage() {
               {getPages(expenseTotalPages).map((page) => (
                 <button
                   key={page}
-                  onClick={() => setExpensesPage(page)}
+                  onClick={() => typeof page === "number" && setExpensesPage(page)}
                   className={`px-3 py-1 text-sm font-black rounded-lg transition-all ${
                     expensesPage === page
                       ? "bg-black text-white"
@@ -640,8 +658,10 @@ export default function ExpensesPage() {
                         {exp.description || "Sin descripción"}
                       </h3>
                       <p className="text-[10px] text-gray-400 font-bold mt-1 uppercase">
-                        {formatDate(exp.date)} •{" "}
-                        {getMethodBadge(exp.paymentMethod)}
+                        Pago: {exp.paidAt ? formatDate(exp.paidAt) : "-"}
+                      </p>
+                      <p className="text-[10px] text-gray-400 font-bold mt-1 uppercase">
+                        Método: {getMethodBadge(exp.paymentMethod)}
                       </p>
                     </div>
                     <div className="flex gap-2 ml-4">
@@ -834,47 +854,45 @@ export default function ExpensesPage() {
                 <div className="grid grid-cols-1 gap-4">
                   <div className="space-y-1.5">
                     <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">
-                      Fecha
+                      Fecha de Pago
                     </label>
                     <input
                       required
                       type="date"
                       max={localDate}
                       className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-rose-500/10 focus:border-rose-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
-                      value={formData.date}
+                      value={formData.paidAt}
                       onChange={(e) => {
                         const value = e.target.value;
-
-                        setFormData({ ...formData, date: value });
-
-                        validateDate(value);
+                        setFormData({ ...formData, paidAt: value });
+                        validateDates(formData.date, value);
                       }}
                     />
-                    {dateError && (
+                    {paidAtError && (
                       <p className="text-xs font-bold text-rose-500 mt-1">
-                        {dateError}
+                        {paidAtError}
                       </p>
                     )}
                   </div>
+                </div>
 
-                  <div className="space-y-1.5">
-                    <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">
-                      Descripción
-                    </label>
-                    <input
-                      required
-                      type="text"
-                      placeholder="Ej. Pago de suministros..."
-                      className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-rose-500/10 focus:border-rose-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
-                      value={formData.description}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          description: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                    Descripción
+                  </label>
+                  <input
+                    required
+                    type="text"
+                    placeholder="Ej. Pago de suministros..."
+                    className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-rose-500/10 focus:border-rose-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
+                    value={formData.description}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        description: e.target.value,
+                      })
+                    }
+                  />
                 </div>
               </div>
             </div>

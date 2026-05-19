@@ -7,6 +7,7 @@ import {
   TrendingUp,
   Edit2,
   Trash2,
+  Clock,
   Loader2,
   CheckCircle2,
   Tag,
@@ -27,10 +28,18 @@ import {
   updateTransactionRequest,
   markAsPendingRequest,
 } from "../services/transaction.api";
+import {
+  getPeruTodayInputStr,
+  utcToPeruInputDate,
+  peruInputDateToUtcISO,
+  formatPeruDate,
+  formatPeruTime,
+} from "../utils/date.utils";
 
 type Income = {
   id: string;
   date: string;
+  paidAt?: string;
   category: string;
   categoryId?: string;
   subCategory?: string;
@@ -62,16 +71,11 @@ export default function IncomePage() {
 
   const [incomePage, setIncomePage] = useState(1);
 
-  const today = new Date();
-  const localDate =
-    today.getFullYear() +
-    "-" +
-    String(today.getMonth() + 1).padStart(2, "0") +
-    "-" +
-    String(today.getDate()).padStart(2, "0");
+  const localDate = getPeruTodayInputStr();
 
   const [formData, setFormData] = useState({
     date: localDate,
+    paidAt: localDate,
     description: "",
     amount: "",
     currency: "PEN" as "PEN" | "USD",
@@ -132,6 +136,7 @@ export default function IncomePage() {
             description: t.description ?? "",
             amount: t.amount,
             date: t.date,
+            paidAt: t.paidAt ?? undefined,
             category: t.category?.name ?? "Otros",
             categoryId: t.categoryId,
             subCategory: t.subCategory?.name ?? "",
@@ -156,6 +161,7 @@ export default function IncomePage() {
     setEditingId(null);
     setFormData({
       date: localDate,
+      paidAt: localDate,
       description: "",
       amount: "",
       currency: "PEN",
@@ -171,7 +177,8 @@ export default function IncomePage() {
   const handleOpenEdit = (item: Income) => {
     setEditingId(item.id);
     setFormData({
-      date: item.date.split("T")[0],
+      date: utcToPeruInputDate(item.date),
+      paidAt: item.paidAt ? utcToPeruInputDate(item.paidAt) : localDate,
       description: item.description,
       amount: item.amount.toString(),
       currency: item.currency,
@@ -184,26 +191,32 @@ export default function IncomePage() {
     setIsModalOpen(true);
   };
   const [dateError, setDateError] = useState<string>("");
+  const [paidAtError, setPaidAtError] = useState<string>("");
 
-  const validateDate = (dateValue: string) => {
-    const hoy = new Date();
-    hoy.setHours(0, 0, 0, 0);
+  const validateDates = (dateVal: string, paidAtVal: string) => {
+    const todayPeruStr = getPeruTodayInputStr();
+    let valid = true;
 
-    const [y, m, d] = dateValue.split("-");
-    const fecha = new Date(Number(y), Number(m) - 1, Number(d));
-
-    if (fecha > hoy) {
+    if (dateVal > todayPeruStr) {
       setDateError("La fecha no puede ser mayor a hoy");
-      return false;
+      valid = false;
+    } else {
+      setDateError("");
     }
 
-    setDateError("");
-    return true;
+    if (paidAtVal > todayPeruStr) {
+      setPaidAtError("La fecha de cobro no puede ser mayor a hoy");
+      valid = false;
+    } else {
+      setPaidAtError("");
+    }
+
+    return valid;
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validateDate(formData.date)) {
+    if (!validateDates(formData.date, formData.paidAt)) {
       toast.error("Fecha inválida");
       return;
     }
@@ -220,8 +233,11 @@ export default function IncomePage() {
     )
       return toast.error("Ingresa un tipo de cambio válido");
 
+    const originalItem = editingId ? items.find((i) => i.id === editingId) : undefined;
     const payload = {
       ...formData,
+      date: peruInputDateToUtcISO(formData.date, originalItem?.date),
+      paidAt: peruInputDateToUtcISO(formData.paidAt, originalItem?.paidAt),
       name: formData.description || "Ingreso",
       amount: Number(formData.amount),
       exchangeRate: Number(formData.exchangeRate),
@@ -293,13 +309,7 @@ export default function IncomePage() {
   };
 
   const formatDate = (dateStr: string) => {
-    if (!dateStr) return "-";
-    const date = new Date(dateStr);
-    if (isNaN(date.getTime())) return "-";
-    const day = String(date.getUTCDate()).padStart(2, "0");
-    const month = String(date.getUTCMonth() + 1).padStart(2, "0");
-    const year = date.getUTCFullYear();
-    return `${day}-${month}-${year}`;
+    return formatPeruDate(dateStr);
   };
 
   const getMethodBadge = (method: string) => {
@@ -372,7 +382,7 @@ export default function IncomePage() {
                   <th className="p-6 pl-8">Ref.</th>
                   <th className="p-6">Clasificación</th>
                   <th className="p-6 text-center">Método</th>
-                  <th className="p-6">Fecha</th>
+                  <th className="p-6">F. Pago</th>
                   <th className="p-6">Descripción</th>
                   <th className="p-6 text-right">Importe</th>
                   <th className="p-6 text-center">Divisa</th>
@@ -407,12 +417,12 @@ export default function IncomePage() {
                           {(typeof inc.subCategory === "object"
                             ? (inc.subCategory as any).name
                             : inc.subCategory) && (
-                            <span className="text-[9px] text-emerald-600/60 font-black ml-1 uppercase tracking-widest">
-                              {typeof inc.subCategory === "object"
-                                ? (inc.subCategory as any).name
-                                : inc.subCategory}
-                            </span>
-                          )}
+                              <span className="text-[9px] text-emerald-600/60 font-black ml-1 uppercase tracking-widest">
+                                {typeof inc.subCategory === "object"
+                                  ? (inc.subCategory as any).name
+                                  : inc.subCategory}
+                              </span>
+                            )}
                         </div>
                       </td>
                       <td className="p-5 text-center">
@@ -420,8 +430,17 @@ export default function IncomePage() {
                           {getMethodBadge(inc.paymentMethod)}
                         </span>
                       </td>
-                      <td className="p-5 text-sm font-bold text-gray-500">
-                        {formatDate(inc.date)}
+                      <td className="p-5 text-sm font-bold text-gray-500 relative group cursor-help">
+                        <span>{inc.paidAt ? formatDate(inc.paidAt) : "-"}</span>
+                        {inc.paidAt && (
+                          <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:flex flex-col items-center z-50">
+                            <div className="bg-slate-900 text-white text-[11px] font-black py-2 px-3 rounded-xl shadow-xl border border-slate-800 flex items-center gap-1.5 whitespace-nowrap">
+                              <Clock className="w-3.5 h-3.5 text-teal-400 animate-pulse" />
+                              <span>{formatPeruTime(inc.paidAt)}</span>
+                            </div>
+                            <div className="w-2.5 h-2.5 bg-slate-900 rotate-45 -mt-1.5 border-r border-b border-slate-800"></div>
+                          </div>
+                        )}
                       </td>
                       <td className="p-5 text-sm font-medium text-gray-600 italic">
                         "{inc.description}"
@@ -536,11 +555,10 @@ export default function IncomePage() {
                 <button
                   key={page}
                   onClick={() => setIncomePage(page)}
-                  className={`px-3 py-1 text-sm font-black rounded-lg transition-all ${
-                    incomePage === page
-                      ? "bg-black text-white"
-                      : "text-gray-500 hover:bg-gray-100"
-                  }`}
+                  className={`px-3 py-1 text-sm font-black rounded-lg transition-all ${incomePage === page
+                    ? "bg-black text-white"
+                    : "text-gray-500 hover:bg-gray-100"
+                    }`}
                 >
                   {page}
                 </button>
@@ -602,8 +620,10 @@ export default function IncomePage() {
                         {inc.description || "Sin descripción"}
                       </h3>
                       <p className="text-[10px] text-gray-400 font-bold mt-1 uppercase">
-                        {formatDate(inc.date)} •{" "}
-                        {getMethodBadge(inc.paymentMethod)}
+                        Cobro: {inc.paidAt ? formatDate(inc.paidAt) : "-"}
+                      </p>
+                      <p className="text-[10px] text-gray-400 font-bold mt-1 uppercase">
+                        Método: {getMethodBadge(inc.paymentMethod)}
                       </p>
                     </div>
                     <div className="flex gap-2 ml-4">
@@ -794,184 +814,183 @@ export default function IncomePage() {
                 <div className="grid grid-cols-1 gap-4">
                   <div className="space-y-1.5">
                     <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">
-                      Fecha
+                      Fecha de Cobro
                     </label>
                     <input
                       required
                       type="date"
                       max={localDate}
                       className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
-                      value={formData.date}
+                      value={formData.paidAt}
                       onChange={(e) => {
                         const value = e.target.value;
-
-                        setFormData({ ...formData, date: value });
-
-                        validateDate(value);
+                        setFormData({ ...formData, paidAt: value });
+                        validateDates(formData.date, value);
                       }}
                     />
-                    {dateError && (
+                    {paidAtError && (
                       <p className="text-xs font-bold text-rose-500 mt-1">
-                        {dateError}
+                        {paidAtError}
                       </p>
                     )}
                   </div>
+                </div>
 
-                  <div className="space-y-1.5">
-                    <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">
-                      Descripción
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                    Descripción
+                  </label>
+                  <input
+                    required
+                    type="text"
+                    placeholder="Ej. Venta de servicios..."
+                    className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
+                    value={formData.description}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        description: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+          </form>
+
+          {/* Sección Método y Moneda */}
+          <div className="bg-gray-50/50 p-6 rounded-[2rem] border border-gray-100 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {/* Método de Pago */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="p-1.5 bg-indigo-100 rounded-lg text-indigo-600">
+                    <Wallet className="w-3.5 h-3.5" />
+                  </div>
+                  <span className="text-[10px] font-black text-indigo-900 uppercase tracking-widest">
+                    Método de Cobro
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                  {[
+                    { id: "CASH", label: "Efectivo" },
+                    { id: "TRANSFER", label: "Transf." },
+                    { id: "YAPE", label: "Yape" },
+                    { id: "PLIN", label: "Plin" },
+                    { id: "CARD", label: "Tarjeta" },
+                  ].map((method) => (
+                    <button
+                      key={method.id}
+                      type="button"
+                      onClick={() =>
+                        setFormData({
+                          ...formData,
+                          paymentMethod: method.id as any,
+                        })
+                      }
+                      className={`py-2.5 rounded-xl text-[9px] font-black uppercase tracking-tighter border transition-all ${formData.paymentMethod === method.id ? "bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-100 scale-105" : "bg-white text-gray-400 border-gray-100 hover:border-indigo-200"}`}
+                    >
+                      {method.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Info Monetaria */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="p-1.5 bg-emerald-100 rounded-lg text-emerald-600">
+                    <CreditCard className="w-3.5 h-3.5" />
+                  </div>
+                  <span className="text-[10px] font-black text-emerald-900 uppercase tracking-widest">
+                    Información Monetaria
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[8px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                      Moneda
                     </label>
-                    <input
-                      required
-                      type="text"
-                      placeholder="Ej. Venta de servicios..."
-                      className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
-                      value={formData.description}
+                    <select
+                      className="w-full px-3 py-2 bg-white border border-gray-100 rounded-lg outline-none text-[11px] font-black text-gray-700 appearance-none shadow-sm"
+                      value={formData.currency}
                       onChange={(e) =>
                         setFormData({
                           ...formData,
-                          description: e.target.value,
+                          currency: e.target.value as any,
                         })
+                      }
+                    >
+                      <option value="PEN">PEN</option>
+                      <option value="USD">USD</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[8px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                      T.C.
+                    </label>
+                    <input
+                      type="number"
+                      step="0.001"
+                      disabled={formData.currency === "PEN"}
+                      className={`w-full px-3 py-2 border rounded-lg outline-none text-[11px] font-black shadow-sm ${formData.currency === "USD" ? "bg-blue-50 border-blue-200 text-blue-700" : "bg-gray-50 border-gray-100 text-gray-400"}`}
+                      value={formData.exchangeRate}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          exchangeRate: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[8px] font-black text-emerald-600 uppercase tracking-widest ml-1">
+                      Importe
+                    </label>
+                    <input
+                      required
+                      type="number"
+                      step="0.01"
+                      className="w-full px-3 py-2 bg-white border-2 border-emerald-100 rounded-lg outline-none text-[11px] font-black text-gray-800 shadow-sm"
+                      value={formData.amount}
+                      onChange={(e) =>
+                        setFormData({ ...formData, amount: e.target.value })
                       }
                     />
                   </div>
                 </div>
               </div>
             </div>
+          </div>
 
-            {/* Sección Método y Moneda */}
-            <div className="bg-gray-50/50 p-6 rounded-[2rem] border border-gray-100 space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {/* Método de Pago */}
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2 mb-1">
-                    <div className="p-1.5 bg-indigo-100 rounded-lg text-indigo-600">
-                      <Wallet className="w-3.5 h-3.5" />
-                    </div>
-                    <span className="text-[10px] font-black text-indigo-900 uppercase tracking-widest">
-                      Método de Cobro
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-                    {[
-                      { id: "CASH", label: "Efectivo" },
-                      { id: "TRANSFER", label: "Transf." },
-                      { id: "YAPE", label: "Yape" },
-                      { id: "PLIN", label: "Plin" },
-                      { id: "CARD", label: "Tarjeta" },
-                    ].map((method) => (
-                      <button
-                        key={method.id}
-                        type="button"
-                        onClick={() =>
-                          setFormData({
-                            ...formData,
-                            paymentMethod: method.id as any,
-                          })
-                        }
-                        className={`py-2.5 rounded-xl text-[9px] font-black uppercase tracking-tighter border transition-all ${formData.paymentMethod === method.id ? "bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-100 scale-105" : "bg-white text-gray-400 border-gray-100 hover:border-indigo-200"}`}
-                      >
-                        {method.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+          <div className="flex justify-end items-center gap-4 pt-4">
+            <button
+              type="button"
+              onClick={() => setIsModalOpen(false)}
+              className="px-5 py-3 text-gray-400 font-black uppercase text-[10px] tracking-widest hover:text-gray-600 transition-all"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-6 py-3.5 bg-emerald-600 text-white font-black rounded-xl hover:bg-emerald-700 shadow-xl shadow-emerald-100 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
+            >
+              {saving ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4" />
+              )}
+              <span className="uppercase tracking-widest text-[10px]">
+                {saving
+                  ? "Guardando..."
+                  : editingId
+                    ? "Actualizar"
+                    : "Confirmar"}
+              </span>
+            </button>
+          </div>
 
-                {/* Info Monetaria */}
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2 mb-1">
-                    <div className="p-1.5 bg-emerald-100 rounded-lg text-emerald-600">
-                      <CreditCard className="w-3.5 h-3.5" />
-                    </div>
-                    <span className="text-[10px] font-black text-emerald-900 uppercase tracking-widest">
-                      Información Monetaria
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-[8px] font-black text-gray-400 uppercase tracking-widest ml-1">
-                        Moneda
-                      </label>
-                      <select
-                        className="w-full px-3 py-2 bg-white border border-gray-100 rounded-lg outline-none text-[11px] font-black text-gray-700 appearance-none shadow-sm"
-                        value={formData.currency}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            currency: e.target.value as any,
-                          })
-                        }
-                      >
-                        <option value="PEN">PEN</option>
-                        <option value="USD">USD</option>
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[8px] font-black text-gray-400 uppercase tracking-widest ml-1">
-                        T.C.
-                      </label>
-                      <input
-                        type="number"
-                        step="0.001"
-                        disabled={formData.currency === "PEN"}
-                        className={`w-full px-3 py-2 border rounded-lg outline-none text-[11px] font-black shadow-sm ${formData.currency === "USD" ? "bg-blue-50 border-blue-200 text-blue-700" : "bg-gray-50 border-gray-100 text-gray-400"}`}
-                        value={formData.exchangeRate}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            exchangeRate: e.target.value,
-                          })
-                        }
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[8px] font-black text-emerald-600 uppercase tracking-widest ml-1">
-                        Importe
-                      </label>
-                      <input
-                        required
-                        type="number"
-                        step="0.01"
-                        className="w-full px-3 py-2 bg-white border-2 border-emerald-100 rounded-lg outline-none text-[11px] font-black text-gray-800 shadow-sm"
-                        value={formData.amount}
-                        onChange={(e) =>
-                          setFormData({ ...formData, amount: e.target.value })
-                        }
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end items-center gap-4 pt-4">
-              <button
-                type="button"
-                onClick={() => setIsModalOpen(false)}
-                className="px-5 py-3 text-gray-400 font-black uppercase text-[10px] tracking-widest hover:text-gray-600 transition-all"
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                disabled={saving}
-                className="px-6 py-3.5 bg-emerald-600 text-white font-black rounded-xl hover:bg-emerald-700 shadow-xl shadow-emerald-100 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
-              >
-                {saving ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <CheckCircle2 className="w-4 h-4" />
-                )}
-                <span className="uppercase tracking-widest text-[10px]">
-                  {saving
-                    ? "Guardando..."
-                    : editingId
-                      ? "Actualizar"
-                      : "Confirmar"}
-                </span>
-              </button>
-            </div>
-          </form>
         </Modal>
 
         <ConfirmModal
@@ -998,6 +1017,6 @@ export default function IncomePage() {
           }}
         />
       </div>
-    </Appshell>
+    </Appshell >
   );
 }

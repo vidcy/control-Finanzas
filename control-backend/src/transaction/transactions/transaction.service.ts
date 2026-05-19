@@ -1,43 +1,57 @@
 import { PrismaService } from 'src/prisma/prisma.service';
-import { Injectable } from '@nestjs/common';
-import {
-  CreateTransactionDto,
-  Currency,
-  MarkAsPendingDto,
-  TransactionStatus,
-  UpdateTransactionDto,
-} from './transactions.dto';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { CreateTransactionDto, Currency, TransactionStatus } from './create-transaction.dto';
+import { MarkAsPendingDto } from './mark-transaction.dto';
+import { UpdateTransactionDto } from './update-transaction.dto';
+
 @Injectable()
 export class TransactionService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
+  // =========================================================
+  // CREATE
+  // Frontend envía fecha en UTC → guardar tal cual
+  // =========================================================
   async createTransaction(userId: string, dto: CreateTransactionDto) {
-    const isUSD = dto.currency == Currency.USD;
+    const isUSD = dto.currency === Currency.USD;
+
     const amountSoles = isUSD
       ? dto.amount * (dto.exchangeRate || 1)
       : dto.amount;
 
     return this.prisma.transaction.create({
       data: {
-        userId: userId,
+        userId,
         type: dto.type,
         categoryId: dto.categoryId,
         subCategoryId: dto.subCategoryId || null,
+
+        // 🔥 SIEMPRE UTC
         date: dto.date ? new Date(dto.date) : new Date(),
+        dueDate: dto.dueDate ? new Date(dto.dueDate) : new Date(),
+        paidAt: dto.paidAt ? new Date(dto.paidAt) : new Date(),
+
         paymentMethod: dto.paymentMethod || 'CASH',
         name: dto.name,
         description: dto.description,
+
         amount: dto.amount,
         currency: dto.currency ?? Currency.PEN,
         exchangeRate: dto.exchangeRate,
+
         justified: dto.justified,
         programmed: dto.programmed,
+
         status: dto.status || TransactionStatus.PAID,
         amountSoles,
       },
     });
   }
 
+  // =========================================================
+  // LIST
+  // Backend devuelve UTC sin tocar fechas
+  // =========================================================
   async listTransactions(userId: string) {
     return this.prisma.transaction.findMany({
       where: {
@@ -45,61 +59,97 @@ export class TransactionService {
         status: TransactionStatus.PAID,
       },
       orderBy: { date: 'desc' },
-      include: { category: true, subCategory: true },
+      include: {
+        category: true,
+        subCategory: true,
+      },
     });
   }
+
+  // =========================================================
+  // FIND BY ID
+  // =========================================================
   async findById(id: string) {
-    return this.prisma.transaction.findUnique({
+    const transaction = await this.prisma.transaction.findUnique({
       where: { id },
-      include: { category: true, subCategory: true },
+      include: {
+        category: true,
+        subCategory: true,
+      },
     });
-  }
-  async updateTransaction(id: string, dto: UpdateTransactionDto) {
-    const existingTransaction = await this.findById(id);
-    if (!existingTransaction) {
-      throw new Error('Transaccion no encontrada');
+
+    if (!transaction) {
+      throw new NotFoundException('Transacción no encontrada');
     }
-    const currency = dto.currency ?? existingTransaction.currency;
-    const amount = dto.amount ?? existingTransaction.amount;
-    const exchangeRate = dto.exchangeRate ?? existingTransaction.exchangeRate;
-    let amountSoles = existingTransaction.amountSoles;
+
+    return transaction; // ← UTC puro
+  }
+
+  // =========================================================
+  // UPDATE
+  // Fechas siempre llegan en UTC desde el frontend
+  // =========================================================
+  async updateTransaction(id: string, dto: UpdateTransactionDto) {
+    const existing = await this.findById(id);
+
+    const currency = dto.currency ?? existing.currency;
+    const amount = dto.amount ?? existing.amount;
+    const exchangeRate = dto.exchangeRate ?? existing.exchangeRate;
+
+    let amountSoles = existing.amountSoles;
 
     if (dto.amount || dto.currency || dto.exchangeRate) {
       const isUSD = currency === Currency.USD;
       amountSoles = isUSD ? amount * (exchangeRate || 1) : amount;
     }
+
     return this.prisma.transaction.update({
       where: { id },
       data: {
-        categoryId: dto.categoryId,
+        ...(dto.categoryId && { categoryId: dto.categoryId }),
         subCategoryId: dto.subCategoryId,
-        date: dto.date,
-        paymentMethod: dto.paymentMethod || 'CASH',
-        name: dto.name,
-        description: dto.description,
+
+        // 🔥 IMPORTANTE: convertir string ISO → Date
+        ...(dto.date && { date: new Date(dto.date) }),
+        ...(dto.dueDate && { dueDate: new Date(dto.dueDate) }),
+        ...(dto.paidAt && { paidAt: new Date(dto.paidAt) }),
+
+        ...(dto.paymentMethod && { paymentMethod: dto.paymentMethod }),
+        ...(dto.name !== undefined && { name: dto.name }),
+        ...(dto.description !== undefined && { description: dto.description }),
+
+        ...(dto.justified !== undefined && { justified: dto.justified }),
+        ...(dto.programmed !== undefined && { programmed: dto.programmed }),
+
         amount,
         currency,
-        justified: dto.justified,
-        programmed: dto.programmed,
         exchangeRate,
         amountSoles,
       },
     });
   }
+
+  // =========================================================
+  // DELETE
+  // =========================================================
   async deleteTransaction(id: string) {
     return this.prisma.transaction.delete({
       where: { id },
     });
   }
+
+  // =========================================================
+  // MARK AS PENDING
+  // Cambio de estado únicamente
+  // =========================================================
   async markTransactionAsPending(id: string, dto: MarkAsPendingDto) {
-    const existingTransaction = await this.findById(id);
-    if (!existingTransaction) {
-      throw new Error('Transaccion no encontrada');
-    }
+    await this.findById(id);
+
     return this.prisma.transaction.update({
       where: { id },
       data: {
-        status: dto.status,
+        status: dto.status as any,
+        paidAt: dto.status === 'PAID' ? new Date() : null,
       },
     });
   }

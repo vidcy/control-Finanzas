@@ -8,6 +8,7 @@ export const createTransactionRequest = async (data: {
   amount: number;
   date: string;
   dueDate?: string;
+  paidAt?: string;
   status: "PAID";
   currency: "PEN" | "USD";
   exchangeRate?: number;
@@ -57,6 +58,7 @@ export const updateTransactionRequest = async (
     amount: number;
     date: string;
     dueDate?: string;
+    paidAt?: string;
     currency: "PEN" | "USD";
     exchangeRate?: number;
     paymentMethod: string;
@@ -68,6 +70,7 @@ export const updateTransactionRequest = async (
       ...data,
       date: new Date(data.date).toISOString(),
       dueDate: data.dueDate ? new Date(data.dueDate).toISOString() : undefined,
+      paidAt: data.paidAt ? new Date(data.paidAt).toISOString() : undefined,
     };
 
     const res = await API.patch(`/transactions/${id}`, payload);

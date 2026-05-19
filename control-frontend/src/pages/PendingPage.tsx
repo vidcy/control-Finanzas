@@ -30,6 +30,13 @@ import {
 import { listCategoriesRequest } from "../services/category.api";
 import ConfirmModal from "../components/ui/ConfirmModal";
 import { markAsPaidRequest } from "../services/pending.api";
+import {
+  getPeruTodayInputStr,
+  utcToPeruInputDate,
+  peruInputDateToUtcISO,
+  formatPeruDate,
+  getDueDateStatus,
+} from "../utils/date.utils";
 type Category = {
   id: string;
   name: string;
@@ -40,6 +47,7 @@ type Category = {
 type PendingItem = {
   id: string;
   date: string;
+  dueDate?: string;
   category: string;
   categoryId?: string;
   subCategory?: string;
@@ -51,6 +59,53 @@ type PendingItem = {
   exchangeRate: number;
   type: "INCOME" | "EXPENSE";
   status: "PENDING" | "PAID";
+};
+
+const renderDueDateBadge = (dueDate: string | undefined, statusPaid: boolean) => {
+  if (statusPaid) {
+    return (
+      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-gray-100 text-gray-400">
+        Pagado
+      </span>
+    );
+  }
+
+  const info = getDueDateStatus(dueDate);
+  let badgeClass = "";
+  let iconClass = "w-3 h-3 mr-1";
+
+  switch (info.status) {
+    case "EXPIRED":
+      badgeClass = "bg-rose-50 border border-rose-200 text-rose-600 animate-pulse font-extrabold shadow-sm shadow-rose-100/50";
+      break;
+    case "TODAY":
+      badgeClass = "bg-amber-50 border border-amber-200 text-amber-600 font-extrabold shadow-sm shadow-amber-100/50";
+      break;
+    case "TOMORROW":
+      badgeClass = "bg-blue-50 border border-blue-200 text-blue-600 font-extrabold shadow-sm shadow-blue-100/50";
+      break;
+    case "FUTURE":
+      badgeClass = "bg-indigo-50 border border-indigo-200 text-indigo-600 font-bold shadow-sm shadow-indigo-100/50";
+      break;
+  }
+
+  return (
+    <div className="relative group cursor-help inline-block">
+      <span className={`inline-flex items-center px-2.5 py-1.5 rounded-xl text-[10px] tracking-tight ${badgeClass}`}>
+        <Clock className={iconClass} />
+        {info.message}
+      </span>
+      {dueDate && (
+        <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:flex flex-col items-center z-50">
+          <div className="bg-slate-900 text-white text-[11px] font-black py-2 px-3 rounded-xl shadow-xl border border-slate-800 flex items-center gap-1.5 whitespace-nowrap">
+            <Calendar className="w-3.5 h-3.5 text-indigo-400" />
+            <span>F. Vence: {formatPeruDate(dueDate)}</span>
+          </div>
+          <div className="w-2.5 h-2.5 bg-slate-900 rotate-45 -mt-1.5 border-r border-b border-slate-800"></div>
+        </div>
+      )}
+    </div>
+  );
 };
 
 export default function PendingPage() {
@@ -74,6 +129,7 @@ export default function PendingPage() {
 
   const [receivablesPage, setReceivablesPage] = useState(1);
   const [payablesPage, setPayablesPage] = useState(1);
+  const [activeTab, setActiveTab] = useState<"RECEIVABLES" | "PAYABLES">("RECEIVABLES");
 
   const ITEMS_PER_PAGE = 4;
 
@@ -81,17 +137,12 @@ export default function PendingPage() {
   const [selectedSubCategoryId, setSelectedSubCategoryId] =
     useState<string>("");
 
-  const today = new Date();
-  const localDate =
-    today.getFullYear() +
-    "-" +
-    String(today.getMonth() + 1).padStart(2, "0") +
-    "-" +
-    String(today.getDate()).padStart(2, "0");
+  const localDate = getPeruTodayInputStr();
 
   // Form state
   const [formData, setFormData] = useState({
     date: localDate,
+    dueDate: localDate,
     person: "",
     description: "",
     amount: "",
@@ -103,13 +154,13 @@ export default function PendingPage() {
     () =>
       Array.isArray(items)
         ? items.filter(
-            (i) =>
-              i.type === "INCOME" &&
-              ((i.description?.toLowerCase() || "").includes(
-                searchTerm.toLowerCase(),
-              ) ||
-                (i.amount?.toString() || "").includes(searchTerm)),
-          )
+          (i) =>
+            i.type === "INCOME" &&
+            ((i.description?.toLowerCase() || "").includes(
+              searchTerm.toLowerCase(),
+            ) ||
+              (i.amount?.toString() || "").includes(searchTerm)),
+        )
         : [],
     [items, searchTerm],
   );
@@ -123,13 +174,13 @@ export default function PendingPage() {
     () =>
       Array.isArray(items)
         ? items.filter(
-            (i) =>
-              i.type === "EXPENSE" &&
-              ((i.description?.toLowerCase() || "").includes(
-                searchTerm.toLowerCase(),
-              ) ||
-                (i.amount?.toString() || "").includes(searchTerm)),
-          )
+          (i) =>
+            i.type === "EXPENSE" &&
+            ((i.description?.toLowerCase() || "").includes(
+              searchTerm.toLowerCase(),
+            ) ||
+              (i.amount?.toString() || "").includes(searchTerm)),
+        )
         : [],
     [items, searchTerm],
   );
@@ -234,6 +285,7 @@ export default function PendingPage() {
       currency: "PEN",
       exchangeRate: "1",
       date: localDate,
+      dueDate: localDate,
     });
     setSelectedCategoryId("");
     setSelectedSubCategoryId("");
@@ -244,7 +296,8 @@ export default function PendingPage() {
     setEditingId(item.id);
     setActiveType(item.type);
     setFormData({
-      date: item.date.split("T")[0],
+      date: utcToPeruInputDate(item.date),
+      dueDate: item.dueDate ? utcToPeruInputDate(item.dueDate) : localDate,
       person: item.name || "",
       description: item.description,
       amount: item.amount.toString(),
@@ -256,29 +309,19 @@ export default function PendingPage() {
     setIsModalOpen(true);
   };
 
-  const [dateError, setDateError] = useState<string>("");
+  const [dueDateError, setDueDateError] = useState<string>("");
 
-  const validateDate = (dateValue: string) => {
-    const hoy = new Date();
-    hoy.setHours(0, 0, 0, 0);
-
-    const [y, m, d] = dateValue.split("-");
-    const fecha = new Date(Number(y), Number(m) - 1, Number(d));
-
-    if (fecha < hoy) {
-      setDateError("La fecha no puede ser menor a hoy");
-      return false;
-    }
-
-    setDateError("");
+  const validateDates = (dueDateVal: string) => {
+    // Permitir cualquier fecha de vencimiento sin restricciones
+    setDueDateError("");
     return true;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!validateDate(formData.date)) {
-      toast.error("Fecha inválida");
+    if (!validateDates(formData.dueDate)) {
+      toast.error("Validación de fechas fallida");
       return;
     }
 
@@ -324,7 +367,14 @@ export default function PendingPage() {
       subCategoryId: selectedSubCategoryId || null,
       status: "PENDING",
       currency: formData.currency,
-      date: formData.date,
+      date: peruInputDateToUtcISO(
+        formData.date,
+        editingId ? items.find((i) => i.id === editingId)?.date : undefined
+      ),
+      dueDate: peruInputDateToUtcISO(
+        formData.dueDate,
+        editingId ? items.find((i) => i.id === editingId)?.dueDate : undefined
+      ),
       type: activeType, // El tipo es necesario para la creación y no estorba en la actualización
     };
 
@@ -356,11 +406,7 @@ export default function PendingPage() {
 
     try {
       await markAsPaidRequest(id, { status: newStatus });
-      setItems((prev) =>
-        prev.map((item) =>
-          item.id === id ? { ...item, status: newStatus } : item,
-        ),
-      );
+      await loadData(); // 🔥 Recargamos de inmediato del servidor para removerlo de la vista y actualizar totales
       toast.success(
         newStatus === "PAID" ? "Marcado como pagado" : "Marcado como pendiente",
       );
@@ -438,619 +484,613 @@ export default function PendingPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-10">
-          {/* RECEIVABLES */}
-          <div className="flex flex-col gap-6">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-gradient-to-r from-emerald-500 to-teal-600 p-6 rounded-[2rem] md:rounded-[2.5rem] text-white shadow-xl shadow-emerald-100">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-white/20 rounded-2xl">
-                  <ArrowUpRight className="w-7 h-7" />
-                </div>
-                <div>
-                  <h2 className="text-xl font-black">Por Cobrar</h2>
-                  <p className="text-[10px] text-emerald-100 font-black uppercase tracking-widest opacity-80">
-                    Dinero a tu favor
-                  </p>
-                  <h2 className="text-xl font-black">S/ {receivablesTotal}</h2>
-                </div>
-              </div>
-              <button
-                onClick={() => handleOpenModal("INCOME")}
-                className="bg-white text-emerald-600 hover:bg-emerald-50 px-6 py-3 rounded-2xl transition-all font-black shadow-lg text-sm w-full sm:w-auto"
-              >
-                + Nuevo Cobro
-              </button>
-            </div>
-
-            <div
-              ref={receivablesRef}
-              className="bg-white rounded-[2.5rem] border border-gray-100 shadow-[0_20px_50px_rgba(0,0,0,0.03)] overflow-hidden"
+        {/* Modern Segmented Tab Selector */}
+        <div className="flex justify-center -mt-2">
+          <div className="bg-slate-100/90 backdrop-blur-xl p-1.5 rounded-[2rem] flex gap-2 border border-slate-200/50 shadow-lg shadow-slate-100/50 max-w-full overflow-x-auto custom-scrollbar">
+            <button
+              onClick={() => setActiveTab("RECEIVABLES")}
+              className={`px-8 py-4 rounded-[1.5rem] text-xs font-black uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-3 whitespace-nowrap min-w-[200px] ${activeTab === "RECEIVABLES"
+                ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-xl shadow-emerald-100 scale-[1.03] -translate-y-0.5"
+                : "text-slate-500 hover:text-slate-800 hover:bg-slate-200/60"
+                }`}
             >
-              {/* DESKTOP TABLE VIEW */}
-              <div className="hidden md:block overflow-x-auto">
-                <table className="w-full text-left border-collapse min-w-[600px]">
-                  <thead>
-                    <tr className="bg-gray-50/50 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-100">
-                      <th className="p-6 pl-8 w-[50px]">Deudor / Detalle</th>
-                      <th className="p-6">Moneda</th>
-                      <th className="p-6 text-right">Monto</th>
-                      <th className="p-6 text-right">En Soles</th>
-                      <th className="p-6 text-center">Estado</th>
-                      <th className="p-6 pr-8 text-center">Acción</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50/50">
-                    {receivablesDesktop.map((item) => (
-                      <tr
-                        key={item.id}
-                        className={`transition-all group hover:bg-gray-50/50 ${item.status === "PAID" ? "opacity-50 grayscale-[0.5]" : ""}`}
-                      >
-                        <td className="p-6 pl-8">
-                          <div className="font-bold text-gray-800 text-sm">
-                            {item.name || "Sin nombre"}
-                          </div>
-                          <div className="text-[10px] text-gray-500 font-bold mt-1 italic">
-                            "{item.description}"
-                          </div>
-                          <div className="text-[10px] text-indigo-400 font-black mt-2 uppercase tracking-tighter">
-                            {item.date?.split("T")[0]}
-                          </div>
-                        </td>
-                        <td className="p-6">
-                          <span
-                            className={`text-[10px] font-black px-2 py-1 rounded-lg ${item.currency === "USD" ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-600"}`}
-                          >
-                            {item.currency}
-                          </span>
-                          {item.currency === "USD" && (
-                            <div className="text-[9px] text-gray-400 font-bold mt-1">
-                              T.C: {item.exchangeRate}
-                            </div>
-                          )}
-                        </td>
-                        <td className="p-6 font-black text-gray-600 text-sm text-right">
-                          {item.currency === "USD" ? "$" : "S/"}{" "}
-                          {item.amount.toLocaleString()}
-                        </td>
-                        <td className="p-6 font-black text-emerald-600 text-lg text-right bg-emerald-50/10">
-                          S/{" "}
-                          {(
-                            item.amount *
-                            (item.currency === "USD" ? item.exchangeRate : 1)
-                          ).toLocaleString(undefined, {
-                            minimumFractionDigits: 2,
-                          })}
-                        </td>
-                        <td className="p-6 text-center">
-                          <button
-                            onClick={() => togglePaid(item.id, item.status)}
-                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 mx-auto ${
-                              item.status === "PAID"
-                                ? "bg-emerald-500 text-white shadow-lg shadow-emerald-100"
-                                : "bg-amber-100 text-amber-700 hover:bg-amber-200"
-                            }`}
-                          >
-                            {item.status === "PAID" ? (
-                              <Check className="w-3.5 h-3.5" />
-                            ) : (
-                              <Clock className="w-3.5 h-3.5" />
-                            )}
-                            {item.status === "PAID" ? "Pagado" : "Pendiente"}
-                          </button>
-                        </td>
-                        <td className="p-6 pr-8 text-center">
-                          <div className="flex justify-center gap-2">
-                            <button
-                              onClick={() => handleOpenEdit(item)}
-                              className="p-2.5 bg-white border border-gray-100 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all shadow-sm"
-                            >
-                              <Edit2 className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDelete(item.id)}
-                              className="p-2 text-gray-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                    {receivables.length === 0 && (
-                      <tr>
-                        <td colSpan={6} className="p-20 text-center">
-                          <ArrowUpLeft className="w-12 h-12 text-gray-100 mx-auto mb-4" />
-                          <p className="text-sm text-gray-400 font-bold uppercase tracking-widest">
-                            Sin cuentas por cobrar
-                          </p>
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-                <div className="flex justify-center items-center gap-2 py-4 border-t border-gray-100 bg-white">
-                  {/* IR AL INICIO */}
-                  <button
-                    onClick={() => setReceivablesPage(1)}
-                    disabled={receivablesPage === 1}
-                    className="px-3 py-1 text-sm font-black disabled:opacity-30"
-                  >
-                    « Inicio
-                  </button>
-
-                  {/* ATRÁS */}
-                  <button
-                    onClick={() =>
-                      setReceivablesPage((p) => Math.max(p - 1, 1))
-                    }
-                    disabled={receivablesPage === 1}
-                    className="px-3 py-1 text-sm font-black disabled:opacity-30"
-                  >
-                    ‹ Atrás
-                  </button>
-
-                  {/* NÚMEROS */}
-                  {getPages(receivablesTotalPages).map((page) => (
-                    <button
-                      key={page}
-                      onClick={() => setReceivablesPage(page)}
-                      className={`px-3 py-1 text-sm font-black rounded-lg transition-all ${
-                        receivablesPage === page
-                          ? "bg-black text-white"
-                          : "text-gray-500 hover:bg-gray-100"
-                      }`}
-                    >
-                      {page}
-                    </button>
-                  ))}
-
-                  {/* SIGUIENTE */}
-                  <button
-                    onClick={() =>
-                      setReceivablesPage((p) =>
-                        Math.min(p + 1, receivablesTotalPages),
-                      )
-                    }
-                    disabled={receivablesPage === receivablesTotalPages}
-                    className="px-3 py-1 text-sm font-black disabled:opacity-30"
-                  >
-                    Siguiente ›
-                  </button>
-
-                  {/* IR AL FINAL */}
-                  <button
-                    onClick={() => setReceivablesPage(receivablesTotalPages)}
-                    disabled={receivablesPage === receivablesTotalPages}
-                    className="px-3 py-1 text-sm font-black disabled:opacity-30"
-                  >
-                    Fin »
-                  </button>
-                </div>
-              </div>
-
-              {/* MOBILE CARD VIEW */}
-              <div className="md:hidden divide-y divide-gray-100">
-                {visibleReceivables.map((item) => (
-                  <div
-                    key={item.id}
-                    className={`p-6 space-y-4 ${item.status === "PAID" ? "opacity-60" : ""}`}
-                  >
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <h3 className="font-black text-gray-900 text-base leading-tight">
-                          {item.name || "Sin nombre"}
-                        </h3>
-                        <p className="text-xs text-gray-500 font-medium italic mt-1 leading-relaxed">
-                          "{item.description}"
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => togglePaid(item.id, item.status)}
-                        className={`p-2 rounded-xl ${item.status === "PAID" ? "bg-emerald-100 text-emerald-600" : "bg-amber-100 text-amber-600"}`}
-                      >
-                        {item.status === "PAID" ? (
-                          <Check className="w-5 h-5" />
-                        ) : (
-                          <Clock className="w-5 h-5" />
-                        )}
-                      </button>
-                    </div>
-
-                    <div className="flex justify-between items-end bg-gray-50/50 p-4 rounded-2xl border border-gray-100/50">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">
-                            En Soles
-                          </span>
-                          <div className="h-px flex-1 bg-gray-200 w-8"></div>
-                        </div>
-                        <p className="text-xl font-black text-emerald-600">
-                          S/{" "}
-                          {(
-                            item.amount *
-                            (item.currency === "USD" ? item.exchangeRate : 1)
-                          ).toLocaleString(undefined, {
-                            minimumFractionDigits: 2,
-                          })}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">
-                          Monto Original
-                        </p>
-                        <p className="text-sm font-black text-gray-600">
-                          {item.currency === "USD" ? "$" : "S/"}{" "}
-                          {item.amount.toLocaleString()}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between pt-2">
-                      <div className="flex items-center gap-2">
-                        <div className="px-2.5 py-1 bg-white border border-gray-100 rounded-lg shadow-sm">
-                          <span className="text-[10px] font-black text-gray-500 uppercase tracking-tighter">
-                            {item.date?.split("T")[0]}
-                          </span>
-                        </div>
-                        {item.currency === "USD" && (
-                          <span className="text-[9px] font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
-                            T.C: {item.exchangeRate}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleOpenEdit(item)}
-                          className="p-3 bg-white border border-gray-200 text-blue-600 rounded-xl shadow-sm active:scale-95 transition-all"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(item.id)}
-                          className="p-3 bg-white border border-gray-200 text-rose-500 rounded-xl shadow-sm active:scale-95 transition-all"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                {receivables.length > 2 && (
-                  <div className="sticky bottom-4 flex justify-center py-4 bg-gradient-to-t from-white via-white/95 to-transparent">
-                    <button
-                      onClick={() => {
-                        if (showAllReceivables) {
-                          setShowAllReceivables(false);
-
-                          setTimeout(() => {
-                            receivablesRef.current?.scrollIntoView({
-                              behavior: "smooth",
-                              block: "start",
-                            });
-                          }, 0);
-                        } else {
-                          setShowAllReceivables(true);
-                        }
-                      }}
-                      className="px-5 py-3 bg-white border border-gray-200 shadow-xl rounded-full text-sm font-black text-gray-700 active:scale-95"
-                    >
-                      {showAllReceivables
-                        ? "Mostrar menos"
-                        : `Mostrar ${receivables.length - 2} más`}
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* PAYABLES */}
-          <div className="flex flex-col gap-6">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-gradient-to-r from-rose-500 to-red-600 p-6 rounded-[2rem] md:rounded-[2.5rem] text-white shadow-xl shadow-rose-100">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-white/20 rounded-2xl">
-                  <ArrowDownRight className="w-7 h-7" />
-                </div>
-                <div>
-                  <h2 className="text-xl font-black">Por Pagar</h2>
-                  <p className="text-[10px] text-rose-100 font-black uppercase tracking-widest opacity-80">
-                    Dinero que debes
-                  </p>
-                  <h2 className="text-xl font-black">S/ {payablesTotal}</h2>
-                </div>
-              </div>
-              <button
-                onClick={() => handleOpenModal("EXPENSE")}
-                className="bg-white text-rose-600 hover:bg-rose-50 px-6 py-3 rounded-2xl transition-all font-black shadow-lg text-sm w-full sm:w-auto"
-              >
-                + Nuevo Pago
-              </button>
-            </div>
-
-            <div
-              ref={payablesRef}
-              className="bg-white rounded-[2.5rem] border border-gray-100 shadow-[0_20px_50px_rgba(0,0,0,0.03)] overflow-hidden"
+              <ArrowUpRight className="w-4 h-4" />
+              Por Cobrar (S/ {receivablesTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })})
+            </button>
+            <button
+              onClick={() => setActiveTab("PAYABLES")}
+              className={`px-8 py-4 rounded-[1.5rem] text-xs font-black uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-3 whitespace-nowrap min-w-[200px] ${activeTab === "PAYABLES"
+                ? "bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-xl shadow-rose-100 scale-[1.03] -translate-y-0.5"
+                : "text-slate-500 hover:text-slate-800 hover:bg-slate-200/60"
+                }`}
             >
-              {/* DESKTOP TABLE VIEW */}
-              <div className="hidden md:block overflow-x-auto">
-                <table className="w-full text-left border-collapse min-w-[600px]">
-                  <thead>
-                    <tr className="bg-gray-50/50 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-100">
-                      <th className="p-6 pl-8">Acreedor / Detalle</th>
-                      <th className="p-6">Moneda</th>
-                      <th className="p-6 text-right">Monto</th>
-                      <th className="p-6 text-right">En Soles</th>
-                      <th className="p-6 text-center">Estado</th>
-                      <th className="p-6 pr-8 text-center">Acción</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50/50">
-                    {payablesDesktop.map((item) => (
-                      <tr
-                        key={item.id}
-                        className={`transition-all group hover:bg-gray-50/50 ${item.status === "PAID" ? "opacity-50 grayscale-[0.5]" : ""}`}
-                      >
-                        <td className="p-6 pl-8">
-                          <div className="font-bold text-gray-800 text-sm">
-                            {item.name || "Sin nombre"}
-                          </div>
-                          <div className="text-[10px] text-gray-500 font-bold mt-1 italic">
-                            "{item.description}"
-                          </div>
-                          <div className="text-[10px] text-rose-400 font-black mt-2 uppercase tracking-tighter">
-                            {item.date?.split("T")[0]}
-                          </div>
-                        </td>
-                        <td className="p-6">
-                          <span
-                            className={`text-[10px] font-black px-2 py-1 rounded-lg ${item.currency === "USD" ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-600"}`}
-                          >
-                            {item.currency}
-                          </span>
-                          {item.currency === "USD" && (
-                            <div className="text-[9px] text-gray-400 font-bold mt-1">
-                              T.C: {item.exchangeRate}
-                            </div>
-                          )}
-                        </td>
-                        <td className="p-6 font-black text-gray-600 text-sm text-right">
-                          {item.currency === "USD" ? "$" : "S/"}{" "}
-                          {item.amount.toLocaleString()}
-                        </td>
-                        <td className="p-6 font-black text-rose-600 text-lg text-right bg-rose-50/10">
-                          S/{" "}
-                          {(
-                            item.amount *
-                            (item.currency === "USD" ? item.exchangeRate : 1)
-                          ).toLocaleString(undefined, {
-                            minimumFractionDigits: 2,
-                          })}
-                        </td>
-                        <td className="p-6 text-center">
-                          <button
-                            onClick={() => togglePaid(item.id, item.status)}
-                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 mx-auto ${
-                              item.status === "PAID"
-                                ? "bg-emerald-500 text-white shadow-lg shadow-emerald-100"
-                                : "bg-amber-100 text-amber-700 hover:bg-amber-200"
-                            }`}
-                          >
-                            {item.status === "PAID" ? (
-                              <Check className="w-3.5 h-3.5" />
-                            ) : (
-                              <Clock className="w-3.5 h-3.5" />
-                            )}
-                            {item.status === "PAID" ? "Pagado" : "Pendiente"}
-                          </button>
-                        </td>
-                        <td className="p-6 pr-8 text-center">
-                          <div className="flex justify-center gap-2">
-                            <button
-                              onClick={() => handleOpenEdit(item)}
-                              className="p-2.5 bg-white border border-gray-100 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all shadow-sm"
-                            >
-                              <Edit2 className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDelete(item.id)}
-                              className="p-2 text-gray-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                    {payables.length === 0 && (
-                      <tr>
-                        <td colSpan={6} className="p-20 text-center">
-                          <ArrowUpRight className="w-12 h-12 text-gray-100 mx-auto mb-4 " />
-                          <p className="text-sm text-gray-400 font-bold uppercase tracking-widest">
-                            Sin cuentas por pagar
-                          </p>
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-                <div className="flex justify-center items-center gap-2 py-4 border-t border-gray-100 bg-white">
-                  {/* IR AL INICIO */}
-                  <button
-                    onClick={() => setPayablesPage(1)}
-                    disabled={payablesPage === 1}
-                    className="px-3 py-1 text-sm font-black disabled:opacity-30"
-                  >
-                    « Inicio
-                  </button>
-
-                  {/* ATRÁS */}
-                  <button
-                    onClick={() => setPayablesPage((p) => Math.max(p - 1, 1))}
-                    disabled={payablesPage === 1}
-                    className="px-3 py-1 text-sm font-black disabled:opacity-30"
-                  >
-                    ‹ Atrás
-                  </button>
-
-                  {/* NÚMEROS */}
-                  {getPages(payablesTotalPages).map((page) => (
-                    <button
-                      key={page}
-                      onClick={() => setPayablesPage(page)}
-                      className={`px-3 py-1 text-sm font-black rounded-lg transition-all ${
-                        payablesPage === page
-                          ? "bg-black text-white"
-                          : "text-gray-500 hover:bg-gray-100"
-                      }`}
-                    >
-                      {page}
-                    </button>
-                  ))}
-
-                  {/* SIGUIENTE */}
-                  <button
-                    onClick={() =>
-                      setPayablesPage((p) =>
-                        Math.min(p + 1, payablesTotalPages),
-                      )
-                    }
-                    disabled={payablesPage === payablesTotalPages}
-                    className="px-3 py-1 text-sm font-black disabled:opacity-30"
-                  >
-                    Siguiente ›
-                  </button>
-
-                  {/* IR AL FINAL */}
-                  <button
-                    onClick={() => setPayablesPage(payablesTotalPages)}
-                    disabled={payablesPage === payablesTotalPages}
-                    className="px-3 py-1 text-sm font-black disabled:opacity-30"
-                  >
-                    Fin »
-                  </button>
-                </div>
-              </div>
-
-              {/* MOBILE CARD VIEW */}
-              <div className="md:hidden divide-y divide-gray-100">
-                {visiblePayables.map((item) => (
-                  <div
-                    key={item.id}
-                    className={`p-6 space-y-4 ${item.status === "PAID" ? "opacity-60" : ""}`}
-                  >
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <h3 className="font-black text-gray-900 text-base leading-tight">
-                          {item.name || "Sin nombre"}
-                        </h3>
-                        <p className="text-xs text-gray-500 font-medium italic mt-1 leading-relaxed">
-                          "{item.description}"
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => togglePaid(item.id, item.status)}
-                        className={`p-2 rounded-xl ${item.status === "PAID" ? "bg-emerald-100 text-emerald-600" : "bg-amber-100 text-amber-600"}`}
-                      >
-                        {item.status === "PAID" ? (
-                          <Check className="w-5 h-5" />
-                        ) : (
-                          <Clock className="w-5 h-5" />
-                        )}
-                      </button>
-                    </div>
-
-                    <div className="flex justify-between items-end bg-gray-50/50 p-4 rounded-2xl border border-gray-100/50">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">
-                            En Soles
-                          </span>
-                          <div className="h-px flex-1 bg-gray-200 w-8"></div>
-                        </div>
-                        <p className="text-xl font-black text-rose-600">
-                          S/{" "}
-                          {(
-                            item.amount *
-                            (item.currency === "USD" ? item.exchangeRate : 1)
-                          ).toLocaleString(undefined, {
-                            minimumFractionDigits: 2,
-                          })}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">
-                          Monto Original
-                        </p>
-                        <p className="text-sm font-black text-gray-600">
-                          {item.currency === "USD" ? "$" : "S/"}{" "}
-                          {item.amount.toLocaleString()}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between pt-2">
-                      <div className="flex items-center gap-2">
-                        <div className="px-2.5 py-1 bg-white border border-gray-100 rounded-lg shadow-sm">
-                          <span className="text-[10px] font-black text-gray-500 uppercase tracking-tighter">
-                            {item.date?.split("T")[0]}
-                          </span>
-                        </div>
-                        {item.currency === "USD" && (
-                          <span className="text-[9px] font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
-                            T.C: {item.exchangeRate}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleOpenEdit(item)}
-                          className="p-3 bg-white border border-gray-200 text-blue-600 rounded-xl shadow-sm active:scale-95 transition-all"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(item.id)}
-                          className="p-3 bg-white border border-gray-200 text-rose-500 rounded-xl shadow-sm active:scale-95 transition-all"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                {payables.length > 2 && (
-                  <div className="sticky bottom-4 flex justify-center py-4 bg-gradient-to-t from-white via-white/95 to-transparent">
-                    <button
-                      onClick={() => {
-                        if (showAllPayables) {
-                          setShowAllPayables(false);
-
-                          setTimeout(() => {
-                            payablesRef.current?.scrollIntoView({
-                              behavior: "smooth",
-                              block: "start",
-                            });
-                          }, 0);
-                        } else {
-                          setShowAllPayables(true);
-                        }
-                      }}
-                      className="px-5 py-3 bg-white border border-gray-200 shadow-xl rounded-full text-sm font-black text-gray-700 active:scale-95"
-                    >
-                      {showAllPayables
-                        ? "Mostrar menos"
-                        : `Mostrar ${payables.length - 2} más`}
-                    </button>
-                  </div>
-                )}
-              </div>
-              {/* end md:hidden mobile cards */}
-            </div>
-            {/* end bg-white payables container */}
+              <ArrowDownRight className="w-4 h-4" />
+              Por Pagar (S/ {payablesTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })})
+            </button>
           </div>
-          {/* end payables flex col */}
         </div>
-        {/* end grid xl:grid-cols-2 */}
+
+        <div className="w-full transition-all duration-300">
+          {activeTab === "RECEIVABLES" ? (
+            <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              {/* RECEIVABLES CARD */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-gradient-to-r from-emerald-500 to-teal-600 p-6 rounded-[2rem] md:rounded-[2.5rem] text-white shadow-xl shadow-emerald-100/50">
+                <div className="flex items-center gap-4">
+                  <div className="p-3.5 bg-white/20 rounded-2xl">
+                    <ArrowUpRight className="w-7 h-7" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-black">Por Cobrar</h2>
+                    <p className="text-[10px] text-emerald-100 font-black uppercase tracking-widest opacity-80">
+                      Dinero a tu favor
+                    </p>
+                    <h2 className="text-2xl font-black mt-0.5">S/ {receivablesTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</h2>
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleOpenModal("INCOME")}
+                  className="bg-white text-emerald-600 hover:bg-emerald-50 hover:scale-[1.02] active:scale-[0.98] px-8 py-4 rounded-2xl transition-all font-black shadow-lg text-sm w-full sm:w-auto"
+                >
+                  + Nuevo Cobro
+                </button>
+              </div>
+
+              <div
+                ref={receivablesRef}
+                className="bg-white rounded-[2.5rem] border border-gray-100 shadow-[0_20px_50px_rgba(0,0,0,0.02)] overflow-hidden"
+              >
+                {/* DESKTOP TABLE VIEW */}
+                <div className="hidden md:block overflow-x-auto">
+                  <table className="w-full text-left border-collapse min-w-[900px]">
+                    <thead>
+                      <tr className="bg-gray-50/50 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-100">
+                        <th className="p-6 pl-8">Deudor</th>
+                        <th className="p-6">Motivo / Descripción</th>
+                        <th className="p-6 text-center">Vencimiento</th>
+                        <th className="p-6 text-center">Moneda</th>
+                        <th className="p-6 text-right">Monto Original</th>
+                        <th className="p-6 text-right bg-emerald-50/20 text-emerald-700">Equivalente (Soles)</th>
+                        <th className="p-6 text-center">Estado</th>
+                        <th className="p-6 pr-8 text-center">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50/50">
+                      {receivablesDesktop.map((item) => (
+                        <tr
+                          key={item.id}
+                          className={`transition-all group hover:bg-gray-50/50 ${item.status === "PAID" ? "opacity-50 grayscale-[0.5]" : ""}`}
+                        >
+                          <td className="p-6 pl-8">
+                            <div className="font-bold text-gray-800 text-sm">
+                              {item.name || "Sin nombre"}
+                            </div>
+                          </td>
+                          <td className="p-6 text-sm text-gray-600 italic">
+                            "{item.description}"
+                          </td>
+                          <td className="p-6 text-center">
+                            {renderDueDateBadge(item.dueDate, item.status === "PAID")}
+                          </td>
+                          <td className="p-6 text-center">
+                            <span
+                              className={`text-[10px] font-black px-2.5 py-1.5 rounded-xl ${item.currency === "USD" ? "bg-blue-50 text-blue-600 border border-blue-100" : "bg-gray-50 text-gray-600 border border-gray-100"}`}
+                            >
+                              {item.currency}
+                            </span>
+                            {item.currency === "USD" && (
+                              <div className="text-[9px] text-blue-400 font-bold mt-1.5">
+                                T.C: {item.exchangeRate}
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-6 font-black text-gray-600 text-sm text-right">
+                            {item.currency === "USD" ? "$" : "S/"}{" "}
+                            {item.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="p-6 font-black text-emerald-600 text-base text-right bg-emerald-50/5">
+                            S/{" "}
+                            {(
+                              item.amount *
+                              (item.currency === "USD" ? item.exchangeRate : 1)
+                            ).toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                            })}
+                          </td>
+                          <td className="p-6 text-center">
+                            <button
+                              onClick={() => togglePaid(item.id, item.status)}
+                              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 mx-auto ${item.status === "PAID"
+                                ? "bg-emerald-500 text-white shadow-lg shadow-emerald-100"
+                                : "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                                }`}
+                            >
+                              {item.status === "PAID" ? (
+                                <Check className="w-3.5 h-3.5" />
+                              ) : (
+                                <Clock className="w-3.5 h-3.5" />
+                              )}
+                              {item.status === "PAID" ? "Pagado" : "Pendiente"}
+                            </button>
+                          </td>
+                          <td className="p-6 pr-8 text-center">
+                            <div className="flex justify-center gap-2">
+                              <button
+                                onClick={() => handleOpenEdit(item)}
+                                className="p-2.5 bg-white border border-gray-100 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all shadow-sm active:scale-95"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDelete(item.id)}
+                                className="p-2.5 bg-white border border-gray-100 text-rose-500 hover:bg-rose-500 hover:text-white rounded-xl transition-all shadow-sm active:scale-95"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                      {receivables.length === 0 && (
+                        <tr>
+                          <td colSpan={8} className="p-20 text-center">
+                            <ArrowUpLeft className="w-12 h-12 text-gray-200 mx-auto mb-4" />
+                            <p className="text-sm text-gray-400 font-bold uppercase tracking-widest">
+                              Sin cuentas por cobrar
+                            </p>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                  {receivablesTotalPages > 1 && (
+                    <div className="flex justify-center items-center gap-2 py-4 border-t border-gray-100 bg-white">
+                      <button
+                        onClick={() => setReceivablesPage(1)}
+                        disabled={receivablesPage === 1}
+                        className="px-3 py-1.5 text-xs font-black disabled:opacity-30 text-gray-600 hover:bg-gray-50 rounded-lg"
+                      >
+                        « Inicio
+                      </button>
+                      <button
+                        onClick={() => setReceivablesPage((p) => Math.max(p - 1, 1))}
+                        disabled={receivablesPage === 1}
+                        className="px-3 py-1.5 text-xs font-black disabled:opacity-30 text-gray-600 hover:bg-gray-50 rounded-lg"
+                      >
+                        ‹ Atrás
+                      </button>
+                      {getPages(receivablesTotalPages).map((page) => (
+                        <button
+                          key={page}
+                          onClick={() => setReceivablesPage(page)}
+                          className={`px-3 py-1.5 text-xs font-black rounded-lg transition-all ${receivablesPage === page
+                            ? "bg-black text-white"
+                            : "text-gray-500 hover:bg-gray-100"
+                            }`}
+                        >
+                          {page}
+                        </button>
+                      ))}
+                      <button
+                        onClick={() => setReceivablesPage((p) => Math.min(p + 1, receivablesTotalPages))}
+                        disabled={receivablesPage === receivablesTotalPages}
+                        className="px-3 py-1.5 text-xs font-black disabled:opacity-30 text-gray-600 hover:bg-gray-50 rounded-lg"
+                      >
+                        Siguiente ›
+                      </button>
+                      <button
+                        onClick={() => setReceivablesPage(receivablesTotalPages)}
+                        disabled={receivablesPage === receivablesTotalPages}
+                        className="px-3 py-1.5 text-xs font-black disabled:opacity-30 text-gray-600 hover:bg-gray-50 rounded-lg"
+                      >
+                        Fin »
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* MOBILE CARD VIEW */}
+                <div className="md:hidden divide-y divide-gray-100">
+                  {visibleReceivables.map((item) => (
+                    <div
+                      key={item.id}
+                      className={`p-6 space-y-4 ${item.status === "PAID" ? "opacity-60" : ""}`}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <h3 className="font-black text-gray-900 text-base leading-tight">
+                            {item.name || "Sin nombre"}
+                          </h3>
+                          <p className="text-xs text-gray-500 font-medium italic mt-1 leading-relaxed">
+                            "{item.description}"
+                          </p>
+                          <div className="mt-2.5">
+                            {renderDueDateBadge(item.dueDate, item.status === "PAID")}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => togglePaid(item.id, item.status)}
+                          className={`p-2.5 rounded-xl ${item.status === "PAID" ? "bg-emerald-100 text-emerald-600" : "bg-amber-100 text-amber-600"}`}
+                        >
+                          {item.status === "PAID" ? (
+                            <Check className="w-5 h-5" />
+                          ) : (
+                            <Clock className="w-5 h-5" />
+                          )}
+                        </button>
+                      </div>
+
+                      <div className="flex justify-between items-end bg-gray-50/50 p-4 rounded-2xl border border-gray-100/50">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">
+                              En Soles
+                            </span>
+                            <div className="h-px flex-1 bg-gray-200 w-8"></div>
+                          </div>
+                          <p className="text-xl font-black text-emerald-600">
+                            S/{" "}
+                            {(
+                              item.amount *
+                              (item.currency === "USD" ? item.exchangeRate : 1)
+                            ).toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                            })}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">
+                            Monto Original
+                          </p>
+                          <p className="text-sm font-black text-gray-600">
+                            {item.currency === "USD" ? "$" : "S/"}{" "}
+                            {item.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-2">
+                        <div className="flex items-center gap-2">
+                          {item.currency === "USD" && (
+                            <span className="text-[9px] font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
+                              T.C: {item.exchangeRate}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleOpenEdit(item)}
+                            className="p-3 bg-white border border-gray-200 text-blue-600 rounded-xl shadow-sm active:scale-95 transition-all"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(item.id)}
+                            className="p-3 bg-white border border-gray-200 text-rose-500 rounded-xl shadow-sm active:scale-95 transition-all"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {receivables.length > 2 && (
+                    <div className="sticky bottom-4 flex justify-center py-4 bg-gradient-to-t from-white via-white/95 to-transparent">
+                      <button
+                        onClick={() => {
+                          if (showAllReceivables) {
+                            setShowAllReceivables(false);
+                            setTimeout(() => {
+                              receivablesRef.current?.scrollIntoView({
+                                behavior: "smooth",
+                                block: "start",
+                              });
+                            }, 0);
+                          } else {
+                            setShowAllReceivables(true);
+                          }
+                        }}
+                        className="px-5 py-3 bg-white border border-gray-200 shadow-xl rounded-full text-sm font-black text-gray-700 active:scale-95"
+                      >
+                        {showAllReceivables
+                          ? "Mostrar menos"
+                          : `Mostrar ${receivables.length - 2} más`}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              {/* PAYABLES CARD */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-gradient-to-r from-rose-500 to-red-600 p-6 rounded-[2rem] md:rounded-[2.5rem] text-white shadow-xl shadow-rose-100/50">
+                <div className="flex items-center gap-4">
+                  <div className="p-3.5 bg-white/20 rounded-2xl">
+                    <ArrowDownRight className="w-7 h-7" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-black">Por Pagar</h2>
+                    <p className="text-[10px] text-rose-100 font-black uppercase tracking-widest opacity-80">
+                      Dinero que debes
+                    </p>
+                    <h2 className="text-2xl font-black mt-0.5">S/ {payablesTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</h2>
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleOpenModal("EXPENSE")}
+                  className="bg-white text-rose-600 hover:bg-rose-50 hover:scale-[1.02] active:scale-[0.98] px-8 py-4 rounded-2xl transition-all font-black shadow-lg text-sm w-full sm:w-auto"
+                >
+                  + Nuevo Pago
+                </button>
+              </div>
+
+              <div
+                ref={payablesRef}
+                className="bg-white rounded-[2.5rem] border border-gray-100 shadow-[0_20px_50px_rgba(0,0,0,0.02)] overflow-hidden"
+              >
+                {/* DESKTOP TABLE VIEW */}
+                <div className="hidden md:block overflow-x-auto">
+                  <table className="w-full text-left border-collapse min-w-[900px]">
+                    <thead>
+                      <tr className="bg-gray-50/50 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-100">
+                        <th className="p-6 pl-8">Acreedor</th>
+                        <th className="p-6">Motivo / Descripción</th>
+                        <th className="p-6 text-center">Vencimiento</th>
+                        <th className="p-6 text-center">Moneda</th>
+                        <th className="p-6 text-right">Monto Original</th>
+                        <th className="p-6 text-right bg-rose-50/20 text-rose-700">Equivalente (Soles)</th>
+                        <th className="p-6 text-center">Estado</th>
+                        <th className="p-6 pr-8 text-center">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50/50">
+                      {payablesDesktop.map((item) => (
+                        <tr
+                          key={item.id}
+                          className={`transition-all group hover:bg-gray-50/50 ${item.status === "PAID" ? "opacity-50 grayscale-[0.5]" : ""}`}
+                        >
+                          <td className="p-6 pl-8">
+                            <div className="font-bold text-gray-800 text-sm">
+                              {item.name || "Sin nombre"}
+                            </div>
+                          </td>
+                          <td className="p-6 text-sm text-gray-600 italic">
+                            "{item.description}"
+                          </td>
+                          <td className="p-6 text-center">
+                            {renderDueDateBadge(item.dueDate, item.status === "PAID")}
+                          </td>
+                          <td className="p-6 text-center">
+                            <span
+                              className={`text-[10px] font-black px-2.5 py-1.5 rounded-xl ${item.currency === "USD" ? "bg-blue-50 text-blue-600 border border-blue-100" : "bg-gray-50 text-gray-600 border border-gray-100"}`}
+                            >
+                              {item.currency}
+                            </span>
+                            {item.currency === "USD" && (
+                              <div className="text-[9px] text-blue-400 font-bold mt-1.5">
+                                T.C: {item.exchangeRate}
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-6 font-black text-gray-600 text-sm text-right">
+                            {item.currency === "USD" ? "$" : "S/"}{" "}
+                            {item.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="p-6 font-black text-rose-600 text-base text-right bg-rose-50/5">
+                            S/{" "}
+                            {(
+                              item.amount *
+                              (item.currency === "USD" ? item.exchangeRate : 1)
+                            ).toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                            })}
+                          </td>
+                          <td className="p-6 text-center">
+                            <button
+                              onClick={() => togglePaid(item.id, item.status)}
+                              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 mx-auto ${item.status === "PAID"
+                                ? "bg-emerald-500 text-white shadow-lg shadow-emerald-100"
+                                : "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                                }`}
+                            >
+                              {item.status === "PAID" ? (
+                                <Check className="w-3.5 h-3.5" />
+                              ) : (
+                                <Clock className="w-3.5 h-3.5" />
+                              )}
+                              {item.status === "PAID" ? "Pagado" : "Pendiente"}
+                            </button>
+                          </td>
+                          <td className="p-6 pr-8 text-center">
+                            <div className="flex justify-center gap-2">
+                              <button
+                                onClick={() => handleOpenEdit(item)}
+                                className="p-2.5 bg-white border border-gray-100 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all shadow-sm active:scale-95"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDelete(item.id)}
+                                className="p-2.5 bg-white border border-gray-100 text-rose-500 hover:bg-rose-500 hover:text-white rounded-xl transition-all shadow-sm active:scale-95"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                      {payables.length === 0 && (
+                        <tr>
+                          <td colSpan={8} className="p-20 text-center">
+                            <ArrowDownRight className="w-12 h-12 text-gray-200 mx-auto mb-4 " />
+                            <p className="text-sm text-gray-400 font-bold uppercase tracking-widest">
+                              Sin cuentas por pagar
+                            </p>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                  {payablesTotalPages > 1 && (
+                    <div className="flex justify-center items-center gap-2 py-4 border-t border-gray-100 bg-white">
+                      <button
+                        onClick={() => setPayablesPage(1)}
+                        disabled={payablesPage === 1}
+                        className="px-3 py-1.5 text-xs font-black disabled:opacity-30 text-gray-600 hover:bg-gray-50 rounded-lg"
+                      >
+                        « Inicio
+                      </button>
+                      <button
+                        onClick={() => setPayablesPage((p) => Math.max(p - 1, 1))}
+                        disabled={payablesPage === 1}
+                        className="px-3 py-1.5 text-xs font-black disabled:opacity-30 text-gray-600 hover:bg-gray-50 rounded-lg"
+                      >
+                        ‹ Atrás
+                      </button>
+                      {getPages(payablesTotalPages).map((page) => (
+                        <button
+                          key={page}
+                          onClick={() => setPayablesPage(page)}
+                          className={`px-3 py-1.5 text-xs font-black rounded-lg transition-all ${payablesPage === page
+                            ? "bg-black text-white"
+                            : "text-gray-500 hover:bg-gray-100"
+                            }`}
+                        >
+                          {page}
+                        </button>
+                      ))}
+                      <button
+                        onClick={() => setPayablesPage((p) => Math.min(p + 1, payablesTotalPages))}
+                        disabled={payablesPage === payablesTotalPages}
+                        className="px-3 py-1.5 text-xs font-black disabled:opacity-30 text-gray-600 hover:bg-gray-50 rounded-lg"
+                      >
+                        Siguiente ›
+                      </button>
+                      <button
+                        onClick={() => setPayablesPage(payablesTotalPages)}
+                        disabled={payablesPage === payablesTotalPages}
+                        className="px-3 py-1.5 text-xs font-black disabled:opacity-30 text-gray-600 hover:bg-gray-50 rounded-lg"
+                      >
+                        Fin »
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* MOBILE CARD VIEW */}
+                <div className="md:hidden divide-y divide-gray-100">
+                  {visiblePayables.map((item) => (
+                    <div
+                      key={item.id}
+                      className={`p-6 space-y-4 ${item.status === "PAID" ? "opacity-60" : ""}`}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <h3 className="font-black text-gray-900 text-base leading-tight">
+                            {item.name || "Sin nombre"}
+                          </h3>
+                          <p className="text-xs text-gray-500 font-medium italic mt-1 leading-relaxed">
+                            "{item.description}"
+                          </p>
+                          <div className="mt-2.5">
+                            {renderDueDateBadge(item.dueDate, item.status === "PAID")}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => togglePaid(item.id, item.status)}
+                          className={`p-2.5 rounded-xl ${item.status === "PAID" ? "bg-emerald-100 text-emerald-600" : "bg-amber-100 text-amber-600"}`}
+                        >
+                          {item.status === "PAID" ? (
+                            <Check className="w-5 h-5" />
+                          ) : (
+                            <Clock className="w-5 h-5" />
+                          )}
+                        </button>
+                      </div>
+
+                      <div className="flex justify-between items-end bg-gray-50/50 p-4 rounded-2xl border border-gray-100/50">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">
+                              En Soles
+                            </span>
+                            <div className="h-px flex-1 bg-gray-200 w-8"></div>
+                          </div>
+                          <p className="text-xl font-black text-rose-600">
+                            S/{" "}
+                            {(
+                              item.amount *
+                              (item.currency === "USD" ? item.exchangeRate : 1)
+                            ).toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                            })}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">
+                            Monto Original
+                          </p>
+                          <p className="text-sm font-black text-gray-600">
+                            {item.currency === "USD" ? "$" : "S/"}{" "}
+                            {item.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-2">
+                        <div className="flex items-center gap-2">
+                          {item.currency === "USD" && (
+                            <span className="text-[9px] font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
+                              T.C: {item.exchangeRate}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleOpenEdit(item)}
+                            className="p-3 bg-white border border-gray-200 text-blue-600 rounded-xl shadow-sm active:scale-95 transition-all"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(item.id)}
+                            className="p-3 bg-white border border-gray-200 text-rose-500 rounded-xl shadow-sm active:scale-95 transition-all"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {payables.length > 2 && (
+                    <div className="sticky bottom-4 flex justify-center py-4 bg-gradient-to-t from-white via-white/95 to-transparent">
+                      <button
+                        onClick={() => {
+                          if (showAllPayables) {
+                            setShowAllPayables(false);
+                            setTimeout(() => {
+                              payablesRef.current?.scrollIntoView({
+                                behavior: "smooth",
+                                block: "start",
+                              });
+                            }, 0);
+                          } else {
+                            setShowAllPayables(true);
+                          }
+                        }}
+                        className="px-5 py-3 bg-white border border-gray-200 shadow-xl rounded-full text-sm font-black text-gray-700 active:scale-95"
+                      >
+                        {showAllPayables
+                          ? "Mostrar menos"
+                          : `Mostrar ${payables.length - 2} más`}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* MODAL */}
         <Modal
@@ -1116,7 +1156,7 @@ export default function PendingPage() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
+                <div className="space-y-2 md:col-span-2">
                   <label className="flex items-center gap-2 text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] ml-1">
                     <User className="w-3.5 h-3.5 text-indigo-500" />{" "}
                     {activeType === "INCOME" ? "Deudor" : "Acreedor"}
@@ -1133,29 +1173,21 @@ export default function PendingPage() {
                   />
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-2 md:col-span-2">
                   <label className="flex items-center gap-2 text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] ml-1">
-                    <Calendar className="w-3.5 h-3.5 text-indigo-500" /> Fecha
+                    <Calendar className="w-3.5 h-3.5 text-indigo-500" /> Fecha Programada de {activeType === "INCOME" ? "Cobro" : "Pago"}
                   </label>
                   <input
                     required
                     type="date"
-                    min={localDate}
                     className="w-full px-5 py-4 bg-white border border-gray-100 rounded-[1.5rem] outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
-                    value={formData.date}
+                    value={formData.dueDate}
                     onChange={(e) => {
                       const value = e.target.value;
-
-                      setFormData({ ...formData, date: value });
-
-                      validateDate(value);
+                      setFormData({ ...formData, dueDate: value });
+                      validateDates(value);
                     }}
                   />
-                  {dateError && (
-                    <p className="text-xs font-bold text-rose-500 mt-1">
-                      {dateError}
-                    </p>
-                  )}
                 </div>
               </div>
 

@@ -8,6 +8,9 @@ import { ConfigModule } from '@nestjs/config';
 import { PendingTransactionModule } from './transaction/pending/peding.module';
 import { TransactionsModule } from './transaction/transactions/transactions.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { NestModule, MiddlewareConsumer } from '@nestjs/common'
+import { TimezoneMiddleware } from './middlewares/timezone.middleware'
+
 
 @Module({
   imports: [
@@ -24,4 +27,10 @@ import { NotificationsModule } from './notifications/notifications.module';
     }),
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer
+      .apply(TimezoneMiddleware)
+      .forRoutes('*') // ← se aplica a TODAS las rutas
+  }
+}

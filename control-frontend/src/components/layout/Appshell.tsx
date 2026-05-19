@@ -15,8 +15,10 @@ import {
   Settings,
   Menu,
   X,
+  Clock,
 } from "lucide-react";
 import NotificationDropdown from "./NotificationDropdown";
+import { formatPeruTime } from "../../utils/date.utils";
 import Modal from "../ui/Modal";
 import { changePasswordRequest } from "../../services/auth.api";
 
@@ -24,6 +26,16 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const { user } = useAuth();
   const location = useLocation();
+
+  const [currentTime, setCurrentTime] = useState("");
+
+  useEffect(() => {
+    setCurrentTime(formatPeruTime(new Date()));
+    const timer = setInterval(() => {
+      setCurrentTime(formatPeruTime(new Date()));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
@@ -113,14 +125,14 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
     },
     ...(user?.role === "ADMIN"
       ? [
-          {
-            name: "Usuarios",
-            path: "/users",
-            icon: Users,
-            color: "from-purple-400 to-purple-600",
-            bgActive: "bg-purple-50 text-purple-700",
-          },
-        ]
+        {
+          name: "Usuarios",
+          path: "/users",
+          icon: Users,
+          color: "from-purple-400 to-purple-600",
+          bgActive: "bg-purple-50 text-purple-700",
+        },
+      ]
       : []),
   ];
 
@@ -191,11 +203,10 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                 onClick={() => navigate(item.path)}
                 className={`
                                     w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all duration-300 ease-out group relative overflow-hidden
-                                    ${
-                                      active
-                                        ? `${item.bgActive} shadow-sm font-semibold`
-                                        : "text-gray-500 hover:bg-gray-100/80 hover:text-gray-900"
-                                    }
+                                    ${active
+                    ? `${item.bgActive} shadow-sm font-semibold`
+                    : "text-gray-500 hover:bg-gray-100/80 hover:text-gray-900"
+                  }
                                 `}
               >
                 {active && (
@@ -297,6 +308,10 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
           )}
 
           <div className="flex items-center gap-3 lg:gap-4">
+            <div className="flex items-center gap-2 bg-white/70 backdrop-blur-md border border-white/80 rounded-2xl py-2 px-3 shadow-sm text-gray-700 select-none">
+              <Clock className="w-3.5 h-3.5 text-indigo-500 animate-pulse" />
+              <span className="text-xs font-black tracking-tight font-mono whitespace-nowrap">{currentTime || "--:--:-- --"}</span>
+            </div>
             <NotificationDropdown />
           </div>
         </header>

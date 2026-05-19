@@ -1,44 +1,57 @@
 import { PrismaService } from '../../prisma/prisma.service';
-import { Injectable } from '@nestjs/common';
-import {
-  CreatePendingTransactionDto,
-  MarkAsPaidDto,
-  UpdatePendingTransactionDto,
-} from './peding.dto';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { CreatePendingTransactionDto } from './create-pending.dto';
+import { UpdatePendingTransactionDto } from './update-pending.dto';
+import { MarkAsPaidDto } from './mark-pending.dto';
 import { Currency, TransactionStatus, TransactionType } from '@prisma/client';
-import { type } from 'os';
-import { MarkAsPendingDto } from '../transactions/transactions.dto';
+
 @Injectable()
 export class PendingTransactionService {
-  constructor(private prisma: PrismaService) {}
-  async createPendingTransaction(
-    userId: string,
-    dto: CreatePendingTransactionDto,
-  ) {
-    const isUSD = dto.currency == Currency.USD;
+  constructor(private prisma: PrismaService) { }
+
+  // =========================================================
+  // CREATE
+  // El frontend YA envía fechas en UTC → solo validamos y guardamos
+  // =========================================================
+  async createPendingTransaction(userId: string, dto: CreatePendingTransactionDto) {
+    const isUSD = dto.currency === Currency.USD;
+
+    // Calculamos monto en soles SOLO para reporting interno
     const amountSoles = isUSD
       ? dto.amount * (dto.exchangeRate || 1)
       : dto.amount;
-    console.log('SUBCATEGORY RECIBIDA:', dto.subCategoryId);
+
     return this.prisma.transaction.create({
       data: {
         userId,
         type: dto.type,
         categoryId: dto.categoryId,
         subCategoryId: dto.subCategoryId || null,
-        date: dto.date ? new Date(dto.date) : new Date(),
-        dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
+
+        // 🔥 IMPORTANTE: fechas llegan en UTC → guardar tal cual
+        date: new Date(dto.date),
+        dueDate: new Date(dto.dueDate),
+        paidAt: dto.paidAt ? new Date(dto.paidAt) : null,
+
         paymentMethod: dto.paymentMethod || 'CASH',
         name: dto.name,
         description: dto.description,
+
         amount: dto.amount,
-        status: TransactionStatus.PENDING,
+        amountSoles,
+
         currency: dto.currency ?? Currency.PEN,
         exchangeRate: dto.exchangeRate,
-        amountSoles,
+
+        status: TransactionStatus.PENDING,
       },
     });
   }
+
+  // =========================================================
+  // LIST
+  // Siempre devolver UTC. El frontend convertirá.
+  // =========================================================
   async listPendingTransactions(userId: string, type?: TransactionType) {
     return this.prisma.transaction.findMany({
       where: {
@@ -47,59 +60,97 @@ export class PendingTransactionService {
         ...(type ? { type } : {}),
       },
       orderBy: { date: 'desc' },
-      include: { category: true, subCategory: true },
-    });
-  }
-  async getPendingTransactionDetails(id: string) {
-    return this.prisma.transaction.findUnique({
-      where: { id },
       include: {
         category: true,
         subCategory: true,
       },
     });
   }
-  async updatePendingTransaction(id: string, dto: UpdatePendingTransactionDto) {
-    const existingTransaction = await this.getPendingTransactionDetails(id);
-    if (!existingTransaction) {
-      throw new Error('Transaccion no encontrada');
-    }
-    const currency = dto.currency ?? existingTransaction.currency;
-    const amount = dto.amount ?? existingTransaction.amount;
-    const exchangeRate = dto.exchangeRate ?? existingTransaction.exchangeRate;
-    let amountSoles = existingTransaction.amountSoles;
 
+  // =========================================================
+  // DETAILS
+  // 🔥 Ya NO convertimos fechas aquí
+  // =========================================================
+  async getPendingTransactionDetails(id: string) {
+    const pending = await this.prisma.transaction.findUnique({
+      where: { id },
+      include: {
+        category: true,
+        subCategory: true,
+      },
+    });
+
+    if (!pending) {
+      throw new NotFoundException('Cuenta pendiente no encontrada');
+    }
+
+    return pending; // ← TODO en UTC
+  }
+
+  // =========================================================
+  // UPDATE
+  // Fechas siempre llegan en UTC desde el frontend
+  // =========================================================
+  async updatePendingTransaction(id: string, dto: UpdatePendingTransactionDto) {
+    const existing = await this.prisma.transaction.findUnique({ where: { id } });
+
+    if (!existing) {
+      throw new NotFoundException('Transacción no encontrada');
+    }
+
+    // Determinar valores finales
+    const currency = dto.currency ?? existing.currency;
+    const amount = dto.amount ?? existing.amount;
+    const exchangeRate = dto.exchangeRate ?? existing.exchangeRate;
+
+    // Recalcular monto en soles si cambian variables financieras
+    let amountSoles = existing.amountSoles;
     if (dto.amount || dto.currency || dto.exchangeRate) {
       const isUSD = currency === Currency.USD;
       amountSoles = isUSD ? amount * (exchangeRate || 1) : amount;
     }
+
     return this.prisma.transaction.update({
       where: { id },
       data: {
         ...(dto.categoryId && { categoryId: dto.categoryId }),
-        subCategoryId: dto.subCategoryId, // Puede ser null
+        subCategoryId: dto.subCategoryId,
+
         ...(dto.date && { date: new Date(dto.date) }),
+        ...(dto.dueDate && { dueDate: new Date(dto.dueDate) }),
+        ...(dto.paidAt && { paidAt: new Date(dto.paidAt) }),
+
         ...(dto.name !== undefined && { name: dto.name }),
         ...(dto.description !== undefined && { description: dto.description }),
-        amount,
         ...(dto.status && { status: dto.status }),
+
+        amount,
         currency,
         exchangeRate,
         amountSoles,
       },
     });
   }
+
+  // =========================================================
+  // DELETE
+  // =========================================================
   async deletePendingTransaction(id: string) {
     return this.prisma.transaction.delete({
       where: { id },
     });
   }
+
+  // =========================================================
+  // MARK AS PAID
+  // paidAt SIEMPRE en UTC
+  // =========================================================
   async markTransactionAsPaid(id: string, dto: MarkAsPaidDto) {
     return this.prisma.transaction.update({
       where: { id },
       data: {
         status: dto.status,
-        paidAt: new Date(),
+        paidAt: dto.status === 'PAID' ? new Date() : null,
       },
     });
   }

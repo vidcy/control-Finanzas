@@ -11,14 +11,16 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
-import { CreatePendingTransactionDto, MarkAsPaidDto } from './peding.dto';
+import { CreatePendingTransactionDto } from './create-pending.dto';
 import { TransactionType } from '@prisma/client';
 import { JwtAuthGuard } from 'src/auth/jwt.guard';
 import { PendingTransactionService } from './pending.service';
+import { MarkAsPaidDto } from './mark-pending.dto';
+import { UpdatePendingTransactionDto } from './update-pending.dto';
 
 @Controller('pending')
 export class PendingTransactionController {
-  constructor(private readonly service: PendingTransactionService) {}
+  constructor(private readonly service: PendingTransactionService) { }
 
   // 🔹 Crear transacción
   @UseGuards(JwtAuthGuard)
@@ -43,7 +45,7 @@ export class PendingTransactionController {
   @Patch(':id')
   updatePendingTransaction(
     @Param('id') id: string,
-    @Body() dto: Partial<CreatePendingTransactionDto>,
+    @Body() dto: UpdatePendingTransactionDto,
   ) {
     return this.service.updatePendingTransaction(id, dto);
   }

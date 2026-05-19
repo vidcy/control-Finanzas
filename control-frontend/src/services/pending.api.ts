@@ -17,6 +17,7 @@ export const createPendingTransactionRequest = async (data: {
   subCategoryId: string;
   amount: number;
   date: string;
+  dueDate?: string;
   status: "PENDING";
   currency: "PEN" | "USD";
   exchangeRate?: number;
