@@ -72,7 +72,4 @@ export class CreatePendingTransactionDto {
   exchangeRate?: number;
 }
 
-export class MarkAsPaidDto {
-  @IsEnum(TransactionStatus)
-  status: TransactionStatus;
-}
+
