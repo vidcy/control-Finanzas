@@ -309,21 +309,13 @@ export default function PendingPage() {
     setIsModalOpen(true);
   };
 
-  const [, setDateError] = useState<string>("");
   const [dueDateError, setDueDateError] = useState<string>("");
 
-  const validateDates = (dateVal: string, paidAtVal: string) => {
+  const validateDates = (dueDateVal: string) => {
     const todayPeruStr = getPeruTodayInputStr();
     let valid = true;
 
-    if (dateVal > todayPeruStr) {
-      setDateError("La fecha no puede ser menor a hoy");
-      valid = false;
-    } else {
-      setDateError("");
-    }
-
-    if (paidAtVal > todayPeruStr) {
+    if (dueDateVal < todayPeruStr) {
       setDueDateError("La fecha de cobro no puede ser menor a hoy");
       valid = false;
     } else {
@@ -335,7 +327,7 @@ export default function PendingPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!validateDates(formData.date, formData.dueDate)) {
+    if (!validateDates(formData.dueDate)) {
       toast.error("Validación de fechas fallida");
       return;
     }
@@ -382,19 +374,15 @@ export default function PendingPage() {
       subCategoryId: selectedSubCategoryId || null,
       status: "PENDING",
       currency: formData.currency,
-      date: peruInputDateToUtcISO(
-        formData.date,
-        editingId ? items.find((i) => i.id === editingId)?.date : undefined
-      ),
+      date: editingId
+        ? items.find((i) => i.id === editingId)?.date
+        : peruInputDateToUtcISO(formData.date),
       dueDate: peruInputDateToUtcISO(
         formData.dueDate,
         editingId ? items.find((i) => i.id === editingId)?.dueDate : undefined
       ),
       type: activeType, // El tipo es necesario para la creación y no estorba en la actualización
     };
-
-    console.log("Enviando payload a la API:", payload);
-
     setSaving(true);
     try {
       if (editingId) {
@@ -1171,7 +1159,7 @@ export default function PendingPage() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2 md:col-span-2">
+                <div className="space-y-2">
                   <label className="flex items-center gap-2 text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] ml-1">
                     <User className="w-3.5 h-3.5 text-indigo-500" />{" "}
                     {activeType === "INCOME" ? "Deudor" : "Acreedor"}
@@ -1187,44 +1175,48 @@ export default function PendingPage() {
                     }
                   />
                 </div>
-
-                <div className="space-y-2 md:col-span-2">
+                <div className="space-y-2">
                   <label className="flex items-center gap-2 text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] ml-1">
                     <Calendar className="w-3.5 h-3.5 text-indigo-500" /> Fecha Programada de {activeType === "INCOME" ? "Cobro" : "Pago"}
                   </label>
                   <input
                     required
                     type="date"
+                    min={localDate}
                     className="w-full px-5 py-4 bg-white border border-gray-100 rounded-[1.5rem] outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
                     value={formData.dueDate}
                     onChange={(e) => {
                       const value = e.target.value;
                       setFormData({ ...formData, dueDate: value });
-                      validateDates(formData.date, value);
+                      validateDates(formData.dueDate);
                     }}
                   />
                   {dueDateError && (
                     <p className="text-red-500 text-xs ml-1 mt-1">{dueDateError}</p>
                   )}
+
                 </div>
+                <div className="space-y-2 md:col-span-2">
+                  <label className="flex items-center gap-2 text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] ml-1">
+                    <Info className="w-3.5 h-3.5 text-indigo-500" /> Descripción
+                    del motivo
+                  </label>
+                  <input
+                    required
+                    type="text"
+                    placeholder="Ej. Préstamo de emergencia"
+                    className="w-full px-5 py-4 bg-white border border-gray-100 rounded-[1.5rem] outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
+                    value={formData.description}
+                    onChange={(e) =>
+                      setFormData({ ...formData, description: e.target.value })
+                    }
+                  />
+                </div>
+
+
               </div>
 
-              <div className="space-y-2">
-                <label className="flex items-center gap-2 text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] ml-1">
-                  <Info className="w-3.5 h-3.5 text-indigo-500" /> Descripción
-                  del motivo
-                </label>
-                <input
-                  required
-                  type="text"
-                  placeholder="Ej. Préstamo de emergencia"
-                  className="w-full px-5 py-4 bg-white border border-gray-100 rounded-[1.5rem] outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
-                  value={formData.description}
-                  onChange={(e) =>
-                    setFormData({ ...formData, description: e.target.value })
-                  }
-                />
-              </div>
+
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">

@@ -6,7 +6,7 @@ export const listPendingTransactionsRequest = async () => {
   } catch (error: any) {
     throw new Error(
       error?.response?.data?.message ||
-        "Error al listar las transacciones pendientes",
+      "Error al listar las transacciones pendientes",
     );
   }
 };
@@ -29,7 +29,7 @@ export const createPendingTransactionRequest = async (data: {
   } catch (error: any) {
     throw new Error(
       error?.response?.data?.message ||
-        "Error al crear la transacción pendiente",
+      "Error al crear la transacción pendiente",
     );
   }
 };
@@ -40,7 +40,7 @@ export const deletePendingTransactionRequest = async (id: string) => {
   } catch (error: any) {
     throw new Error(
       error?.response?.data?.message ||
-        "Error al eliminar la transacción pendiente",
+      "Error al eliminar la transacción pendiente",
     );
   }
 };
@@ -66,14 +66,16 @@ export const updatePendingTransactionRequest = async (
   } catch (error: any) {
     throw new Error(
       error?.response?.data?.message ||
-        "Error al actualizar la transacción pendiente",
+      "Error al actualizar la transacción pendiente",
     );
   }
 };
 
 export const markAsPaidRequest = async (
   id: string,
-  data: { status: "PENDING" | "PAID" },
+  data: {
+    status: "PENDING" | "PAID",
+  },
 ) => {
   try {
     const res = await API.patch(`/transactions/${id}/mark-pending`, data);

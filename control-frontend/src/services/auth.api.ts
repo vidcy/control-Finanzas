@@ -19,9 +19,7 @@ export const loginRequest = async (
             email,
             password,
         });
-        console.log("🔥 RESPUESTA COMPLETA:", res);
-        console.log("🔥 RESPONSE.DATA:", res.data);
-        console.log("🔥 TOKEN QUE ENVÍA BACKEND:", res.data.access_token);
+
         localStorage.setItem("token", res.data.access_token);
         // 👇 SI LLEGAMOS AQUÍ = backend respondió 200 OK
         return res.data;

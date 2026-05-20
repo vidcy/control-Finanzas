@@ -26,7 +26,7 @@ export default function RecoverPasswordPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   useEffect(() => {
-    if (token) {
+    if (token && step === "EMAIL") {
       setStep("RESET");
     }
   }, [token]);

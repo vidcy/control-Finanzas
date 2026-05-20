@@ -63,6 +63,7 @@ export const updateTransactionRequest = async (
     exchangeRate?: number;
     paymentMethod: string;
     description?: string;
+    name?: string;
   },
 ) => {
   try {

@@ -45,6 +45,7 @@ type Expense = {
   categoryId?: string;
   subCategory?: string;
   subCategoryId?: string;
+  name: string;
   description: string;
   amount: number;
   currency: "PEN" | "USD";
@@ -104,6 +105,7 @@ export default function ExpensesPage() {
   const [formData, setFormData] = useState({
     date: localDate,
     paidAt: localDate,
+    name: "",
     description: "",
     amount: "",
     currency: "PEN" as "PEN" | "USD",
@@ -150,6 +152,7 @@ export default function ExpensesPage() {
           .filter((t: any) => t.type === "EXPENSE")
           .map((t: any) => ({
             id: t.id,
+            name: t.name,
             description: t.description ?? "",
             amount: t.amount,
             date: t.date,
@@ -181,6 +184,7 @@ export default function ExpensesPage() {
     setFormData({
       date: localDate,
       paidAt: localDate,
+      name: "",
       description: "",
       amount: "",
       currency: "PEN",
@@ -200,6 +204,7 @@ export default function ExpensesPage() {
     setFormData({
       date: utcToPeruInputDate(item.date),
       paidAt: item.paidAt ? utcToPeruInputDate(item.paidAt) : localDate,
+      name: item.name,
       description: item.description,
       amount: item.amount.toString(),
       currency: item.currency,
@@ -262,7 +267,8 @@ export default function ExpensesPage() {
       ...formData,
       date: peruInputDateToUtcISO(formData.date, originalItem?.date),
       paidAt: peruInputDateToUtcISO(formData.paidAt, originalItem?.paidAt),
-      name: formData.description || "Egreso",
+      name: formData.name || "Egreso",
+      description: formData.description || "Egreso",
       amount: Number(formData.amount),
       exchangeRate: Number(formData.exchangeRate),
       type: "EXPENSE",
@@ -407,6 +413,7 @@ export default function ExpensesPage() {
                   <th className="p-5 pl-8">Categoría / Sub</th>
                   <th className="p-5 text-center">Pago</th>
                   <th className="p-5">F. Pago</th>
+                  <th className="p-5">Destino</th>
                   <th className="p-5">Descripción</th>
                   <th className="p-5 text-center">Tags</th>
                   <th className="p-5 text-right">Monto Original</th>
@@ -462,6 +469,9 @@ export default function ExpensesPage() {
                             <div className="w-2.5 h-2.5 bg-slate-900 rotate-45 -mt-1.5 border-r border-b border-slate-800"></div>
                           </div>
                         )}
+                      </td>
+                      <td className="p-5 text-sm font-bold text-gray-600">
+                        {exp.name}
                       </td>
                       <td className="p-5 text-sm font-bold text-gray-600">
                         {exp.description}
@@ -836,6 +846,30 @@ export default function ExpensesPage() {
                       </div>
                     </div>
                   )}
+                  <div className="grid grid-cols-1 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                        Fecha de Pago
+                      </label>
+                      <input
+                        required
+                        type="date"
+                        max={localDate}
+                        className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-rose-500/10 focus:border-rose-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
+                        value={formData.paidAt}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setFormData({ ...formData, paidAt: value });
+                          validateDates(formData.date, value);
+                        }}
+                      />
+                      {paidAtError && (
+                        <p className="text-xs font-bold text-rose-500 mt-1">
+                          {paidAtError}
+                        </p>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -849,32 +883,24 @@ export default function ExpensesPage() {
                     Detalles
                   </span>
                 </div>
-
-                <div className="grid grid-cols-1 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">
-                      Fecha de Pago
-                    </label>
-                    <input
-                      required
-                      type="date"
-                      max={localDate}
-                      className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-rose-500/10 focus:border-rose-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
-                      value={formData.paidAt}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        setFormData({ ...formData, paidAt: value });
-                        validateDates(formData.date, value);
-                      }}
-                    />
-                    {paidAtError && (
-                      <p className="text-xs font-bold text-rose-500 mt-1">
-                        {paidAtError}
-                      </p>
-                    )}
-                  </div>
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                    Destino
+                  </label>
+                  <input
+                    required
+                    type="text"
+                    placeholder="Ej. Pago de suministros..."
+                    className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-rose-500/10 focus:border-rose-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
+                    value={formData.description}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        description: e.target.value,
+                      })
+                    }
+                  />
                 </div>
-
                 <div className="space-y-1.5">
                   <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">
                     Descripción

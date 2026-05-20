@@ -17,6 +17,7 @@ import {
   Wallet,
   ArrowUpRight,
   RotateCcw,
+  User,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { listCategoriesRequest } from "../services/category.api";
@@ -45,6 +46,7 @@ type Income = {
   subCategory?: string;
   subCategoryId?: string;
   description: string;
+  name: string;
   amount: number;
   currency: "PEN" | "USD";
   status: "PENDING" | "PAID";
@@ -76,6 +78,7 @@ export default function IncomePage() {
   const [formData, setFormData] = useState({
     date: localDate,
     paidAt: localDate,
+    name: "",
     description: "",
     amount: "",
     currency: "PEN" as "PEN" | "USD",
@@ -133,6 +136,7 @@ export default function IncomePage() {
           .filter((t: any) => t.type === "INCOME")
           .map((t: any) => ({
             id: t.id,
+            name: t.name,
             description: t.description ?? "",
             amount: t.amount,
             date: t.date,
@@ -162,6 +166,7 @@ export default function IncomePage() {
     setFormData({
       date: localDate,
       paidAt: localDate,
+      name: "",
       description: "",
       amount: "",
       currency: "PEN",
@@ -179,6 +184,7 @@ export default function IncomePage() {
     setFormData({
       date: utcToPeruInputDate(item.date),
       paidAt: item.paidAt ? utcToPeruInputDate(item.paidAt) : localDate,
+      name: item.name,
       description: item.description,
       amount: item.amount.toString(),
       currency: item.currency,
@@ -238,7 +244,8 @@ export default function IncomePage() {
       ...formData,
       date: peruInputDateToUtcISO(formData.date, originalItem?.date),
       paidAt: peruInputDateToUtcISO(formData.paidAt, originalItem?.paidAt),
-      name: formData.description || "Ingreso",
+      name: formData.name || "Ingreso",
+      description: formData.description || "Ingreso",
       amount: Number(formData.amount),
       exchangeRate: Number(formData.exchangeRate),
       type: "INCOME",
@@ -383,6 +390,7 @@ export default function IncomePage() {
                   <th className="p-6">Clasificación</th>
                   <th className="p-6 text-center">Método</th>
                   <th className="p-6">F. Pago</th>
+                  <th className="p-6">Fuente de Ingreso</th>
                   <th className="p-6">Descripción</th>
                   <th className="p-6 text-right">Importe</th>
                   <th className="p-6 text-center">Divisa</th>
@@ -441,6 +449,9 @@ export default function IncomePage() {
                             <div className="w-2.5 h-2.5 bg-slate-900 rotate-45 -mt-1.5 border-r border-b border-slate-800"></div>
                           </div>
                         )}
+                      </td>
+                      <td className="p-5 text-sm font-medium text-gray-600 italic">
+                        "{inc.name}"
                       </td>
                       <td className="p-5 text-sm font-medium text-gray-600 italic">
                         "{inc.description}"
@@ -797,6 +808,30 @@ export default function IncomePage() {
                       </div>
                     </div>
                   )}
+                  <div className="grid grid-cols-1 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                        Fecha de Cobro
+                      </label>
+                      <input
+                        required
+                        type="date"
+                        max={localDate}
+                        className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
+                        value={formData.paidAt}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setFormData({ ...formData, paidAt: value });
+                          validateDates(formData.date, value);
+                        }}
+                      />
+                      {paidAtError && (
+                        <p className="text-xs font-bold text-rose-500 mt-1">
+                          {paidAtError}
+                        </p>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -810,31 +845,23 @@ export default function IncomePage() {
                     Detalles
                   </span>
                 </div>
-
-                <div className="grid grid-cols-1 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">
-                      Fecha de Cobro
-                    </label>
-                    <input
-                      required
-                      type="date"
-                      max={localDate}
-                      className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
-                      value={formData.paidAt}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        setFormData({ ...formData, paidAt: value });
-                        validateDates(formData.date, value);
-                      }}
-                    />
-                    {paidAtError && (
-                      <p className="text-xs font-bold text-rose-500 mt-1">
-                        {paidAtError}
-                      </p>
-                    )}
-                  </div>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] ml-1">
+                    <User className="w-3.5 h-3.5 text-indigo-500" />{" "}
+                    Origen
+                  </label>
+                  <input
+                    required
+                    type="text"
+                    placeholder="Nombre completo"
+                    className="w-full px-5 py-4 bg-white border border-gray-100 rounded-[1.5rem] outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
+                    value={formData.name}
+                    onChange={(e) =>
+                      setFormData({ ...formData, name: e.target.value })
+                    }
+                  />
                 </div>
+
 
                 <div className="space-y-1.5">
                   <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">
