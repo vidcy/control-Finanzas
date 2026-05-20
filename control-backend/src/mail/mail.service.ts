@@ -1,30 +1,40 @@
 import { Injectable } from '@nestjs/common';
-import sgMail from '@sendgrid/mail';
 
 @Injectable()
 export class MailService {
-  constructor() {
-    sgMail.setApiKey(process.env.SENDGRID_API_KEY!);
-  }
+  private readonly apiKey = process.env.SMTP2GO_API_KEY!;
+  private readonly sender = process.env.SMTP2GO_SENDER!;
+  // ejemplo: noreply@tudominio.com
 
   async sendResetPassword(email: string, token: string) {
     const resetLink = `${process.env.FRONT_URL}/reset-password?token=${token}`;
 
-    const msg = {
-      to: email,
-      from: {
-        email: process.env.SENDGRID_MAIL!, // 👈 AQUÍ estaba el error
-        name: 'Control Finanzas',
+    const response = await fetch('https://api.smtp2go.com/v3/email/send', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
       },
-      subject: 'Restablecer contraseña',
-      html: `
-        <h2>Recuperación de contraseña</h2>
-        <p>Haz clic en el enlace para cambiar tu contraseña:</p>
-        <a href="${resetLink}">${resetLink}</a>
-        <p>Este enlace expira en 15 minutos.</p>
-      `,
-    };
+      body: JSON.stringify({
+        api_key: this.apiKey,
+        to: [email],
+        sender: this.sender,
+        subject: 'Restablecer contraseña',
+        html_body: `
+          <h2>Recuperación de contraseña</h2>
+          <p>Haz clic en el enlace para cambiar tu contraseña:</p>
+          <a href="${resetLink}">${resetLink}</a>
+          <p>Este enlace expira en 15 minutos.</p>
+        `,
+      }),
+    });
 
-    await sgMail.send(msg);
+    const data = await response.json();
+
+    if (!data?.data?.succeeded) {
+      console.error('SMTP2GO error:', data);
+      throw new Error('Error enviando correo');
+    }
+
+    return data;
   }
 }

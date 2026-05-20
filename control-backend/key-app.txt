@@ -10,3 +10,9 @@ contraseña de aplicación: uiqt kcpp himj imzw
   npx prisma db see
 
   npx prisma migrate dev --name add-paid-at
+
+
+  contraseña smt2p: PicgTshyaN2pHUAb
+  soporte-finanzas@ccoplex.com
+
+  apikey:api-C9C1652EEA564C548C9248ECB9A4A102

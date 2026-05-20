@@ -72,20 +72,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
     }
   };
 
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [canInstall, setCanInstall] = useState(false);
 
-  useEffect(() => {
-    const handler = (e: any) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-      setCanInstall(true);
-    };
-
-    window.addEventListener("beforeinstallprompt", handler);
-
-    return () => window.removeEventListener("beforeinstallprompt", handler);
-  }, []);
 
   const menu = [
     {
@@ -288,24 +275,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
             </div>
           </div>
 
-          {canInstall && (
-            <button
-              onClick={async () => {
-                deferredPrompt.prompt();
-                const choice = await deferredPrompt.userChoice;
 
-                if (choice.outcome === "accepted") {
-                  console.log("App instalada");
-                }
-
-                setDeferredPrompt(null);
-                setCanInstall(false);
-              }}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold"
-            >
-              Instalar app
-            </button>
-          )}
 
           <div className="flex items-center gap-3 lg:gap-4">
             <div className="flex items-center gap-2 bg-white/70 backdrop-blur-md border border-white/80 rounded-2xl py-2 px-3 shadow-sm text-gray-700 select-none">

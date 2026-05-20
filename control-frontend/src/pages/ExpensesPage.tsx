@@ -592,11 +592,10 @@ export default function ExpensesPage() {
                 <button
                   key={page}
                   onClick={() => typeof page === "number" && setExpensesPage(page)}
-                  className={`px-3 py-1 text-sm font-black rounded-lg transition-all ${
-                    expensesPage === page
-                      ? "bg-black text-white"
-                      : "text-gray-500 hover:bg-gray-100"
-                  }`}
+                  className={`px-3 py-1 text-sm font-black rounded-lg transition-all ${expensesPage === page
+                    ? "bg-black text-white"
+                    : "text-gray-500 hover:bg-gray-100"
+                    }`}
                 >
                   {page}
                 </button>

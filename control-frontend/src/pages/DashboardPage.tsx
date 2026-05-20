@@ -46,6 +46,21 @@ export default function DashboardPage() {
   const [showValues, setShowValues] = useState(true);
   const safeTransactions = Array.isArray(transactions) ? transactions : [];
 
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [canInstall, setCanInstall] = useState(false);
+
+  useEffect(() => {
+    const handler = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setCanInstall(true);
+    };
+
+    window.addEventListener("beforeinstallprompt", handler);
+
+    return () => window.removeEventListener("beforeinstallprompt", handler);
+  }, []);
+
   useEffect(() => {
     loadData();
   }, []);
@@ -244,8 +259,8 @@ export default function DashboardPage() {
                   <span className="text-emerald-500 text-2xl mr-1">S/</span>
                   {showValues
                     ? grandTotalIncome.toLocaleString("en-US", {
-                        minimumFractionDigits: 2,
-                      })
+                      minimumFractionDigits: 2,
+                    })
                     : "••••••"}
                 </h3>
                 <div className="mt-4 flex items-center gap-2 text-emerald-600 font-bold text-sm bg-emerald-50 px-3 py-1 rounded-full w-fit">
@@ -275,8 +290,8 @@ export default function DashboardPage() {
                   <span className="text-rose-500 text-2xl mr-1">S/</span>
                   {showValues
                     ? grandTotalExpense.toLocaleString("en-US", {
-                        minimumFractionDigits: 2,
-                      })
+                      minimumFractionDigits: 2,
+                    })
                     : "••••••"}
                 </h3>
                 <div className="mt-4 flex items-center gap-2 text-rose-600 font-bold text-sm bg-rose-50 px-3 py-1 rounded-full w-fit">
@@ -306,8 +321,8 @@ export default function DashboardPage() {
                   <span className="text-indigo-500 text-2xl mr-1">S/</span>
                   {showValues
                     ? grandTotalBalance.toLocaleString("en-US", {
-                        minimumFractionDigits: 2,
-                      })
+                      minimumFractionDigits: 2,
+                    })
                     : "••••••"}
                 </h3>
                 <div
@@ -697,6 +712,24 @@ export default function DashboardPage() {
             <Calendar className="w-5 h-5 text-indigo-400" /> Ciclo{" "}
             {new Date().getFullYear()}
           </div>
+          {canInstall && (
+            <button
+              onClick={async () => {
+                deferredPrompt.prompt();
+                const choice = await deferredPrompt.userChoice;
+
+                if (choice.outcome === "accepted") {
+                  console.log("App instalada");
+                }
+
+                setDeferredPrompt(null);
+                setCanInstall(false);
+              }}
+              className="px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold"
+            >
+              Instalar app
+            </button>
+          )}
         </div>
       </div>
 

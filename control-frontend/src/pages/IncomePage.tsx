@@ -856,141 +856,141 @@ export default function IncomePage() {
                 </div>
               </div>
             </div>
-          </form>
 
-          {/* Sección Método y Moneda */}
-          <div className="bg-gray-50/50 p-6 rounded-[2rem] border border-gray-100 space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              {/* Método de Pago */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="p-1.5 bg-indigo-100 rounded-lg text-indigo-600">
-                    <Wallet className="w-3.5 h-3.5" />
-                  </div>
-                  <span className="text-[10px] font-black text-indigo-900 uppercase tracking-widest">
-                    Método de Cobro
-                  </span>
-                </div>
-                <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-                  {[
-                    { id: "CASH", label: "Efectivo" },
-                    { id: "TRANSFER", label: "Transf." },
-                    { id: "YAPE", label: "Yape" },
-                    { id: "PLIN", label: "Plin" },
-                    { id: "CARD", label: "Tarjeta" },
-                  ].map((method) => (
-                    <button
-                      key={method.id}
-                      type="button"
-                      onClick={() =>
-                        setFormData({
-                          ...formData,
-                          paymentMethod: method.id as any,
-                        })
-                      }
-                      className={`py-2.5 rounded-xl text-[9px] font-black uppercase tracking-tighter border transition-all ${formData.paymentMethod === method.id ? "bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-100 scale-105" : "bg-white text-gray-400 border-gray-100 hover:border-indigo-200"}`}
-                    >
-                      {method.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
 
-              {/* Info Monetaria */}
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="p-1.5 bg-emerald-100 rounded-lg text-emerald-600">
-                    <CreditCard className="w-3.5 h-3.5" />
+            {/* Sección Método y Moneda */}
+            <div className="bg-gray-50/50 p-6 rounded-[2rem] border border-gray-100 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {/* Método de Pago */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="p-1.5 bg-indigo-100 rounded-lg text-indigo-600">
+                      <Wallet className="w-3.5 h-3.5" />
+                    </div>
+                    <span className="text-[10px] font-black text-indigo-900 uppercase tracking-widest">
+                      Método de Cobro
+                    </span>
                   </div>
-                  <span className="text-[10px] font-black text-emerald-900 uppercase tracking-widest">
-                    Información Monetaria
-                  </span>
+                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                    {[
+                      { id: "CASH", label: "Efectivo" },
+                      { id: "TRANSFER", label: "Transf." },
+                      { id: "YAPE", label: "Yape" },
+                      { id: "PLIN", label: "Plin" },
+                      { id: "CARD", label: "Tarjeta" },
+                    ].map((method) => (
+                      <button
+                        key={method.id}
+                        type="button"
+                        onClick={() =>
+                          setFormData({
+                            ...formData,
+                            paymentMethod: method.id as any,
+                          })
+                        }
+                        className={`py-2.5 rounded-xl text-[9px] font-black uppercase tracking-tighter border transition-all ${formData.paymentMethod === method.id ? "bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-100 scale-105" : "bg-white text-gray-400 border-gray-100 hover:border-indigo-200"}`}
+                      >
+                        {method.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-[8px] font-black text-gray-400 uppercase tracking-widest ml-1">
-                      Moneda
-                    </label>
-                    <select
-                      className="w-full px-3 py-2 bg-white border border-gray-100 rounded-lg outline-none text-[11px] font-black text-gray-700 appearance-none shadow-sm"
-                      value={formData.currency}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          currency: e.target.value as any,
-                        })
-                      }
-                    >
-                      <option value="PEN">PEN</option>
-                      <option value="USD">USD</option>
-                    </select>
+
+                {/* Info Monetaria */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="p-1.5 bg-emerald-100 rounded-lg text-emerald-600">
+                      <CreditCard className="w-3.5 h-3.5" />
+                    </div>
+                    <span className="text-[10px] font-black text-emerald-900 uppercase tracking-widest">
+                      Información Monetaria
+                    </span>
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-[8px] font-black text-gray-400 uppercase tracking-widest ml-1">
-                      T.C.
-                    </label>
-                    <input
-                      type="number"
-                      step="0.001"
-                      disabled={formData.currency === "PEN"}
-                      className={`w-full px-3 py-2 border rounded-lg outline-none text-[11px] font-black shadow-sm ${formData.currency === "USD" ? "bg-blue-50 border-blue-200 text-blue-700" : "bg-gray-50 border-gray-100 text-gray-400"}`}
-                      value={formData.exchangeRate}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          exchangeRate: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[8px] font-black text-emerald-600 uppercase tracking-widest ml-1">
-                      Importe
-                    </label>
-                    <input
-                      required
-                      type="number"
-                      step="0.01"
-                      className="w-full px-3 py-2 bg-white border-2 border-emerald-100 rounded-lg outline-none text-[11px] font-black text-gray-800 shadow-sm"
-                      value={formData.amount}
-                      onChange={(e) =>
-                        setFormData({ ...formData, amount: e.target.value })
-                      }
-                    />
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[8px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                        Moneda
+                      </label>
+                      <select
+                        className="w-full px-3 py-2 bg-white border border-gray-100 rounded-lg outline-none text-[11px] font-black text-gray-700 appearance-none shadow-sm"
+                        value={formData.currency}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            currency: e.target.value as any,
+                          })
+                        }
+                      >
+                        <option value="PEN">PEN</option>
+                        <option value="USD">USD</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[8px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                        T.C.
+                      </label>
+                      <input
+                        type="number"
+                        step="0.001"
+                        disabled={formData.currency === "PEN"}
+                        className={`w-full px-3 py-2 border rounded-lg outline-none text-[11px] font-black shadow-sm ${formData.currency === "USD" ? "bg-blue-50 border-blue-200 text-blue-700" : "bg-gray-50 border-gray-100 text-gray-400"}`}
+                        value={formData.exchangeRate}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            exchangeRate: e.target.value,
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[8px] font-black text-emerald-600 uppercase tracking-widest ml-1">
+                        Importe
+                      </label>
+                      <input
+                        required
+                        type="number"
+                        step="0.01"
+                        className="w-full px-3 py-2 bg-white border-2 border-emerald-100 rounded-lg outline-none text-[11px] font-black text-gray-800 shadow-sm"
+                        value={formData.amount}
+                        onChange={(e) =>
+                          setFormData({ ...formData, amount: e.target.value })
+                        }
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          <div className="flex justify-end items-center gap-4 pt-4">
-            <button
-              type="button"
-              onClick={() => setIsModalOpen(false)}
-              className="px-5 py-3 text-gray-400 font-black uppercase text-[10px] tracking-widest hover:text-gray-600 transition-all"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="px-6 py-3.5 bg-emerald-600 text-white font-black rounded-xl hover:bg-emerald-700 shadow-xl shadow-emerald-100 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
-            >
-              {saving ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <CheckCircle2 className="w-4 h-4" />
-              )}
-              <span className="uppercase tracking-widest text-[10px]">
-                {saving
-                  ? "Guardando..."
-                  : editingId
-                    ? "Actualizar"
-                    : "Confirmar"}
-              </span>
-            </button>
-          </div>
-
+            <div className="flex justify-end items-center gap-4 pt-4">
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="px-5 py-3 text-gray-400 font-black uppercase text-[10px] tracking-widest hover:text-gray-600 transition-all"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-6 py-3.5 bg-emerald-600 text-white font-black rounded-xl hover:bg-emerald-700 shadow-xl shadow-emerald-100 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
+              >
+                {saving ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4" />
+                )}
+                <span className="uppercase tracking-widest text-[10px]">
+                  {saving
+                    ? "Guardando..."
+                    : editingId
+                      ? "Actualizar"
+                      : "Confirmar"}
+                </span>
+              </button>
+            </div>
+          </form>
         </Modal>
 
         <ConfirmModal

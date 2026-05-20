@@ -309,18 +309,33 @@ export default function PendingPage() {
     setIsModalOpen(true);
   };
 
+  const [dateError, setDateError] = useState<string>("");
   const [dueDateError, setDueDateError] = useState<string>("");
 
-  const validateDates = (dueDateVal: string) => {
-    // Permitir cualquier fecha de vencimiento sin restricciones
-    setDueDateError("");
-    return true;
-  };
+  const validateDates = (dateVal: string, paidAtVal: string) => {
+    const todayPeruStr = getPeruTodayInputStr();
+    let valid = true;
 
+    if (dateVal > todayPeruStr) {
+      setDateError("La fecha no puede ser menor a hoy");
+      valid = false;
+    } else {
+      setDateError("");
+    }
+
+    if (paidAtVal > todayPeruStr) {
+      setDueDateError("La fecha de cobro no puede ser menor a hoy");
+      valid = false;
+    } else {
+      setDueDateError("");
+    }
+
+    return valid;
+  };
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!validateDates(formData.dueDate)) {
+    if (!validateDates(formData.date, formData.dueDate)) {
       toast.error("Validación de fechas fallida");
       return;
     }
@@ -1185,9 +1200,12 @@ export default function PendingPage() {
                     onChange={(e) => {
                       const value = e.target.value;
                       setFormData({ ...formData, dueDate: value });
-                      validateDates(value);
+                      validateDates(formData.date, value);
                     }}
                   />
+                  {dueDateError && (
+                    <p className="text-red-500 text-xs ml-1 mt-1">{dueDateError}</p>
+                  )}
                 </div>
               </div>
 
