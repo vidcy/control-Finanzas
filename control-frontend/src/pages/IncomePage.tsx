@@ -190,7 +190,7 @@ export default function IncomePage() {
     setSelectedSubCategoryId(item.subCategoryId || "");
     setIsModalOpen(true);
   };
-  const [dateError, setDateError] = useState<string>("");
+  const [, setDateError] = useState<string>("");
   const [paidAtError, setPaidAtError] = useState<string>("");
 
   const validateDates = (dateVal: string, paidAtVal: string) => {

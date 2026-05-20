@@ -309,7 +309,7 @@ export default function PendingPage() {
     setIsModalOpen(true);
   };
 
-  const [dateError, setDateError] = useState<string>("");
+  const [, setDateError] = useState<string>("");
   const [dueDateError, setDueDateError] = useState<string>("");
 
   const validateDates = (dateVal: string, paidAtVal: string) => {

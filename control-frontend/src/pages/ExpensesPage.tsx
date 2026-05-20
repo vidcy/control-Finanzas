@@ -214,7 +214,7 @@ export default function ExpensesPage() {
     setIsModalOpen(true);
   };
 
-  const [dateError, setDateError] = useState<string>("");
+  const [, setDateError] = useState<string>("");
   const [paidAtError, setPaidAtError] = useState<string>("");
 
   const validateDates = (dateVal: string, paidAtVal: string) => {
