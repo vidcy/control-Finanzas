@@ -28,7 +28,7 @@ export class MailService {
       }),
     });
 
-    const data:any = await response.json();
+    const data: any = await response.json();
 
     if (!data?.data?.succeeded) {
       console.error('SMTP2GO error:', data);
