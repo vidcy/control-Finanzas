@@ -61,7 +61,10 @@ type PendingItem = {
   status: "PENDING" | "PAID";
 };
 
-const renderDueDateBadge = (dueDate: string | undefined, statusPaid: boolean) => {
+const renderDueDateBadge = (
+  dueDate: string | undefined,
+  statusPaid: boolean,
+) => {
   if (statusPaid) {
     return (
       <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-gray-100 text-gray-400">
@@ -76,22 +79,28 @@ const renderDueDateBadge = (dueDate: string | undefined, statusPaid: boolean) =>
 
   switch (info.status) {
     case "EXPIRED":
-      badgeClass = "bg-rose-50 border border-rose-200 text-rose-600 animate-pulse font-extrabold shadow-sm shadow-rose-100/50";
+      badgeClass =
+        "bg-rose-50 border border-rose-200 text-rose-600 animate-pulse font-extrabold shadow-sm shadow-rose-100/50";
       break;
     case "TODAY":
-      badgeClass = "bg-amber-50 border border-amber-200 text-amber-600 font-extrabold shadow-sm shadow-amber-100/50";
+      badgeClass =
+        "bg-amber-50 border border-amber-200 text-amber-600 font-extrabold shadow-sm shadow-amber-100/50";
       break;
     case "TOMORROW":
-      badgeClass = "bg-blue-50 border border-blue-200 text-blue-600 font-extrabold shadow-sm shadow-blue-100/50";
+      badgeClass =
+        "bg-blue-50 border border-blue-200 text-blue-600 font-extrabold shadow-sm shadow-blue-100/50";
       break;
     case "FUTURE":
-      badgeClass = "bg-indigo-50 border border-indigo-200 text-indigo-600 font-bold shadow-sm shadow-indigo-100/50";
+      badgeClass =
+        "bg-indigo-50 border border-indigo-200 text-indigo-600 font-bold shadow-sm shadow-indigo-100/50";
       break;
   }
 
   return (
     <div className="relative group cursor-help inline-block">
-      <span className={`inline-flex items-center px-2.5 py-1.5 rounded-xl text-[10px] tracking-tight ${badgeClass}`}>
+      <span
+        className={`inline-flex items-center px-2.5 py-1.5 rounded-xl text-[10px] tracking-tight ${badgeClass}`}
+      >
         <Clock className={iconClass} />
         {info.message}
       </span>
@@ -129,7 +138,9 @@ export default function PendingPage() {
 
   const [receivablesPage, setReceivablesPage] = useState(1);
   const [payablesPage, setPayablesPage] = useState(1);
-  const [activeTab, setActiveTab] = useState<"RECEIVABLES" | "PAYABLES">("RECEIVABLES");
+  const [activeTab, setActiveTab] = useState<"RECEIVABLES" | "PAYABLES">(
+    "RECEIVABLES",
+  );
 
   const ITEMS_PER_PAGE = 4;
 
@@ -154,13 +165,13 @@ export default function PendingPage() {
     () =>
       Array.isArray(items)
         ? items.filter(
-          (i) =>
-            i.type === "INCOME" &&
-            ((i.description?.toLowerCase() || "").includes(
-              searchTerm.toLowerCase(),
-            ) ||
-              (i.amount?.toString() || "").includes(searchTerm)),
-        )
+            (i) =>
+              i.type === "INCOME" &&
+              ((i.description?.toLowerCase() || "").includes(
+                searchTerm.toLowerCase(),
+              ) ||
+                (i.amount?.toString() || "").includes(searchTerm)),
+          )
         : [],
     [items, searchTerm],
   );
@@ -174,13 +185,13 @@ export default function PendingPage() {
     () =>
       Array.isArray(items)
         ? items.filter(
-          (i) =>
-            i.type === "EXPENSE" &&
-            ((i.description?.toLowerCase() || "").includes(
-              searchTerm.toLowerCase(),
-            ) ||
-              (i.amount?.toString() || "").includes(searchTerm)),
-        )
+            (i) =>
+              i.type === "EXPENSE" &&
+              ((i.description?.toLowerCase() || "").includes(
+                searchTerm.toLowerCase(),
+              ) ||
+                (i.amount?.toString() || "").includes(searchTerm)),
+          )
         : [],
     [items, searchTerm],
   );
@@ -379,7 +390,7 @@ export default function PendingPage() {
         : peruInputDateToUtcISO(formData.date),
       dueDate: peruInputDateToUtcISO(
         formData.dueDate,
-        editingId ? items.find((i) => i.id === editingId)?.dueDate : undefined
+        editingId ? items.find((i) => i.id === editingId)?.dueDate : undefined,
       ),
       type: activeType, // El tipo es necesario para la creación y no estorba en la actualización
     };
@@ -492,23 +503,31 @@ export default function PendingPage() {
           <div className="bg-slate-100/90 backdrop-blur-xl p-1.5 rounded-[2rem] flex gap-2 border border-slate-200/50 shadow-lg shadow-slate-100/50 max-w-full overflow-x-auto custom-scrollbar">
             <button
               onClick={() => setActiveTab("RECEIVABLES")}
-              className={`px-8 py-4 rounded-[1.5rem] text-xs font-black uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-3 whitespace-nowrap min-w-[200px] ${activeTab === "RECEIVABLES"
-                ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-xl shadow-emerald-100 scale-[1.03] -translate-y-0.5"
-                : "text-slate-500 hover:text-slate-800 hover:bg-slate-200/60"
-                }`}
+              className={`px-8 py-4 rounded-[1.5rem] text-xs font-black uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-3 whitespace-nowrap min-w-[200px] ${
+                activeTab === "RECEIVABLES"
+                  ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-xl shadow-emerald-100 scale-[1.03] -translate-y-0.5"
+                  : "text-slate-500 hover:text-slate-800 hover:bg-slate-200/60"
+              }`}
             >
               <ArrowUpRight className="w-4 h-4" />
-              Por Cobrar (S/ {receivablesTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })})
+              Por Cobrar
+              {/* (S/{" "}
+              {receivablesTotal.toLocaleString(undefined, {
+                minimumFractionDigits: 2,
+              })}
+              ) */}
             </button>
             <button
               onClick={() => setActiveTab("PAYABLES")}
-              className={`px-8 py-4 rounded-[1.5rem] text-xs font-black uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-3 whitespace-nowrap min-w-[200px] ${activeTab === "PAYABLES"
-                ? "bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-xl shadow-rose-100 scale-[1.03] -translate-y-0.5"
-                : "text-slate-500 hover:text-slate-800 hover:bg-slate-200/60"
-                }`}
+              className={`px-8 py-4 rounded-[1.5rem] text-xs font-black uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-3 whitespace-nowrap min-w-[200px] ${
+                activeTab === "PAYABLES"
+                  ? "bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-xl shadow-rose-100 scale-[1.03] -translate-y-0.5"
+                  : "text-slate-500 hover:text-slate-800 hover:bg-slate-200/60"
+              }`}
             >
               <ArrowDownRight className="w-4 h-4" />
-              Por Pagar (S/ {payablesTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })})
+              Por Pagar
+              {/*(S/ {payablesTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })})*/}
             </button>
           </div>
         </div>
@@ -527,7 +546,12 @@ export default function PendingPage() {
                     <p className="text-[10px] text-emerald-100 font-black uppercase tracking-widest opacity-80">
                       Dinero a tu favor
                     </p>
-                    <h2 className="text-2xl font-black mt-0.5">S/ {receivablesTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</h2>
+                    <h2 className="text-2xl font-black mt-0.5">
+                      S/{" "}
+                      {receivablesTotal.toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                      })}
+                    </h2>
                   </div>
                 </div>
                 <button
@@ -552,7 +576,9 @@ export default function PendingPage() {
                         <th className="p-6 text-center">Vencimiento</th>
                         <th className="p-6 text-center">Moneda</th>
                         <th className="p-6 text-right">Monto Original</th>
-                        <th className="p-6 text-right bg-emerald-50/20 text-emerald-700">Equivalente (Soles)</th>
+                        <th className="p-6 text-right bg-emerald-50/20 text-emerald-700">
+                          Equivalente (Soles)
+                        </th>
                         <th className="p-6 text-center">Estado</th>
                         <th className="p-6 pr-8 text-center">Acciones</th>
                       </tr>
@@ -572,7 +598,10 @@ export default function PendingPage() {
                             "{item.description}"
                           </td>
                           <td className="p-6 text-center">
-                            {renderDueDateBadge(item.dueDate, item.status === "PAID")}
+                            {renderDueDateBadge(
+                              item.dueDate,
+                              item.status === "PAID",
+                            )}
                           </td>
                           <td className="p-6 text-center">
                             <span
@@ -588,7 +617,9 @@ export default function PendingPage() {
                           </td>
                           <td className="p-6 font-black text-gray-600 text-sm text-right">
                             {item.currency === "USD" ? "$" : "S/"}{" "}
-                            {item.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            {item.amount.toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                            })}
                           </td>
                           <td className="p-6 font-black text-emerald-600 text-base text-right bg-emerald-50/5">
                             S/{" "}
@@ -602,10 +633,11 @@ export default function PendingPage() {
                           <td className="p-6 text-center">
                             <button
                               onClick={() => togglePaid(item.id, item.status)}
-                              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 mx-auto ${item.status === "PAID"
-                                ? "bg-emerald-500 text-white shadow-lg shadow-emerald-100"
-                                : "bg-amber-100 text-amber-700 hover:bg-amber-200"
-                                }`}
+                              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 mx-auto ${
+                                item.status === "PAID"
+                                  ? "bg-emerald-500 text-white shadow-lg shadow-emerald-100"
+                                  : "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                              }`}
                             >
                               {item.status === "PAID" ? (
                                 <Check className="w-3.5 h-3.5" />
@@ -655,7 +687,9 @@ export default function PendingPage() {
                         « Inicio
                       </button>
                       <button
-                        onClick={() => setReceivablesPage((p) => Math.max(p - 1, 1))}
+                        onClick={() =>
+                          setReceivablesPage((p) => Math.max(p - 1, 1))
+                        }
                         disabled={receivablesPage === 1}
                         className="px-3 py-1.5 text-xs font-black disabled:opacity-30 text-gray-600 hover:bg-gray-50 rounded-lg"
                       >
@@ -665,23 +699,30 @@ export default function PendingPage() {
                         <button
                           key={page}
                           onClick={() => setReceivablesPage(page)}
-                          className={`px-3 py-1.5 text-xs font-black rounded-lg transition-all ${receivablesPage === page
-                            ? "bg-black text-white"
-                            : "text-gray-500 hover:bg-gray-100"
-                            }`}
+                          className={`px-3 py-1.5 text-xs font-black rounded-lg transition-all ${
+                            receivablesPage === page
+                              ? "bg-black text-white"
+                              : "text-gray-500 hover:bg-gray-100"
+                          }`}
                         >
                           {page}
                         </button>
                       ))}
                       <button
-                        onClick={() => setReceivablesPage((p) => Math.min(p + 1, receivablesTotalPages))}
+                        onClick={() =>
+                          setReceivablesPage((p) =>
+                            Math.min(p + 1, receivablesTotalPages),
+                          )
+                        }
                         disabled={receivablesPage === receivablesTotalPages}
                         className="px-3 py-1.5 text-xs font-black disabled:opacity-30 text-gray-600 hover:bg-gray-50 rounded-lg"
                       >
                         Siguiente ›
                       </button>
                       <button
-                        onClick={() => setReceivablesPage(receivablesTotalPages)}
+                        onClick={() =>
+                          setReceivablesPage(receivablesTotalPages)
+                        }
                         disabled={receivablesPage === receivablesTotalPages}
                         className="px-3 py-1.5 text-xs font-black disabled:opacity-30 text-gray-600 hover:bg-gray-50 rounded-lg"
                       >
@@ -707,7 +748,10 @@ export default function PendingPage() {
                             "{item.description}"
                           </p>
                           <div className="mt-2.5">
-                            {renderDueDateBadge(item.dueDate, item.status === "PAID")}
+                            {renderDueDateBadge(
+                              item.dueDate,
+                              item.status === "PAID",
+                            )}
                           </div>
                         </div>
                         <button
@@ -746,7 +790,9 @@ export default function PendingPage() {
                           </p>
                           <p className="text-sm font-black text-gray-600">
                             {item.currency === "USD" ? "$" : "S/"}{" "}
-                            {item.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            {item.amount.toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                            })}
                           </p>
                         </div>
                       </div>
@@ -816,7 +862,12 @@ export default function PendingPage() {
                     <p className="text-[10px] text-rose-100 font-black uppercase tracking-widest opacity-80">
                       Dinero que debes
                     </p>
-                    <h2 className="text-2xl font-black mt-0.5">S/ {payablesTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</h2>
+                    <h2 className="text-2xl font-black mt-0.5">
+                      S/{" "}
+                      {payablesTotal.toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                      })}
+                    </h2>
                   </div>
                 </div>
                 <button
@@ -841,7 +892,9 @@ export default function PendingPage() {
                         <th className="p-6 text-center">Vencimiento</th>
                         <th className="p-6 text-center">Moneda</th>
                         <th className="p-6 text-right">Monto Original</th>
-                        <th className="p-6 text-right bg-rose-50/20 text-rose-700">Equivalente (Soles)</th>
+                        <th className="p-6 text-right bg-rose-50/20 text-rose-700">
+                          Equivalente (Soles)
+                        </th>
                         <th className="p-6 text-center">Estado</th>
                         <th className="p-6 pr-8 text-center">Acciones</th>
                       </tr>
@@ -861,7 +914,10 @@ export default function PendingPage() {
                             "{item.description}"
                           </td>
                           <td className="p-6 text-center">
-                            {renderDueDateBadge(item.dueDate, item.status === "PAID")}
+                            {renderDueDateBadge(
+                              item.dueDate,
+                              item.status === "PAID",
+                            )}
                           </td>
                           <td className="p-6 text-center">
                             <span
@@ -877,7 +933,9 @@ export default function PendingPage() {
                           </td>
                           <td className="p-6 font-black text-gray-600 text-sm text-right">
                             {item.currency === "USD" ? "$" : "S/"}{" "}
-                            {item.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            {item.amount.toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                            })}
                           </td>
                           <td className="p-6 font-black text-rose-600 text-base text-right bg-rose-50/5">
                             S/{" "}
@@ -891,10 +949,11 @@ export default function PendingPage() {
                           <td className="p-6 text-center">
                             <button
                               onClick={() => togglePaid(item.id, item.status)}
-                              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 mx-auto ${item.status === "PAID"
-                                ? "bg-emerald-500 text-white shadow-lg shadow-emerald-100"
-                                : "bg-amber-100 text-amber-700 hover:bg-amber-200"
-                                }`}
+                              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 mx-auto ${
+                                item.status === "PAID"
+                                  ? "bg-emerald-500 text-white shadow-lg shadow-emerald-100"
+                                  : "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                              }`}
                             >
                               {item.status === "PAID" ? (
                                 <Check className="w-3.5 h-3.5" />
@@ -944,7 +1003,9 @@ export default function PendingPage() {
                         « Inicio
                       </button>
                       <button
-                        onClick={() => setPayablesPage((p) => Math.max(p - 1, 1))}
+                        onClick={() =>
+                          setPayablesPage((p) => Math.max(p - 1, 1))
+                        }
                         disabled={payablesPage === 1}
                         className="px-3 py-1.5 text-xs font-black disabled:opacity-30 text-gray-600 hover:bg-gray-50 rounded-lg"
                       >
@@ -954,16 +1015,21 @@ export default function PendingPage() {
                         <button
                           key={page}
                           onClick={() => setPayablesPage(page)}
-                          className={`px-3 py-1.5 text-xs font-black rounded-lg transition-all ${payablesPage === page
-                            ? "bg-black text-white"
-                            : "text-gray-500 hover:bg-gray-100"
-                            }`}
+                          className={`px-3 py-1.5 text-xs font-black rounded-lg transition-all ${
+                            payablesPage === page
+                              ? "bg-black text-white"
+                              : "text-gray-500 hover:bg-gray-100"
+                          }`}
                         >
                           {page}
                         </button>
                       ))}
                       <button
-                        onClick={() => setPayablesPage((p) => Math.min(p + 1, payablesTotalPages))}
+                        onClick={() =>
+                          setPayablesPage((p) =>
+                            Math.min(p + 1, payablesTotalPages),
+                          )
+                        }
                         disabled={payablesPage === payablesTotalPages}
                         className="px-3 py-1.5 text-xs font-black disabled:opacity-30 text-gray-600 hover:bg-gray-50 rounded-lg"
                       >
@@ -996,7 +1062,10 @@ export default function PendingPage() {
                             "{item.description}"
                           </p>
                           <div className="mt-2.5">
-                            {renderDueDateBadge(item.dueDate, item.status === "PAID")}
+                            {renderDueDateBadge(
+                              item.dueDate,
+                              item.status === "PAID",
+                            )}
                           </div>
                         </div>
                         <button
@@ -1035,7 +1104,9 @@ export default function PendingPage() {
                           </p>
                           <p className="text-sm font-black text-gray-600">
                             {item.currency === "USD" ? "$" : "S/"}{" "}
-                            {item.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            {item.amount.toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                            })}
                           </p>
                         </div>
                       </div>
@@ -1177,7 +1248,8 @@ export default function PendingPage() {
                 </div>
                 <div className="space-y-2">
                   <label className="flex items-center gap-2 text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] ml-1">
-                    <Calendar className="w-3.5 h-3.5 text-indigo-500" /> Fecha Programada de {activeType === "INCOME" ? "Cobro" : "Pago"}
+                    <Calendar className="w-3.5 h-3.5 text-indigo-500" /> Fecha
+                    Programada de {activeType === "INCOME" ? "Cobro" : "Pago"}
                   </label>
                   <input
                     required
@@ -1192,9 +1264,10 @@ export default function PendingPage() {
                     }}
                   />
                   {dueDateError && (
-                    <p className="text-red-500 text-xs ml-1 mt-1">{dueDateError}</p>
+                    <p className="text-red-500 text-xs ml-1 mt-1">
+                      {dueDateError}
+                    </p>
                   )}
-
                 </div>
                 <div className="space-y-2 md:col-span-2">
                   <label className="flex items-center gap-2 text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] ml-1">
@@ -1212,11 +1285,7 @@ export default function PendingPage() {
                     }
                   />
                 </div>
-
-
               </div>
-
-
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
