@@ -971,13 +971,13 @@ export default function ExpensesPage() {
                   <input
                     required
                     type="text"
-                    placeholder="Ej. Pago de suministros..."
+                    placeholder="Ej. ElectroSurEste..."
                     className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-rose-500/10 focus:border-rose-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
-                    value={formData.description}
+                    value={formData.name}
                     onChange={(e) =>
                       setFormData({
                         ...formData,
-                        description: e.target.value,
+                        name: e.target.value,
                       })
                     }
                   />
