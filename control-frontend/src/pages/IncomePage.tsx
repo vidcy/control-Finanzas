@@ -100,13 +100,74 @@ export default function IncomePage() {
 
   const categoryHasSubcategories = filteredSubCategories.length > 0;
 
-  const filtered = (Array.isArray(items) ? items : []).filter(
-    (inc) =>
-      (inc.description?.toLowerCase() || "").includes(
-        searchTerm.toLowerCase(),
-      ) ||
-      (inc.category?.toLowerCase() || "").includes(searchTerm.toLowerCase()),
-  );
+  /* const filtered = (Array.isArray(items) ? items : []).filter(
+     (inc) =>
+       (inc.description?.toLowerCase() || "").includes(
+         searchTerm.toLowerCase(),
+       ) ||
+       (inc.category?.toLowerCase() || "").includes(searchTerm.toLowerCase()),
+   );*/
+  const normalizeText = (value: any) => {
+    return String(value || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim();
+  };
+
+  const formatDateSearch = (dateValue?: string) => {
+    if (!dateValue) return [];
+
+    const date = new Date(dateValue);
+
+    if (isNaN(date.getTime())) return [];
+
+    const peDate = new Intl.DateTimeFormat("es-PE", {
+      timeZone: "America/Lima",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    }).format(date);
+
+    return [
+      peDate, // 20/05/2026
+      peDate.replace(/\//g, "-"),
+      date.toISOString().split("T")[0], // 2026-05-20
+    ];
+  };
+
+  const filtered = useMemo(() => {
+    const term = normalizeText(searchTerm);
+
+    if (!term) return items;
+
+    return items.filter((inc) => {
+      const amount = Number(inc.amount || 0);
+
+      const searchValues = [
+        inc.name,
+        inc.description, // ✅ importante (ya estaba, lo reforzamos)
+        inc.category,
+        inc.subCategory,
+        inc.paymentMethod,
+        inc.currency,
+        inc.status,
+        amount,
+        amount.toFixed(2),
+        `s/${amount}`,
+        `$${amount}`,
+        ...formatDateSearch(inc.paidAt),
+      ]
+        .filter(Boolean)
+        .map(normalizeText);
+
+      if (!isNaN(Number(term)) && amount === Number(term)) {
+        return true;
+      }
+
+      return searchValues.some((v) => v.includes(term));
+    });
+  }, [items, searchTerm]);
 
   const incomeTotalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE);
 
@@ -119,6 +180,24 @@ export default function IncomePage() {
     const end = start + ITEMS_PER_PAGE;
     return filtered.slice(start, end);
   }, [filtered, incomePage]);
+
+  useEffect(() => {
+    if (!searchTerm) return;
+
+    const term = normalizeText(searchTerm);
+
+    const index = filtered.findIndex((inc) => {
+      return (
+        normalizeText(inc.name).includes(term) ||
+        normalizeText(inc.description).includes(term)
+      );
+    });
+
+    if (index >= 0) {
+      const page = Math.floor(index / ITEMS_PER_PAGE) + 1;
+      setIncomePage(page);
+    }
+  }, [searchTerm, filtered]);
 
   useEffect(() => {
     loadData();
