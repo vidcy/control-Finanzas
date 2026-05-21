@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import Appshell from "../components/layout/Appshell";
 import Modal from "../components/ui/Modal";
 import {
@@ -87,117 +87,110 @@ export default function IncomePage() {
     status: "PAID" as "PAID" | "PENDING",
   });
 
-  const [editingId, setEditingId] = useState<string | null>(null);
 
-  const filteredCategories = (
-    Array.isArray(categories) ? categories : []
-  ).filter((c) => c.type === "INCOME" && !c.parentId);
 
-  const filteredSubCategories = (
-    Array.isArray(categories) ? categories : []
-  ).filter((c) => c.parentId === selectedCategoryId);
-  const ITEMS_PER_PAGE = 4;
+  // =============================================
+  // 1️⃣ FUNCIÓN ÚNICA: Genera TODOS los strings posibles de un item
+  // =============================================
+  const getAllPossibleStrings = (item: Income): string[] => {
+    const amount = Number(item.amount || 0);
+    const paidAt = item.paidAt;
 
-  const categoryHasSubcategories = filteredSubCategories.length > 0;
+    // 🔹 TODOS los campos de texto (sin filtrar, sin límites)
+    const textFields = [
+      item.id,
+      item.name,
+      item.description,
+      item.category,
+      item.subCategory,
+      item.categoryId,
+      item.subCategoryId,
+      item.currency,
+      item.status,
+      amount.toString(),
+      amount.toFixed(2),
+      `s/${amount}`,
+      `s/ ${amount}`,
+      `$${amount}`,
+      `$ ${amount}`,
+      `${amount} ${item.currency}`,
+      `${amount.toFixed(2)} ${item.currency}`,
+    ];
 
-  /* const filtered = (Array.isArray(items) ? items : []).filter(
-     (inc) =>
-       (inc.description?.toLowerCase() || "").includes(
-         searchTerm.toLowerCase(),
-       ) ||
-       (inc.category?.toLowerCase() || "").includes(searchTerm.toLowerCase()),
-   );*/
-  const normalizeText = (value: any) => {
-    return String(value || "")
+    // 🔹 TODOS los formatos de fecha (si existe dueDate)
+    const dateStrings = paidAt ? [
+      // Formatos con guiones y barras
+      formatPeruDate(paidAt), // "22-05-2026" (USANDO TU FUNCIÓN)
+      formatPeruDate(paidAt).replace(/-/g, "/"), // "22/05/2026"
+      new Date(paidAt).toISOString().split("T")[0], // "2026-05-22"
+
+      // Componentes individuales (día, mes, año)
+      new Date(paidAt).getDate().toString(), // "22"
+      (new Date(paidAt).getMonth() + 1).toString(), // "5"
+      new Date(paidAt).getFullYear().toString(), // "2026"
+
+      // Nombres de meses
+      new Date(paidAt).toLocaleString("es-PE", { month: "long" }), // "mayo"
+      new Date(paidAt).toLocaleString("es-PE", { month: "short" }), // "may."
+
+      // Formatos con texto
+      `${new Date(paidAt).getDate()} de ${new Date(paidAt).toLocaleString("es-PE", { month: "long" })}`, // "22 de mayo"
+      `${new Date(paidAt).getDate()} de ${new Date(paidAt).toLocaleString("es-PE", { month: "long" })} de ${new Date(paidAt).getFullYear()}`, // "22 de mayo de 2026"
+      `${new Date(paidAt).toLocaleString("es-PE", { month: "long" })} de ${new Date(paidAt).getFullYear()}`, // "mayo de 2026"
+      `${new Date(paidAt).getDate()}-${new Date(paidAt).getMonth() + 1}-${new Date(paidAt).getFullYear()}`, // "22-5-2026"
+      `${new Date(paidAt).getDate()}/${new Date(paidAt).getMonth() + 1}/${new Date(paidAt).getFullYear()}`, // "22/5/2026"
+    ] : [];
+
+    // 🔥 Combinar TODO y convertir a string
+    return [...textFields, ...dateStrings].map(String);
+  };
+
+  // =============================================
+  // 2️⃣ FILTRO PRINCIPAL (SIN LÍMITES, 100% FLEXIBLE)
+  // =============================================
+  const filtered = useMemo(() => {
+    // 🔹 Normalizar el término de búsqueda (solo minúsculas, sin tildes)
+    const searchTermNormalized = searchTerm
       .toLowerCase()
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
       .trim();
-  };
 
-  const formatDateSearch = (dateValue?: string) => {
-    if (!dateValue) return [];
+    // Si no hay término, devolver todo
+    if (!searchTermNormalized) return items;
 
-    const date = new Date(dateValue);
-
-    if (isNaN(date.getTime())) return [];
-
-    const peDate = new Intl.DateTimeFormat("es-PE", {
-      timeZone: "America/Lima",
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    }).format(date);
-
-    return [
-      peDate, // 20/05/2026
-      peDate.replace(/\//g, "-"),
-      date.toISOString().split("T")[0], // 2026-05-20
-    ];
-  };
-
-  const filtered = useMemo(() => {
-    const term = normalizeText(searchTerm);
-
-    if (!term) return items;
-
-    return items.filter((inc) => {
-      const amount = Number(inc.amount || 0);
-
-      const searchValues = [
-        inc.name,
-        inc.description, // ✅ importante (ya estaba, lo reforzamos)
-        inc.category,
-        inc.subCategory,
-        inc.paymentMethod,
-        inc.currency,
-        inc.status,
-        amount,
-        amount.toFixed(2),
-        `s/${amount}`,
-        `$${amount}`,
-        ...formatDateSearch(inc.paidAt),
-      ]
-        .filter(Boolean)
-        .map(normalizeText);
-
-      if (!isNaN(Number(term)) && amount === Number(term)) {
-        return true;
-      }
-
-      return searchValues.some((v) => v.includes(term));
+    // Filtrar: si ALGÚN valor del item contiene el término (sin importar qué)
+    return items.filter((item) => {
+      const allStrings = getAllPossibleStrings(item).map((str) =>
+        str
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+      );
+      return allStrings.some((str) => str.includes(searchTermNormalized));
     });
   }, [items, searchTerm]);
 
-  const incomeTotalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE);
+  // 🔥 Separa por tipo (INCOME/EXPENSE) si es necesario
+  const income = filtered;
 
-  const getPages = (total: number) => {
-    return Array.from({ length: total }, (_, i) => i + 1);
-  };
+  const ITEMS_PER_PAGE = 4;
 
-  const incomeDesktop = useMemo(() => {
-    const start = (incomePage - 1) * ITEMS_PER_PAGE;
-    const end = start + ITEMS_PER_PAGE;
-    return filtered.slice(start, end);
-  }, [filtered, incomePage]);
+  // Calcular número de páginas de ingresos a cobrar
+  const incomeTotalPages = Math.ceil(income.length / ITEMS_PER_PAGE);
 
-  useEffect(() => {
-    if (!searchTerm) return;
+  // Genera un array [1, 2, 3, ..., total] para renderizar los botones de paginación.
+  const getPages = useCallback(
+    (total: number) => Array.from({ length: total }, (_, i) => i + 1),
+    []
+  );
 
-    const term = normalizeText(searchTerm);
+  // Paginación (solo para desktop)
+  const incomeDesktop = income.slice(
+    (incomePage - 1) * ITEMS_PER_PAGE,
+    incomePage * ITEMS_PER_PAGE
+  );
 
-    const index = filtered.findIndex((inc) => {
-      return (
-        normalizeText(inc.name).includes(term) ||
-        normalizeText(inc.description).includes(term)
-      );
-    });
-
-    if (index >= 0) {
-      const page = Math.floor(index / ITEMS_PER_PAGE) + 1;
-      setIncomePage(page);
-    }
-  }, [searchTerm, filtered]);
 
   useEffect(() => {
     loadData();
@@ -239,6 +232,18 @@ export default function IncomePage() {
       setLoading(false);
     }
   };
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const filteredCategories = (
+    Array.isArray(categories) ? categories : []
+  ).filter((c) => c.type === "INCOME" && !c.parentId);
+
+  const filteredSubCategories = (
+    Array.isArray(categories) ? categories : []
+  ).filter((c) => c.parentId === selectedCategoryId);
+
+  const categoryHasSubcategories = filteredSubCategories.length > 0;
 
   const handleOpenCreate = () => {
     setEditingId(null);

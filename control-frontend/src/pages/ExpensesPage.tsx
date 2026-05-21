@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import Appshell from "../components/layout/Appshell";
 import Modal from "../components/ui/Modal";
 import {
@@ -75,11 +75,6 @@ export default function ExpensesPage() {
 
   const [expensesPage, setExpensesPage] = useState(1);
 
-  const ITEMS_PER_PAGE = 4;
-
-
-
-
   const localDate = getPeruTodayInputStr();
 
   const [formData, setFormData] = useState({
@@ -96,127 +91,108 @@ export default function ExpensesPage() {
     paymentMethod: "CASH" as "CASH" | "TRANSFER" | "YAPE" | "PLIN" | "CARD",
   });
 
-  const [editingId, setEditingId] = useState<string | null>(null);
 
-  const filteredCategories = (
-    Array.isArray(categories) ? categories : []
-  ).filter((c) => c.type === "EXPENSE" && !c.parentId);
+  // =============================================
+  // 1️⃣ FUNCIÓN ÚNICA: Genera TODOS los strings posibles de un item
+  // =============================================
+  const getAllPossibleStrings = (item: Expense): string[] => {
+    const amount = Number(item.amount || 0);
+    const paidAt = item.paidAt;
 
-  const filteredSubCategories = (
-    Array.isArray(categories) ? categories : []
-  ).filter((c) => c.parentId === selectedCategoryId);
+    // 🔹 TODOS los campos de texto (sin filtrar, sin límites)
+    const textFields = [
+      item.id,
+      item.name,
+      item.description,
+      item.category,
+      item.subCategory,
+      item.categoryId,
+      item.subCategoryId,
+      item.currency,
+      item.status,
+      amount.toString(),
+      amount.toFixed(2),
+      `s/${amount}`,
+      `s/ ${amount}`,
+      `$${amount}`,
+      `$ ${amount}`,
+      `${amount} ${item.currency}`,
+      `${amount.toFixed(2)} ${item.currency}`,
+    ];
 
-  const hasSubcategories = filteredSubCategories.length > 0;
+    // 🔹 TODOS los formatos de fecha (si existe dueDate)
+    const dateStrings = paidAt ? [
+      // Formatos con guiones y barras
+      formatPeruDate(paidAt), // "22-05-2026" (USANDO TU FUNCIÓN)
+      formatPeruDate(paidAt).replace(/-/g, "/"), // "22/05/2026"
+      new Date(paidAt).toISOString().split("T")[0], // "2026-05-22"
 
-  /*const filtered = (Array.isArray(items) ? items : []).filter(
-    (exp) =>
-      (exp.description?.toLowerCase() || "").includes(
-        searchTerm.toLowerCase(),
-      ) ||
-      (exp.category?.toLowerCase() || "").includes(searchTerm.toLowerCase()),
-  );*/
-  const normalizeText = (value: any) => {
-    return String(value || "")
+      // Componentes individuales (día, mes, año)
+      new Date(paidAt).getDate().toString(), // "22"
+      (new Date(paidAt).getMonth() + 1).toString(), // "5"
+      new Date(paidAt).getFullYear().toString(), // "2026"
+
+      // Nombres de meses
+      new Date(paidAt).toLocaleString("es-PE", { month: "long" }), // "mayo"
+      new Date(paidAt).toLocaleString("es-PE", { month: "short" }), // "may."
+
+      // Formatos con texto
+      `${new Date(paidAt).getDate()} de ${new Date(paidAt).toLocaleString("es-PE", { month: "long" })}`, // "22 de mayo"
+      `${new Date(paidAt).getDate()} de ${new Date(paidAt).toLocaleString("es-PE", { month: "long" })} de ${new Date(paidAt).getFullYear()}`, // "22 de mayo de 2026"
+      `${new Date(paidAt).toLocaleString("es-PE", { month: "long" })} de ${new Date(paidAt).getFullYear()}`, // "mayo de 2026"
+      `${new Date(paidAt).getDate()}-${new Date(paidAt).getMonth() + 1}-${new Date(paidAt).getFullYear()}`, // "22-5-2026"
+      `${new Date(paidAt).getDate()}/${new Date(paidAt).getMonth() + 1}/${new Date(paidAt).getFullYear()}`, // "22/5/2026"
+    ] : [];
+
+    // 🔥 Combinar TODO y convertir a string
+    return [...textFields, ...dateStrings].map(String);
+  };
+
+  // =============================================
+  // 2️⃣ FILTRO PRINCIPAL (SIN LÍMITES, 100% FLEXIBLE)
+  // =============================================
+  const filtered = useMemo(() => {
+    // 🔹 Normalizar el término de búsqueda (solo minúsculas, sin tildes)
+    const searchTermNormalized = searchTerm
       .toLowerCase()
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
       .trim();
-  };
 
-  const formatDateSearch = (dateValue?: string) => {
-    if (!dateValue) return [];
+    // Si no hay término, devolver todo
+    if (!searchTermNormalized) return items;
 
-    const date = new Date(dateValue);
-
-    if (isNaN(date.getTime())) return [];
-
-    const peDate = new Intl.DateTimeFormat("es-PE", {
-      timeZone: "America/Lima",
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    }).format(date);
-
-    return [
-      peDate, // 20/05/2026
-      peDate.replace(/\//g, "-"),
-      date.toISOString().split("T")[0], // 2026-05-20
-    ];
-  };
-
-  const filtered = useMemo(() => {
-    const term = normalizeText(searchTerm);
-
-    if (!term) return items;
-
-    return items.filter((inc) => {
-      const amount = Number(inc.amount || 0);
-
-      const searchValues = [
-        inc.name,
-        inc.description, // ✅ importante (ya estaba, lo reforzamos)
-        inc.category,
-        inc.subCategory,
-        inc.paymentMethod,
-        inc.currency,
-        inc.status,
-        amount,
-        amount.toFixed(2),
-        `s/${amount}`,
-        `$${amount}`,
-        ...formatDateSearch(inc.paidAt),
-      ]
-        .filter(Boolean)
-        .map(normalizeText);
-
-      if (!isNaN(Number(term)) && amount === Number(term)) {
-        return true;
-      }
-
-      return searchValues.some((v) => v.includes(term));
+    // Filtrar: si ALGÚN valor del item contiene el término (sin importar qué)
+    return items.filter((item) => {
+      const allStrings = getAllPossibleStrings(item).map((str) =>
+        str
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+      );
+      return allStrings.some((str) => str.includes(searchTermNormalized));
     });
   }, [items, searchTerm]);
 
-  const expenseTotalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE);
-  const getPages = (totalPages: number) => {
-    if (totalPages <= 6) {
-      return Array.from({ length: totalPages }, (_, i) => i + 1);
-    }
+  // 🔥 Separa por tipo (INCOME/EXPENSE) si es necesario
+  const expense = filtered;
 
-    const pages = [];
-    pages.push(1);
-    if (expensesPage > 2) pages.push("...");
-    pages.push(expensesPage);
-    if (expensesPage < totalPages - 1) pages.push("...");
-    pages.push(totalPages);
+  const ITEMS_PER_PAGE = 4;
 
-    return pages;
-  };
+  // Calcular número de páginas de ingresos a cobrar
+  const expenseTotalPages = Math.ceil(expense.length / ITEMS_PER_PAGE);
 
-  const expensesDesktop = useMemo(() => {
-    const start = (expensesPage - 1) * ITEMS_PER_PAGE;
-    const end = start + ITEMS_PER_PAGE;
-    return filtered.slice(start, end);
-  }, [filtered, expensesPage]);
+  // Genera un array [1, 2, 3, ..., total] para renderizar los botones de paginación.
+  const getPages = useCallback(
+    (total: number) => Array.from({ length: total }, (_, i) => i + 1),
+    []
+  );
 
-  useEffect(() => {
-    if (!searchTerm) return;
-
-    const term = normalizeText(searchTerm);
-
-    const index = filtered.findIndex((inc) => {
-      return (
-        normalizeText(inc.name).includes(term) ||
-        normalizeText(inc.description).includes(term)
-      );
-    });
-
-    if (index === -1) return;
-
-    const page = Math.floor(index / ITEMS_PER_PAGE) + 1;
-
-    setExpensesPage(page);
-  }, [searchTerm, filtered]);
+  // Paginación (solo para desktop)
+  const expenseDesktop = expense.slice(
+    (expensesPage - 1) * ITEMS_PER_PAGE,
+    expensesPage * ITEMS_PER_PAGE
+  );
 
   useEffect(() => {
     loadData();
@@ -259,6 +235,18 @@ export default function ExpensesPage() {
       setLoading(false);
     }
   };
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const filteredCategories = (
+    Array.isArray(categories) ? categories : []
+  ).filter((c) => c.type === "EXPENSE" && !c.parentId);
+
+  const filteredSubCategories = (
+    Array.isArray(categories) ? categories : []
+  ).filter((c) => c.parentId === selectedCategoryId);
+
+  const hasSubcategories = filteredSubCategories.length > 0;
 
   const handleOpenCreate = () => {
     setEditingId(null);
@@ -505,7 +493,7 @@ export default function ExpensesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50/50">
-                {expensesDesktop.map((exp) => {
+                {expenseDesktop.map((exp) => {
                   const montoSoles =
                     exp.currency === "USD"
                       ? exp.amount * exp.exchangeRate

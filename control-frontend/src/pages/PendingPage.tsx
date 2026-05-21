@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import Appshell from "../components/layout/Appshell";
 import Modal from "../components/ui/Modal";
 import {
@@ -37,6 +37,7 @@ import {
   formatPeruDate,
   getDueDateStatus,
 } from "../utils/date.utils";
+
 type Category = {
   id: string;
   name: string;
@@ -142,7 +143,7 @@ export default function PendingPage() {
     "RECEIVABLES",
   );
 
-  const ITEMS_PER_PAGE = 4;
+
 
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
   const [selectedSubCategoryId, setSelectedSubCategoryId] =
@@ -160,62 +161,154 @@ export default function PendingPage() {
     currency: "PEN" as "PEN" | "USD",
     exchangeRate: "1",
   });
+  // =============================================
+  // 1️⃣ FUNCIÓN ÚNICA: Genera TODOS los strings posibles de un item
+  // =============================================
+  const getAllPossibleStrings = (item: PendingItem): string[] => {
+    const amount = Number(item.amount || 0);
+    const dueDate = item.dueDate;
 
-  const receivables = useMemo(
-    () =>
-      Array.isArray(items)
-        ? items.filter(
-            (i) =>
-              i.type === "INCOME" &&
-              ((i.description?.toLowerCase() || "").includes(
-                searchTerm.toLowerCase(),
-              ) ||
-                (i.amount?.toString() || "").includes(searchTerm)),
-          )
-        : [],
-    [items, searchTerm],
-  );
+    // 🔹 TODOS los campos de texto (sin filtrar, sin límites)
+    const textFields = [
+      item.id,
+      item.name,
+      item.description,
+      item.category,
+      item.subCategory,
+      item.categoryId,
+      item.subCategoryId,
+      item.currency,
+      item.status,
+      item.type,
+      amount.toString(),
+      amount.toFixed(2),
+      `s/${amount}`,
+      `s/ ${amount}`,
+      `$${amount}`,
+      `$ ${amount}`,
+      `${amount} ${item.currency}`,
+      `${amount.toFixed(2)} ${item.currency}`,
+    ];
 
+    // 🔹 TODOS los formatos de fecha (si existe dueDate)
+    const dateStrings = dueDate ? [
+      // Formatos con guiones y barras
+      formatPeruDate(dueDate), // "22-05-2026" (USANDO TU FUNCIÓN)
+      formatPeruDate(dueDate).replace(/-/g, "/"), // "22/05/2026"
+      new Date(dueDate).toISOString().split("T")[0], // "2026-05-22"
+
+      // Componentes individuales (día, mes, año)
+      new Date(dueDate).getDate().toString(), // "22"
+      (new Date(dueDate).getMonth() + 1).toString(), // "5"
+      new Date(dueDate).getFullYear().toString(), // "2026"
+
+      // Nombres de meses
+      new Date(dueDate).toLocaleString("es-PE", { month: "long" }), // "mayo"
+      new Date(dueDate).toLocaleString("es-PE", { month: "short" }), // "may."
+
+      // Formatos con texto
+      `${new Date(dueDate).getDate()} de ${new Date(dueDate).toLocaleString("es-PE", { month: "long" })}`, // "22 de mayo"
+      `${new Date(dueDate).getDate()} de ${new Date(dueDate).toLocaleString("es-PE", { month: "long" })} de ${new Date(dueDate).getFullYear()}`, // "22 de mayo de 2026"
+      `${new Date(dueDate).toLocaleString("es-PE", { month: "long" })} de ${new Date(dueDate).getFullYear()}`, // "mayo de 2026"
+      `${new Date(dueDate).getDate()}-${new Date(dueDate).getMonth() + 1}-${new Date(dueDate).getFullYear()}`, // "22-5-2026"
+      `${new Date(dueDate).getDate()}/${new Date(dueDate).getMonth() + 1}/${new Date(dueDate).getFullYear()}`, // "22/5/2026"
+    ] : [];
+
+    // 🔥 Combinar TODO y convertir a string
+    return [...textFields, ...dateStrings].map(String);
+  };
+
+  // =============================================
+  // 2️⃣ FILTRO PRINCIPAL (SIN LÍMITES, 100% FLEXIBLE)
+  // =============================================
+  const filteredItems = useMemo(() => {
+    // 🔹 Normalizar el término de búsqueda (solo minúsculas, sin tildes)
+    const searchTermNormalized = searchTerm
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim();
+
+    // Si no hay término, devolver todo
+    if (!searchTermNormalized) return items;
+
+    // Filtrar: si ALGÚN valor del item contiene el término (sin importar qué)
+    return items.filter((item) => {
+      const allStrings = getAllPossibleStrings(item).map((str) =>
+        str
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+      );
+      return allStrings.some((str) => str.includes(searchTermNormalized));
+    });
+  }, [items, searchTerm]);
+
+  // 🔥 Separa por tipo (INCOME/EXPENSE) si es necesario
+  const receivables = filteredItems.filter((i) => i.type === "INCOME");
+  const payables = filteredItems.filter((i) => i.type === "EXPENSE");
+  // ✅ Filtros actualizados (para receivables y payables)
+  /*const payables = useMemo(() => {
+    const searchTermLower = searchTerm.toLowerCase().trim();
+    const searchDate = searchTerm ? parseFlexibleDate(searchTerm) : null;
+    const dayNumber = /^\d{1,2}$/.test(searchTerm) ? parseInt(searchTerm) : null;
+
+    return items.filter((i) => {
+      if (i.type !== "EXPENSE") return false;
+
+      const matchesText =
+        (i.name?.toLowerCase() || "").includes(searchTermLower) ||
+        (i.description?.toLowerCase() || "").includes(searchTermLower) ||
+        i.amount.toString().includes(searchTerm);
+
+      const matchesExactDate = i.dueDate && searchDate && (
+        new Date(i.dueDate).toDateString() === searchDate.toDateString()
+      );
+
+      const matchesDay = i.dueDate && dayNumber !== null && dayNumber >= 1 && dayNumber <= 31 && (
+        new Date(i.dueDate).getDate() === dayNumber
+      );
+
+      return matchesText || matchesExactDate || matchesDay;
+    });
+  }, [items, searchTerm]);*/
+
+  const ITEMS_PER_PAGE = 4;
+
+  // Calcular número de páginas de ingresos a cobrar
+  const receivablesTotalPages = Math.ceil(receivables.length / ITEMS_PER_PAGE);
+
+  // Calcular totales de ingresos a cobrar
   const receivablesTotal = useMemo(
     () => receivables.reduce((acc, item) => acc + item.amount, 0),
     [receivables],
   );
-
-  const payables = useMemo(
-    () =>
-      Array.isArray(items)
-        ? items.filter(
-            (i) =>
-              i.type === "EXPENSE" &&
-              ((i.description?.toLowerCase() || "").includes(
-                searchTerm.toLowerCase(),
-              ) ||
-                (i.amount?.toString() || "").includes(searchTerm)),
-          )
-        : [],
-    [items, searchTerm],
-  );
-
-  const receivablesTotalPages = Math.ceil(receivables.length / ITEMS_PER_PAGE);
+  // Calcular número de páginas de egresos por pagar
   const payablesTotalPages = Math.ceil(payables.length / ITEMS_PER_PAGE);
-  const getPages = (total: number) => {
-    return Array.from({ length: total }, (_, i) => i + 1);
-  };
-  const payablesDesktop = useMemo(() => {
-    const start = (payablesPage - 1) * ITEMS_PER_PAGE;
-    const end = start + ITEMS_PER_PAGE;
-    return payables.slice(start, end);
-  }, [payables, payablesPage]);
-  const receivablesDesktop = useMemo(() => {
-    const start = (receivablesPage - 1) * ITEMS_PER_PAGE;
-    const end = start + ITEMS_PER_PAGE;
-    return receivables.slice(start, end);
-  }, [receivables, receivablesPage]);
 
+  // Calcular totales de egresos por pagar
   const payablesTotal = useMemo(
     () => payables.reduce((acc, item) => acc + item.amount, 0),
     [payables],
   );
+
+  // Genera un array [1, 2, 3, ..., total] para renderizar los botones de paginación.
+  const getPages = useCallback(
+    (total: number) => Array.from({ length: total }, (_, i) => i + 1),
+    []
+  );
+
+  // Paginación (solo para desktop)
+  const receivablesPageItems = receivables.slice(
+    (receivablesPage - 1) * ITEMS_PER_PAGE,
+    receivablesPage * ITEMS_PER_PAGE
+  );
+  const payablesPageItems = payables.slice(
+    (payablesPage - 1) * ITEMS_PER_PAGE,
+    payablesPage * ITEMS_PER_PAGE
+  );
+
+
   const visibleReceivables = showAllReceivables
     ? receivables
     : receivables.slice(0, 2);
@@ -238,6 +331,10 @@ export default function PendingPage() {
     [categories, selectedCategoryId],
   );
 
+  useEffect(() => {
+    setReceivablesPage(1);
+    setPayablesPage(1);
+  }, [searchTerm]);
   const categoryHasSubcategories = filteredSubCategories.length > 0;
 
   useEffect(() => {
@@ -492,7 +589,7 @@ export default function PendingPage() {
                 placeholder="Buscar transacción..."
                 className="pl-11 pr-4 py-3 bg-white/70 backdrop-blur-md border border-white rounded-2xl text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all shadow-sm w-full md:w-72 text-gray-700 font-bold placeholder-gray-400"
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => setSearchTerm(e.target.value.trimStart())}
               />
             </div>
           </div>
@@ -503,11 +600,10 @@ export default function PendingPage() {
           <div className="bg-slate-100/90 backdrop-blur-xl p-1.5 rounded-[2rem] flex gap-2 border border-slate-200/50 shadow-lg shadow-slate-100/50 max-w-full overflow-x-auto custom-scrollbar">
             <button
               onClick={() => setActiveTab("RECEIVABLES")}
-              className={`px-8 py-4 rounded-[1.5rem] text-xs font-black uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-3 whitespace-nowrap min-w-[200px] ${
-                activeTab === "RECEIVABLES"
-                  ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-xl shadow-emerald-100 scale-[1.03] -translate-y-0.5"
-                  : "text-slate-500 hover:text-slate-800 hover:bg-slate-200/60"
-              }`}
+              className={`px-8 py-4 rounded-[1.5rem] text-xs font-black uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-3 whitespace-nowrap min-w-[200px] ${activeTab === "RECEIVABLES"
+                ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-xl shadow-emerald-100 scale-[1.03] -translate-y-0.5"
+                : "text-slate-500 hover:text-slate-800 hover:bg-slate-200/60"
+                }`}
             >
               <ArrowUpRight className="w-4 h-4" />
               Por Cobrar
@@ -519,11 +615,10 @@ export default function PendingPage() {
             </button>
             <button
               onClick={() => setActiveTab("PAYABLES")}
-              className={`px-8 py-4 rounded-[1.5rem] text-xs font-black uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-3 whitespace-nowrap min-w-[200px] ${
-                activeTab === "PAYABLES"
-                  ? "bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-xl shadow-rose-100 scale-[1.03] -translate-y-0.5"
-                  : "text-slate-500 hover:text-slate-800 hover:bg-slate-200/60"
-              }`}
+              className={`px-8 py-4 rounded-[1.5rem] text-xs font-black uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-3 whitespace-nowrap min-w-[200px] ${activeTab === "PAYABLES"
+                ? "bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-xl shadow-rose-100 scale-[1.03] -translate-y-0.5"
+                : "text-slate-500 hover:text-slate-800 hover:bg-slate-200/60"
+                }`}
             >
               <ArrowDownRight className="w-4 h-4" />
               Por Pagar
@@ -584,7 +679,7 @@ export default function PendingPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50/50">
-                      {receivablesDesktop.map((item) => (
+                      {receivablesPageItems.map((item) => (
                         <tr
                           key={item.id}
                           className={`transition-all group hover:bg-gray-50/50 ${item.status === "PAID" ? "opacity-50 grayscale-[0.5]" : ""}`}
@@ -633,11 +728,10 @@ export default function PendingPage() {
                           <td className="p-6 text-center">
                             <button
                               onClick={() => togglePaid(item.id, item.status)}
-                              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 mx-auto ${
-                                item.status === "PAID"
-                                  ? "bg-emerald-500 text-white shadow-lg shadow-emerald-100"
-                                  : "bg-amber-100 text-amber-700 hover:bg-amber-200"
-                              }`}
+                              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 mx-auto ${item.status === "PAID"
+                                ? "bg-emerald-500 text-white shadow-lg shadow-emerald-100"
+                                : "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                                }`}
                             >
                               {item.status === "PAID" ? (
                                 <Check className="w-3.5 h-3.5" />
@@ -699,11 +793,10 @@ export default function PendingPage() {
                         <button
                           key={page}
                           onClick={() => setReceivablesPage(page)}
-                          className={`px-3 py-1.5 text-xs font-black rounded-lg transition-all ${
-                            receivablesPage === page
-                              ? "bg-black text-white"
-                              : "text-gray-500 hover:bg-gray-100"
-                          }`}
+                          className={`px-3 py-1.5 text-xs font-black rounded-lg transition-all ${receivablesPage === page
+                            ? "bg-black text-white"
+                            : "text-gray-500 hover:bg-gray-100"
+                            }`}
                         >
                           {page}
                         </button>
@@ -900,7 +993,7 @@ export default function PendingPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50/50">
-                      {payablesDesktop.map((item) => (
+                      {payablesPageItems.map((item) => (
                         <tr
                           key={item.id}
                           className={`transition-all group hover:bg-gray-50/50 ${item.status === "PAID" ? "opacity-50 grayscale-[0.5]" : ""}`}
@@ -949,11 +1042,10 @@ export default function PendingPage() {
                           <td className="p-6 text-center">
                             <button
                               onClick={() => togglePaid(item.id, item.status)}
-                              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 mx-auto ${
-                                item.status === "PAID"
-                                  ? "bg-emerald-500 text-white shadow-lg shadow-emerald-100"
-                                  : "bg-amber-100 text-amber-700 hover:bg-amber-200"
-                              }`}
+                              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 mx-auto ${item.status === "PAID"
+                                ? "bg-emerald-500 text-white shadow-lg shadow-emerald-100"
+                                : "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                                }`}
                             >
                               {item.status === "PAID" ? (
                                 <Check className="w-3.5 h-3.5" />
@@ -1015,11 +1107,10 @@ export default function PendingPage() {
                         <button
                           key={page}
                           onClick={() => setPayablesPage(page)}
-                          className={`px-3 py-1.5 text-xs font-black rounded-lg transition-all ${
-                            payablesPage === page
-                              ? "bg-black text-white"
-                              : "text-gray-500 hover:bg-gray-100"
-                          }`}
+                          className={`px-3 py-1.5 text-xs font-black rounded-lg transition-all ${payablesPage === page
+                            ? "bg-black text-white"
+                            : "text-gray-500 hover:bg-gray-100"
+                            }`}
                         >
                           {page}
                         </button>
