@@ -1337,12 +1337,12 @@ export default function DashboardPage() {
               {/* --- Pestañas con iconos y animación --- */}
               <div className="flex gap-1.5 bg-slate-50/80 p-1.5 rounded-2xl border border-slate-100 mb-5 relative z-10">
                 {[
-                  { id: 'resumen', label: 'Resumen', icon: <TrendingUp className="w-4 h-4" /> },
-                  { id: 'analisis', label: 'Análisis', icon: <BarChart3 className="w-4 h-4" /> },
-                  { id: 'recomendaciones', label: 'Recomend.', icon: <Zap className="w-4 h-4" /> },
-                  { id: 'proyecciones', label: 'Proyecc.', icon: <Clock className="w-4 h-4" /> },
+                  { id: 'resumen' as const, label: 'Resumen', icon: <TrendingUp className="w-4 h-4" /> },
+                  { id: 'analisis' as const, label: 'Análisis', icon: <BarChart3 className="w-4 h-4" /> },
+                  { id: 'recomendaciones' as const, label: 'Recomend.', icon: <Zap className="w-4 h-4" /> },
+                  { id: 'proyecciones' as const, label: 'Proyecc.', icon: <Clock className="w-4 h-4" /> },
                 ].map((tab) => {
-                  const isActive = activeAITab === tab.id;
+                  const isActive = activeAITab === tab.id; // ✅ Ahora tab.id es del tipo correcto
                   return (
                     <motion.button
                       key={tab.id}
@@ -1465,7 +1465,7 @@ export default function DashboardPage() {
                               <motion.div
                                 key={idx}
                                 whileHover={{ scale: 1.05, y: -2 }}
-                                className={`p-2.5 rounded-2xl border ${colors[metric.color]} transition-all`}
+                                className={`p-2.5 rounded-2xl border ${colors[metric.color as keyof typeof colors]} transition-all`}
                               >
                                 <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest">{metric.label}</p>
                                 <p className="text-sm font-black text-gray-800 mt-1">{metric.value}</p>
