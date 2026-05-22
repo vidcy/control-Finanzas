@@ -38,6 +38,7 @@ import {
   getDueDateStatus,
 } from "../utils/date.utils";
 
+
 type Category = {
   id: string;
   name: string;
@@ -548,6 +549,19 @@ export default function PendingPage() {
       toast.error(message);
     }
   };
+
+
+  // Leer parámetros de la URL al cargar la página
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const tabParam = urlParams.get('tab');
+
+    if (tabParam === "RECEIVABLES" || tabParam === "PAYABLES") {
+      setActiveTab(tabParam);
+      // Limpiar los parámetros de la URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
 
   if (loading) {
     return (

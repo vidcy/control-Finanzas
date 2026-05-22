@@ -36,6 +36,7 @@ import {
   formatPeruDate,
   formatPeruTime,
 } from "../utils/date.utils";
+import { useTransactionModal } from "../auth/TransactionModalContext";
 
 type Income = {
   id: string;
@@ -86,6 +87,7 @@ export default function IncomePage() {
     paymentMethod: "TRANSFER" as "CASH" | "TRANSFER" | "YAPE" | "PLIN" | "CARD",
     status: "PAID" as "PAID" | "PENDING",
   });
+
 
 
 
@@ -398,6 +400,24 @@ export default function IncomePage() {
       toast.error(message);
     }
   };
+
+  // Leer parámetros de la URL al cargar la página
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const openModal = urlParams.get('openModal') === 'true';
+    const categoryParam = urlParams.get('category');
+
+    if (openModal && categoryParam) {
+      // Buscar la categoría en la lista de categorías
+      const matchingCategory = categories.find(c => c.name === categoryParam);
+      if (matchingCategory) {
+        setSelectedCategoryId(matchingCategory.id);
+        handleOpenCreate(); // Abre el modal de creación
+        // Limpiar los parámetros de la URL para que no se abra el modal cada vez que se recargue
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    }
+  }, [categories, handleOpenCreate]);
 
   const formatDate = (dateStr: string) => {
     return formatPeruDate(dateStr);

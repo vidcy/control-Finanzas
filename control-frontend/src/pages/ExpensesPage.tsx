@@ -36,7 +36,6 @@ import {
   formatPeruDate,
   formatPeruTime,
 } from "../utils/date.utils";
-
 type Expense = {
   id: string;
   date: string;
@@ -406,6 +405,25 @@ export default function ExpensesPage() {
       setSaving(false);
     }
   };
+
+
+  // Leer parámetros de la URL al cargar la página
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const openModal = urlParams.get('openModal') === 'true';
+    const categoryParam = urlParams.get('category');
+
+    if (openModal && categoryParam) {
+      // Buscar la categoría en la lista de categorías
+      const matchingCategory = categories.find(c => c.name === categoryParam);
+      if (matchingCategory) {
+        setSelectedCategoryId(matchingCategory.id);
+        handleOpenCreate(); // Abre el modal de creación
+        // Limpiar los parámetros de la URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    }
+  }, [categories, handleOpenCreate]);
 
   const formatDate = (dateStr: string) => {
     return formatPeruDate(dateStr);

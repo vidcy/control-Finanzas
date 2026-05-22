@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import Appshell from "../components/layout/Appshell";
 import {
   LayoutDashboard,
@@ -35,6 +35,7 @@ import {
   PiggyBank,
   ShieldAlert,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { getTransactionsRequest } from "../services/transaction.api";
 import { listPendingTransactionsRequest, markAsPaidRequest } from "../services/pending.api";
@@ -86,6 +87,10 @@ export default function DashboardPage() {
   const [simulatorSavings, setSimulatorSavings] = useState(0);
   const [payingId, setPayingId] = useState<string | null>(null);
 
+  // 👇 NUEVO: Referencia para la tabla y estado para saber si los módulos deben apilarse
+  const tableRef = useRef<HTMLDivElement>(null);
+  const [shouldStackModules, setShouldStackModules] = useState(false);
+
   // Estado para el tab activo del Asesor Financiero PRO
   const [activeAITab, setActiveAITab] = useState<'resumen' | 'analisis' | 'recomendaciones' | 'proyecciones'>('resumen');
 
@@ -117,6 +122,24 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  // 👇 NUEVO: Efecto para medir la altura de la tabla y decidir si apilar los módulos
+  useEffect(() => {
+    if (!tableRef.current) return;
+
+    const observer = new ResizeObserver((entries) => {
+      for (let entry of entries) {
+        const height = entry.contentRect.height;
+        // Si la tabla mide menos de 400px de altura, apilamos los módulos debajo
+        setShouldStackModules(height < 400);
+      }
+    });
+
+    observer.observe(tableRef.current);
+    return () => observer.disconnect();
+  }, []);
 
   // ── Quick Pay ───────────────────────────────────────────────────────────────
   const handleQuickPay = async (id: string) => {
@@ -218,6 +241,37 @@ export default function DashboardPage() {
     return { receivable, payable, urgent: urgent.slice(0, 5) };
   }, [safePending]);
 
+
+  // Dentro del componente DashboardPage (después de los estados):
+  const navigate = useNavigate();
+  const handleRecommendationClick = useCallback((category: string, type: string) => {
+    // Mapear el tipo de recomendación a la ruta y acción
+    if (type === "Ahorro" || type === "Baja Tasa de Ahorro" || type === "Sin Fondo de Emergencia" || type === "Mejora tu tasa de ahorro") {
+      // Redirige a Egresos con categoría "Ahorro Mensual" y abre el modal
+      navigate(`/expenses?openModal=true&category=${encodeURIComponent("Ahorro Mensual")}`);
+    }
+    else if (type === "Ingresos" || type === "Diversifica ingresos" || type === "Dependencia de Ingresos" || type === "Cobranza") {
+      // Redirige a Ingresos con la categoría mencionada
+      navigate(`/income?openModal=true&category=${encodeURIComponent(category || "Otros Ingresos")}`);
+    }
+    else if (type === "Gastos" || type.includes("Ahorro en") || type === "Gastos en Crecimiento" || type === "Pagos para Hoy") {
+      // Redirige a Egresos con la categoría mencionada
+      navigate(`/expenses?openModal=true&category=${encodeURIComponent(category || "Otros Gastos")}`);
+    }
+    else if (type === "Deudas Vencidas" || type === "Sobreendeudamiento" || type === "Falta de Liquidez" || type === "Deudas") {
+      // Redirige a Pendientes (Por Pagar)
+      navigate("/pending?tab=PAYABLES");
+    }
+    else if (type === "Superávit") {
+      // Redirige a Pendientes (Por Cobrar)
+      navigate("/pending?tab=RECEIVABLES");
+    }
+    else {
+      // Caso por defecto: redirige a Ingresos
+      navigate("/income");
+    }
+  }, [navigate]);
+
   // ── Financial health alerts ─────────────────────────────────────────────────
   // =============================================
   // 🔥 MOTOR DE ANÁLISIS FINANCIERO IA PRO
@@ -228,10 +282,10 @@ export default function DashboardPage() {
     const currentMonth = now.getMonth();
 
     // Métricas básicas
-    const savingsRate = totalIncome > 0 ? (totalBalance / totalIncome) * 100 : 0;
+
     const debtRatio = pendingStats.payable > 0 && totalIncome > 0 ? (pendingStats.payable / totalIncome) * 100 : 0;
     const liquidityRatio = totalBalance > 0 ? totalBalance / pendingStats.payable : Infinity;
-    const emergencyFundMonths = totalBalance > 0 ? Math.floor(totalBalance / (totalExpense / 12)) : 0;
+
 
     // Función para calcular tendencias (últimos 3 meses vs anteriores)
     const calculateTrend = (data: number[]) => {
@@ -254,6 +308,7 @@ export default function DashboardPage() {
       categories: {} as Record<string, { amount: number; percentage: number }>,
       seasonality: [] as { month: string; amount: number; vsAveragePct: number }[],
     };
+
 
     // Agrupar ingresos por categoría
     const incomeByCategory: Record<string, number> = {};
@@ -328,12 +383,17 @@ export default function DashboardPage() {
       expenseAnalysis.topCategories.push({ name, amount: data.amount, percentage, isRecurrent: data.isRecurrent });
 
       // Identificar oportunidades de ahorro (categorías >20% no fijas)
-      if (percentage > 20 && !['Alquiler', 'Hipoteca', 'Servicios Públicos'].includes(name)) {
+      if (
+        percentage > 20 &&
+        !['Alquiler', 'Hipoteca', 'Servicios Públicos'].includes(name) &&
+        !name.toLowerCase().includes("ahorro") &&
+        !name.toLowerCase().includes("saving")
+      ) {
         expenseAnalysis.savingsOpportunities.push({
           category: name,
           amount: data.amount,
           percentage,
-          potentialSavings: data.amount * 0.15, // 15% de ahorro potencial
+          potentialSavings: data.amount * 0.15,
         });
       }
     });
@@ -380,19 +440,32 @@ export default function DashboardPage() {
     });
 
     // ========== 🏦 ANÁLISIS DE AHORROS ==========
+    // ========== 🏦 ANÁLISIS DE AHORROS (CORREGIDO) ==========
+    // 1. Buscar el monto de la categoría "Ahorro Mensual" (o similar)
+    let explicitSavings = 0;
+    activeTx.forEach(t => {
+      if (t.type === "INCOME" && (t.category?.name?.toLowerCase().includes("ahorro") || t.category?.name?.toLowerCase().includes("saving"))) {
+        explicitSavings += Number(t.amount || 0) * (t.currency === "USD" ? Number(t.exchangeRate || 1) : 1);
+      }
+    });
+
+    // 2. Ahorro total = Balance neto + Ahorros explícitos
+    const totalSavings = totalBalance + explicitSavings;
+
     const savingsAnalysis = {
-      total: totalBalance,
-      savingsRate,
+      total: totalSavings, // ← Ahora incluye ahorros explícitos
+      savingsRate: totalIncome > 0 ? (totalSavings / totalIncome) * 100 : 0,
       emergencyFund: {
-        months: emergencyFundMonths,
-        amount: totalBalance,
-        recommended: totalExpense * 3, // 3 meses de gastos
-        gap: Math.max(0, (totalExpense * 3) - totalBalance),
+        months: totalExpense > 0 ? Math.floor(totalSavings / (totalExpense / 12)) : 0,
+        amount: totalSavings,
+        recommended: totalExpense * 3,
+        gap: Math.max(0, (totalExpense * 3) - totalSavings),
       },
       patterns: {
-        isConsistent: mBalance.filter(b => b > 0).length >= 9, // Al menos 9 meses positivos
-        averageMonthlySavings: totalBalance / 12,
+        isConsistent: mBalance.filter(b => b > 0).length >= 9,
+        averageMonthlySavings: totalSavings / 12,
       },
+      explicitSavings, // ← Ahorros explícitos (para mostrar en el dashboard)
     };
 
     // ========== 💧 ANÁLISIS DE LIQUIDEZ ==========
@@ -628,10 +701,10 @@ export default function DashboardPage() {
 
     // ========== 📋 RECOMENDACIONES PRIORIZADAS ==========
     const recommendations = [
-      ...riskAnalysis.critical.map(r => ({ ...r, priority: 1, potential: 0 })),
-      ...riskAnalysis.warnings.map(r => ({ ...r, priority: 2, potential: 0 })),
+      ...riskAnalysis.critical.map(r => ({ ...r, priority: 1, potential: 0, type: r.category })),
+      ...riskAnalysis.warnings.map(r => ({ ...r, priority: 2, potential: 0, type: r.category })),
       {
-        type: 'Mejora tu tasa de ahorro',
+        type: 'Ahorro',
         message: `Aumenta tu tasa de ahorro al ${Math.min(30, Math.ceil(savingsAnalysis.savingsRate + 5))}%.`,
         action: `Destina un ${Math.min(30, Math.ceil(savingsAnalysis.savingsRate + 5))}% de tus ingresos a ahorro.`,
         category: 'Ahorro',
@@ -640,7 +713,7 @@ export default function DashboardPage() {
         potential: 0,
       },
       {
-        type: 'Diversifica ingresos',
+        type: 'Ingresos',
         message: `El ${(100 - incomeAnalysis.diversification).toFixed(0)}% de tus ingresos depende de una fuente.`,
         action: 'Busca fuentes adicionales de ingresos (freelance, inversiones, etc.).',
         category: 'Ingresos',
@@ -650,7 +723,7 @@ export default function DashboardPage() {
       },
       // ✅ AÑADIR ESTO (antes del .sort):
       ...(balanceTrend < 0 ? [{
-        type: 'Balance en caída',
+        type: 'Balance',
         message: `Tu balance neto ha caído un ${Math.abs(balanceTrend).toFixed(1)}% en los últimos meses.`,
         action: 'Revisa tus gastos recurrentes e identifica qué está causando esta tendencia negativa.',
         category: 'Balance',
@@ -658,7 +731,7 @@ export default function DashboardPage() {
         severity: 'high' as const,
         potential: 0,
       }] : []),
-      ...riskAnalysis.opportunities.map(o => ({ ...o, priority: 4, severity: 'low' as const })),
+      ...riskAnalysis.opportunities.map(o => ({ ...o, priority: 4, severity: 'low' as const, type: o.category })),
     ].sort((a, b) => a.priority - b.priority);
 
     // ========== 🔮 PROYECCIONES ==========
@@ -712,6 +785,7 @@ export default function DashboardPage() {
         unit: 'meses',
       });
     }
+
 
     // ========== 📊 RESUMEN EJECUTIVO ==========
     return {
@@ -788,6 +862,52 @@ export default function DashboardPage() {
     );
   }
 
+
+  // Componente para renderizar una recomendación
+  const RecomendacionItem = ({ rec, idx, onClick }: { rec: any; idx: number; onClick: (category: string, type: string) => void }) => {
+    const priorityConfig = {
+      1: { bg: 'bg-rose-50/80 border-rose-100', icon: <ShieldAlert className="w-4 h-4 text-rose-500" />, text: 'text-rose-900', label: 'URGENTE' },
+      2: { bg: 'bg-amber-50/80 border-amber-100', icon: <AlertTriangle className="w-4 h-4 text-amber-500" />, text: 'text-amber-900', label: 'ALTA' },
+      3: { bg: 'bg-indigo-50/80 border-indigo-100', icon: <Info className="w-4 h-4 text-indigo-500" />, text: 'text-indigo-900', label: 'MEDIA' },
+      4: { bg: 'bg-emerald-50/80 border-emerald-100', icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" />, text: 'text-emerald-900', label: 'OPORTUNIDAD' },
+    };
+    const config = priorityConfig[rec.priority as keyof typeof priorityConfig];
+    const borderColor = rec.priority === 1 ? '#f43f5e' : rec.priority === 2 ? '#f59e0b' : rec.priority === 3 ? '#6366f1' : '#10b981';
+
+    return (
+      <motion.div
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ delay: idx * 0.1 }}
+        whileHover={{ scale: 1.02, x: 5 }}
+        className={`flex gap-3 p-3 rounded-2xl border border-l-4 ${config.bg} cursor-pointer`}
+        style={{ borderLeftColor: borderColor }}
+        onClick={() => onClick(rec.category, rec.type)}
+      >
+        <motion.div whileHover={{ scale: 1.2 }}>{config.icon}</motion.div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <p className={`text-[10px] font-black ${config.text}`}>{rec.type}</p>
+            {rec.priority <= 2 && (
+              <span className={`text-[8px] bg-${rec.priority === 1 ? 'rose' : 'amber'}-100 text-${rec.priority === 1 ? 'rose' : 'amber'}-600 px-1.5 py-0.5 rounded font-bold animate-pulse`}>
+                {config.label}
+              </span>
+            )}
+            {rec.priority === 4 && (
+              <span className="text-[8px] bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded font-bold">💰 OPORTUNIDAD</span>
+            )}
+          </div>
+          <p className="text-[10px] text-gray-500 leading-relaxed truncate">{rec.message}</p>
+          <p className="text-[9px] text-indigo-600 mt-1 font-semibold truncate">→ {rec.action}</p>
+          {'potential' in rec && rec.potential > 0 && (
+            <p className="text-[9px] text-emerald-600 mt-1 font-bold">
+              Potencial: +S/ {fmt(rec.potential, 0)}
+            </p>
+          )}
+        </div>
+      </motion.div>
+    );
+  };
   // ─────────────────────────────────────────────────────────────────────────────
   return (
     <Appshell>
@@ -1129,7 +1249,10 @@ export default function DashboardPage() {
             </div>
 
             {/* ── DESGLOSE ESTRUCTURAL TABLE ──────────────────────────────── */}
-            <div className="bg-white rounded-3xl border border-gray-100 shadow-[0_20px_60px_rgba(0,0,0,0.04)] overflow-hidden">
+            <div
+              ref={tableRef}  // 👈 Añade esto
+              className="bg-white rounded-3xl border border-gray-100 shadow-[0_20px_60px_rgba(0,0,0,0.04)] overflow-hidden"
+            >
               <div className="p-5 md:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-50">
                 <div className="flex items-center gap-3">
                   <div className="p-2.5 bg-indigo-600 rounded-xl text-white shadow-md shadow-indigo-200/40">
@@ -1292,738 +1415,814 @@ export default function DashboardPage() {
               </div>
             </div>
           </div>
-
           {/* ── RIGHT SIDEBAR ─────────────────────────────────────────────────── */}
-          <div className="flex flex-col gap-5">
+          {/* ── RIGHT SIDEBAR ─────────────────────────────────────────────────── */}
+          {/* 👇 Si shouldStackModules es true, el sidebar ocupará todo el ancho en pantallas grandes */}
+          <div className={shouldStackModules ? "xl:col-span-3" : "xl:col-span-1"}>
+            <div className="flex flex-col gap-5">
 
-            {/* Financial Health Advisor */}
-            {/* ============================================= */}
-            {/* 🔥 ASESOR FINANCIERO IA PRO (REMPLAZAR ESTA SECCIÓN) */}
-            {/* ============================================= */}
-            {/* ============================================= */}
-            {/* 🔥 ASESOR FINANCIERO IA PRO (NUEVA VERSIÓN) */}
-            {/* ============================================= */}
-            <div className="bg-white rounded-3xl border border-gray-100 shadow-2xl p-5 relative overflow-hidden min-w-[300px] w-full">
-              {/* --- Efectos de fondo --- */}
-              <div className="absolute -right-10 -top-10 w-40 h-40 bg-gradient-to-br from-indigo-400 via-purple-400 to-pink-400/20 rounded-full blur-3xl" />
-              <div className="absolute -left-10 -bottom-10 w-32 h-32 bg-gradient-to-br from-emerald-400 to-teal-400/20 rounded-full blur-3xl" />
+              {/* Financial Health Advisor */}
+              {/* ============================================= */}
+              {/* 🔥 ASESOR FINANCIERO IA PRO (NUEVA VERSIÓN) */}
+              {/* ============================================= */}
+              <div className="bg-white rounded-3xl border border-gray-100 shadow-2xl p-5 relative overflow-hidden min-w-[300px] w-full">
+                {/* --- Efectos de fondo --- */}
+                <div className="absolute -right-10 -top-10 w-40 h-40 bg-gradient-to-br from-indigo-400 via-purple-400 to-pink-400/20 rounded-full blur-3xl" />
+                <div className="absolute -left-10 -bottom-10 w-32 h-32 bg-gradient-to-br from-emerald-400 to-teal-400/20 rounded-full blur-3xl" />
 
-              {/* --- Header con logo y título --- */}
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="flex items-center justify-between mb-6 relative z-10"
-              >
-                <div className="flex items-center gap-4">
-                  <motion.div
-                    className="p-3 bg-gradient-to-br from-indigo-600 to-purple-700 rounded-2xl shadow-xl shadow-indigo-200/50 relative overflow-hidden"
-                    whileHover={{ scale: 1.1, rotate: 5 }}
-                    whileTap={{ scale: 0.95 }}
-                  >
-                    <Sparkles className="w-6 h-6 text-white relative z-10" />
-                    <div className="absolute inset-0 bg-white/20 rounded-2xl" />
-                  </motion.div>
-                  <div>
-                    <h3 className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-gray-900 via-indigo-900 to-purple-700">
-                      Asesor Financiero IA
-                    </h3>
-                    <p className="text-xs text-gray-500 font-bold uppercase tracking-wider mt-0.5">
-                      Análisis Inteligente en Tiempo Real
-                    </p>
-                  </div>
-                </div>
-              </motion.div>
-
-              {/* --- Pestañas con iconos y animación --- */}
-              <div className="flex gap-1.5 bg-slate-50/80 p-1.5 rounded-2xl border border-slate-100 mb-5 relative z-10">
-                {[
-                  { id: 'resumen' as const, label: 'Resumen', icon: <TrendingUp className="w-4 h-4" /> },
-                  { id: 'analisis' as const, label: 'Análisis', icon: <BarChart3 className="w-4 h-4" /> },
-                  { id: 'recomendaciones' as const, label: 'Recomend.', icon: <Zap className="w-4 h-4" /> },
-                  { id: 'proyecciones' as const, label: 'Proyecc.', icon: <Clock className="w-4 h-4" /> },
-                ].map((tab) => {
-                  const isActive = activeAITab === tab.id; // ✅ Ahora tab.id es del tipo correcto
-                  return (
-                    <motion.button
-                      key={tab.id}
-                      onClick={() => setActiveAITab(tab.id as any)}
-                      className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-black transition-all relative overflow-hidden
-            ${isActive
-                          ? 'bg-white text-indigo-600 shadow-md'
-                          : 'text-gray-500 hover:bg-white/50 hover:text-indigo-600'
-                        }`}
-                      whileHover={{ scale: 1.05 }}
+                {/* --- Header con logo y título --- */}
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex items-center justify-between mb-6 relative z-10"
+                >
+                  <div className="flex items-center gap-4">
+                    <motion.div
+                      className="p-3 bg-gradient-to-br from-indigo-600 to-purple-700 rounded-2xl shadow-xl shadow-indigo-200/50 relative overflow-hidden"
+                      whileHover={{ scale: 1.1, rotate: 5 }}
                       whileTap={{ scale: 0.95 }}
                     >
-                      {isActive && (
-                        <motion.div
-                          className="absolute inset-0 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-xl opacity-10"
-                          initial={{ x: -100 }}
-                          animate={{ x: 0 }}
-                          transition={{ type: 'spring', stiffness: 300 }}
-                        />
-                      )}
-                      <span className="relative z-10">{tab.icon}</span>
-                      <span className="relative z-10">{tab.label}</span>
-                    </motion.button>
-                  );
-                })}
-              </div>
+                      <Sparkles className="w-6 h-6 text-white relative z-10" />
+                      <div className="absolute inset-0 bg-white/20 rounded-2xl" />
+                    </motion.div>
+                    <div>
+                      <h3 className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-gray-900 via-indigo-900 to-purple-700">
+                        Asesor Financiero IA
+                      </h3>
+                      <p className="text-xs text-gray-500 font-bold uppercase tracking-wider mt-0.5">
+                        Análisis Inteligente en Tiempo Real
+                      </p>
+                    </div>
+                  </div>
+                </motion.div>
 
-              {/* --- Contenido con animación de transición --- */}
-              <div className="relative z-10 min-h-[400px] max-h-[60vh] overflow-y-auto scrollbar-premium pr-2">
-                <AnimatePresence mode="wait">
-                  <motion.div
-                    key={activeAITab}
-                    initial={{ opacity: 0, x: 50 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -50 }}
-                    transition={{ type: 'spring', stiffness: 200, damping: 20 }}
-                  >
-                    {/* ========== 📊 RESUMEN ========== */}
-                    {activeAITab === 'resumen' && (
-                      <div className="space-y-4">
-                        {/* Score con animación */}
-                        <motion.div
-                          initial={{ scale: 0.9 }}
-                          animate={{ scale: 1 }}
-                          className="relative p-1 rounded-2xl bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 border border-indigo-100/50 overflow-hidden"
-                        >
-                          <div className="absolute inset-0 bg-gradient-to-br from-indigo-400/10 to-purple-400/10" />
-                          <div className="relative p-5 bg-white/90 backdrop-blur-sm rounded-2xl">
-                            <div className="flex items-center justify-between mb-4">
-                              <div>
-                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Puntuación Financiera</p>
-                                <div className="flex items-end gap-2 mt-1">
-                                  <motion.p
-                                    className="text-5xl font-black text-gray-900"
-                                    initial={{ opacity: 0, y: 20 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    transition={{ delay: 0.2 }}
+                {/* --- Pestañas con iconos y animación --- */}
+                <div className="flex gap-1.5 bg-slate-50/80 p-1.5 rounded-2xl border border-slate-100 mb-5 relative z-10">
+                  {[
+                    { id: 'resumen' as const, label: 'Resumen', icon: <TrendingUp className="w-4 h-4" /> },
+                    { id: 'analisis' as const, label: 'Análisis', icon: <BarChart3 className="w-4 h-4" /> },
+                    { id: 'recomendaciones' as const, label: 'Recomend.', icon: <Zap className="w-4 h-4" /> },
+                    { id: 'proyecciones' as const, label: 'Proyecc.', icon: <Clock className="w-4 h-4" /> },
+                  ].map((tab) => {
+                    const isActive = activeAITab === tab.id; // ✅ Ahora tab.id es del tipo correcto
+                    return (
+                      <motion.button
+                        key={tab.id}
+                        onClick={() => setActiveAITab(tab.id as any)}
+                        className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-black transition-all relative overflow-hidden
+            ${isActive
+                            ? 'bg-white text-indigo-600 shadow-md'
+                            : 'text-gray-500 hover:bg-white/50 hover:text-indigo-600'
+                          }`}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                      >
+                        {isActive && (
+                          <motion.div
+                            className="absolute inset-0 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-xl opacity-10"
+                            initial={{ x: -100 }}
+                            animate={{ x: 0 }}
+                            transition={{ type: 'spring', stiffness: 300 }}
+                          />
+                        )}
+                        <span className="relative z-10">{tab.icon}</span>
+                        <span className="relative z-10">{tab.label}</span>
+                      </motion.button>
+                    );
+                  })}
+                </div>
+
+                {/* --- Contenido con animación de transición --- */}
+                <div className="relative z-10 h-[350px] overflow-y-auto scrollbar-premium pr-2">
+                  <AnimatePresence mode="wait">
+                    <motion.div
+                      key={activeAITab}
+                      initial={{ opacity: 0, x: 50 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -50 }}
+                      transition={{ type: 'spring', stiffness: 200, damping: 20 }}
+                      className="space-y-3"
+                    >
+                      {/* ========== 📊 RESUMEN ========== */}
+                      {activeAITab === 'resumen' && (
+                        <div className="space-y-4">
+                          {/* Score con animación */}
+                          <motion.div
+                            initial={{ scale: 0.9 }}
+                            animate={{ scale: 1 }}
+                            className="relative p-1 rounded-2xl bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 border border-indigo-100/50 overflow-hidden"
+                          >
+                            <div className="absolute inset-0 bg-gradient-to-br from-indigo-400/10 to-purple-400/10" />
+                            <div className="relative p-5 bg-white/90 backdrop-blur-sm rounded-2xl">
+                              <div className="flex items-center justify-between mb-4">
+                                <div>
+                                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Puntuación Financiera</p>
+                                  <div className="flex items-end gap-2 mt-1">
+                                    <motion.p
+                                      className="text-5xl font-black text-gray-900"
+                                      initial={{ opacity: 0, y: 20 }}
+                                      animate={{ opacity: 1, y: 0 }}
+                                      transition={{ delay: 0.2 }}
+                                    >
+                                      {financialAnalysisEngine.score}
+                                    </motion.p>
+                                    <span className="text-2xl text-gray-500 mb-1">/100</span>
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <motion.div
+                                    className="flex items-center gap-2 justify-end"
+                                    initial={{ opacity: 0, scale: 0.8 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    transition={{ delay: 0.3 }}
                                   >
-                                    {financialAnalysisEngine.score}
+                                    <div className={`p-2.5 rounded-xl ${financialAnalysisEngine.diagnosis.color === 'emerald' ? 'bg-emerald-100 text-emerald-600' :
+                                      financialAnalysisEngine.diagnosis.color === 'amber' ? 'bg-amber-100 text-amber-600' :
+                                        'bg-rose-100 text-rose-600'}`}>
+                                      {financialAnalysisEngine.diagnosis.icon}
+                                    </div>
+                                  </motion.div>
+                                  <motion.p
+                                    className="text-sm font-black mt-1 text-gray-800"
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    transition={{ delay: 0.4 }}
+                                  >
+                                    {financialAnalysisEngine.diagnosis.emoji} {financialAnalysisEngine.diagnosis.text}
                                   </motion.p>
-                                  <span className="text-2xl text-gray-500 mb-1">/100</span>
                                 </div>
                               </div>
-                              <div className="text-right">
+                              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                                 <motion.div
-                                  className="flex items-center gap-2 justify-end"
-                                  initial={{ opacity: 0, scale: 0.8 }}
-                                  animate={{ opacity: 1, scale: 1 }}
-                                  transition={{ delay: 0.3 }}
-                                >
-                                  <div className={`p-2.5 rounded-xl ${financialAnalysisEngine.diagnosis.color === 'emerald' ? 'bg-emerald-100 text-emerald-600' :
-                                    financialAnalysisEngine.diagnosis.color === 'amber' ? 'bg-amber-100 text-amber-600' :
-                                      'bg-rose-100 text-rose-600'}`}>
-                                    {financialAnalysisEngine.diagnosis.icon}
-                                  </div>
-                                </motion.div>
-                                <motion.p
-                                  className="text-sm font-black mt-1 text-gray-800"
-                                  initial={{ opacity: 0 }}
-                                  animate={{ opacity: 1 }}
-                                  transition={{ delay: 0.4 }}
-                                >
-                                  {financialAnalysisEngine.diagnosis.emoji} {financialAnalysisEngine.diagnosis.text}
-                                </motion.p>
+                                  className={`h-full bg-gradient-to-r ${financialAnalysisEngine.score >= 80 ? 'from-emerald-500 to-teal-500' :
+                                    financialAnalysisEngine.score >= 60 ? 'from-indigo-500 to-purple-500' :
+                                      financialAnalysisEngine.score >= 40 ? 'from-amber-500 to-orange-500' :
+                                        'from-rose-500 to-pink-500'} rounded-full`}
+                                  initial={{ width: 0 }}
+                                  animate={{ width: `${financialAnalysisEngine.score}%` }}
+                                  transition={{ duration: 1.5, ease: 'easeOut' }}
+                                />
                               </div>
+                              <p className="text-[9px] text-gray-400 font-bold mt-2 text-center">
+                                {financialAnalysisEngine.score >= 80 ? '¡Excelente! Mantén el ritmo.' :
+                                  financialAnalysisEngine.score >= 60 ? 'Buen trabajo. Sigue mejorando.' :
+                                    financialAnalysisEngine.score >= 40 ? 'Necesitas tomar acción.' : '¡Urgentemente! Revisa tu situación.'}
+                              </p>
                             </div>
-                            <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                              <motion.div
-                                className={`h-full bg-gradient-to-r ${financialAnalysisEngine.score >= 80 ? 'from-emerald-500 to-teal-500' :
-                                  financialAnalysisEngine.score >= 60 ? 'from-indigo-500 to-purple-500' :
-                                    financialAnalysisEngine.score >= 40 ? 'from-amber-500 to-orange-500' :
-                                      'from-rose-500 to-pink-500'} rounded-full`}
-                                initial={{ width: 0 }}
-                                animate={{ width: `${financialAnalysisEngine.score}%` }}
-                                transition={{ duration: 1.5, ease: 'easeOut' }}
-                              />
-                            </div>
-                            <p className="text-[9px] text-gray-400 font-bold mt-2 text-center">
-                              {financialAnalysisEngine.score >= 80 ? '¡Excelente! Mantén el ritmo.' :
-                                financialAnalysisEngine.score >= 60 ? 'Buen trabajo. Sigue mejorando.' :
-                                  financialAnalysisEngine.score >= 40 ? 'Necesitas tomar acción.' : '¡Urgentemente! Revisa tu situación.'}
-                            </p>
-                          </div>
-                        </motion.div>
+                          </motion.div>
 
-                        {/* Métricas clave */}
-                        <motion.div
-                          initial={{ opacity: 0, y: 20 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: 0.5 }}
-                          className="grid grid-cols-3 gap-2"
-                        >
-                          {financialAnalysisEngine.keyMetrics.map((metric, idx) => {
-                            const colors = {
-                              emerald: 'bg-emerald-50 text-emerald-700 border-emerald-100',
-                              amber: 'bg-amber-50 text-amber-700 border-amber-100',
-                              rose: 'bg-rose-50 text-rose-700 border-rose-100',
-                            };
-                            return (
-                              <motion.div
-                                key={idx}
-                                whileHover={{ scale: 1.05, y: -2 }}
-                                className={`p-2.5 rounded-2xl border ${colors[metric.color as keyof typeof colors]} transition-all`}
-                              >
-                                <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest">{metric.label}</p>
-                                <p className="text-sm font-black text-gray-800 mt-1">{metric.value}</p>
-                              </motion.div>
-                            );
-                          })}
-                        </motion.div>
-
-                        {/* Resumen financiero rápido */}
-                        <motion.div
-                          initial={{ opacity: 0, y: 20 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: 0.7 }}
-                          className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-100"
-                        >
-                          <div className="p-3 bg-slate-50/50 rounded-2xl border border-slate-100">
-                            <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Deuda Total</p>
-                            <p className="text-lg font-black text-rose-600 mt-1">S/ {fmt(financialAnalysisEngine.totalDebt, 0)}</p>
-                          </div>
-                          <div className="p-3 bg-slate-50/50 rounded-2xl border border-slate-100">
-                            <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Por Cobrar</p>
-                            <p className="text-lg font-black text-emerald-600 mt-1">S/ {fmt(financialAnalysisEngine.totalReceivable, 0)}</p>
-                          </div>
-                          <div className="p-3 bg-slate-50/50 rounded-2xl border border-slate-100 col-span-2">
-                            <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Patrimonio Neto Estimado</p>
-                            <p className="text-lg font-black text-indigo-600 mt-1">
-                              S/ {fmt(financialAnalysisEngine.netWorth, 0)}
-                            </p>
-                          </div>
-                        </motion.div>
-
-                        {/* Alertas críticas */}
-                        {financialAnalysisEngine.riskAnalysis.critical.length > 0 && (
+                          {/* Métricas clave */}
                           <motion.div
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.9 }}
-                            className="space-y-2"
+                            transition={{ delay: 0.5 }}
+                            className="grid grid-cols-3 gap-2"
                           >
-                            <p className="text-[10px] font-black text-rose-500 uppercase tracking-widest mb-2 flex items-center gap-1">
-                              <ShieldAlert className="w-3 h-3" /> Alertas Críticas
-                            </p>
-                            {financialAnalysisEngine.riskAnalysis.critical.map((alert, idx) => (
-                              <motion.div
-                                key={idx}
-                                initial={{ opacity: 0, x: -20 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                transition={{ delay: 1 + idx * 0.1 }}
-                                whileHover={{ scale: 1.02 }}
-                                className="flex gap-2 p-3 bg-rose-50/80 border border-rose-100 rounded-2xl"
-                              >
-                                <div className="p-2 bg-rose-100 rounded-xl text-rose-600 shrink-0">
-                                  <ShieldAlert className="w-4 h-4" />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-xs font-black text-rose-800">{alert.type}</p>
-                                  <p className="text-[10px] text-rose-600 mt-0.5">{alert.message}</p>
-                                  <p className="text-[9px] text-rose-500 mt-1 font-semibold">→ {alert.action}</p>
-                                </div>
-                              </motion.div>
-                            ))}
-                          </motion.div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* ========== 🔍 ANÁLISIS DETALLADO ========== */}
-                    {activeAITab === 'analisis' && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="space-y-4"
-                      >
-                        {/* Análisis de Ingresos */}
-                        <motion.div
-                          initial={{ opacity: 0, x: -20 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: 0.1 }}
-                          className="p-4 rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-100"
-                        >
-                          <div className="flex items-center gap-2 mb-4">
-                            <TrendingUp className="w-5 h-5 text-emerald-600" />
-                            <h4 className="text-sm font-black text-emerald-800">Análisis de Ingresos</h4>
-                          </div>
-                          <div className="grid grid-cols-2 gap-3">
-                            <div className="p-3 bg-white/80 rounded-xl border border-emerald-100/50">
-                              <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Total Anual</p>
-                              <p className="text-lg font-black text-emerald-700">S/ {fmt(financialAnalysisEngine.incomeAnalysis.total, 0)}</p>
-                            </div>
-                            <div className="p-3 bg-white/80 rounded-xl border border-emerald-100/50">
-                              <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Promedio Mensual</p>
-                              <p className="text-lg font-black text-emerald-700">S/ {fmt(financialAnalysisEngine.incomeAnalysis.averageMonthly, 0)}</p>
-                            </div>
-                            <div className="p-3 bg-white/80 rounded-xl border border-emerald-100/50">
-                              <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Tendencia (3m)</p>
-                              <p className={`text-lg font-black ${financialAnalysisEngine.incomeAnalysis.growthRate > 0 ? 'text-emerald-600' : financialAnalysisEngine.incomeAnalysis.growthRate < 0 ? 'text-rose-600' : 'text-amber-600'}`}>
-                                {financialAnalysisEngine.incomeAnalysis.growthRate > 0 ? '+' : ''}{financialAnalysisEngine.incomeAnalysis.growthRate.toFixed(1)}%
-                              </p>
-                            </div>
-                            <div className="p-3 bg-white/80 rounded-xl border border-emerald-100/50">
-                              <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Diversificación</p>
-                              <p className="text-lg font-black text-emerald-700">{financialAnalysisEngine.incomeAnalysis.diversification.toFixed(0)}%</p>
-                            </div>
-                          </div>
-                          <div className="mt-4 space-y-2">
-                            <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-2">Top 3 Categorías</p>
-                            {Object.entries(financialAnalysisEngine.incomeAnalysis.categories)
-                              .sort((a, b) => b[1].amount - a[1].amount)
-                              .slice(0, 3)
-                              .map(([name, data], idx) => (
+                            {financialAnalysisEngine.keyMetrics.map((metric, idx) => {
+                              const colors = {
+                                emerald: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+                                amber: 'bg-amber-50 text-amber-700 border-amber-100',
+                                rose: 'bg-rose-50 text-rose-700 border-rose-100',
+                              };
+                              return (
                                 <motion.div
                                   key={idx}
-                                  initial={{ opacity: 0, y: 10 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  transition={{ delay: 0.2 + idx * 0.1 }}
-                                  whileHover={{ scale: 1.02 }}
-                                  className="flex items-center gap-3 p-2 bg-white/80 rounded-xl border border-emerald-100/50"
+                                  whileHover={{ scale: 1.05, y: -2 }}
+                                  className={`p-2.5 rounded-2xl border ${colors[metric.color as keyof typeof colors]} transition-all`}
                                 >
-                                  <div className="w-2 h-2 bg-emerald-500 rounded-full" />
-                                  <div className="flex-1">
-                                    <p className="text-xs font-black text-gray-700 truncate">{name}</p>
-                                  </div>
-                                  <p className="text-xs font-black text-emerald-600">S/ {fmt(data.amount, 0)} ({data.percentage.toFixed(1)}%)</p>
+                                  <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest">{metric.label}</p>
+                                  <p className="text-sm font-black text-gray-800 mt-1">{metric.value}</p>
                                 </motion.div>
-                              ))}
-                          </div>
-                        </motion.div>
+                              );
+                            })}
+                          </motion.div>
 
-                        {/* Análisis de Gastos */}
-                        <motion.div
-                          initial={{ opacity: 0, x: 20 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: 0.2 }}
-                          className="p-4 rounded-2xl bg-gradient-to-br from-rose-50 to-pink-50 border border-rose-100"
-                        >
-                          <div className="flex items-center gap-2 mb-4">
-                            <TrendingDown className="w-5 h-5 text-rose-600" />
-                            <h4 className="text-sm font-black text-rose-800">Análisis de Gastos</h4>
-                          </div>
-                          <div className="grid grid-cols-2 gap-3">
-                            <div className="p-3 bg-white/80 rounded-xl border border-rose-100/50">
-                              <p className="text-[9px] font-black text-rose-600 uppercase tracking-widest">Total Anual</p>
-                              <p className="text-lg font-black text-rose-700">S/ {fmt(financialAnalysisEngine.expenseAnalysis.total, 0)}</p>
+                          {/* Resumen financiero rápido */}
+                          <motion.div
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.7 }}
+                            className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-100"
+                          >
+                            <div className="p-3 bg-slate-50/50 rounded-2xl border border-slate-100">
+                              <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Deuda Total</p>
+                              <p className="text-lg font-black text-rose-600 mt-1">S/ {fmt(financialAnalysisEngine.totalDebt, 0)}</p>
                             </div>
-                            <div className="p-3 bg-white/80 rounded-xl border border-rose-100/50">
-                              <p className="text-[9px] font-black text-rose-600 uppercase tracking-widest">Promedio Mensual</p>
-                              <p className="text-lg font-black text-rose-700">S/ {fmt(financialAnalysisEngine.expenseAnalysis.averageMonthly, 0)}</p>
+                            <div className="p-3 bg-slate-50/50 rounded-2xl border border-slate-100">
+                              <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Por Cobrar</p>
+                              <p className="text-lg font-black text-emerald-600 mt-1">S/ {fmt(financialAnalysisEngine.totalReceivable, 0)}</p>
                             </div>
-                            <div className="p-3 bg-white/80 rounded-xl border border-rose-100/50">
-                              <p className="text-[9px] font-black text-rose-600 uppercase tracking-widest">Tendencia (3m)</p>
-                              <p className={`text-lg font-black ${financialAnalysisEngine.expenseAnalysis.growthRate < 0 ? 'text-emerald-600' : financialAnalysisEngine.expenseAnalysis.growthRate > 0 ? 'text-rose-600' : 'text-amber-600'}`}>
-                                {financialAnalysisEngine.expenseAnalysis.growthRate > 0 ? '+' : ''}{financialAnalysisEngine.expenseAnalysis.growthRate.toFixed(1)}%
+                            <div className="p-3 bg-slate-50/50 rounded-2xl border border-slate-100 col-span-2">
+                              <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Patrimonio Neto Estimado</p>
+                              <p className="text-lg font-black text-indigo-600 mt-1">
+                                S/ {fmt(financialAnalysisEngine.netWorth, 0)}
                               </p>
                             </div>
-                            <div className="p-3 bg-white/80 rounded-xl border border-rose-100/50">
-                              <p className="text-[9px] font-black text-rose-600 uppercase tracking-widest">Gastos Fijos</p>
-                              <p className="text-lg font-black text-rose-700">{financialAnalysisEngine.expenseAnalysis.fixedVsVariable.fixedPct.toFixed(0)}%</p>
-                            </div>
-                          </div>
-                        </motion.div>
+                          </motion.div>
 
-                        {/* Análisis de Deudas */}
+                          {/* Alertas críticas */}
+                          {financialAnalysisEngine.riskAnalysis.critical.length > 0 && (
+                            <motion.div
+                              initial={{ opacity: 0, y: 20 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ delay: 0.9 }}
+                              className="space-y-2"
+                            >
+                              <p className="text-[10px] font-black text-rose-500 uppercase tracking-widest mb-2 flex items-center gap-1">
+                                <ShieldAlert className="w-3 h-3" /> Alertas Críticas
+                              </p>
+                              {financialAnalysisEngine.riskAnalysis.critical.map((alert, idx) => (
+                                <motion.div
+                                  key={idx}
+                                  initial={{ opacity: 0, x: -20 }}
+                                  animate={{ opacity: 1, x: 0 }}
+                                  transition={{ delay: 1 + idx * 0.1 }}
+                                  whileHover={{ scale: 1.02 }}
+                                  className="flex gap-2 p-3 bg-rose-50/80 border border-rose-100 rounded-2xl"
+                                >
+                                  <div className="p-2 bg-rose-100 rounded-xl text-rose-600 shrink-0">
+                                    <ShieldAlert className="w-4 h-4" />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-xs font-black text-rose-800">{alert.type}</p>
+                                    <p className="text-[10px] text-rose-600 mt-0.5">{alert.message}</p>
+                                    <p className="text-[9px] text-rose-500 mt-1 font-semibold">→ {alert.action}</p>
+                                  </div>
+                                </motion.div>
+                              ))}
+                            </motion.div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* ========== 🔍 ANÁLISIS DETALLADO ========== */}
+                      {activeAITab === 'analisis' && (
                         <motion.div
                           initial={{ opacity: 0, y: 20 }}
                           animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: 0.3 }}
-                          className="p-4 rounded-2xl bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-100"
+                          className="space-y-4"
                         >
-                          <div className="flex items-center gap-2 mb-4">
-                            <Clock className="w-5 h-5 text-amber-600" />
-                            <h4 className="text-sm font-black text-amber-800">Análisis de Deudas</h4>
-                          </div>
-                          <div className="grid grid-cols-2 gap-3">
-                            <div className="p-3 bg-white/80 rounded-xl border border-amber-100/50">
-                              <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest">Deuda Total</p>
-                              <p className="text-lg font-black text-amber-700">S/ {fmt(financialAnalysisEngine.debtAnalysis.total, 0)}</p>
+                          {/* Análisis de Ingresos */}
+                          <motion.div
+                            initial={{ opacity: 0, x: -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: 0.1 }}
+                            className="p-4 rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-100"
+                          >
+                            <div className="flex items-center gap-2 mb-4">
+                              <TrendingUp className="w-5 h-5 text-emerald-600" />
+                              <h4 className="text-sm font-black text-emerald-800">Análisis de Ingresos</h4>
                             </div>
-                            <div className="p-3 bg-white/80 rounded-xl border border-amber-100/50">
-                              <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest">Ratio Deuda/Ingresos</p>
-                              <p className="text-lg font-black text-amber-700">{financialAnalysisEngine.debtAnalysis.debtToIncomeRatio.toFixed(1)}%</p>
-                            </div>
-                            <div className="p-3 bg-white/80 rounded-xl border border-amber-100/50">
-                              <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest">Vencidas</p>
-                              <p className="text-lg font-black text-rose-600">{financialAnalysisEngine.debtAnalysis.expired}</p>
-                            </div>
-                            <div className="p-3 bg-white/80 rounded-xl border border-amber-100/50">
-                              <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest">Para Hoy</p>
-                              <p className="text-lg font-black text-orange-600">{financialAnalysisEngine.debtAnalysis.dueToday}</p>
-                            </div>
-                          </div>
-                        </motion.div>
-
-                        {/* Análisis de Ahorros */}
-                        <motion.div
-                          initial={{ opacity: 0, x: -20 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: 0.4 }}
-                          className="p-4 rounded-2xl bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100"
-                        >
-                          <div className="flex items-center gap-2 mb-4">
-                            <Wallet className="w-5 h-5 text-indigo-600" />
-                            <h4 className="text-sm font-black text-indigo-800">Análisis de Ahorros</h4>
-                          </div>
-                          <div className="grid grid-cols-2 gap-3">
-                            <div className="p-3 bg-white/80 rounded-xl border border-indigo-100/50">
-                              <p className="text-[9px] font-black text-indigo-600 uppercase tracking-widest">Tasa de Ahorro</p>
-                              <p className="text-lg font-black text-indigo-700">{financialAnalysisEngine.savingsAnalysis.savingsRate.toFixed(1)}%</p>
-                            </div>
-                            <div className="p-3 bg-white/80 rounded-xl border border-indigo-100/50">
-                              <p className="text-[9px] font-black text-indigo-600 uppercase tracking-widest">Fondo Emergencia</p>
-                              <p className="text-lg font-black text-indigo-700">{financialAnalysisEngine.savingsAnalysis.emergencyFund.months} meses</p>
-                            </div>
-                            <div className="p-3 bg-white/80 rounded-xl border border-indigo-100/50 col-span-2">
-                              <p className="text-[9px] font-black text-indigo-600 uppercase tracking-widest">Meta Recomendada (3 meses)</p>
-                              <p className="text-sm font-black text-indigo-700 mt-1">S/ {fmt(financialAnalysisEngine.savingsAnalysis.emergencyFund.recommended, 0)}</p>
-                              <div className="mt-2 h-1.5 bg-indigo-100 rounded-full overflow-hidden">
-                                <motion.div
-                                  className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full"
-                                  initial={{ width: 0 }}
-                                  animate={{ width: `${Math.min(100, (financialAnalysisEngine.savingsAnalysis.emergencyFund.amount / financialAnalysisEngine.savingsAnalysis.emergencyFund.recommended) * 100)}%` }}
-                                  transition={{ duration: 1.5 }}
-                                />
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="p-3 bg-white/80 rounded-xl border border-emerald-100/50">
+                                <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Total Anual</p>
+                                <p className="text-lg font-black text-emerald-700">S/ {fmt(financialAnalysisEngine.incomeAnalysis.total, 0)}</p>
                               </div>
-                              <p className="text-[8px] text-indigo-500 font-bold mt-1 text-right">
-                                {Math.min(100, (financialAnalysisEngine.savingsAnalysis.emergencyFund.amount / financialAnalysisEngine.savingsAnalysis.emergencyFund.recommended) * 100).toFixed(0)}% alcanzado
-                              </p>
+                              <div className="p-3 bg-white/80 rounded-xl border border-emerald-100/50">
+                                <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Promedio Mensual</p>
+                                <p className="text-lg font-black text-emerald-700">S/ {fmt(financialAnalysisEngine.incomeAnalysis.averageMonthly, 0)}</p>
+                              </div>
+                              <div className="p-3 bg-white/80 rounded-xl border border-emerald-100/50">
+                                <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Tendencia (3m)</p>
+                                <p className={`text-lg font-black ${financialAnalysisEngine.incomeAnalysis.growthRate > 0 ? 'text-emerald-600' : financialAnalysisEngine.incomeAnalysis.growthRate < 0 ? 'text-rose-600' : 'text-amber-600'}`}>
+                                  {financialAnalysisEngine.incomeAnalysis.growthRate > 0 ? '+' : ''}{financialAnalysisEngine.incomeAnalysis.growthRate.toFixed(1)}%
+                                </p>
+                              </div>
+                              <div className="p-3 bg-white/80 rounded-xl border border-emerald-100/50">
+                                <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Diversificación</p>
+                                <p className="text-lg font-black text-emerald-700">{financialAnalysisEngine.incomeAnalysis.diversification.toFixed(0)}%</p>
+                              </div>
                             </div>
-                          </div>
-                        </motion.div>
-
-                        {/* Tendencia de Balance */}
-                        <motion.div
-                          initial={{ opacity: 0, scale: 0.9 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          transition={{ delay: 0.5 }}
-                          className="p-4 rounded-2xl bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100"
-                        >
-                          <div className="flex items-center gap-2 mb-4">
-                            <TrendUp className={`w-5 h-5 ${financialAnalysisEngine.balanceTrend >= 0 ? 'text-emerald-600' : 'text-rose-600'}`} />
-                            <h4 className="text-sm font-black text-indigo-800">Tendencia de Balance Neto</h4>
-                          </div>
-                          <div className="grid grid-cols-2 gap-3">
-                            <div className="p-3 bg-white/80 rounded-xl border border-indigo-100/50">
-                              <p className="text-[9px] font-black text-indigo-600 uppercase tracking-widest">Tendencia (3m)</p>
-                              <p className={`text-lg font-black ${financialAnalysisEngine.balanceTrend > 0 ? 'text-emerald-600' : financialAnalysisEngine.balanceTrend < 0 ? 'text-rose-600' : 'text-amber-600'}`}>
-                                {financialAnalysisEngine.balanceTrend > 0 ? '+' : ''}{financialAnalysisEngine.balanceTrend.toFixed(1)}%
-                              </p>
-                            </div>
-                            <div className="p-3 bg-white/80 rounded-xl border border-indigo-100/50">
-                              <p className="text-[9px] font-black text-indigo-600 uppercase tracking-widest">Estado</p>
-                              <p className={`text-sm font-black ${financialAnalysisEngine.balanceTrend > 5 ? 'text-emerald-600' : financialAnalysisEngine.balanceTrend > 0 ? 'text-indigo-600' : financialAnalysisEngine.balanceTrend < -5 ? 'text-rose-600' : 'text-amber-600'}`}>
-                                {financialAnalysisEngine.balanceTrend > 5 ? '↗ Crecimiento fuerte' :
-                                  financialAnalysisEngine.balanceTrend > 0 ? '↗ Crecimiento' :
-                                    financialAnalysisEngine.balanceTrend < -5 ? '↘ Caída fuerte' : '➖ Estable'}
-                              </p>
-                            </div>
-                          </div>
-                        </motion.div>
-                      </motion.div>
-                    )}
-
-                    {/* ========== 💡 RECOMENDACIONES ========== */}
-                    {activeAITab === 'recomendaciones' && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="space-y-3"
-                      >
-                        {financialAnalysisEngine.recommendations.length === 0 ? (
-                          <motion.div
-                            initial={{ opacity: 0, scale: 0.9 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            className="flex flex-col items-center p-8 bg-emerald-50/40 rounded-2xl border border-emerald-100 text-center"
-                          >
-                            <CheckCircle className="w-12 h-12 text-emerald-500 mb-3" />
-                            <p className="text-sm font-black text-emerald-700">¡Todo está optimizado!</p>
-                            <p className="text-[10px] text-gray-400 mt-1">No hay recomendaciones en este momento.</p>
-                          </motion.div>
-                        ) : (
-                          financialAnalysisEngine.recommendations.map((rec, idx) => {
-                            const priorityConfig = {
-                              1: { bg: 'bg-rose-50/80 border-rose-100', icon: <ShieldAlert className="w-4 h-4 text-rose-500" />, text: 'text-rose-900', label: 'URGENTE' },
-                              2: { bg: 'bg-amber-50/80 border-amber-100', icon: <AlertTriangle className="w-4 h-4 text-amber-500" />, text: 'text-amber-900', label: 'ALTA' },
-                              3: { bg: 'bg-indigo-50/80 border-indigo-100', icon: <Info className="w-4 h-4 text-indigo-500" />, text: 'text-indigo-900', label: 'MEDIA' },
-                              4: { bg: 'bg-emerald-50/80 border-emerald-100', icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" />, text: 'text-emerald-900', label: 'OPORTUNIDAD' },
-                            };
-                            const config = priorityConfig[rec.priority as keyof typeof priorityConfig];
-                            const borderColor = rec.priority === 1 ? '#f43f5e' : rec.priority === 2 ? '#f59e0b' : rec.priority === 3 ? '#6366f1' : '#10b981';
-
-                            return (
-                              <motion.div
-                                key={idx}
-                                initial={{ opacity: 0, x: -20 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                transition={{ delay: idx * 0.1 }}
-                                whileHover={{ scale: 1.02, x: 5 }}
-                                className={`flex gap-3 p-3.5 rounded-2xl border border-l-4 ${config.bg}`}
-                                style={{ borderLeftColor: borderColor }}
-                              >
-                                <motion.div whileHover={{ scale: 1.2 }}>{config.icon}</motion.div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <p className={`text-[10px] font-black ${config.text}`}>{rec.type}</p>
-                                    {rec.priority <= 2 && (
-                                      <span className={`text-[8px] bg-${rec.priority === 1 ? 'rose' : 'amber'}-100 text-${rec.priority === 1 ? 'rose' : 'amber'}-600 px-1.5 py-0.5 rounded font-bold animate-pulse`}>
-                                        {config.label}
-                                      </span>
-                                    )}
-                                    {rec.priority === 4 && (
-                                      <span className="text-[8px] bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded font-bold">💰 OPORTUNIDAD</span>
-                                    )}
-                                  </div>
-                                  <p className="text-[10px] text-gray-500 leading-relaxed">{rec.message}</p>
-                                  <p className="text-[9px] text-indigo-600 mt-1 font-semibold">→ {rec.action}</p>
-                                  {'potential' in rec && rec.potential && rec.potential > 0 && (
-                                    <p className="text-[9px] text-emerald-600 mt-1 font-bold">
-                                      Potencial: +S/ {fmt(rec.potential, 0)}
-                                    </p>
-                                  )}
-                                  <p className="text-[8px] text-gray-400 mt-1 font-semibold">
-                                    Categoría: <span className="text-indigo-600">{rec.category}</span>
-                                  </p>
-                                </div>
-                              </motion.div>
-                            );
-                          })
-                        )}
-                      </motion.div>
-                    )}
-
-                    {/* ========== 🔮 PROYECCIONES ========== */}
-                    {activeAITab === 'proyecciones' && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="space-y-4"
-                      >
-                        {financialAnalysisEngine.projections.length === 0 ? (
-                          <motion.div
-                            initial={{ opacity: 0, scale: 0.9 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            className="flex flex-col items-center p-8 bg-slate-50/40 rounded-2xl border border-slate-100 text-center"
-                          >
-                            <p className="text-sm font-black text-gray-400">No hay proyecciones disponibles</p>
-                          </motion.div>
-                        ) : (
-                          financialAnalysisEngine.projections.map((proj, idx) => {
-                            const typeConfig = {
-                              positive: { bg: 'bg-emerald-50/80 border-emerald-100', icon: <TrendUp className="w-5 h-5 text-emerald-500" />, text: 'text-emerald-900' },
-                              negative: { bg: 'bg-rose-50/80 border-rose-100', icon: <TrendingDown className="w-5 h-5 text-rose-500" />, text: 'text-rose-900' },
-                              neutral: { bg: 'bg-indigo-50/80 border-indigo-100', icon: <Clock className="w-5 h-5 text-indigo-500" />, text: 'text-indigo-900' },
-                            };
-                            const config = typeConfig[proj.type as keyof typeof typeConfig];
-
-                            return (
-                              <motion.div
-                                key={idx}
-                                initial={{ opacity: 0, y: 20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ delay: idx * 0.1 }}
-                                whileHover={{ scale: 1.02, y: -2 }}
-                                className={`p-4 rounded-2xl border ${config.bg}`}
-                              >
-                                <div className="flex items-center gap-3">
-                                  <motion.div whileHover={{ scale: 1.1 }} className="p-2 bg-white rounded-xl border border-gray-100">
-                                    {config.icon}
+                            <div className="mt-4 space-y-2">
+                              <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-2">Top 3 Categorías</p>
+                              {Object.entries(financialAnalysisEngine.incomeAnalysis.categories)
+                                .sort((a, b) => b[1].amount - a[1].amount)
+                                .slice(0, 3)
+                                .map(([name, data], idx) => (
+                                  <motion.div
+                                    key={idx}
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: 0.2 + idx * 0.1 }}
+                                    whileHover={{ scale: 1.02 }}
+                                    className="flex items-center gap-3 p-2 bg-white/80 rounded-xl border border-emerald-100/50"
+                                  >
+                                    <div className="w-2 h-2 bg-emerald-500 rounded-full" />
+                                    <div className="flex-1">
+                                      <p className="text-xs font-black text-gray-700 truncate">{name}</p>
+                                    </div>
+                                    <p className="text-xs font-black text-emerald-600">S/ {fmt(data.amount, 0)} ({data.percentage.toFixed(1)}%)</p>
                                   </motion.div>
-                                  <div className="flex-1">
-                                    <p className="text-sm font-black text-gray-800">{proj.title}</p>
-                                    <p className={`text-xl font-black ${config.text} mt-1`}>
-                                      {proj.unit === 'meses' ? `${proj.value} ${proj.unit}` : `S/ ${fmt(proj.value, 0)}`}
-                                    </p>
-                                    {proj.change !== 0 && (
-                                      <p className={`text-[10px] mt-1 ${proj.change > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                        {proj.change > 0 ? '+' : ''}S/ {fmt(Math.abs(proj.change), 0)} ({proj.change > 0 ? '+' : ''}{proj.changePct.toFixed(1)}%)
+                                ))}
+                            </div>
+                          </motion.div>
+
+                          {/* Análisis de Gastos */}
+                          <motion.div
+                            initial={{ opacity: 0, x: 20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: 0.2 }}
+                            className="p-4 rounded-2xl bg-gradient-to-br from-rose-50 to-pink-50 border border-rose-100"
+                          >
+                            <div className="flex items-center gap-2 mb-4">
+                              <TrendingDown className="w-5 h-5 text-rose-600" />
+                              <h4 className="text-sm font-black text-rose-800">Análisis de Gastos</h4>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="p-3 bg-white/80 rounded-xl border border-rose-100/50">
+                                <p className="text-[9px] font-black text-rose-600 uppercase tracking-widest">Total Anual</p>
+                                <p className="text-lg font-black text-rose-700">S/ {fmt(financialAnalysisEngine.expenseAnalysis.total, 0)}</p>
+                              </div>
+                              <div className="p-3 bg-white/80 rounded-xl border border-rose-100/50">
+                                <p className="text-[9px] font-black text-rose-600 uppercase tracking-widest">Promedio Mensual</p>
+                                <p className="text-lg font-black text-rose-700">S/ {fmt(financialAnalysisEngine.expenseAnalysis.averageMonthly, 0)}</p>
+                              </div>
+                              <div className="p-3 bg-white/80 rounded-xl border border-rose-100/50">
+                                <p className="text-[9px] font-black text-rose-600 uppercase tracking-widest">Tendencia (3m)</p>
+                                <p className={`text-lg font-black ${financialAnalysisEngine.expenseAnalysis.growthRate < 0 ? 'text-emerald-600' : financialAnalysisEngine.expenseAnalysis.growthRate > 0 ? 'text-rose-600' : 'text-amber-600'}`}>
+                                  {financialAnalysisEngine.expenseAnalysis.growthRate > 0 ? '+' : ''}{financialAnalysisEngine.expenseAnalysis.growthRate.toFixed(1)}%
+                                </p>
+                              </div>
+                              <div className="p-3 bg-white/80 rounded-xl border border-rose-100/50">
+                                <p className="text-[9px] font-black text-rose-600 uppercase tracking-widest">Gastos Fijos</p>
+                                <p className="text-lg font-black text-rose-700">{financialAnalysisEngine.expenseAnalysis.fixedVsVariable.fixedPct.toFixed(0)}%</p>
+                              </div>
+                            </div>
+                          </motion.div>
+
+                          {/* Análisis de Deudas */}
+                          <motion.div
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.3 }}
+                            className="p-4 rounded-2xl bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-100"
+                          >
+                            <div className="flex items-center gap-2 mb-4">
+                              <Clock className="w-5 h-5 text-amber-600" />
+                              <h4 className="text-sm font-black text-amber-800">Análisis de Deudas</h4>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="p-3 bg-white/80 rounded-xl border border-amber-100/50">
+                                <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest">Deuda Total</p>
+                                <p className="text-lg font-black text-amber-700">S/ {fmt(financialAnalysisEngine.debtAnalysis.total, 0)}</p>
+                              </div>
+                              <div className="p-3 bg-white/80 rounded-xl border border-amber-100/50">
+                                <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest">Ratio Deuda/Ingresos</p>
+                                <p className="text-lg font-black text-amber-700">{financialAnalysisEngine.debtAnalysis.debtToIncomeRatio.toFixed(1)}%</p>
+                              </div>
+                              <div className="p-3 bg-white/80 rounded-xl border border-amber-100/50">
+                                <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest">Vencidas</p>
+                                <p className="text-lg font-black text-rose-600">{financialAnalysisEngine.debtAnalysis.expired}</p>
+                              </div>
+                              <div className="p-3 bg-white/80 rounded-xl border border-amber-100/50">
+                                <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest">Para Hoy</p>
+                                <p className="text-lg font-black text-orange-600">{financialAnalysisEngine.debtAnalysis.dueToday}</p>
+                              </div>
+                            </div>
+                          </motion.div>
+
+                          {/* Análisis de Ahorros */}
+                          <motion.div
+                            initial={{ opacity: 0, x: -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: 0.4 }}
+                            className="p-4 rounded-2xl bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100"
+                          >
+                            <div className="flex items-center gap-2 mb-4">
+                              <Wallet className="w-5 h-5 text-indigo-600" />
+                              <h4 className="text-sm font-black text-indigo-800">Análisis de Ahorros</h4>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="p-3 bg-white/80 rounded-xl border border-indigo-100/50">
+                                <p className="text-[9px] font-black text-indigo-600 uppercase tracking-widest">Tasa de Ahorro</p>
+                                <p className="text-lg font-black text-indigo-700">{financialAnalysisEngine.savingsAnalysis.savingsRate.toFixed(1)}%</p>
+                              </div>
+                              <div className="p-3 bg-white/80 rounded-xl border border-indigo-100/50">
+                                <p className="text-[9px] font-black text-indigo-600 uppercase tracking-widest">Fondo Emergencia</p>
+                                <p className="text-lg font-black text-indigo-700">{financialAnalysisEngine.savingsAnalysis.emergencyFund.months} meses</p>
+                              </div>
+                              <div className="p-3 bg-white/80 rounded-xl border border-indigo-100/50 col-span-2">
+                                <p className="text-[9px] font-black text-indigo-600 uppercase tracking-widest">Meta Recomendada (3 meses)</p>
+                                <p className="text-sm font-black text-indigo-700 mt-1">S/ {fmt(financialAnalysisEngine.savingsAnalysis.emergencyFund.recommended, 0)}</p>
+                                <div className="mt-2 h-1.5 bg-indigo-100 rounded-full overflow-hidden">
+                                  <motion.div
+                                    className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full"
+                                    initial={{ width: 0 }}
+                                    animate={{ width: `${Math.min(100, (financialAnalysisEngine.savingsAnalysis.emergencyFund.amount / financialAnalysisEngine.savingsAnalysis.emergencyFund.recommended) * 100)}%` }}
+                                    transition={{ duration: 1.5 }}
+                                  />
+                                </div>
+                                <p className="text-[8px] text-indigo-500 font-bold mt-1 text-right">
+                                  {Math.min(100, (financialAnalysisEngine.savingsAnalysis.emergencyFund.amount / financialAnalysisEngine.savingsAnalysis.emergencyFund.recommended) * 100).toFixed(0)}% alcanzado
+                                </p>
+                              </div>
+                            </div>
+                          </motion.div>
+
+                          {/* Tendencia de Balance */}
+                          <motion.div
+                            initial={{ opacity: 0, scale: 0.9 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{ delay: 0.5 }}
+                            className="p-4 rounded-2xl bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100"
+                          >
+                            <div className="flex items-center gap-2 mb-4">
+                              <TrendUp className={`w-5 h-5 ${financialAnalysisEngine.balanceTrend >= 0 ? 'text-emerald-600' : 'text-rose-600'}`} />
+                              <h4 className="text-sm font-black text-indigo-800">Tendencia de Balance Neto</h4>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="p-3 bg-white/80 rounded-xl border border-indigo-100/50">
+                                <p className="text-[9px] font-black text-indigo-600 uppercase tracking-widest">Tendencia (3m)</p>
+                                <p className={`text-lg font-black ${financialAnalysisEngine.balanceTrend > 0 ? 'text-emerald-600' : financialAnalysisEngine.balanceTrend < 0 ? 'text-rose-600' : 'text-amber-600'}`}>
+                                  {financialAnalysisEngine.balanceTrend > 0 ? '+' : ''}{financialAnalysisEngine.balanceTrend.toFixed(1)}%
+                                </p>
+                              </div>
+                              <div className="p-3 bg-white/80 rounded-xl border border-indigo-100/50">
+                                <p className="text-[9px] font-black text-indigo-600 uppercase tracking-widest">Estado</p>
+                                <p className={`text-sm font-black ${financialAnalysisEngine.balanceTrend > 5 ? 'text-emerald-600' : financialAnalysisEngine.balanceTrend > 0 ? 'text-indigo-600' : financialAnalysisEngine.balanceTrend < -5 ? 'text-rose-600' : 'text-amber-600'}`}>
+                                  {financialAnalysisEngine.balanceTrend > 5 ? '↗ Crecimiento fuerte' :
+                                    financialAnalysisEngine.balanceTrend > 0 ? '↗ Crecimiento' :
+                                      financialAnalysisEngine.balanceTrend < -5 ? '↘ Caída fuerte' : '➖ Estable'}
+                                </p>
+                              </div>
+                            </div>
+                          </motion.div>
+                        </motion.div>
+                      )}
+
+                      {/* ========== 💡 RECOMENDACIONES ========== */}
+                      {activeAITab === 'recomendaciones' && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="space-y-3"
+                        >
+                          {/* Si no hay recomendaciones */}
+                          {financialAnalysisEngine.recommendations.length === 0 ? (
+                            <motion.div
+                              initial={{ opacity: 0, scale: 0.9 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              className="flex flex-col items-center p-8 bg-emerald-50/40 rounded-2xl border border-emerald-100 text-center"
+                            >
+                              <CheckCircle className="w-12 h-12 text-emerald-500 mb-3" />
+                              <p className="text-sm font-black text-emerald-700">¡Todo está optimizado!</p>
+                              <p className="text-[10px] text-gray-400 mt-1">No hay recomendaciones en este momento.</p>
+                            </motion.div>
+                          ) : (
+                            <>
+                              {/* Mostrar las primeras 3 recomendaciones (visibles sin scroll) */}
+                              {financialAnalysisEngine.recommendations.slice(0, 3).map((rec, idx) => (
+                                <motion.div
+                                  key={idx}
+                                  initial={{ opacity: 0, x: -20 }}
+                                  animate={{ opacity: 1, x: 0 }}
+                                  transition={{ delay: idx * 0.1 }}
+                                  whileHover={{ scale: 1.02, x: 5 }}
+                                  className={`flex gap-3 p-3.5 rounded-2xl border border-l-4 cursor-pointer ${rec.priority === 1 ? 'bg-rose-50/80 border-rose-100' :
+                                    rec.priority === 2 ? 'bg-amber-50/80 border-amber-100' :
+                                      rec.priority === 3 ? 'bg-indigo-50/80 border-indigo-100' :
+                                        'bg-emerald-50/80 border-emerald-100'
+                                    }`}
+                                  style={{ borderLeftColor: rec.priority === 1 ? '#f43f5e' : rec.priority === 2 ? '#f59e0b' : rec.priority === 3 ? '#6366f1' : '#10b981' }}
+                                  onClick={() => handleRecommendationClick(rec.category, rec.type)}
+                                >
+                                  <motion.div whileHover={{ scale: 1.2 }}>
+                                    {rec.priority === 1 ? <ShieldAlert className="w-4 h-4 text-rose-500" /> :
+                                      rec.priority === 2 ? <AlertTriangle className="w-4 h-4 text-amber-500" /> :
+                                        rec.priority === 3 ? <Info className="w-4 h-4 text-indigo-500" /> :
+                                          <CheckCircle2 className="w-4 h-4 text-emerald-500" />}
+                                  </motion.div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <p className={`text-[10px] font-black ${rec.priority === 1 ? 'text-rose-900' :
+                                        rec.priority === 2 ? 'text-amber-900' :
+                                          rec.priority === 3 ? 'text-indigo-900' :
+                                            'text-emerald-900'
+                                        }`}>
+                                        {rec.type}
+                                      </p>
+                                      {rec.priority <= 2 && (
+                                        <span className={`text-[8px] ${rec.priority === 1 ? 'bg-rose-100 text-rose-600' : 'bg-amber-100 text-amber-600'
+                                          } px-1.5 py-0.5 rounded font-bold animate-pulse`}>
+                                          {rec.priority === 1 ? 'URGENTE' : 'ALTA'}
+                                        </span>
+                                      )}
+                                      {rec.priority === 4 && (
+                                        <span className="text-[8px] bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded font-bold">💰 OPORTUNIDAD</span>
+                                      )}
+                                    </div>
+                                    <p className="text-[10px] text-gray-500 leading-relaxed truncate">{rec.message}</p>
+                                    <p className="text-[9px] text-indigo-600 mt-1 font-semibold truncate">→ {rec.action}</p>
+                                    {'potential' in rec && rec.potential > 0 && (
+                                      <p className="text-[9px] text-emerald-600 mt-1 font-bold">
+                                        Potencial: +S/ {fmt(rec.potential, 0)}
                                       </p>
                                     )}
+                                    <p className="text-[8px] text-gray-400 mt-1 font-semibold">
+                                      Categoría: <span className="text-indigo-600">{rec.category}</span>
+                                    </p>
                                   </div>
-                                </div>
-                              </motion.div>
-                            );
-                          })
-                        )}
-                      </motion.div>
-                    )}
-                  </motion.div>
-                </AnimatePresence>
+                                </motion.div>
+                              ))}
+
+                              {/* Si hay más de 3 recomendaciones, mostrar las restantes */}
+                              {financialAnalysisEngine.recommendations.length > 3 && (
+                                <>
+                                  {/* Divisor visual */}
+                                  <div className="pt-4 border-t border-gray-100 mt-2" />
+
+                                  {/* Recomendaciones adicionales (con scroll natural) */}
+                                  {financialAnalysisEngine.recommendations.slice(3).map((rec, idx) => (
+                                    <motion.div
+                                      key={idx + 3}
+                                      initial={{ opacity: 0, x: -20 }}
+                                      animate={{ opacity: 1, x: 0 }}
+                                      transition={{ delay: (idx + 3) * 0.1 }}
+                                      whileHover={{ scale: 1.02, x: 5 }}
+                                      className={`flex gap-3 p-3.5 rounded-2xl border border-l-4 cursor-pointer ${rec.priority === 1 ? 'bg-rose-50/80 border-rose-100' :
+                                        rec.priority === 2 ? 'bg-amber-50/80 border-amber-100' :
+                                          rec.priority === 3 ? 'bg-indigo-50/80 border-indigo-100' :
+                                            'bg-emerald-50/80 border-emerald-100'
+                                        }`}
+                                      style={{ borderLeftColor: rec.priority === 1 ? '#f43f5e' : rec.priority === 2 ? '#f59e0b' : rec.priority === 3 ? '#6366f1' : '#10b981' }}
+                                      onClick={() => handleRecommendationClick(rec.category, rec.type)}
+                                    >
+                                      <motion.div whileHover={{ scale: 1.2 }}>
+                                        {rec.priority === 1 ? <ShieldAlert className="w-4 h-4 text-rose-500" /> :
+                                          rec.priority === 2 ? <AlertTriangle className="w-4 h-4 text-amber-500" /> :
+                                            rec.priority === 3 ? <Info className="w-4 h-4 text-indigo-500" /> :
+                                              <CheckCircle2 className="w-4 h-4 text-emerald-500" />}
+                                      </motion.div>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 mb-1">
+                                          <p className={`text-[10px] font-black ${rec.priority === 1 ? 'text-rose-900' :
+                                            rec.priority === 2 ? 'text-amber-900' :
+                                              rec.priority === 3 ? 'text-indigo-900' :
+                                                'text-emerald-900'
+                                            }`}>
+                                            {rec.type}
+                                          </p>
+                                          {rec.priority <= 2 && (
+                                            <span className={`text-[8px] ${rec.priority === 1 ? 'bg-rose-100 text-rose-600' : 'bg-amber-100 text-amber-600'
+                                              } px-1.5 py-0.5 rounded font-bold animate-pulse`}>
+                                              {rec.priority === 1 ? 'URGENTE' : 'ALTA'}
+                                            </span>
+                                          )}
+                                          {rec.priority === 4 && (
+                                            <span className="text-[8px] bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded font-bold">💰 OPORTUNIDAD</span>
+                                          )}
+                                        </div>
+                                        <p className="text-[10px] text-gray-500 leading-relaxed truncate">{rec.message}</p>
+                                        <p className="text-[9px] text-indigo-600 mt-1 font-semibold truncate">→ {rec.action}</p>
+                                        {'potential' in rec && rec.potential > 0 && (
+                                          <p className="text-[9px] text-emerald-600 mt-1 font-bold">
+                                            Potencial: +S/ {fmt(rec.potential, 0)}
+                                          </p>
+                                        )}
+                                        <p className="text-[8px] text-gray-400 mt-1 font-semibold">
+                                          Categoría: <span className="text-indigo-600">{rec.category}</span>
+                                        </p>
+                                      </div>
+                                    </motion.div>
+                                  ))}
+                                </>
+                              )}
+                            </>
+                          )}
+                        </motion.div>
+                      )}
+
+                      {/* ========== 🔮 PROYECCIONES ========== */}
+                      {activeAITab === 'proyecciones' && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="space-y-4"
+                        >
+                          {financialAnalysisEngine.projections.length === 0 ? (
+                            <motion.div
+                              initial={{ opacity: 0, scale: 0.9 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              className="flex flex-col items-center p-8 bg-slate-50/40 rounded-2xl border border-slate-100 text-center"
+                            >
+                              <p className="text-sm font-black text-gray-400">No hay proyecciones disponibles</p>
+                            </motion.div>
+                          ) : (
+                            financialAnalysisEngine.projections.map((proj, idx) => {
+                              const typeConfig = {
+                                positive: { bg: 'bg-emerald-50/80 border-emerald-100', icon: <TrendUp className="w-5 h-5 text-emerald-500" />, text: 'text-emerald-900' },
+                                negative: { bg: 'bg-rose-50/80 border-rose-100', icon: <TrendingDown className="w-5 h-5 text-rose-500" />, text: 'text-rose-900' },
+                                neutral: { bg: 'bg-indigo-50/80 border-indigo-100', icon: <Clock className="w-5 h-5 text-indigo-500" />, text: 'text-indigo-900' },
+                              };
+                              const config = typeConfig[proj.type as keyof typeof typeConfig];
+
+                              return (
+                                <motion.div
+                                  key={idx}
+                                  initial={{ opacity: 0, y: 20 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  transition={{ delay: idx * 0.1 }}
+                                  whileHover={{ scale: 1.02, y: -2 }}
+                                  className={`p-4 rounded-2xl border ${config.bg}`}
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <motion.div whileHover={{ scale: 1.1 }} className="p-2 bg-white rounded-xl border border-gray-100">
+                                      {config.icon}
+                                    </motion.div>
+                                    <div className="flex-1">
+                                      <p className="text-sm font-black text-gray-800">{proj.title}</p>
+                                      <p className={`text-xl font-black ${config.text} mt-1`}>
+                                        {proj.unit === 'meses' ? `${proj.value} ${proj.unit}` : `S/ ${fmt(proj.value, 0)}`}
+                                      </p>
+                                      {proj.change !== 0 && (
+                                        <p className={`text-[10px] mt-1 ${proj.change > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                          {proj.change > 0 ? '+' : ''}S/ {fmt(Math.abs(proj.change), 0)} ({proj.change > 0 ? '+' : ''}{proj.changePct.toFixed(1)}%)
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                </motion.div>
+                              );
+                            })
+                          )}
+                        </motion.div>
+                      )}
+                    </motion.div>
+                  </AnimatePresence>
+                </div>
+
+                {/* --- Footer --- */}
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 1 }}
+                  className="mt-5 pt-4 border-t border-gray-100 flex items-center justify-between text-[9px] font-bold text-gray-400 uppercase tracking-widest"
+                >
+                  <span className="flex items-center gap-1">
+                    <Activity className="w-3 h-3" /> Análisis en tiempo real
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Calendar className="w-3 h-3" /> {YEAR}
+                  </span>
+                </motion.div>
               </div>
 
-              {/* --- Footer --- */}
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 1 }}
-                className="mt-5 pt-4 border-t border-gray-100 flex items-center justify-between text-[9px] font-bold text-gray-400 uppercase tracking-widest"
-              >
-                <span className="flex items-center gap-1">
-                  <Activity className="w-3 h-3" /> Análisis en tiempo real
-                </span>
-                <span className="flex items-center gap-1">
-                  <Calendar className="w-3 h-3" /> {YEAR}
-                </span>
-              </motion.div>
-            </div>
-            {/* ============================================= */}
-            {/* ============================================= */}
-
-            {/* Debt Payoff Simulator */}
-            <div className="bg-white rounded-3xl border border-gray-100 shadow-[0_20px_50px_rgba(0,0,0,0.04)] p-5 relative overflow-hidden">
-              <div className="absolute -left-6 -bottom-6 w-24 h-24 bg-emerald-400/5 rounded-full blur-xl" />
-              <div className="flex items-center gap-3 mb-5">
-                <div className="p-2.5 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl text-white shadow-md shadow-emerald-200/50">
-                  <PiggyBank className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-black text-gray-800">Simulador de Deuda</h3>
-                  <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">Proyección de Amortización</p>
-                </div>
-              </div>
-
-              {pendingStats.payable > 0 ? (() => {
-                const avgBal = totalBalance / 12;
-                const capacity = Math.max(avgBal + simulatorSavings, 0.01);
-                const months = pendingStats.payable <= 0 ? 0 : Math.ceil(pendingStats.payable / capacity);
-                const isAchievable = months <= 60;
-                const pct = Math.min((simulatorSavings / 5000) * 100, 100);
-                const colorClass = !isAchievable ? "text-rose-600 bg-rose-50 border-rose-100"
-                  : months <= 6 ? "text-emerald-600 bg-emerald-50 border-emerald-100"
-                    : months <= 18 ? "text-amber-600 bg-amber-50 border-amber-100"
-                      : "text-indigo-600 bg-indigo-50 border-indigo-100";
-
-                return (
-                  <>
-                    <div className="mb-4">
-                      <div className="flex justify-between items-center mb-2">
-                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Ahorro Extra Mensual</label>
-                        <span className="text-sm font-black text-emerald-600">S/ {simulatorSavings.toLocaleString()}</span>
-                      </div>
-                      <input
-                        type="range" min={0} max={5000} step={50}
-                        value={simulatorSavings}
-                        onChange={e => setSimulatorSavings(Number(e.target.value))}
-                        className="w-full sim-slider"
-                      />
-                      <div className="flex justify-between text-[9px] text-gray-300 font-black mt-1">
-                        <span>S/ 0</span><span>S/ 5,000</span>
-                      </div>
+              {/* Debt Payoff Simulator */}
+              {/* Contenedor para Simulador + Acción Rápida */}
+              {/* 👇 Si shouldStackModules es true, estos módulos se pondrán DEBAJO de la tabla */}
+              <div className={shouldStackModules ? "xl:col-span-2" : ""}>
+                <div className="bg-white rounded-3xl border border-gray-100 shadow-[0_20px_50px_rgba(0,0,0,0.04)] p-5 relative overflow-hidden">
+                  <div className="absolute -left-6 -bottom-6 w-24 h-24 bg-emerald-400/5 rounded-full blur-xl" />
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className="p-2.5 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl text-white shadow-md shadow-emerald-200/50">
+                      <PiggyBank className="w-5 h-5" />
                     </div>
-
-                    <div className={`p-4 rounded-2xl border ${colorClass}`}>
-                      <p className="text-[9px] font-black uppercase tracking-widest text-gray-500 mb-1">Tiempo para liquidar deuda</p>
-                      <p className={`text-3xl font-black ${colorClass.split(" ")[0]}`}>
-                        {!isAchievable ? "+60 meses" : months === 0 ? "¡Liquidada!" : `${months} ${months === 1 ? "mes" : "meses"}`}
-                      </p>
-                      <p className="text-[10px] text-gray-400 mt-1">
-                        Deuda total: S/ {fmt(pendingStats.payable, 0)}
-                      </p>
+                    <div>
+                      <h3 className="text-sm font-black text-gray-800">Simulador de Deuda</h3>
+                      <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">Proyección de Amortización</p>
                     </div>
-
-                    <div className="mt-3 h-2 bg-gray-100 rounded-full overflow-hidden">
-                      <div className="h-full bg-gradient-to-r from-emerald-400 to-teal-500 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
-                    </div>
-                    <p className="text-[9px] text-gray-400 text-center mt-2 font-semibold">
-                      {simulatorSavings > 0 ? `+S/${simulatorSavings}/mes reduce ${Math.ceil(pendingStats.payable / Math.max(avgBal, 0.01)) - months} meses` : "Mueve el slider para simular"}
-                    </p>
-                  </>
-                );
-              })() : (
-                <div className="flex flex-col items-center p-6 bg-emerald-50/40 rounded-2xl border border-emerald-100 text-center">
-                  <CheckCircle className="w-10 h-10 text-emerald-500 mb-2" />
-                  <p className="text-sm font-black text-emerald-700">¡Sin deudas!</p>
-                  <p className="text-[10px] text-gray-400 mt-1">Tu flujo está libre de compromisos por pagar.</p>
-                </div>
-              )}
-            </div>
-
-            {/* Urgent Pending Actions */}
-            <div className="bg-white rounded-3xl border border-gray-100 shadow-[0_20px_50px_rgba(0,0,0,0.04)] p-5 relative overflow-hidden">
-              <div className="absolute -right-4 -top-4 w-20 h-20 bg-rose-400/5 rounded-full blur-xl" />
-
-              <div className="flex items-center gap-3 mb-4">
-                <div className="p-2.5 bg-gradient-to-br from-rose-500 to-orange-500 rounded-xl text-white shadow-md shadow-rose-200/50">
-                  <Zap className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-black text-gray-800">Acción Rápida</h3>
-                  <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">Pendientes Urgentes</p>
-                </div>
-              </div>
-
-              {/* Totals */}
-              <div className="grid grid-cols-2 gap-2 mb-4 p-3 bg-slate-50/60 rounded-2xl border border-slate-100">
-                <div>
-                  <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Por Cobrar</p>
-                  <p className="text-sm font-black text-emerald-600">S/ {fmt(pendingStats.receivable, 0)}</p>
-                </div>
-                <div className="border-l border-slate-200 pl-3">
-                  <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Por Pagar</p>
-                  <p className="text-sm font-black text-rose-600">S/ {fmt(pendingStats.payable, 0)}</p>
-                </div>
-              </div>
-
-              <div className="space-y-2.5">
-                {pendingStats.urgent.length === 0 ? (
-                  <div className="flex flex-col items-center p-6 bg-emerald-50/40 rounded-2xl border border-emerald-100 text-center">
-                    <Check className="w-8 h-8 text-emerald-500 mb-1.5" />
-                    <p className="text-xs font-black text-emerald-700">¡Al día!</p>
-                    <p className="text-[10px] text-gray-400 mt-0.5">Sin compromisos urgentes pendientes.</p>
                   </div>
-                ) : pendingStats.urgent.map((item, idx) => {
-                  const isInc = item.type === "INCOME";
-                  const isExp = item.dueInfo.status === "EXPIRED";
-                  const isToday = item.dueInfo.status === "TODAY";
-                  let badge = "bg-slate-50 text-slate-500 border-slate-100";
-                  if (isExp) badge = "bg-rose-50 text-rose-600 border-rose-200 animate-pulse";
-                  else if (isToday) badge = "bg-orange-50 text-orange-600 border-orange-100";
-                  else badge = "bg-amber-50 text-amber-600 border-amber-100";
-                  const isPaying = payingId === (item.id || item._id);
 
-                  return (
-                    <div key={idx} className="group/item flex items-center justify-between p-3 bg-white/80 hover:bg-slate-50 border border-slate-100 rounded-2xl transition-all hover:shadow-sm">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className={`p-1.5 rounded-xl shrink-0 ${isInc ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-500"}`}>
-                          {isInc ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-xs font-black text-gray-800 truncate">{item.description || item.name || "Sin descripción"}</p>
-                          <div className="flex items-center gap-1 mt-0.5">
-                            <span className="text-[8px] text-gray-400 font-semibold">{item.category?.name || item.category || "Otros"}</span>
-                            <span className="text-gray-200">·</span>
-                            <span className={`text-[8px] px-1.5 py-0.5 rounded border font-bold ${badge}`}>{item.dueInfo.message}</span>
+                  {pendingStats.payable > 0 ? (() => {
+                    const avgBal = totalBalance / 12;
+                    const capacity = Math.max(avgBal + simulatorSavings, 0.01);
+                    const months = pendingStats.payable <= 0 ? 0 : Math.ceil(pendingStats.payable / capacity);
+                    const isAchievable = months <= 60;
+                    const pct = Math.min((simulatorSavings / 5000) * 100, 100);
+                    const colorClass = !isAchievable ? "text-rose-600 bg-rose-50 border-rose-100"
+                      : months <= 6 ? "text-emerald-600 bg-emerald-50 border-emerald-100"
+                        : months <= 18 ? "text-amber-600 bg-amber-50 border-amber-100"
+                          : "text-indigo-600 bg-indigo-50 border-indigo-100";
+
+                    return (
+                      <>
+                        <div className="mb-4">
+                          <div className="flex justify-between items-center mb-2">
+                            <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Ahorro Extra Mensual</label>
+                            <span className="text-sm font-black text-emerald-600">S/ {simulatorSavings.toLocaleString()}</span>
+                          </div>
+                          <input
+                            type="range" min={0} max={5000} step={50}
+                            value={simulatorSavings}
+                            onChange={e => setSimulatorSavings(Number(e.target.value))}
+                            className="w-full sim-slider"
+                          />
+                          <div className="flex justify-between text-[9px] text-gray-300 font-black mt-1">
+                            <span>S/ 0</span><span>S/ 5,000</span>
                           </div>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0 pl-2">
-                        <span className={`text-xs font-black ${isInc ? "text-emerald-600" : "text-rose-600"}`}>
-                          S/{item.amountSoles.toLocaleString("es-PE", { maximumFractionDigits: 0 })}
-                        </span>
-                        <button
-                          onClick={() => handleQuickPay(item.id || item._id)}
-                          disabled={isPaying}
-                          className={`p-1.5 rounded-xl border transition-all flex items-center justify-center ${isInc
-                            ? "bg-emerald-50 hover:bg-emerald-500 hover:text-white text-emerald-600 border-emerald-100 hover:shadow-lg hover:shadow-emerald-200"
-                            : "bg-rose-50 hover:bg-rose-500 hover:text-white text-rose-500 border-rose-100 hover:shadow-lg hover:shadow-rose-200"
-                            } disabled:opacity-50`}
-                          title={isInc ? "Registrar cobro" : "Registrar pago"}
-                        >
-                          {isPaying
-                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            : <Check className="w-3.5 h-3.5" />}
-                        </button>
-                      </div>
+
+                        <div className={`p-4 rounded-2xl border ${colorClass}`}>
+                          <p className="text-[9px] font-black uppercase tracking-widest text-gray-500 mb-1">Tiempo para liquidar deuda</p>
+                          <p className={`text-3xl font-black ${colorClass.split(" ")[0]}`}>
+                            {!isAchievable ? "+60 meses" : months === 0 ? "¡Liquidada!" : `${months} ${months === 1 ? "mes" : "meses"}`}
+                          </p>
+                          <p className="text-[10px] text-gray-400 mt-1">
+                            Deuda total: S/ {fmt(pendingStats.payable, 0)}
+                          </p>
+                        </div>
+
+                        <div className="mt-3 h-2 bg-gray-100 rounded-full overflow-hidden">
+                          <div className="h-full bg-gradient-to-r from-emerald-400 to-teal-500 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+                        </div>
+                        <p className="text-[9px] text-gray-400 text-center mt-2 font-semibold">
+                          {simulatorSavings > 0 ? `+S/${simulatorSavings}/mes reduce ${Math.ceil(pendingStats.payable / Math.max(avgBal, 0.01)) - months} meses` : "Mueve el slider para simular"}
+                        </p>
+                      </>
+                    );
+                  })() : (
+                    <div className="flex flex-col items-center p-6 bg-emerald-50/40 rounded-2xl border border-emerald-100 text-center">
+                      <CheckCircle className="w-10 h-10 text-emerald-500 mb-2" />
+                      <p className="text-sm font-black text-emerald-700">¡Sin deudas!</p>
+                      <p className="text-[10px] text-gray-400 mt-1">Tu flujo está libre de compromisos por pagar.</p>
                     </div>
-                  );
-                })}
+                  )}
+                </div>
+                {/* Urgent Pending Actions */}
+                <div className="bg-white rounded-3xl border border-gray-100 shadow-[0_20px_50px_rgba(0,0,0,0.04)] p-5 relative overflow-hidden">
+                  <div className="absolute -right-4 -top-4 w-20 h-20 bg-rose-400/5 rounded-full blur-xl" />
+
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2.5 bg-gradient-to-br from-rose-500 to-orange-500 rounded-xl text-white shadow-md shadow-rose-200/50">
+                      <Zap className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-black text-gray-800">Acción Rápida</h3>
+                      <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">Pendientes Urgentes</p>
+                    </div>
+                  </div>
+
+                  {/* Totals */}
+                  <div className="grid grid-cols-2 gap-2 mb-4 p-3 bg-slate-50/60 rounded-2xl border border-slate-100">
+                    <div>
+                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Por Cobrar</p>
+                      <p className="text-sm font-black text-emerald-600">S/ {fmt(pendingStats.receivable, 0)}</p>
+                    </div>
+                    <div className="border-l border-slate-200 pl-3">
+                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Por Pagar</p>
+                      <p className="text-sm font-black text-rose-600">S/ {fmt(pendingStats.payable, 0)}</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    {pendingStats.urgent.length === 0 ? (
+                      <div className="flex flex-col items-center p-6 bg-emerald-50/40 rounded-2xl border border-emerald-100 text-center">
+                        <Check className="w-8 h-8 text-emerald-500 mb-1.5" />
+                        <p className="text-xs font-black text-emerald-700">¡Al día!</p>
+                        <p className="text-[10px] text-gray-400 mt-0.5">Sin compromisos urgentes pendientes.</p>
+                      </div>
+                    ) : pendingStats.urgent.map((item, idx) => {
+                      const isInc = item.type === "INCOME";
+                      const isExp = item.dueInfo.status === "EXPIRED";
+                      const isToday = item.dueInfo.status === "TODAY";
+                      let badge = "bg-slate-50 text-slate-500 border-slate-100";
+                      if (isExp) badge = "bg-rose-50 text-rose-600 border-rose-200 animate-pulse";
+                      else if (isToday) badge = "bg-orange-50 text-orange-600 border-orange-100";
+                      else badge = "bg-amber-50 text-amber-600 border-amber-100";
+                      const isPaying = payingId === (item.id || item._id);
+
+                      return (
+                        <div key={idx} className="group/item flex items-center justify-between p-3 bg-white/80 hover:bg-slate-50 border border-slate-100 rounded-2xl transition-all hover:shadow-sm">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className={`p-1.5 rounded-xl shrink-0 ${isInc ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-500"}`}>
+                              {isInc ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs font-black text-gray-800 truncate">{item.description || item.name || "Sin descripción"}</p>
+                              <div className="flex items-center gap-1 mt-0.5">
+                                <span className="text-[8px] text-gray-400 font-semibold">{item.category?.name || item.category || "Otros"}</span>
+                                <span className="text-gray-200">·</span>
+                                <span className={`text-[8px] px-1.5 py-0.5 rounded border font-bold ${badge}`}>{item.dueInfo.message}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0 pl-2">
+                            <span className={`text-xs font-black ${isInc ? "text-emerald-600" : "text-rose-600"}`}>
+                              S/{item.amountSoles.toLocaleString("es-PE", { maximumFractionDigits: 0 })}
+                            </span>
+                            <button
+                              onClick={() => handleQuickPay(item.id || item._id)}
+                              disabled={isPaying}
+                              className={`p-1.5 rounded-xl border transition-all flex items-center justify-center ${isInc
+                                ? "bg-emerald-50 hover:bg-emerald-500 hover:text-white text-emerald-600 border-emerald-100 hover:shadow-lg hover:shadow-emerald-200"
+                                : "bg-rose-50 hover:bg-rose-500 hover:text-white text-rose-500 border-rose-100 hover:shadow-lg hover:shadow-rose-200"
+                                } disabled:opacity-50`}
+                              title={isInc ? "Registrar cobro" : "Registrar pago"}
+                            >
+                              {isPaying
+                                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                : <Check className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
+
         </div>
 
         {/* ── FOOTER STATUS BAR ─────────────────────────────────────────────── */}
@@ -2066,6 +2265,8 @@ export default function DashboardPage() {
         .sim-slider::-webkit-slider-thumb:hover { transform: scale(1.25); box-shadow: 0 4px 16px rgba(16,185,129,0.5); }
         .sim-slider::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: white; border: 3px solid #10b981; box-shadow: 0 2px 8px rgba(16,185,129,0.4); cursor: pointer; }
       ` }} />
+
+
     </Appshell>
   );
 }
