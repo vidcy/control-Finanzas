@@ -669,7 +669,7 @@ export default function DashboardPage() {
         type: liquidityAnalysis.cashFlow.projected3M > totalBalance ? 'positive' : 'negative',
         change: liquidityAnalysis.cashFlow.projected3M - totalBalance,
         changePct: ((liquidityAnalysis.cashFlow.projected3M - totalBalance) / totalBalance) * 100,
-        unit: null,
+        unit: "",
       },
       {
         title: 'Balance en 6 meses',
@@ -677,7 +677,7 @@ export default function DashboardPage() {
         type: liquidityAnalysis.cashFlow.projected6M > totalBalance ? 'positive' : 'negative',
         change: liquidityAnalysis.cashFlow.projected6M - totalBalance,
         changePct: ((liquidityAnalysis.cashFlow.projected6M - totalBalance) / totalBalance) * 100,
-        unit: null,
+        unit: "",
       },
       {
         title: 'Balance en 12 meses',
@@ -685,7 +685,7 @@ export default function DashboardPage() {
         type: liquidityAnalysis.cashFlow.projected12M > totalBalance ? 'positive' : 'negative',
         change: liquidityAnalysis.cashFlow.projected12M - totalBalance,
         changePct: ((liquidityAnalysis.cashFlow.projected12M - totalBalance) / totalBalance) * 100,
-        unit: null,
+        unit: "",
       },
     ];
 
