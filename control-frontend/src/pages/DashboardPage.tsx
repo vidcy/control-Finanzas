@@ -37,10 +37,11 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { getTransactionsRequest } from "../services/transaction.api";
+import { createTransactionRequest, getTransactionsRequest } from "../services/transaction.api";
 import { listPendingTransactionsRequest, markAsPaidRequest } from "../services/pending.api";
 import { toast } from "react-hot-toast";
-import { utcToPeruDate, getDueDateStatus } from "../utils/date.utils";
+import { utcToPeruDate, getDueDateStatus, peruInputDateToUtcISO } from "../utils/date.utils";
+import { listCategoriesRequest } from "../services/category.api";
 
 // ─── SAFE DATE PARSER (fixes April 1st UTC-midnight timezone rollback) ─────────
 const parseSafeDate = (raw: string | Date | undefined | null): Date => {
@@ -120,8 +121,6 @@ export default function DashboardPage() {
       setLoading(false); setRefreshing(false);
     }
   }, []);
-
-  useEffect(() => { loadData(); }, [loadData]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -244,31 +243,40 @@ export default function DashboardPage() {
 
   // Dentro del componente DashboardPage (después de los estados):
   const navigate = useNavigate();
-  const handleRecommendationClick = useCallback((category: string, type: string) => {
-    // Mapear el tipo de recomendación a la ruta y acción
-    if (type === "Ahorro" || type === "Baja Tasa de Ahorro" || type === "Sin Fondo de Emergencia" || type === "Mejora tu tasa de ahorro") {
-      // Redirige a Egresos con categoría "Ahorro Mensual" y abre el modal
-      navigate(`/expenses?openModal=true&category=${encodeURIComponent("Ahorro Mensual")}`);
+
+  const handleRecommendationClick = useCallback((
+    category: string,
+    type: string,
+    categoryId?: string,    // <-- Opcional
+    subCategoryId?: string, // <-- Opcional
+    module?: string,        // <-- Opcional
+    tab?: string            // <-- Opcional
+  ) => {
+    const queryParams = new URLSearchParams();
+    if (category) queryParams.set('category', category);
+    if (categoryId) queryParams.set('categoryId', categoryId);
+    if (subCategoryId) queryParams.set('subCategoryId', subCategoryId);
+    if (module) queryParams.set('module', module);  // <-- AÑADIDO (faltaba)
+    if (tab) queryParams.set('tab', tab);
+
+    // Lógica de navegación (ya la tienes bien)
+    if (type.includes("Ahorro") || type.includes("Fondo de Emergencia")) {
+      navigate(`/expenses?${queryParams.toString()}`);
     }
-    else if (type === "Ingresos" || type === "Diversifica ingresos" || type === "Dependencia de Ingresos" || type === "Cobranza") {
-      // Redirige a Ingresos con la categoría mencionada
-      navigate(`/income?openModal=true&category=${encodeURIComponent(category || "Otros Ingresos")}`);
+    else if (type.includes("Ingresos") || type === "Cobranza") {
+      navigate(`/income?${queryParams.toString()}`);
     }
-    else if (type === "Gastos" || type.includes("Ahorro en") || type === "Gastos en Crecimiento" || type === "Pagos para Hoy") {
-      // Redirige a Egresos con la categoría mencionada
-      navigate(`/expenses?openModal=true&category=${encodeURIComponent(category || "Otros Gastos")}`);
+    else if (type.includes("Gastos") || type.includes("Ahorro en") || type === "Pagos para Hoy") {
+      navigate(`/expenses?${queryParams.toString()}`);
     }
-    else if (type === "Deudas Vencidas" || type === "Sobreendeudamiento" || type === "Falta de Liquidez" || type === "Deudas") {
-      // Redirige a Pendientes (Por Pagar)
-      navigate("/pending?tab=PAYABLES");
+    else if (type.includes("Deudas") || type === "Falta de Liquidez" || type === "Sobreendeudamiento") {
+      navigate(`/pending?tab=PAYABLES&${queryParams.toString()}`);
     }
     else if (type === "Superávit") {
-      // Redirige a Pendientes (Por Cobrar)
-      navigate("/pending?tab=RECEIVABLES");
+      navigate(`/pending?tab=RECEIVABLES&${queryParams.toString()}`);
     }
     else {
-      // Caso por defecto: redirige a Ingresos
-      navigate("/income");
+      navigate(`/income?${queryParams.toString()}`);
     }
   }, [navigate]);
 
@@ -700,40 +708,72 @@ export default function DashboardPage() {
     const diagnosis = getDiagnosis();
 
     // ========== 📋 RECOMENDACIONES PRIORIZADAS ==========
+    // ✅ SOLUCIÓN: Normalización de recomendaciones (línea ~600)
     const recommendations = [
-      ...riskAnalysis.critical.map(r => ({ ...r, priority: 1, potential: 0, type: r.category })),
-      ...riskAnalysis.warnings.map(r => ({ ...r, priority: 2, potential: 0, type: r.category })),
+      // Críticos (con params y module definidos)
+      ...riskAnalysis.critical.map(r => ({
+        ...r,
+        priority: 1,
+        potential: 0,
+        type: r.type,          // ✅ Usar r.type (no r.category)
+        params: undefined,      // ✅ Añadido
+        module: undefined,      // ✅ Añadido
+      })),
+      // Advertencias
+      ...riskAnalysis.warnings.map(r => ({
+        ...r,
+        priority: 2,
+        potential: 0,
+        type: r.type,          // ✅ Usar r.type
+        params: undefined,      // ✅ Añadido
+        module: undefined,      // ✅ Añadido
+      })),
+      // Ahorro
       {
         type: 'Ahorro',
         message: `Aumenta tu tasa de ahorro al ${Math.min(30, Math.ceil(savingsAnalysis.savingsRate + 5))}%.`,
         action: `Destina un ${Math.min(30, Math.ceil(savingsAnalysis.savingsRate + 5))}% de tus ingresos a ahorro.`,
         category: 'Ahorro',
         priority: 3,
-        severity: 'medium' as const,
+        severity: 'medium',
         potential: 0,
+        params: undefined,      // ✅ Añadido
+        module: undefined,      // ✅ Añadido
       },
+      // Ingresos
       {
         type: 'Ingresos',
         message: `El ${(100 - incomeAnalysis.diversification).toFixed(0)}% de tus ingresos depende de una fuente.`,
         action: 'Busca fuentes adicionales de ingresos (freelance, inversiones, etc.).',
         category: 'Ingresos',
         priority: 3,
-        severity: 'medium' as const,
+        severity: 'medium',
         potential: 0,
+        params: undefined,      // ✅ Añadido
+        module: undefined,      // ✅ Añadido
       },
-      // ✅ AÑADIR ESTO (antes del .sort):
+      // Balance (si aplica)
       ...(balanceTrend < 0 ? [{
         type: 'Balance',
         message: `Tu balance neto ha caído un ${Math.abs(balanceTrend).toFixed(1)}% en los últimos meses.`,
         action: 'Revisa tus gastos recurrentes e identifica qué está causando esta tendencia negativa.',
         category: 'Balance',
         priority: balanceTrend < -5 ? 1 : 2,
-        severity: 'high' as const,
+        severity: 'high',
         potential: 0,
+        params: undefined,      // ✅ Añadido
+        module: undefined,      // ✅ Añadido
       }] : []),
-      ...riskAnalysis.opportunities.map(o => ({ ...o, priority: 4, severity: 'low' as const, type: o.category })),
+      // Oportunidades
+      ...riskAnalysis.opportunities.map(o => ({
+        ...o,
+        priority: 4,
+        severity: 'low',
+        type: o.type,            // ✅ Usar o.type (no o.category)
+        params: undefined,      // ✅ Añadido
+        module: undefined,      // ✅ Añadido
+      })),
     ].sort((a, b) => a.priority - b.priority);
-
     // ========== 🔮 PROYECCIONES ==========
     const projections = [
       {
@@ -864,14 +904,36 @@ export default function DashboardPage() {
 
 
   // Componente para renderizar una recomendación
-  const RecomendacionItem = ({ rec, idx, onClick }: { rec: any; idx: number; onClick: (category: string, type: string) => void }) => {
+  const RecommendationItem = ({
+    rec,
+    idx,
+    onClick,
+    children
+  }: {
+    rec: {
+      type: string;
+      message: string;
+      action: string;
+      category: string;
+      subCategory?: string;
+      priority: number;
+      module?: string;
+      params?: { tab?: string; categoryId?: string; subCategoryId?: string };
+      potential?: number;
+      confidence?: number;
+    };
+    idx: number;
+    onClick: (category: string, type: string, categoryId?: string, subCategoryId?: string, module?: string, tab?: string) => void;
+    children?: React.ReactNode;
+  }) => {
     const priorityConfig = {
       1: { bg: 'bg-rose-50/80 border-rose-100', icon: <ShieldAlert className="w-4 h-4 text-rose-500" />, text: 'text-rose-900', label: 'URGENTE' },
       2: { bg: 'bg-amber-50/80 border-amber-100', icon: <AlertTriangle className="w-4 h-4 text-amber-500" />, text: 'text-amber-900', label: 'ALTA' },
       3: { bg: 'bg-indigo-50/80 border-indigo-100', icon: <Info className="w-4 h-4 text-indigo-500" />, text: 'text-indigo-900', label: 'MEDIA' },
       4: { bg: 'bg-emerald-50/80 border-emerald-100', icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" />, text: 'text-emerald-900', label: 'OPORTUNIDAD' },
     };
-    const config = priorityConfig[rec.priority as keyof typeof priorityConfig];
+
+    const config = priorityConfig[rec.priority as keyof typeof priorityConfig] || priorityConfig[3];
     const borderColor = rec.priority === 1 ? '#f43f5e' : rec.priority === 2 ? '#f59e0b' : rec.priority === 3 ? '#6366f1' : '#10b981';
 
     return (
@@ -880,34 +942,66 @@ export default function DashboardPage() {
         animate={{ opacity: 1, x: 0 }}
         transition={{ delay: idx * 0.1 }}
         whileHover={{ scale: 1.02, x: 5 }}
-        className={`flex gap-3 p-3 rounded-2xl border border-l-4 ${config.bg} cursor-pointer`}
+        className={`flex gap-3 p-3.5 rounded-2xl border border-l-4 ${config.bg} cursor-pointer`}
         style={{ borderLeftColor: borderColor }}
-        onClick={() => onClick(rec.category, rec.type)}
+        onClick={() => onClick(
+          rec.category,
+          rec.type,
+          rec.params?.categoryId,
+          rec.params?.subCategoryId,
+          rec.module,
+          rec.params?.tab
+        )}
       >
-        <motion.div whileHover={{ scale: 1.2 }}>{config.icon}</motion.div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <p className={`text-[10px] font-black ${config.text}`}>{rec.type}</p>
-            {rec.priority <= 2 && (
-              <span className={`text-[8px] bg-${rec.priority === 1 ? 'rose' : 'amber'}-100 text-${rec.priority === 1 ? 'rose' : 'amber'}-600 px-1.5 py-0.5 rounded font-bold animate-pulse`}>
-                {config.label}
-              </span>
+        {children}
+        {/* ⬇️ COPIA ESTO AQUÍ (reemplaza el comentario) ⬇️ */}
+        <>
+          <motion.div whileHover={{ scale: 1.2 }}>
+            {rec.priority === 1 ? <ShieldAlert className="w-4 h-4 text-rose-500" /> :
+              rec.priority === 2 ? <AlertTriangle className="w-4 h-4 text-amber-500" /> :
+                rec.priority === 3 ? <Info className="w-4 h-4 text-indigo-500" /> :
+                  <CheckCircle2 className="w-4 h-4 text-emerald-500" />}
+          </motion.div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <p className={`text-[10px] font-black ${rec.priority === 1 ? 'text-rose-900' :
+                rec.priority === 2 ? 'text-amber-900' :
+                  rec.priority === 3 ? 'text-indigo-900' :
+                    'text-emerald-900'
+                }`}>
+                {rec.type}
+              </p>
+              {rec.priority <= 2 && (
+                <span className={`text-[8px] ${rec.priority === 1 ? 'bg-rose-100 text-rose-600' : 'bg-amber-100 text-amber-600'
+                  } px-1.5 py-0.5 rounded font-bold animate-pulse`}>
+                  {rec.priority === 1 ? 'URGENTE' : 'ALTA'}
+                </span>
+              )}
+              {rec.priority === 4 && (
+                <span className="text-[8px] bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded font-bold">💰 OPORTUNIDAD</span>
+              )}
+            </div>
+            <p className="text-[10px] text-gray-500 leading-relaxed truncate">{rec.message}</p>
+            <p className="text-[9px] text-indigo-600 mt-1 font-semibold truncate">→ {rec.action}</p>
+            {'potential' in rec && rec.potential > 0 && (
+              <p className="text-[9px] text-emerald-600 mt-1 font-bold">
+                Potencial: +S/ {fmt(rec.potential, 0)}
+              </p>
             )}
-            {rec.priority === 4 && (
-              <span className="text-[8px] bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded font-bold">💰 OPORTUNIDAD</span>
-            )}
-          </div>
-          <p className="text-[10px] text-gray-500 leading-relaxed truncate">{rec.message}</p>
-          <p className="text-[9px] text-indigo-600 mt-1 font-semibold truncate">→ {rec.action}</p>
-          {'potential' in rec && rec.potential > 0 && (
-            <p className="text-[9px] text-emerald-600 mt-1 font-bold">
-              Potencial: +S/ {fmt(rec.potential, 0)}
+            <p className="text-[8px] text-gray-400 mt-1 font-semibold">
+              Categoría: <span className="text-indigo-600">{rec.category}</span>
             </p>
-          )}
-        </div>
+          </div>
+        </>
+        {/* ⬆️ HASTA AQUÍ ⬆️ */}
       </motion.div>
     );
   };
+  // AGREGA ESTOS ESTADOS AL INICIO DEL COMPONENTE DashboardPage (después de los estados existentes):
+
+
+
+
   // ─────────────────────────────────────────────────────────────────────────────
   return (
     <Appshell>
@@ -1872,57 +1966,23 @@ export default function DashboardPage() {
                             <>
                               {/* Mostrar las primeras 3 recomendaciones (visibles sin scroll) */}
                               {financialAnalysisEngine.recommendations.slice(0, 3).map((rec, idx) => (
-                                <motion.div
+                                <RecommendationItem
                                   key={idx}
-                                  initial={{ opacity: 0, x: -20 }}
-                                  animate={{ opacity: 1, x: 0 }}
-                                  transition={{ delay: idx * 0.1 }}
-                                  whileHover={{ scale: 1.02, x: 5 }}
-                                  className={`flex gap-3 p-3.5 rounded-2xl border border-l-4 cursor-pointer ${rec.priority === 1 ? 'bg-rose-50/80 border-rose-100' :
-                                    rec.priority === 2 ? 'bg-amber-50/80 border-amber-100' :
-                                      rec.priority === 3 ? 'bg-indigo-50/80 border-indigo-100' :
-                                        'bg-emerald-50/80 border-emerald-100'
-                                    }`}
-                                  style={{ borderLeftColor: rec.priority === 1 ? '#f43f5e' : rec.priority === 2 ? '#f59e0b' : rec.priority === 3 ? '#6366f1' : '#10b981' }}
-                                  onClick={() => handleRecommendationClick(rec.category, rec.type)}
-                                >
-                                  <motion.div whileHover={{ scale: 1.2 }}>
-                                    {rec.priority === 1 ? <ShieldAlert className="w-4 h-4 text-rose-500" /> :
-                                      rec.priority === 2 ? <AlertTriangle className="w-4 h-4 text-amber-500" /> :
-                                        rec.priority === 3 ? <Info className="w-4 h-4 text-indigo-500" /> :
-                                          <CheckCircle2 className="w-4 h-4 text-emerald-500" />}
-                                  </motion.div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 mb-1">
-                                      <p className={`text-[10px] font-black ${rec.priority === 1 ? 'text-rose-900' :
-                                        rec.priority === 2 ? 'text-amber-900' :
-                                          rec.priority === 3 ? 'text-indigo-900' :
-                                            'text-emerald-900'
-                                        }`}>
-                                        {rec.type}
-                                      </p>
-                                      {rec.priority <= 2 && (
-                                        <span className={`text-[8px] ${rec.priority === 1 ? 'bg-rose-100 text-rose-600' : 'bg-amber-100 text-amber-600'
-                                          } px-1.5 py-0.5 rounded font-bold animate-pulse`}>
-                                          {rec.priority === 1 ? 'URGENTE' : 'ALTA'}
-                                        </span>
-                                      )}
-                                      {rec.priority === 4 && (
-                                        <span className="text-[8px] bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded font-bold">💰 OPORTUNIDAD</span>
-                                      )}
-                                    </div>
-                                    <p className="text-[10px] text-gray-500 leading-relaxed truncate">{rec.message}</p>
-                                    <p className="text-[9px] text-indigo-600 mt-1 font-semibold truncate">→ {rec.action}</p>
-                                    {'potential' in rec && rec.potential > 0 && (
-                                      <p className="text-[9px] text-emerald-600 mt-1 font-bold">
-                                        Potencial: +S/ {fmt(rec.potential, 0)}
-                                      </p>
-                                    )}
-                                    <p className="text-[8px] text-gray-400 mt-1 font-semibold">
-                                      Categoría: <span className="text-indigo-600">{rec.category}</span>
-                                    </p>
-                                  </div>
-                                </motion.div>
+                                  rec={rec}
+                                  idx={idx}
+                                  onClick={() =>
+                                    handleRecommendationClick(
+                                      rec.category,
+                                      rec.type,
+                                      rec.params?.categoryId,
+                                      rec.params?.subCategoryId,
+                                      rec.module,
+                                      rec.params?.tab
+                                    )
+                                  }>
+
+
+                                </RecommendationItem>
                               ))}
 
                               {/* Si hay más de 3 recomendaciones, mostrar las restantes */}
@@ -1945,7 +2005,16 @@ export default function DashboardPage() {
                                             'bg-emerald-50/80 border-emerald-100'
                                         }`}
                                       style={{ borderLeftColor: rec.priority === 1 ? '#f43f5e' : rec.priority === 2 ? '#f59e0b' : rec.priority === 3 ? '#6366f1' : '#10b981' }}
-                                      onClick={() => handleRecommendationClick(rec.category, rec.type)}
+                                      onClick={() =>
+                                        handleRecommendationClick(
+                                          rec.category,
+                                          rec.type,
+                                          rec.params?.categoryId,
+                                          rec.params?.subCategoryId,
+                                          rec.module,
+                                          rec.params?.tab
+                                        )
+                                      }
                                     >
                                       <motion.div whileHover={{ scale: 1.2 }}>
                                         {rec.priority === 1 ? <ShieldAlert className="w-4 h-4 text-rose-500" /> :
@@ -2265,12 +2334,242 @@ export default function DashboardPage() {
         .sim-slider::-webkit-slider-thumb:hover { transform: scale(1.25); box-shadow: 0 4px 16px rgba(16,185,129,0.5); }
         .sim-slider::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: white; border: 3px solid #10b981; box-shadow: 0 2px 8px rgba(16,185,129,0.4); cursor: pointer; }
       ` }} />
-
-
-    </Appshell>
+    </Appshell >
   );
 }
+// 🐷 BOTÓN FLOTANTE + MODAL (FUERA DE Appshell)
 
+export function FloatingSaveButton({ onSaveSuccess }: { onSaveSuccess?: () => void }) {
+  // Estados
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [saveAmount, setSaveAmount] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [ahorroCategoryId, setAhorroCategoryId] = useState<string>('');
+  const [selectedSubCategoryId, setSelectedSubCategoryId] = useState("");
+
+  // 🔥 Cargar categorías (IGUAL QUE EN IncomePage)
+  useEffect(() => {
+    const loadCategories = async () => {
+      try {
+        const data = await listCategoriesRequest();
+        setCategories(Array.isArray(data) ? data : []);
+
+        // 🔹 Buscar la categoría "Ahorros" (EXPENSE y sin parentId)
+        const ahorroCat = data.find((c: any) =>
+          (!c.parentId || c.parentId === null) &&
+          c.type === "EXPENSE" &&
+          (c.name.toLowerCase().includes('ahorro') || c.name.toLowerCase().includes('saving'))
+        );
+
+        if (ahorroCat) {
+          setAhorroCategoryId(ahorroCat.id);
+        } else {
+          // 🔹 Si no existe, crear una por defecto
+          setAhorroCategoryId('ahorros');
+          setCategories(prev => [
+            ...prev,
+            { id: 'ahorros', name: 'Ahorros', type: 'EXPENSE', parentId: null },
+            { id: 'emergencia', name: 'Fondo de Emergencia', type: 'EXPENSE', parentId: 'ahorros' },
+            { id: 'vacaciones', name: 'Vacaciones', type: 'EXPENSE', parentId: 'ahorros' },
+            { id: 'educacion', name: 'Educación', type: 'EXPENSE', parentId: 'ahorros' },
+          ]);
+        }
+      } catch (error) {
+        console.error('Error cargando categorías:', error);
+        // 🔹 Categorías por defecto
+        setCategories([
+          { id: 'ahorros', name: 'Ahorros', type: 'EXPENSE', parentId: null },
+          { id: 'emergencia', name: 'Fondo de Emergencia', type: 'EXPENSE', parentId: 'ahorros' },
+          { id: 'vacaciones', name: 'Vacaciones', type: 'EXPENSE', parentId: 'ahorros' },
+          { id: 'educacion', name: 'Educación', type: 'EXPENSE', parentId: 'ahorros' },
+        ]);
+        setAhorroCategoryId('ahorros');
+      }
+    };
+    loadCategories();
+  }, []);
+
+
+  // 🔹 Sub-categorías de "Ahorros" (IGUAL QUE EN IncomePage)
+  const ahorroSubCategories = categories.filter(c => c.parentId === ahorroCategoryId);
+
+  // Guardar ahorro
+  const handleSaveSavings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!saveAmount || parseFloat(saveAmount) <= 0) {
+      toast.error('Ingresa un monto válido');
+      return;
+    }
+    if (!selectedSubCategoryId) {
+      toast.error('Selecciona una sub-categoría');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const payload = {
+        date: peruInputDateToUtcISO(new Date().toISOString()),
+        paidAt: peruInputDateToUtcISO(new Date().toISOString()),
+        name: "Ahorro",
+        description: "Mi ahorro",
+        amount: Number('-' + saveAmount),
+        exchangeRate: Number("1.00"),
+        type: "EXPENSE",
+        currency: "PEN",
+        paymentMethod: "TRANSFER",
+        status: "PAID",
+        categoryId: ahorroCategoryId,
+        subCategoryId: selectedSubCategoryId || null,
+      };
+      setSaving(true);
+      // 🔥 CORREGIDO: Usar createTransactionRequest
+      await createTransactionRequest(payload as any);
+      toast.success('¡Ahorro registrado! 🎉');
+      setShowSaveModal(false);
+      setSaveAmount('');
+      setSelectedSubCategoryId('');
+      onSaveSuccess?.();
+    } catch (error) {
+      toast.error('Error al registrar el ahorro');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      {/* 🐷 BOTÓN FLOTANTE (FIJO EN INFERIOR DERECHA) */}
+      <button
+        onClick={() => setShowSaveModal(true)}
+        className="fixed bottom-6 right-6 z-[9999] group"
+        aria-label="Registrar ahorro rápido"
+      >
+        <div className="relative">
+          <span className="absolute -top-10 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-[10px] font-bold px-2 py-1 rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-lg">
+            Ahorro Rápido
+          </span>
+          <motion.div
+            whileHover={{ scale: 1.1, rotate: 5 }}
+            whileTap={{ scale: 0.95 }}
+            className="p-4 bg-gradient-to-br from-green-500 to-emerald-600 rounded-full shadow-xl shadow-green-200/50 border-4 border-white"
+          >
+            <PiggyBank className="w-7 h-7 text-white" />
+            <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center font-bold">
+              +
+            </span>
+          </motion.div>
+        </div>
+      </button>
+
+      {/* MODAL (z-index más alto que el botón) */}
+      <AnimatePresence>
+        {showSaveModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[10000]"
+            onClick={() => setShowSaveModal(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="bg-white rounded-3xl border border-gray-100 shadow-2xl w-full max-w-md p-6 relative"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl">
+                    <PiggyBank className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-black text-gray-800">Registrar Ahorro</h2>
+                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">
+                      Ahorro Rápido
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowSaveModal(false)}
+                  className="p-2 hover:bg-gray-50 rounded-xl transition-colors"
+                >
+                  <X className="w-5 h-5 text-gray-400" />
+                </button>
+              </div>
+
+              {/* Formulario */}
+              <div className="space-y-4">
+                {/* Monto */}
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">
+                    Monto (S/.)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">S/.</span>
+                    <input
+                      type="number"
+                      value={saveAmount}
+                      onChange={(e) => setSaveAmount(e.target.value)}
+                      placeholder="0.00"
+                      step="0.01"
+                      min="0.01"
+                      className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all"
+                    />
+                  </div>
+                </div>
+
+                {/* 🔥 SUB-CATEGORÍA DE AHORROS (IGUAL QUE EN IncomePage) */}
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">
+                    Tipo de Ahorro
+                  </label>
+                  <div className="relative">
+                    <select
+                      required
+                      className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-green-500/10 focus:border-green-500 transition-all text-sm font-black text-gray-700 appearance-none shadow-sm"
+                      value={selectedSubCategoryId}
+                      onChange={(e) => setSelectedSubCategoryId(e.target.value)}
+                    >
+                      <option value="">Seleccionar...</option>
+                      {ahorroSubCategories.map((sc) => (
+                        <option key={sc.id} value={sc.id}>
+                          {sc.name}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-green-400 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </div>
+                </div>
+
+                {/* Botón Guardar */}
+                <button
+                  onClick={handleSaveSavings}
+                  disabled={saving || !saveAmount || !selectedSubCategoryId}
+                  className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black py-4 rounded-2xl hover:shadow-lg hover:shadow-green-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {saving ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Guardando...
+                    </>
+                  ) : (
+                    <>
+                      <PiggyBank className="w-5 h-5" />
+                      Guardar Ahorro
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
+  );
+}
 // ─── KPI CARD COMPONENT ────────────────────────────────────────────────────────
 function KPICard({
   label, value, color, icon, sub, subPositive,

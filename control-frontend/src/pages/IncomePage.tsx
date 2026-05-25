@@ -36,7 +36,7 @@ import {
   formatPeruDate,
   formatPeruTime,
 } from "../utils/date.utils";
-import { useTransactionModal } from "../auth/TransactionModalContext";
+
 
 type Income = {
   id: string;
