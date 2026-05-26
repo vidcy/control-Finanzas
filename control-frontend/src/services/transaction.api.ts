@@ -56,9 +56,9 @@ export const updateTransactionRequest = async (
     categoryId: string;
     subCategoryId: string;
     amount: number;
-    date: string;
-    dueDate?: string;
-    paidAt?: string;
+    date: Date;
+    dueDate?: Date;
+    paidAt?: Date;
     currency: "PEN" | "USD";
     exchangeRate?: number;
     paymentMethod: string;
@@ -69,9 +69,9 @@ export const updateTransactionRequest = async (
   try {
     const payload = {
       ...data,
-      date: new Date(data.date).toISOString(),
-      dueDate: data.dueDate ? new Date(data.dueDate).toISOString() : undefined,
-      paidAt: data.paidAt ? new Date(data.paidAt).toISOString() : undefined,
+      date: new Date(data.date),
+      dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
+      paidAt: data.paidAt ? new Date(data.paidAt) : undefined,
     };
 
     const res = await API.patch(`/transactions/${id}`, payload);

@@ -64,7 +64,8 @@ export default function ExpensesPage() {
 
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [isConfirmDelete, setIsConfirmDelete] = useState(false);
+  const [isConfirmReturn, setIsConfirmReturn] = useState(false);
   const [idToDelete, setIdToDelete] = useState<string | null>(null);
   const [idStatus, setStatus] = useState<string | null>(null);
   const [idToReturn, setIdToReturn] = useState<string | null>(null);
@@ -235,6 +236,18 @@ export default function ExpensesPage() {
     }
   };
 
+  useEffect(() => {
+    const handleTransactionCreated = () => {
+      loadData(); // ✅ Recarga automáticamente
+    };
+
+    window.addEventListener('transactionCreated', handleTransactionCreated);
+
+    return () => {
+      window.removeEventListener('transactionCreated', handleTransactionCreated);
+    };
+  }, []);
+
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const filteredCategories = (
@@ -368,7 +381,7 @@ export default function ExpensesPage() {
 
   const handleDelete = (id: string) => {
     setIdToDelete(id);
-    setIsConfirmOpen(true);
+    setIsConfirmDelete(true);
   };
 
   const confirmDelete = async () => {
@@ -376,7 +389,7 @@ export default function ExpensesPage() {
     try {
       await deleteTransactionRequest(idToDelete);
       toast.success("Eliminado correctamente");
-      setIsConfirmOpen(false);
+      setIsConfirmDelete(false); ''
       loadData();
     } catch (error: unknown) {
       const message =
@@ -387,7 +400,7 @@ export default function ExpensesPage() {
   const handleStatus = async (id: string, status: string) => {
     setIdToReturn(id);
     setStatus(status);
-    setIsConfirmOpen(true);
+    setIsConfirmReturn(true);
   };
   const confirmReturn = async () => {
     if (!idToReturn) return;
@@ -1204,15 +1217,15 @@ export default function ExpensesPage() {
         </Modal>
 
         <ConfirmModal
-          isOpen={isConfirmOpen}
-          onClose={() => setIsConfirmOpen(false)}
+          isOpen={isConfirmDelete}
+          onClose={() => setIsConfirmDelete(false)}
           onConfirm={confirmDelete}
           title="Eliminar Egreso"
           message="¿Estás seguro de que deseas eliminar este registro de gasto permanentemente?"
         />
         <ConfirmModal
-          isOpen={isConfirmOpen}
-          onClose={() => setIsConfirmOpen(false)}
+          isOpen={isConfirmReturn}
+          onClose={() => setIsConfirmReturn(false)}
           onConfirm={confirmReturn}
           title="Devolver egreso"
           message="¿Estás seguro de que deseas devolver este registro a cuentas por Pagar?"

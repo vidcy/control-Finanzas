@@ -40,7 +40,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { createTransactionRequest, getTransactionsRequest } from "../services/transaction.api";
 import { listPendingTransactionsRequest, markAsPaidRequest } from "../services/pending.api";
 import { toast } from "react-hot-toast";
-import { utcToPeruDate, getDueDateStatus, peruInputDateToUtcISO } from "../utils/date.utils";
+import { utcToPeruDate, getDueDateStatus } from "../utils/date.utils";
 import { listCategoriesRequest } from "../services/category.api";
 
 // ─── SAFE DATE PARSER (fixes April 1st UTC-midnight timezone rollback) ─────────
@@ -2337,6 +2337,8 @@ export default function DashboardPage() {
     </Appshell >
   );
 }
+
+
 // 🐷 BOTÓN FLOTANTE + MODAL (FUERA DE Appshell)
 
 export function FloatingSaveButton({ onSaveSuccess }: { onSaveSuccess?: () => void }) {
@@ -2347,6 +2349,7 @@ export function FloatingSaveButton({ onSaveSuccess }: { onSaveSuccess?: () => vo
   const [categories, setCategories] = useState<any[]>([]);
   const [ahorroCategoryId, setAhorroCategoryId] = useState<string>('');
   const [selectedSubCategoryId, setSelectedSubCategoryId] = useState("");
+
 
   // 🔥 Cargar categorías (IGUAL QUE EN IncomePage)
   useEffect(() => {
@@ -2408,30 +2411,38 @@ export function FloatingSaveButton({ onSaveSuccess }: { onSaveSuccess?: () => vo
 
     setSaving(true);
     try {
+      // ✅ CORRECCIONES:
       const payload = {
-        date: peruInputDateToUtcISO(new Date().toISOString()),
-        paidAt: peruInputDateToUtcISO(new Date().toISOString()),
-        name: "Ahorro",
-        description: "Mi ahorro",
-        amount: Number('-' + saveAmount),
-        exchangeRate: Number("1.00"),
+        date: new Date(), // or your selected date
+        paidAt: new Date(),
+        name: "Ahorro Rápido",
+        description: `Ahorro rápido de ${saveAmount}`,
+        amount: parseFloat(saveAmount),
+        exchangeRate: 1, // or your actual exchange rate as number
         type: "EXPENSE",
         currency: "PEN",
-        paymentMethod: "TRANSFER",
+        paymentMethod: "CASH", // or your default payment method
         status: "PAID",
         categoryId: ahorroCategoryId,
-        subCategoryId: selectedSubCategoryId || null,
+        subCategoryId: selectedSubCategoryId,
       };
-      setSaving(true);
-      // 🔥 CORREGIDO: Usar createTransactionRequest
+
+      // ✅ Usar createTransactionRequest (ya lo tienes importado)
       await createTransactionRequest(payload as any);
+
       toast.success('¡Ahorro registrado! 🎉');
       setShowSaveModal(false);
       setSaveAmount('');
       setSelectedSubCategoryId('');
       onSaveSuccess?.();
-    } catch (error) {
-      toast.error('Error al registrar el ahorro');
+      // ✅ AGREGAR PARA ACTUALIZAR AUTOMÁTICAMENTE:
+      // ✅ AGREGA ESTA LÍNEA (dispara el evento global)
+      window.dispatchEvent(new CustomEvent('transactionCreated'));
+
+    } catch (error: any) {
+      // ✅ AGREGADO: Para ver el error real en consola
+      console.error('Error detallado:', error.response?.data || error.message || error);
+      toast.error(error?.response?.data?.message || error?.message || 'Error al registrar el ahorro');
     } finally {
       setSaving(false);
     }
