@@ -992,7 +992,7 @@ export default function DashboardPage() {
             </div>
             <p className="text-[10px] text-gray-500 leading-relaxed truncate">{rec.message}</p>
             <p className="text-[9px] text-indigo-600 mt-1 font-semibold truncate">→ {rec.action}</p>
-            {'potential' in rec && rec.potential > 0 && (
+            {rec.potential !== undefined && rec.potential > 0 && (
               <p className="text-[9px] text-emerald-600 mt-1 font-bold">
                 Potencial: +S/ {fmt(rec.potential, 0)}
               </p>
@@ -2070,9 +2070,9 @@ export default function DashboardPage() {
                                         </div>
                                         <p className="text-[10px] text-gray-500 leading-relaxed truncate">{rec.message}</p>
                                         <p className="text-[9px] text-indigo-600 mt-1 font-semibold truncate">→ {rec.action}</p>
-                                        {'potential' in rec && rec.potential > 0 && (
+                                        {rec.potential !== undefined && rec.potential > 0 && (
                                           <p className="text-[9px] text-emerald-600 mt-1 font-bold">
-                                            Potencial: +S/ {fmt(rec.potential, 0)}
+                                            Potencial: +S/ {fmt(rec.potential ?? 0, 0)}  // ✅ Añade ?? 0 para garantizar número
                                           </p>
                                         )}
                                         <p className="text-[8px] text-gray-400 mt-1 font-semibold">
