@@ -43,6 +43,26 @@ import { toast } from "react-hot-toast";
 import { utcToPeruDate, getDueDateStatus } from "../utils/date.utils";
 import { listCategoriesRequest } from "../services/category.api";
 
+
+// 📌 AGREGA ESTA INTERFAZ AL INICIO DEL ARCHIVO
+interface Recommendation {
+  type: string;
+  message: string;
+  action: string;
+  category: string;
+  subCategory?: string;
+  priority: number;
+  severity?: 'high' | 'medium' | 'low';
+  module?: string;
+  params?: {
+    tab?: string;
+    categoryId?: string;
+    subCategoryId?: string;
+  };
+  potential?: number;
+  confidence?: number;
+}
+
 // ─── SAFE DATE PARSER (fixes April 1st UTC-midnight timezone rollback) ─────────
 const parseSafeDate = (raw: string | Date | undefined | null): Date => {
   if (!raw) return new Date(NaN);
@@ -716,7 +736,7 @@ export default function DashboardPage() {
         priority: 1,
         potential: 0,
         type: r.type,          // ✅ Usar r.type (no r.category)
-        params: undefined,      // ✅ Añadido
+        params: {},      // ✅ Añadido
         module: undefined,      // ✅ Añadido
       })),
       // Advertencias
@@ -725,7 +745,7 @@ export default function DashboardPage() {
         priority: 2,
         potential: 0,
         type: r.type,          // ✅ Usar r.type
-        params: undefined,      // ✅ Añadido
+        params: {},      // ✅ Añadido
         module: undefined,      // ✅ Añadido
       })),
       // Ahorro
@@ -737,7 +757,7 @@ export default function DashboardPage() {
         priority: 3,
         severity: 'medium',
         potential: 0,
-        params: undefined,      // ✅ Añadido
+        params: {},      // ✅ Añadido
         module: undefined,      // ✅ Añadido
       },
       // Ingresos
@@ -749,7 +769,7 @@ export default function DashboardPage() {
         priority: 3,
         severity: 'medium',
         potential: 0,
-        params: undefined,      // ✅ Añadido
+        params: {},      // ✅ Añadido
         module: undefined,      // ✅ Añadido
       },
       // Balance (si aplica)
@@ -761,7 +781,7 @@ export default function DashboardPage() {
         priority: balanceTrend < -5 ? 1 : 2,
         severity: 'high',
         potential: 0,
-        params: undefined,      // ✅ Añadido
+        params: {},      // ✅ Añadido
         module: undefined,      // ✅ Añadido
       }] : []),
       // Oportunidades
@@ -770,7 +790,7 @@ export default function DashboardPage() {
         priority: 4,
         severity: 'low',
         type: o.type,            // ✅ Usar o.type (no o.category)
-        params: undefined,      // ✅ Añadido
+        params: {},      // ✅ Añadido
         module: undefined,      // ✅ Añadido
       })),
     ].sort((a, b) => a.priority - b.priority);
@@ -910,18 +930,7 @@ export default function DashboardPage() {
     onClick,
     children
   }: {
-    rec: {
-      type: string;
-      message: string;
-      action: string;
-      category: string;
-      subCategory?: string;
-      priority: number;
-      module?: string;
-      params?: { tab?: string; categoryId?: string; subCategoryId?: string };
-      potential?: number;
-      confidence?: number;
-    };
+    rec: Recommendation;
     idx: number;
     onClick: (category: string, type: string, categoryId?: string, subCategoryId?: string, module?: string, tab?: string) => void;
     children?: React.ReactNode;
@@ -1965,7 +1974,16 @@ export default function DashboardPage() {
                           ) : (
                             <>
                               {/* Mostrar las primeras 3 recomendaciones (visibles sin scroll) */}
-                              {financialAnalysisEngine.recommendations.slice(0, 3).map((rec, idx) => (
+                              {(financialAnalysisEngine.recommendations as Array<{
+                                type: string;
+                                message: string;
+                                action: string;
+                                category: string;
+                                priority: number;
+                                params?: { categoryId?: string; subCategoryId?: string; tab?: string };
+                                module?: string;
+                                potential?: number;
+                              }>).slice(0, 3).map((rec, idx) => (
                                 <RecommendationItem
                                   key={idx}
                                   rec={rec}
@@ -1992,7 +2010,16 @@ export default function DashboardPage() {
                                   <div className="pt-4 border-t border-gray-100 mt-2" />
 
                                   {/* Recomendaciones adicionales (con scroll natural) */}
-                                  {financialAnalysisEngine.recommendations.slice(3).map((rec, idx) => (
+                                  {(financialAnalysisEngine.recommendations as Array<{
+                                    type: string;
+                                    message: string;
+                                    action: string;
+                                    category: string;
+                                    priority: number;
+                                    params?: { categoryId?: string; subCategoryId?: string; tab?: string };
+                                    module?: string;
+                                    potential?: number;
+                                  }>).slice(0, 3).map((rec, idx) => (
                                     <motion.div
                                       key={idx + 3}
                                       initial={{ opacity: 0, x: -20 }}
