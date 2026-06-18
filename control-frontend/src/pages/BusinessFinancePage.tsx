@@ -139,7 +139,7 @@ export default function BusinessFinancePage() {
                   setType("INCOME");
                   setIsModalOpen(true);
                 }}
-                className="px-5 py-3 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-xl font-bold flex items-center gap-2 hover:bg-emerald-500/30 transition-all"
+                className="px-5 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/30 hover:scale-[1.02] active:scale-[0.98] rounded-xl font-bold flex items-center gap-2 transition-all"
               >
                 <ArrowUpRight className="w-5 h-5" /> Nuevo Ingreso
               </button>
@@ -148,7 +148,7 @@ export default function BusinessFinancePage() {
                   setType("EXPENSE");
                   setIsModalOpen(true);
                 }}
-                className="px-5 py-3 bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-xl font-bold flex items-center gap-2 hover:bg-rose-500/30 transition-all"
+                className="px-5 py-3 bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-lg shadow-rose-500/20 hover:shadow-rose-500/30 hover:scale-[1.02] active:scale-[0.98] rounded-xl font-bold flex items-center gap-2 transition-all"
               >
                 <ArrowDownRight className="w-5 h-5" /> Nuevo Gasto (OPEX)
               </button>

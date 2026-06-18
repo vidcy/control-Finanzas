@@ -22,10 +22,13 @@ import {
   PieChart,
   Vault,
   DollarSign,
-  Target
+  Target,
+  History,
 } from "lucide-react";
+
 import { toast } from "react-hot-toast";
 import { updateUserProfilesRequest } from "../../services/user.api";
+
 import NotificationDropdown from "./NotificationDropdown";
 import { formatPeruTime } from "../../utils/date.utils";
 import Modal from "../ui/Modal";
@@ -227,6 +230,13 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       icon: Tags,
       color: "from-amber-400 to-amber-600",
       bgActive: "bg-amber-50 text-amber-700",
+    },
+    {
+      name: "Historial",
+      path: "/business-history",
+      icon: History,
+      color: "from-violet-400 to-purple-600",
+      bgActive: "bg-violet-50 text-violet-700",
     },
   ];
 

@@ -75,5 +75,3 @@ export class CreatePendingTransactionDto {
   @IsString()
   workspace?: string;
 }
-
-

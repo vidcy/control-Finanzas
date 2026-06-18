@@ -3,8 +3,8 @@ import fetch from 'node-fetch';
 
 @Injectable()
 export class MailService {
-  private readonly apiKey = process.env.SMTP2GO_API_KEY!;
-  private readonly sender = process.env.SMTP2GO_SENDER!;
+  private readonly apiKey = process.env.SMTP2GO_API_KEY;
+  private readonly sender = process.env.SMTP2GO_SENDER;
   // ejemplo: noreply@tudominio.com
 
   async sendResetPassword(email: string, token: string) {

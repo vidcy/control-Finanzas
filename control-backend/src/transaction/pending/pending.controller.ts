@@ -20,7 +20,7 @@ import { UpdatePendingTransactionDto } from './update-pending.dto';
 
 @Controller('pending')
 export class PendingTransactionController {
-  constructor(private readonly service: PendingTransactionService) { }
+  constructor(private readonly service: PendingTransactionService) {}
 
   // 🔹 Crear transacción
   @UseGuards(JwtAuthGuard)
@@ -33,7 +33,11 @@ export class PendingTransactionController {
   }
   @UseGuards(JwtAuthGuard)
   @Get()
-  listPendingTransactions(@Req() req, @Query('type') type?: TransactionType, @Query('workspace') workspace?: string) {
+  listPendingTransactions(
+    @Req() req,
+    @Query('type') type?: TransactionType,
+    @Query('workspace') workspace?: string,
+  ) {
     return this.service.listPendingTransactions(req.user.id, type, workspace);
   }
   @UseGuards(JwtAuthGuard)

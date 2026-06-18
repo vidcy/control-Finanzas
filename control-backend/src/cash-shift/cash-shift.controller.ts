@@ -1,4 +1,11 @@
-import { Controller, Post, Get, Body, UseGuards, Request } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  UseGuards,
+  Request,
+} from '@nestjs/common';
 import { CashShiftService } from './cash-shift.service';
 import { JwtAuthGuard } from '../auth/jwt.guard';
 
@@ -8,7 +15,10 @@ export class CashShiftController {
   constructor(private readonly cashShiftService: CashShiftService) {}
 
   @Post('open')
-  async openShift(@Request() req, @Body('initialBalance') initialBalance: number) {
+  async openShift(
+    @Request() req,
+    @Body('initialBalance') initialBalance: number,
+  ) {
     return this.cashShiftService.openShift(req.user.id, initialBalance);
   }
 

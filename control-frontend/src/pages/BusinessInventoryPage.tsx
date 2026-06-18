@@ -6,20 +6,54 @@ import {
   Search,
   Edit2,
   Trash2,
-  AlertCircle,
   TrendingUp,
+  Image,
+  X,
 } from "lucide-react";
 import {
   getProductsRequest,
   createProductRequest,
   updateProductRequest,
   deleteProductRequest,
+  restockProductRequest,
 } from "../services/product.api";
-import type { Product } from "../services/product.api";
-import { createTransactionRequest } from "../services/transaction.api";
+import type { Product, Presentation } from "../services/product.api";
 import { listCategoriesRequest } from "../services/category.api";
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
+import { getReceiptAbsoluteUrl, ProductImageUploader } from "../components/ui/ImageUploader";
+
+
+
+// Helper to format stock quantities into mixed presentations dynamically
+export function formatStock(stock: number, unit: string, presentations?: Presentation[]) {
+  if (!presentations || presentations.length === 0) {
+    return `${parseFloat(stock.toFixed(2))} ${unit}`;
+  }
+
+  // Sort presentations by equivalence descending, excluding equivalence = 1 to prevent loops
+  const sorted = [...presentations]
+    .filter((p) => p.equivalence > 1)
+    .sort((a, b) => b.equivalence - a.equivalence);
+
+  let remaining = stock;
+  const parts: string[] = [];
+
+  for (const p of sorted) {
+    if (remaining >= p.equivalence) {
+      const qty = Math.floor(remaining / p.equivalence);
+      remaining = remaining % p.equivalence;
+      parts.push(`${qty} ${p.name}`);
+    }
+  }
+
+  const rounded = parseFloat(remaining.toFixed(2));
+  if (rounded > 0 || parts.length === 0) {
+    parts.push(`${rounded} ${unit}`);
+  }
+
+  return parts.join(" + ");
+}
 
 export default function BusinessInventoryPage() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -42,10 +76,14 @@ export default function BusinessInventoryPage() {
     salePrice: 0,
     stock: 0,
     minStock: 5,
+    unit: "Kg",
+    imageUrl: "",
+    presentations: [] as Presentation[],
   });
 
   const [restockData, setRestockData] = useState({
     quantity: 0,
+    presentationId: "",
     totalCost: 0,
     categoryId: "",
     paymentMethod: "CASH",
@@ -82,6 +120,9 @@ export default function BusinessInventoryPage() {
         salePrice: product.salePrice,
         stock: product.stock,
         minStock: product.minStock,
+        unit: product.unit || "Kg",
+        imageUrl: product.imageUrl || "",
+        presentations: product.presentations || [],
       });
     } else {
       setEditingProduct(null);
@@ -93,6 +134,9 @@ export default function BusinessInventoryPage() {
         salePrice: 0,
         stock: 0,
         minStock: 5,
+        unit: "Kg",
+        imageUrl: "",
+        presentations: [],
       });
     }
     setIsModalOpen(true);
@@ -101,17 +145,21 @@ export default function BusinessInventoryPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const payload = {
+        ...formData,
+        imageUrl: formData.imageUrl || null,
+      };
       if (editingProduct) {
-        await updateProductRequest(editingProduct.id, formData);
+        await updateProductRequest(editingProduct.id, payload);
         toast.success("Producto actualizado");
       } else {
-        await createProductRequest(formData);
+        await createProductRequest(payload);
         toast.success("Producto creado");
       }
       setIsModalOpen(false);
       loadData();
-    } catch (error) {
-      toast.error("Error al guardar producto");
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || "Error al guardar producto");
     }
   };
 
@@ -124,37 +172,26 @@ export default function BusinessInventoryPage() {
     }
 
     try {
-      // 1. Aumentar Stock
-      await updateProductRequest(restockProduct.id, {
-        stock: restockProduct.stock + restockData.quantity,
-      });
-
-      // 2. Crear Transacción Automática
-      await createTransactionRequest({
-        name: `Compra de Mercadería: ${restockProduct.name} (+${restockData.quantity})`,
-        type: "EXPENSE",
-        amount: restockData.totalCost,
+      await restockProductRequest(restockProduct.id, {
+        quantity: restockData.quantity,
+        presentationId: restockData.presentationId || undefined,
+        totalCost: restockData.totalCost,
         categoryId: restockData.categoryId,
-        subCategoryId: "",
-        date: new Date().toISOString(),
-        status: "PAID",
-        currency: "PEN",
         paymentMethod: restockData.paymentMethod,
-        description: `Reposición de stock generada automáticamente desde el inventario.`,
-        workspace: "BUSINESS",
       });
 
-      toast.success("Stock repuesto y gasto registrado contablemente");
+      toast.success("Stock repuesto y egreso registrado contablemente");
       setIsRestockModalOpen(false);
       setRestockData({
         quantity: 0,
+        presentationId: "",
         totalCost: 0,
         categoryId: "",
         paymentMethod: "CASH",
       });
       loadData();
-    } catch (error) {
-      toast.error("Error al reponer stock");
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || "Error al reponer stock");
     }
   };
 
@@ -164,8 +201,8 @@ export default function BusinessInventoryPage() {
         await deleteProductRequest(id);
         toast.success("Producto eliminado");
         loadData();
-      } catch (error) {
-        toast.error("Error al eliminar");
+      } catch (error: any) {
+        toast.error(error?.response?.data?.message || "Error al eliminar");
       }
     }
   };
@@ -173,6 +210,10 @@ export default function BusinessInventoryPage() {
   const filteredProducts = products.filter((p) =>
     p.name.toLowerCase().includes(searchTerm.toLowerCase()),
   );
+
+  const selectedPres = restockProduct?.presentations?.find((p) => p.id === restockData.presentationId);
+  const restockEquivalence = selectedPres ? selectedPres.equivalence : 1;
+  const restockEquivalencyText = `${restockData.quantity * restockEquivalence} ${restockProduct?.unit || ""}`;
 
   return (
     <Appshell>
@@ -185,11 +226,9 @@ export default function BusinessInventoryPage() {
               <div className="inline-flex items-center justify-center p-3 bg-white rounded-2xl mb-4 border border-indigo-100 shadow-sm">
                 <Package className="w-8 h-8 text-indigo-600" />
               </div>
-              <h1 className="text-4xl font-black tracking-tight">
-                Inventario
-              </h1>
+              <h1 className="text-4xl font-black tracking-tight">Inventario</h1>
               <p className="text-gray-500 font-medium mt-2 max-w-lg">
-                Mantén el control exacto de tus productos, costos y precios de venta.
+                Mantén el control exacto de tus productos, presentaciones y stock de forma intuitiva.
               </p>
             </div>
             <button
@@ -216,110 +255,125 @@ export default function BusinessInventoryPage() {
           </div>
         </div>
 
-        {/* TABLE */}
-        <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-gray-50 text-gray-500 uppercase text-xs font-semibold">
-                <tr>
-                  <th className="px-6 py-4">Producto</th>
-                  <th className="px-6 py-4">SKU</th>
-                  <th className="px-6 py-4 text-right">Costo</th>
-                  <th className="px-6 py-4 text-right">P. Venta</th>
-                  <th className="px-6 py-4 text-right">Stock</th>
-                  <th className="px-6 py-4 text-center">Acciones</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {loading ? (
-                  <tr>
-                    <td
-                      colSpan={6}
-                      className="px-6 py-8 text-center text-gray-500"
-                    >
-                      Cargando inventario...
-                    </td>
-                  </tr>
-                ) : filteredProducts.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={6}
-                      className="px-6 py-8 text-center text-gray-500"
-                    >
-                      No hay productos. ¡Agrega uno nuevo!
-                    </td>
-                  </tr>
-                ) : (
-                  filteredProducts.map((p) => (
-                    <tr
-                      key={p.id}
-                      className="hover:bg-gray-50 transition-colors group"
-                    >
-                      <td className="px-6 py-4">
-                        <div className="font-semibold text-gray-900">
-                          {p.name}
-                        </div>
-                        {p.description && (
-                          <div className="text-xs text-gray-500 truncate max-w-[200px]">
-                            {p.description}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 text-gray-500 font-mono text-xs">
-                        {p.sku || "-"}
-                      </td>
-                      <td className="px-6 py-4 text-right font-medium text-gray-600">
-                        S/ {p.costPrice.toFixed(2)}
-                      </td>
-                      <td className="px-6 py-4 text-right font-medium text-gray-900">
-                        S/ {p.salePrice.toFixed(2)}
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <div
-                          className={`inline-flex items-center justify-center px-2.5 py-1 rounded-lg font-bold text-xs ${p.stock <= p.minStock ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}
-                        >
-                          {p.stock}
-                          {p.stock <= p.minStock && (
-                            <AlertCircle className="w-3 h-3 ml-1" />
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => {
-                              setRestockProduct(p);
-                              setRestockData({
-                                ...restockData,
-                                totalCost: p.costPrice,
-                              });
-                              setIsRestockModalOpen(true);
-                            }}
-                            className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                            title="Reponer Stock (Compra)"
+        {/* CARDS GRID */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {loading ? (
+            Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="bg-white rounded-2xl p-4 animate-pulse border border-gray-100">
+                <div className="w-full h-32 bg-gray-100 rounded-xl mb-3"></div>
+                <div className="h-4 bg-gray-100 rounded w-3/4 mb-2"></div>
+                <div className="h-3 bg-gray-100 rounded w-1/2"></div>
+              </div>
+            ))
+          ) : filteredProducts.length === 0 ? (
+            <div className="col-span-full text-center py-16 text-gray-400">
+              <Package className="w-16 h-16 mx-auto mb-4 opacity-30" />
+              <p className="font-bold text-lg">No hay productos. ¡Agrega uno nuevo!</p>
+            </div>
+          ) : (
+            filteredProducts.map((p) => (
+              <div
+                key={p.id}
+                className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all group overflow-hidden flex flex-col"
+              >
+                {/* Product Image */}
+                <div className="relative w-full h-36 bg-gradient-to-br from-gray-50 to-indigo-50 overflow-hidden">
+                  {p.imageUrl ? (
+                    <img
+                      src={getReceiptAbsoluteUrl(p.imageUrl) || p.imageUrl}
+                      alt={p.name}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = "none";
+                      }}
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <Package className="w-12 h-12 text-indigo-200" />
+                    </div>
+                  )}
+                  {/* Stock badge */}
+                  <div className={`absolute top-2 right-2 px-2 py-1 rounded-lg text-[10px] font-black shadow-sm ${p.stock <= p.minStock ? "bg-red-500 text-white" : "bg-emerald-500 text-white"}`}>
+                    {p.stock <= p.minStock ? "⚠ Stock bajo" : "✓ En stock"}
+                  </div>
+                </div>
+
+                {/* Content */}
+                <div className="p-4 flex-1 flex flex-col">
+                  <div className="flex-1">
+                    <h3 className="font-black text-gray-900 text-sm leading-tight mb-1">{p.name}</h3>
+                    {p.sku && <p className="text-[10px] text-gray-400 font-mono mb-1">SKU: {p.sku}</p>}
+
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      {p.presentations && p.presentations.length > 0 ? (
+                        p.presentations.slice(0, 2).map((pres) => (
+                          <span
+                            key={pres.id}
+                            className="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded-md text-[9px] font-bold"
+                            title={`Equivale a ${pres.equivalence} ${p.unit}`}
                           >
-                            <TrendingUp className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleOpenModal(p)}
-                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(p.id)}
-                            className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                            {pres.name}
+                          </span>
+                        ))
+                      ) : null}
+                    </div>
+
+                    <div className="bg-gray-50 rounded-xl p-2 mb-3">
+                      <div className="text-[10px] text-gray-500 font-semibold mb-0.5">Stock actual</div>
+                      <div className="font-black text-gray-900 text-xs">
+                        {formatStock(p.stock, p.unit, p.presentations)}
+                      </div>
+                      <div className="text-[9px] text-gray-400">{p.stock} {p.unit} base</div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <div className="text-[9px] text-gray-400 font-medium">Costo</div>
+                        <div className="text-sm font-bold text-gray-700">S/ {p.costPrice.toFixed(2)}</div>
+                      </div>
+                      <div>
+                        <div className="text-[9px] text-gray-400 font-medium">Venta</div>
+                        <div className="text-sm font-black text-indigo-600">S/ {p.salePrice.toFixed(2)}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex gap-1.5 mt-3 pt-3 border-t border-gray-100">
+                    <button
+                      onClick={() => {
+                        setRestockProduct(p);
+                        setRestockData({
+                          quantity: 1,
+                          presentationId: p.presentations?.[0]?.id || "",
+                          totalCost: p.costPrice * (p.presentations?.[0]?.equivalence || 1),
+                          categoryId: "",
+                          paymentMethod: "CASH",
+                        });
+                        setIsRestockModalOpen(true);
+                      }}
+                      className="flex-1 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-bold hover:bg-emerald-100 transition-colors flex items-center justify-center gap-1"
+                      title="Reponer Stock"
+                    >
+                      <TrendingUp className="w-3 h-3" /> Comprar
+                    </button>
+                    <button
+                      onClick={() => handleOpenModal(p)}
+                      className="flex-1 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-bold hover:bg-blue-100 transition-colors flex items-center justify-center gap-1"
+                    >
+                      <Edit2 className="w-3 h-3" /> Editar
+                    </button>
+                    <button
+                      onClick={() => handleDelete(p.id)}
+                      className="px-2 py-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
 
@@ -330,143 +384,238 @@ export default function BusinessInventoryPage() {
         title={editingProduct ? "Editar Producto" : "Nuevo Producto"}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* IMAGEN DEL PRODUCTO */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+              <Image className="w-4 h-4 text-indigo-500" />
+              Foto del Producto (opcional)
+            </label>
+            {formData.imageUrl ? (
+              <div className="relative">
+                <img
+                  src={getReceiptAbsoluteUrl(formData.imageUrl) || formData.imageUrl}
+                  alt="Producto"
+                  className="w-full h-40 object-cover rounded-xl border border-gray-200"
+                />
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, imageUrl: "" })}
+                  className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            ) : (
+              <ProductImageUploader
+                currentImageUrl={null}
+                onUploadSuccess={(url) => setFormData({ ...formData, imageUrl: url })}
+                onClear={() => setFormData({ ...formData, imageUrl: "" })}
+              />
+
+            )}
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="md:col-span-2">
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Nombre
-              </label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Nombre *</label>
               <input
                 type="text"
                 required
                 value={formData.name}
-                onChange={(e) =>
-                  setFormData({ ...formData, name: e.target.value })
-                }
-                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-                placeholder="Ej. Zapatillas Nike"
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                placeholder="Ej. Arroz Extra"
               />
             </div>
             <div className="md:col-span-2">
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Descripción
-              </label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Descripción</label>
               <input
                 type="text"
                 value={formData.description}
-                onChange={(e) =>
-                  setFormData({ ...formData, description: e.target.value })
-                }
-                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                 placeholder="Opcional"
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                SKU / Código
-              </label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">SKU / Código</label>
               <input
                 type="text"
                 value={formData.sku}
-                onChange={(e) =>
-                  setFormData({ ...formData, sku: e.target.value })
-                }
-                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-                placeholder="Ej. NK-001"
+                onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                placeholder="Ej. ARR-001"
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Stock Actual
-              </label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Unidad Principal</label>
+              <select
+                value={formData.unit}
+                onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+              >
+                <option value="Kg">Kg</option>
+                <option value="Litro">Litro</option>
+                <option value="Metro">Metro</option>
+                <option value="Unidad">Unidad</option>
+                <option value="Par">Par</option>
+                <option value="Caja">Caja</option>
+                <option value="Rollo">Rollo</option>
+                <option value="Saco">Saco</option>
+                <option value="Bolsa">Bolsa</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Stock Inicial ({formData.unit})</label>
               <input
                 type="number"
                 required
                 min="0"
+                step="any"
                 value={formData.stock}
-                onChange={(e) =>
-                  setFormData({ ...formData, stock: Number(e.target.value) })
-                }
-                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                onChange={(e) => setFormData({ ...formData, stock: Number(e.target.value) })}
+                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Precio de Compra (Costo)
-              </label>
-              <div className="relative">
-                <span className="absolute left-3 top-2.5 text-gray-500">
-                  S/
-                </span>
-                <input
-                  type="number"
-                  required
-                  min="0"
-                  step="0.01"
-                  value={formData.costPrice}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      costPrice: Number(e.target.value),
-                    })
-                  }
-                  className="w-full pl-8 pr-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Precio de Venta
-              </label>
-              <div className="relative">
-                <span className="absolute left-3 top-2.5 text-gray-500">
-                  S/
-                </span>
-                <input
-                  type="number"
-                  required
-                  min="0"
-                  step="0.01"
-                  value={formData.salePrice}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      salePrice: Number(e.target.value),
-                    })
-                  }
-                  className="w-full pl-8 pr-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-                />
-              </div>
-            </div>
-            <div className="md:col-span-2">
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Stock Mínimo (Alerta)
-              </label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Stock Mínimo (Alerta)</label>
               <input
                 type="number"
                 required
                 min="0"
+                step="any"
                 value={formData.minStock}
-                onChange={(e) =>
-                  setFormData({ ...formData, minStock: Number(e.target.value) })
-                }
-                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                onChange={(e) => setFormData({ ...formData, minStock: Number(e.target.value) })}
+                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
               />
-              <p className="text-xs text-gray-500 mt-1">
-                Te avisaremos si el stock cae por debajo de este número.
-              </p>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">P. Compra (Costo Base) S/</label>
+              <input
+                type="number"
+                required
+                min="0"
+                step="0.01"
+                value={formData.costPrice}
+                onChange={(e) => setFormData({ ...formData, costPrice: Number(e.target.value) })}
+                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">P. Venta (Base) S/</label>
+              <input
+                type="number"
+                required
+                min="0"
+                step="0.01"
+                value={formData.salePrice}
+                onChange={(e) => setFormData({ ...formData, salePrice: Number(e.target.value) })}
+                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+              />
+            </div>
+
+            {/* PRESENTATIONS */}
+            <div className="md:col-span-2 border-t border-gray-100 pt-4">
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-sm font-bold text-gray-700">Presentaciones / Empaques</h3>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFormData({
+                      ...formData,
+                      presentations: [
+                        ...formData.presentations,
+                        { name: "", equivalence: 1, price: formData.salePrice },
+                      ],
+                    })
+                  }
+                  className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-bold hover:bg-indigo-100"
+                >
+                  + Agregar Presentación
+                </button>
+              </div>
+
+              {formData.presentations.length === 0 ? (
+                <p className="text-xs text-gray-400 italic bg-gray-50 p-3 rounded-xl">
+                  Sin presentaciones adicionales. Se venderá por {formData.unit}.
+                </p>
+              ) : (
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                  {formData.presentations.map((pres, index) => (
+                    <div key={index} className="flex gap-2 items-center bg-gray-50 p-2 rounded-xl border border-gray-100">
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ej. Saco, Medio Saco"
+                        value={pres.name}
+                        onChange={(e) => {
+                          const newPres = [...formData.presentations];
+                          newPres[index] = { ...newPres[index], name: e.target.value };
+                          setFormData({ ...formData, presentations: newPres });
+                        }}
+                        className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                      />
+                      <div className="flex items-center gap-1 text-xs">
+                        <span className="text-gray-400 text-[10px]">= </span>
+                        <input
+                          type="number"
+                          required
+                          min="0.001"
+                          step="any"
+                          value={pres.equivalence}
+                          onChange={(e) => {
+                            const newPres = [...formData.presentations];
+                            newPres[index] = { ...newPres[index], equivalence: Number(e.target.value) };
+                            setFormData({ ...formData, presentations: newPres });
+                          }}
+                          className="w-14 px-2 py-1.5 border border-gray-200 rounded-lg outline-none text-center focus:ring-1 focus:ring-indigo-500 bg-white text-xs"
+                        />
+                        <span className="text-gray-500 font-bold text-[10px]">{formData.unit}</span>
+                      </div>
+                      <div className="flex items-center gap-1 text-xs">
+                        <span className="text-gray-400 text-[10px]">S/</span>
+                        <input
+                          type="number"
+                          required
+                          min="0"
+                          step="0.01"
+                          value={pres.price}
+                          onChange={(e) => {
+                            const newPres = [...formData.presentations];
+                            newPres[index] = { ...newPres[index], price: Number(e.target.value) };
+                            setFormData({ ...formData, presentations: newPres });
+                          }}
+                          className="w-18 px-2 py-1.5 border border-gray-200 rounded-lg outline-none text-right focus:ring-1 focus:ring-indigo-500 bg-white text-xs"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newPres = formData.presentations.filter((_, i) => i !== index);
+                          setFormData({ ...formData, presentations: newPres });
+                        }}
+                        className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
+
           <div className="mt-6 flex justify-end gap-3">
             <button
               type="button"
               onClick={() => setIsModalOpen(false)}
-              className="px-5 py-2.5 bg-gray-100 text-gray-700 font-medium rounded-xl hover:bg-gray-200 transition-colors"
+              className="px-5 py-2.5 bg-gray-100 text-gray-700 font-medium rounded-xl hover:bg-gray-200"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              className="px-5 py-2.5 bg-indigo-600 text-white font-medium rounded-xl hover:bg-indigo-700 transition-colors shadow-sm shadow-indigo-500/30"
+              className="px-5 py-2.5 bg-indigo-600 text-white font-medium rounded-xl hover:bg-indigo-700 shadow-sm shadow-indigo-500/30"
             >
               Guardar Producto
             </button>
@@ -481,90 +630,110 @@ export default function BusinessInventoryPage() {
         title="Comprar / Reponer Stock"
       >
         <form onSubmit={handleRestockSubmit} className="space-y-4">
-          <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-xl mb-4">
-            <h4 className="font-bold text-indigo-900">
-              {restockProduct?.name}
-            </h4>
-            <p className="text-sm text-indigo-700">
-              Stock Actual: {restockProduct?.stock}
-            </p>
+          <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-xl mb-4 flex gap-4 items-center">
+            {restockProduct?.imageUrl && (
+              <img
+                src={getReceiptAbsoluteUrl(restockProduct.imageUrl) || restockProduct.imageUrl}
+                alt={restockProduct.name}
+                className="w-14 h-14 object-cover rounded-xl border border-indigo-200"
+                onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}
+              />
+            )}
+            <div>
+              <h4 className="font-bold text-indigo-900">{restockProduct?.name}</h4>
+              <p className="text-sm text-indigo-700 font-medium mt-1">
+                Stock Actual: {restockProduct ? formatStock(restockProduct.stock, restockProduct.unit, restockProduct.presentations) : ""}
+              </p>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Comprar en presentación</label>
+              <select
+                value={restockData.presentationId}
+                onChange={(e) => {
+                  const presId = e.target.value;
+                  const pres = restockProduct?.presentations?.find((p) => p.id === presId);
+                  const equiv = pres ? pres.equivalence : 1;
+                  const qty = restockData.quantity || 1;
+                  setRestockData({
+                    ...restockData,
+                    presentationId: presId,
+                    totalCost: qty * (restockProduct?.costPrice || 0) * equiv,
+                  });
+                }}
+                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+              >
+                <option value="">{restockProduct?.unit} (Unidad Principal)</option>
+                {restockProduct?.presentations?.map((pres) => (
+                  <option key={pres.id} value={pres.id}>
+                    {pres.name} (Equivale a {pres.equivalence} {restockProduct.unit})
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Cantidad a Agregar
-              </label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Cantidad a comprar</label>
               <input
                 type="number"
                 required
                 min="1"
+                step="any"
                 value={restockData.quantity}
                 onChange={(e) => {
                   const qty = Number(e.target.value);
                   setRestockData({
                     ...restockData,
                     quantity: qty,
-                    totalCost: qty * (restockProduct?.costPrice || 0),
+                    totalCost: qty * (restockProduct?.costPrice || 0) * restockEquivalence,
                   });
                 }}
                 className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Costo Total del Lote (S/)
-              </label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Costo Total (S/)</label>
               <input
                 type="number"
                 required
-                min="0.1"
+                min="0"
                 step="0.01"
                 value={restockData.totalCost}
                 onChange={(e) =>
-                  setRestockData({
-                    ...restockData,
-                    totalCost: Number(e.target.value),
-                  })
+                  setRestockData({ ...restockData, totalCost: Number(e.target.value) })
                 }
                 className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
               />
+            </div>
+
+            <div className="col-span-2 text-xs font-bold text-gray-600 bg-emerald-50 p-2.5 rounded-xl border border-emerald-100 flex justify-between">
+              <span>Total a cargar al inventario:</span>
+              <span className="text-emerald-600 font-extrabold">{restockEquivalencyText}</span>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Categoría del Gasto
-              </label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Categoría del Gasto</label>
               <select
                 required
                 value={restockData.categoryId}
-                onChange={(e) =>
-                  setRestockData({ ...restockData, categoryId: e.target.value })
-                }
+                onChange={(e) => setRestockData({ ...restockData, categoryId: e.target.value })}
                 className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
               >
                 <option value="">Seleccione...</option>
                 {categories.map((c: any) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
+                  <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
             </div>
             <div className="col-span-2">
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Método de Pago
-              </label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Método de Pago</label>
               <select
                 value={restockData.paymentMethod}
-                onChange={(e) =>
-                  setRestockData({
-                    ...restockData,
-                    paymentMethod: e.target.value,
-                  })
-                }
+                onChange={(e) => setRestockData({ ...restockData, paymentMethod: e.target.value })}
                 className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
               >
                 <option value="CASH">Efectivo</option>
@@ -585,14 +754,14 @@ export default function BusinessInventoryPage() {
             <button
               type="button"
               onClick={() => setIsRestockModalOpen(false)}
-              className="px-5 py-2.5 bg-gray-100 text-gray-700 font-medium rounded-xl hover:bg-gray-200 transition-colors"
+              className="px-5 py-2.5 bg-gray-100 text-gray-700 font-medium rounded-xl hover:bg-gray-200"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={categories.length === 0}
-              className="px-5 py-2.5 bg-emerald-600 text-white font-medium rounded-xl hover:bg-emerald-700 transition-colors shadow-sm shadow-emerald-500/30 flex items-center gap-2"
+              className="px-5 py-2.5 bg-emerald-600 text-white font-medium rounded-xl hover:bg-emerald-700 shadow-sm shadow-emerald-500/30 flex items-center gap-2"
             >
               <TrendingUp className="w-4 h-4" /> Ejecutar Compra
             </button>

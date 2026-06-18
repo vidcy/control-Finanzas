@@ -1,12 +1,16 @@
 import { PrismaService } from 'src/prisma/prisma.service';
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { CreateTransactionDto, Currency, TransactionStatus } from './create-transaction.dto';
+import {
+  CreateTransactionDto,
+  Currency,
+  TransactionStatus,
+} from './create-transaction.dto';
 import { MarkAsPendingDto } from './mark-transaction.dto';
 import { UpdateTransactionDto } from './update-transaction.dto';
 
 @Injectable()
 export class TransactionService {
-  constructor(private prisma: PrismaService) { }
+  constructor(private prisma: PrismaService) {}
 
   // =========================================================
   // CREATE
@@ -44,7 +48,7 @@ export class TransactionService {
 
         status: dto.status || TransactionStatus.PAID,
         amountSoles,
-        workspace: dto.workspace || "PERSONAL",
+        workspace: dto.workspace || 'PERSONAL',
         receiptUrl: dto.receiptUrl || null,
       },
     });
@@ -54,7 +58,7 @@ export class TransactionService {
   // LIST
   // Backend devuelve UTC sin tocar fechas
   // =========================================================
-  async listTransactions(userId: string, workspace: string = "PERSONAL") {
+  async listTransactions(userId: string, workspace: string = 'PERSONAL') {
     return this.prisma.transaction.findMany({
       where: {
         userId,

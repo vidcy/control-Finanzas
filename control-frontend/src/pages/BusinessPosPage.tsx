@@ -1,11 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Appshell from "../components/layout/Appshell";
-import { getProductsRequest, updateProductRequest } from "../services/product.api";
+import { getProductsRequest, checkoutCartRequest } from "../services/product.api";
 import type { Product } from "../services/product.api";
-import { createTransactionRequest } from "../services/transaction.api";
 import { listCategoriesRequest } from "../services/category.api";
 import { getActiveCashShiftRequest } from "../services/cash-shift.api";
-import ImageUploader, { getReceiptAbsoluteUrl } from "../components/ui/ImageUploader";
+import ReceiptUploader, { getReceiptAbsoluteUrl } from "../components/ui/ImageUploader";
+
+import { formatStock } from "./BusinessInventoryPage";
 import {
   ShoppingCart,
   Search,
@@ -18,6 +19,8 @@ import {
   Printer,
   Download,
   X,
+  Package,
+  FileText,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
@@ -25,7 +28,9 @@ import { format } from "date-fns";
 
 interface CartItem extends Product {
   quantity: number;
-  isCustom?: boolean; // Para "Venta Libre"
+  presentationId?: string;
+  isCustom?: boolean;
+  originalSalePrice: number;
 }
 
 export default function BusinessPosPage() {
@@ -44,41 +49,42 @@ export default function BusinessPosPage() {
   const [isCustomSaleOpen, setIsCustomSaleOpen] = useState(false);
   const [customSaleData, setCustomSaleData] = useState({ name: "", price: 0, quantity: 1 });
 
-  // Ticket / Proforma
+  // Ticket
   const [showTicket, setShowTicket] = useState(false);
   const [lastSale, setLastSale] = useState<any>(null);
+  const ticketRef = useRef<HTMLDivElement>(null);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const [prods, cats, shiftRes] = await Promise.all([
+        getProductsRequest(),
+        listCategoriesRequest(),
+        getActiveCashShiftRequest().catch(() => null),
+      ]);
+      setProducts(prods);
+
+      const allIncomeCats = cats.filter((c: any) => c.type === "INCOME" && !c.parentId);
+      setCategories(allIncomeCats);
+
+      if (allIncomeCats.length > 0) {
+        const priority = allIncomeCats.find(
+          (c: any) =>
+            c.name.toLowerCase().includes("negocio") ||
+            c.name.toLowerCase().includes("venta"),
+        );
+        setSelectedCategory(priority ? priority.id : allIncomeCats[0].id);
+      }
+
+      setActiveShift(shiftRes);
+    } catch {
+      toast.error("Error al cargar datos");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        setLoading(true);
-        const [prods, cats, shiftRes] = await Promise.all([
-          getProductsRequest(),
-          listCategoriesRequest(),
-          getActiveCashShiftRequest().catch(() => null)
-        ]);
-        setProducts(prods);
-        
-        // All INCOME categories (personal + business) for POS
-        const allIncomeCats = cats.filter((c: any) => c.type === "INCOME" && !c.parentId);
-        setCategories(allIncomeCats);
-        
-        if (allIncomeCats.length > 0) {
-          // Priority: "Mi negocio" > "Ventas" > first available
-          const priority = allIncomeCats.find((c: any) => 
-            c.name.toLowerCase().includes("negocio") || 
-            c.name.toLowerCase().includes("venta")
-          );
-          setSelectedCategory(priority ? priority.id : allIncomeCats[0].id);
-        }
-        
-        setActiveShift(shiftRes);
-      } catch (error) {
-        toast.error("Error al cargar datos");
-      } finally {
-        setLoading(false);
-      }
-    };
     loadData();
   }, []);
 
@@ -87,21 +93,21 @@ export default function BusinessPosPage() {
       toast.error("Sin stock disponible");
       return;
     }
-    const existing = cart.find((item) => item.id === product.id && !item.isCustom);
-    if (existing) {
-      if (existing.quantity >= product.stock) {
+
+    // Check if already in cart (same product, same presentation = no presentation)
+    const existingIndex = cart.findIndex(
+      (item) => item.id === product.id && !item.isCustom && !item.presentationId,
+    );
+    if (existingIndex > -1) {
+      const existing = cart[existingIndex];
+      const newQty = existing.quantity + 1;
+      if (newQty > product.stock) {
         toast.error("Stock máximo alcanzado");
         return;
       }
-      setCart(
-        cart.map((item) =>
-          item.id === product.id && !item.isCustom
-            ? { ...item, quantity: item.quantity + 1 }
-            : item,
-        ),
-      );
+      setCart(cart.map((item, idx) => (idx === existingIndex ? { ...item, quantity: newQty } : item)));
     } else {
-      setCart([...cart, { ...product, quantity: 1 }]);
+      setCart([...cart, { ...product, quantity: 1, originalSalePrice: product.salePrice }]);
     }
   };
 
@@ -111,7 +117,7 @@ export default function BusinessPosPage() {
       toast.error("Datos inválidos para venta libre");
       return;
     }
-    
+
     const customItem: CartItem = {
       id: `custom-${Date.now()}`,
       name: customSaleData.name,
@@ -119,10 +125,12 @@ export default function BusinessPosPage() {
       sku: "MANUAL",
       costPrice: 0,
       salePrice: customSaleData.price,
-      stock: 9999, // Stock infinito simulado
+      originalSalePrice: customSaleData.price,
+      stock: 9999,
       minStock: 0,
+      unit: "UNIDAD",
       quantity: customSaleData.quantity,
-      isCustom: true
+      isCustom: true,
     };
 
     setCart([...cart, customItem]);
@@ -131,30 +139,28 @@ export default function BusinessPosPage() {
     toast.success("Añadido al carrito");
   };
 
-  const updateQuantity = (id: string, delta: number) => {
-    setCart(
-      cart.map((item) => {
-        if (item.id === id) {
-          const newQ = item.quantity + delta;
-          if (!item.isCustom && newQ > item.stock) {
-            toast.error("Supera el stock");
-            return item;
-          }
-          return { ...item, quantity: Math.max(1, newQ) };
-        }
-        return item;
-      }),
-    );
+  const updateQuantity = (cartIndex: number, delta: number) => {
+    const item = cart[cartIndex];
+    const newQ = item.quantity + delta;
+    if (newQ < 1) return;
+
+    if (!item.isCustom) {
+      const pres = item.presentations?.find((p) => p.id === item.presentationId);
+      const equivalence = pres ? pres.equivalence : 1;
+      if (newQ * equivalence > item.stock) {
+        toast.error("Supera el stock disponible");
+        return;
+      }
+    }
+
+    setCart(cart.map((c, idx) => (idx === cartIndex ? { ...c, quantity: newQ } : c)));
   };
 
-  const removeFromCart = (id: string) => {
-    setCart(cart.filter((item) => item.id !== id));
+  const removeFromCart = (cartIndex: number) => {
+    setCart(cart.filter((_, idx) => idx !== cartIndex));
   };
 
-  const total = cart.reduce(
-    (acc, item) => acc + item.salePrice * item.quantity,
-    0,
-  );
+  const total = cart.reduce((acc, item) => acc + item.salePrice * item.quantity, 0);
 
   const handleCheckout = async () => {
     if (!activeShift) {
@@ -163,85 +169,69 @@ export default function BusinessPosPage() {
     }
     if (cart.length === 0) return;
     if (!selectedCategory) {
-      toast.error("Debes seleccionar una Categoría de Ingreso (Ej: Ventas)");
+      toast.error("Selecciona una Categoría de Ingreso");
       return;
     }
 
     setIsProcessing(true);
 
     try {
-      // 1. Descontar Stock solo de productos reales
-      for (const item of cart) {
-        if (!item.isCustom) {
-          await updateProductRequest(item.id, {
-            stock: item.stock - item.quantity,
-          });
-        }
-      }
-
-      // 2. Registrar Ingreso (Venta)
-      const desc = `Venta en POS: ${cart.map((c) => `${c.quantity}x ${c.name}`).join(", ")}`;
-      const transactionData = {
-        name: "Venta en Caja",
-        type: "INCOME",
-        amount: total,
+      const txResult = await checkoutCartRequest({
+        items: cart.map((c) => ({
+          id: c.id,
+          quantity: c.quantity,
+          presentationId: c.presentationId || undefined,
+          isCustom: c.isCustom,
+          salePrice: c.salePrice,
+          name: c.name,
+        })),
+        paymentMethod,
         categoryId: selectedCategory,
-        subCategoryId: "",
-        date: new Date().toISOString(),
-        paymentMethod: paymentMethod,
-        description: desc,
-        workspace: "BUSINESS",
-        status: "PAID",
-        receiptUrl: receiptUrl
-      } as any;
+        receiptUrl,
+      });
 
-      const txResult = await createTransactionRequest(transactionData);
+      toast.success("¡Venta completada con éxito!");
 
-      toast.success("Venta completada con éxito");
-      
-      // Guardar info para el ticket
       setLastSale({
         items: [...cart],
         total,
         paymentMethod,
         date: new Date(),
-        txId: txResult?.id || `TX-${Date.now()}`,
-        receiptUrl: receiptUrl,
+        txId: txResult?.transactionId || `TX-${Date.now()}`,
+        receiptUrl,
       });
-      
+
       setCart([]);
       setReceiptUrl(null);
       setShowTicket(true);
-      
-    } catch (error) {
-      toast.error("Error al procesar la venta");
+      loadData();
+    } catch (error: any) {
+      toast.error(error.message || "Error al procesar la venta");
     } finally {
       setIsProcessing(false);
     }
   };
 
   const printTicket = () => {
-    // Usar setTimeout para que el modal se renderice antes de imprimir
-    setTimeout(() => window.print(), 300);
+    window.print();
   };
 
-  const downloadTicketPng = async () => {
-    const element = document.getElementById("printable-ticket");
+  const downloadTicketImage = async () => {
+    const element = ticketRef.current;
     if (!element || !lastSale) return;
-    
+
     try {
       const { toPng } = await import("html-to-image");
-      // Snapshot actual size to prevent clipping
-      const width = element.scrollWidth;
-      const height = element.scrollHeight;
-      const dataUrl = await toPng(element, { 
-        quality: 0.98, 
-        pixelRatio: 2,
-        width,
-        height,
-        style: { overflow: "visible" },
-        canvasWidth: width * 2,
-        canvasHeight: height * 2,
+      // Ensure element is fully visible with no clipping
+      const dataUrl = await toPng(element, {
+        quality: 1,
+        pixelRatio: 3,
+        backgroundColor: "#ffffff",
+        style: {
+          overflow: "visible",
+          maxHeight: "none",
+          height: "auto",
+        },
       });
       const link = document.createElement("a");
       link.download = `Ticket_${lastSale.txId?.slice(0, 8) || Date.now()}.png`;
@@ -255,30 +245,28 @@ export default function BusinessPosPage() {
   };
 
   const downloadTicketPdf = async () => {
-    const element = document.getElementById("printable-ticket");
+    const element = ticketRef.current;
     if (!element || !lastSale) return;
 
     try {
       const { toPng } = await import("html-to-image");
-      const width = element.scrollWidth;
-      const height = element.scrollHeight;
-      const dataUrl = await toPng(element, { 
-        quality: 0.98, 
-        pixelRatio: 2,
-        width,
-        height,
-        style: { overflow: "visible" },
-        canvasWidth: width * 2,
-        canvasHeight: height * 2,
+      const dataUrl = await toPng(element, {
+        quality: 1,
+        pixelRatio: 3,
+        backgroundColor: "#ffffff",
+        style: {
+          overflow: "visible",
+          maxHeight: "none",
+          height: "auto",
+        },
       });
 
       const { jsPDF } = await import("jspdf");
       const img = new Image();
       img.src = dataUrl;
-      await new Promise(r => img.onload = r);
+      await new Promise((r) => (img.onload = r));
 
-      // 80mm wide ticket, auto height
-      const pdfW = 80;
+      const pdfW = 80; // 80mm thermal printer width
       const pdfH = (img.naturalHeight / img.naturalWidth) * pdfW;
       const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: [pdfW, pdfH] });
       pdf.addImage(dataUrl, "PNG", 0, 0, pdfW, pdfH);
@@ -286,7 +274,7 @@ export default function BusinessPosPage() {
       toast.success("PDF descargado");
     } catch (err) {
       console.error(err);
-      downloadTicketPng(); // Fallback a PNG
+      downloadTicketImage();
     }
   };
 
@@ -294,23 +282,151 @@ export default function BusinessPosPage() {
     p.name.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
+  const paymentLabel: Record<string, string> = {
+    CASH: "Efectivo", YAPE: "Yape", PLIN: "Plin", CARD: "Tarjeta", TRANSFER: "Transferencia"
+  };
+
   return (
     <Appshell>
+      {/* Print styles — applied globally during window.print() */}
+      <style>{`
+        @media print {
+          body > * { display: none !important; }
+          #printable-ticket-wrapper {
+            display: block !important;
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 80mm !important;
+            background: white !important;
+            z-index: 99999 !important;
+          }
+          #printable-ticket {
+            width: 80mm !important;
+            padding: 4mm !important;
+            margin: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
+            overflow: visible !important;
+            height: auto !important;
+            max-height: none !important;
+          }
+          #printable-ticket img {
+            display: block !important;
+            max-width: 100% !important;
+            height: auto !important;
+            page-break-inside: avoid !important;
+          }
+        }
+      `}</style>
+
+      {/* HIDDEN TICKET for printing/export — lives outside the modal */}
+      {lastSale && (
+        <div id="printable-ticket-wrapper" style={{ display: "none" }}>
+          <div
+            id="printable-ticket"
+            ref={ticketRef}
+            style={{
+              backgroundColor: "#ffffff",
+              padding: "16px",
+              width: "300px",
+              fontFamily: "'Courier New', monospace",
+              fontSize: "12px",
+              color: "#111111",
+              overflow: "visible",
+            }}
+          >
+            <div style={{ textAlign: "center", marginBottom: "12px" }}>
+              <div style={{ fontWeight: 900, fontSize: "16px", letterSpacing: "1px" }}>FINANZAS PRO</div>
+              <div style={{ fontSize: "10px", color: "#666" }}>Ticket de Venta (Proforma)</div>
+              <div style={{ borderBottom: "1px dashed #ccc", margin: "8px 0" }}></div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "10px" }}>
+                <span>Fecha:</span>
+                <span>{format(lastSale.date, "dd/MM/yyyy HH:mm")}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "10px" }}>
+                <span>Ticket #:</span>
+                <span>{lastSale.txId.slice(0, 8).toUpperCase()}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "10px" }}>
+                <span>Pago:</span>
+                <span>{paymentLabel[lastSale.paymentMethod] || lastSale.paymentMethod}</span>
+              </div>
+            </div>
+
+            <div style={{ borderBottom: "1px dashed #ccc", margin: "8px 0" }}></div>
+
+            <div style={{ marginBottom: "8px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: "10px", marginBottom: "4px" }}>
+                <span>CANT. DESCRIPCION</span>
+                <span>IMPORTE</span>
+              </div>
+              {lastSale.items.map((item: any, i: number) => {
+                const pres = item.presentations?.find((p: any) => p.id === item.presentationId);
+                const presName = pres ? pres.name : item.unit;
+                return (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: "10px", marginBottom: "2px" }}>
+                    <span style={{ flex: 1, paddingRight: "8px" }}>
+                      {item.quantity}x {item.name} [{presName}]
+                    </span>
+                    <span>S/ {(item.quantity * item.salePrice).toFixed(2)}</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ borderBottom: "1px dashed #ccc", margin: "8px 0" }}></div>
+
+            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, fontSize: "16px" }}>
+              <span>TOTAL</span>
+              <span>S/ {lastSale.total.toFixed(2)}</span>
+            </div>
+
+            <div style={{ textAlign: "center", marginTop: "16px", fontSize: "10px", color: "#666" }}>
+              <div>¡Gracias por tu preferencia!</div>
+              <div>Documento no válido como factura</div>
+            </div>
+
+            {/* Receipt image — fully rendered */}
+            {lastSale.receiptUrl && (
+              <div style={{ marginTop: "12px", borderTop: "1px dashed #ccc", paddingTop: "8px" }}>
+                <div style={{ fontSize: "9px", color: "#999", textAlign: "center", marginBottom: "6px", fontWeight: 700 }}>
+                  COMPROBANTE DE PAGO
+                </div>
+                <img
+                  src={getReceiptAbsoluteUrl(lastSale.receiptUrl) || lastSale.receiptUrl}
+                  alt="Comprobante"
+                  style={{
+                    width: "100%",
+                    height: "auto",
+                    display: "block",
+                    borderRadius: "4px",
+                  }}
+                  crossOrigin="anonymous"
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col lg:flex-row h-[calc(100vh-6rem)] gap-4">
-        {/* LADO IZQUIERDO: PRODUCTOS */}
+        {/* LEFT: CATALOG */}
         <div className="flex-1 flex flex-col min-h-0 bg-gray-50/50 relative">
-          {/* Overlay si la caja está cerrada */}
           {!activeShift && !loading && (
             <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] z-20 flex items-center justify-center">
-              <div className="bg-white p-8 rounded-3xl shadow-2xl border border-rose-100 text-center max-w-sm mx-4 transform transition-all">
+              <div className="bg-white p-8 rounded-3xl shadow-2xl border border-rose-100 text-center max-w-sm mx-4">
                 <div className="w-20 h-20 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-4">
                   <Landmark className="w-10 h-10 text-rose-600" />
                 </div>
                 <h3 className="text-2xl font-black text-gray-900 mb-2">Caja Cerrada</h3>
                 <p className="text-gray-500 font-medium mb-6">
-                  Para poder vender, necesitas abrir la caja primero desde el módulo de Finanzas o Control de Caja.
+                  Para vender, abre la caja primero desde el módulo de Finanzas.
                 </p>
-                <a href="/business-cash-register" className="inline-block w-full py-4 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all">
+                <a
+                  href="/business-cash-register"
+                  className="inline-block w-full py-4 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-all"
+                >
                   Ir a Abrir Caja →
                 </a>
               </div>
@@ -330,13 +446,13 @@ export default function BusinessPosPage() {
             </div>
             <button
               onClick={() => setIsCustomSaleOpen(true)}
-              className="px-4 py-3 bg-indigo-600 text-white rounded-xl font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all text-sm whitespace-nowrap shadow-md shadow-indigo-200"
+              className="px-4 py-3 bg-indigo-600 text-white rounded-xl font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all text-sm whitespace-nowrap shadow-md"
             >
               <Plus className="w-4 h-4" /> Venta Libre
             </button>
           </div>
 
-          <div className="flex-1 p-6 bg-gray-50/30 overflow-y-auto">
+          <div className="flex-1 p-4 overflow-y-auto">
             {loading ? (
               <div className="h-full flex items-center justify-center">
                 <div className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
@@ -346,20 +462,44 @@ export default function BusinessPosPage() {
                 No hay productos que coincidan.
               </div>
             ) : (
-              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
                 {filteredProducts.map((p) => (
                   <div
                     key={p.id}
                     onClick={() => addToCart(p)}
-                    className="bg-white p-4 rounded-2xl border border-gray-100 hover:border-indigo-300 hover:shadow-lg transition-all cursor-pointer group flex flex-col justify-between h-full shadow-sm"
+                    className={`bg-white rounded-2xl border hover:border-indigo-300 hover:shadow-lg transition-all cursor-pointer group flex flex-col overflow-hidden shadow-sm ${p.stock <= 0 ? "opacity-50 cursor-not-allowed" : ""}`}
                   >
-                    <div>
-                      <h3 className="font-bold text-gray-800 group-hover:text-indigo-600 transition-colors line-clamp-2">{p.name}</h3>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${p.stock > 0 ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>
-                        Stock: {p.stock}
-                      </span>
+                    {/* Product image */}
+                    <div className="w-full h-24 bg-gradient-to-br from-gray-50 to-indigo-50 overflow-hidden relative">
+                      {p.imageUrl ? (
+                        <img
+                          src={getReceiptAbsoluteUrl(p.imageUrl) || p.imageUrl}
+                          alt={p.name}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = "none";
+                          }}
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <Package className="w-8 h-8 text-indigo-200" />
+                        </div>
+                      )}
                     </div>
-                    <p className="text-lg font-black text-gray-900 mt-2">S/ {p.salePrice.toFixed(2)}</p>
+
+                    <div className="p-3 flex-1 flex flex-col justify-between">
+                      <div>
+                        <h3 className="font-bold text-gray-800 group-hover:text-indigo-600 transition-colors line-clamp-2 text-sm">
+                          {p.name}
+                        </h3>
+                        <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full inline-block mt-1 ${p.stock > 0 ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>
+                          {formatStock(p.stock, p.unit, p.presentations)}
+                        </span>
+                      </div>
+                      <p className="text-base font-black text-gray-900 mt-2">
+                        S/ {p.salePrice.toFixed(2)}
+                      </p>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -367,43 +507,95 @@ export default function BusinessPosPage() {
           </div>
         </div>
 
-        {/* RIGHT: CART / TICKET */}
-        <div className="w-full lg:w-[400px] flex flex-col bg-white rounded-[2rem] shadow-sm border border-gray-100 overflow-hidden relative">
+        {/* RIGHT: CART */}
+        <div className="w-full lg:w-[400px] flex flex-col bg-white rounded-[2rem] shadow-sm border border-gray-100 overflow-hidden">
           <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-gray-50">
             <h2 className="text-xl font-black text-gray-900 flex items-center gap-2">
               <ShoppingCart className="w-5 h-5" /> Ticket Actual
             </h2>
-            <span className="bg-white/20 px-3 py-1 rounded-lg text-sm font-bold">
+            <span className="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-lg text-sm font-bold">
               {cart.length} items
             </span>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-5 custom-scrollbar space-y-3">
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {cart.length === 0 ? (
               <div className="h-[200px] flex flex-col items-center justify-center text-gray-400">
                 <ShoppingCart className="w-12 h-12 mb-3 text-gray-300" />
-                <p className="font-bold">No hay productos disponibles</p>
+                <p className="font-bold">No hay productos en el ticket</p>
               </div>
             ) : (
               cart.map((item, index) => (
                 <div key={index} className="flex gap-3 p-3 bg-gray-50 rounded-2xl border border-gray-100 relative group">
-                  <div className="flex-1">
-                    <h4 className="font-bold text-sm text-gray-800 leading-tight pr-6">{item.name}</h4>
-                    <p className="text-indigo-600 font-black text-sm mt-1">S/ {item.salePrice.toFixed(2)}</p>
+                  {item.imageUrl && (
+                    <img
+                      src={getReceiptAbsoluteUrl(item.imageUrl) || item.imageUrl}
+                      alt={item.name}
+                      className="w-12 h-12 rounded-xl object-cover border border-gray-100 flex-shrink-0"
+                      onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}
+                    />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-bold text-sm text-gray-800 leading-tight pr-6 truncate">
+                      {item.name}
+                    </h4>
+
+                    {!item.isCustom && item.presentations && item.presentations.length > 0 ? (
+                      <select
+                        value={item.presentationId || ""}
+                        onChange={(e) => {
+                          const presId = e.target.value;
+                          const pres = item.presentations?.find((p) => p.id === presId);
+                          const newPrice = pres ? pres.price : item.originalSalePrice;
+                          setCart(
+                            cart.map((c, i) =>
+                              i === index
+                                ? { ...c, presentationId: presId || undefined, salePrice: newPrice }
+                                : c,
+                            ),
+                          );
+                        }}
+                        className="mt-1 text-[10px] border border-gray-200 rounded-lg px-2 py-1 outline-none font-bold text-gray-700 bg-white w-full"
+                      >
+                        <option value="">{item.unit} (S/ {item.originalSalePrice.toFixed(2)})</option>
+                        {item.presentations.map((pres) => (
+                          <option key={pres.id} value={pres.id}>
+                            {pres.name} (S/ {pres.price.toFixed(2)})
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="text-[10px] text-gray-500 font-bold block mt-1">
+                        {item.unit}
+                      </span>
+                    )}
+
+                    <p className="text-indigo-600 font-black text-sm mt-1">
+                      S/ {item.salePrice.toFixed(2)} c/u
+                    </p>
                   </div>
-                  <div className="flex flex-col items-end justify-between">
+
+                  <div className="flex flex-col items-end justify-between flex-shrink-0">
                     <button
-                      onClick={() => removeFromCart(item.id)}
-                      className="text-gray-400 hover:text-rose-500 transition-colors absolute top-3 right-3"
+                      onClick={() => removeFromCart(index)}
+                      className="text-gray-400 hover:text-rose-500 transition-colors"
                     >
                       <X className="w-4 h-4" />
                     </button>
-                    <div className="flex items-center gap-2 bg-white rounded-lg border border-gray-200 p-1 mt-6">
-                      <button onClick={() => updateQuantity(item.id, item.quantity - 1)} className="p-1 hover:bg-gray-100 rounded text-gray-600">
+                    <div className="flex items-center gap-1 bg-white rounded-lg border border-gray-200 p-1 mt-2">
+                      <button
+                        onClick={() => updateQuantity(index, -1)}
+                        className="p-1 hover:bg-gray-100 rounded text-gray-600"
+                      >
                         <Minus className="w-3 h-3" />
                       </button>
-                      <span className="text-xs font-black w-4 text-center text-gray-800">{item.quantity}</span>
-                      <button onClick={() => updateQuantity(item.id, item.quantity + 1)} className="p-1 hover:bg-gray-100 rounded text-gray-600">
+                      <span className="text-xs font-black w-6 text-center text-gray-800">
+                        {item.quantity}
+                      </span>
+                      <button
+                        onClick={() => updateQuantity(index, 1)}
+                        className="p-1 hover:bg-gray-100 rounded text-gray-600"
+                      >
                         <Plus className="w-3 h-3" />
                       </button>
                     </div>
@@ -413,70 +605,71 @@ export default function BusinessPosPage() {
             )}
           </div>
 
-          <div className="p-6 border-t border-gray-100 bg-gray-50 space-y-5">
+          <div className="p-5 border-t border-gray-100 bg-gray-50 space-y-4">
+            {/* Payment Method */}
             <div>
               <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wider">1. Método de Pago</p>
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-5 gap-1.5">
                 {[
                   { id: "CASH", icon: Banknote, label: "Efectivo" },
                   { id: "YAPE", icon: Smartphone, label: "Yape" },
                   { id: "PLIN", icon: Smartphone, label: "Plin" },
                   { id: "CARD", icon: CreditCard, label: "Tarjeta" },
                   { id: "TRANSFER", icon: Landmark, label: "Transf." },
-                ].map(method => (
+                ].map((method) => (
                   <button
                     key={method.id}
                     onClick={() => setPaymentMethod(method.id)}
-                    className={`flex flex-col items-center gap-1 p-2 rounded-xl border transition-all ${paymentMethod === method.id ? "bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-200" : "bg-white text-gray-500 border-gray-200 hover:border-indigo-300 hover:text-indigo-600"}`}
+                    className={`flex flex-col items-center gap-1 p-2 rounded-xl border transition-all ${paymentMethod === method.id ? "bg-indigo-600 text-white border-indigo-600 shadow-md" : "bg-white text-gray-500 border-gray-200 hover:border-indigo-300 hover:text-indigo-600"}`}
                   >
-                    <method.icon className="w-5 h-5" />
-                    <span className="text-[9px] font-black uppercase tracking-wider">{method.label}</span>
+                    <method.icon className="w-4 h-4" />
+                    <span className="text-[8px] font-black uppercase">{method.label}</span>
                   </button>
                 ))}
               </div>
             </div>
 
+            {/* Category */}
             <div>
               <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wider">2. Categoría Contable</p>
-              <select 
-                value={selectedCategory} 
-                onChange={e => setSelectedCategory(e.target.value)}
-                className="w-full p-3 rounded-xl border border-gray-200 focus:border-indigo-500 outline-none text-sm font-medium bg-white"
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                className="w-full p-2.5 rounded-xl border border-gray-200 focus:border-indigo-500 outline-none text-sm font-medium bg-white"
               >
                 <option value="">Seleccionar Categoría...</option>
-                {categories.map(c => (
+                {categories.map((c) => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
-              {categories.length === 0 && <p className="text-xs text-red-500 mt-1">Crea una categoría de Ingreso primero.</p>}
             </div>
 
+            {/* Total */}
             <div className="flex justify-between items-end pt-3 border-t border-gray-200 border-dashed">
               <span className="text-gray-500 font-medium">Total a cobrar:</span>
-              <span className="text-4xl font-black text-gray-900 tracking-tight">
-                S/ {total.toFixed(2)}
-              </span>
+              <span className="text-3xl font-black text-gray-900">S/ {total.toFixed(2)}</span>
             </div>
-            
-            {/* Comprobante (Voucher) si no es Efectivo */}
+
+            {/* Receipt upload */}
             {paymentMethod !== "CASH" && (
-              <div className="mb-4">
-                <ImageUploader
+              <div>
+                <ReceiptUploader
                   currentImageUrl={receiptUrl}
                   onUploadSuccess={(url) => setReceiptUrl(url)}
                   onClear={() => setReceiptUrl(null)}
+                  label="Comprobante de Pago"
                 />
+
               </div>
             )}
 
             <button
               onClick={handleCheckout}
               disabled={cart.length === 0 || isProcessing || !activeShift}
-              className={`w-full py-4 rounded-2xl font-black text-lg flex items-center justify-center gap-2 transition-all ${
-                cart.length === 0 || !activeShift
-                  ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                  : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-xl shadow-indigo-200 hover:-translate-y-1"
-              }`}
+              className={`w-full py-4 rounded-2xl font-black text-lg flex items-center justify-center gap-2 transition-all ${cart.length === 0 || !activeShift
+                ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-xl shadow-indigo-200 hover:-translate-y-1"
+                }`}
             >
               {isProcessing ? (
                 <div className="w-6 h-6 border-4 border-white/30 border-t-white rounded-full animate-spin"></div>
@@ -488,123 +681,145 @@ export default function BusinessPosPage() {
         </div>
       </div>
 
-      {/* MODAL: VENTA LIBRE */}
+      {/* MODAL: FREE SALE */}
       <Modal isOpen={isCustomSaleOpen} onClose={() => setIsCustomSaleOpen(false)} title="Venta Libre / Manual">
         <form onSubmit={addCustomSale} className="space-y-4 mt-2">
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1">Concepto / Producto</label>
-            <input type="text" autoFocus required value={customSaleData.name} onChange={e => setCustomSaleData({...customSaleData, name: e.target.value})} className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="Ej: Bolsa extra, Servicio de Delivery..." />
+            <input
+              type="text"
+              autoFocus
+              required
+              value={customSaleData.name}
+              onChange={(e) => setCustomSaleData({ ...customSaleData, name: e.target.value })}
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+              placeholder="Ej: Servicio de Delivery..."
+            />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">Precio Unitario (S/)</label>
-              <input type="number" required min="0.1" step="0.01" value={customSaleData.price || ''} onChange={e => setCustomSaleData({...customSaleData, price: Number(e.target.value)})} className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
+              <input
+                type="number"
+                required
+                min="0.1"
+                step="0.01"
+                value={customSaleData.price || ""}
+                onChange={(e) => setCustomSaleData({ ...customSaleData, price: Number(e.target.value) })}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+              />
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">Cantidad</label>
-              <input type="number" required min="1" value={customSaleData.quantity} onChange={e => setCustomSaleData({...customSaleData, quantity: Number(e.target.value)})} className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
+              <input
+                type="number"
+                required
+                min="1"
+                value={customSaleData.quantity}
+                onChange={(e) => setCustomSaleData({ ...customSaleData, quantity: Number(e.target.value) })}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+              />
             </div>
           </div>
           <div className="pt-4 flex justify-end gap-3">
-            <button type="button" onClick={() => setIsCustomSaleOpen(false)} className="px-5 py-2.5 bg-gray-100 text-gray-700 font-medium rounded-xl hover:bg-gray-200 transition-colors">Cancelar</button>
-            <button type="submit" className="px-5 py-2.5 bg-indigo-600 text-white font-medium rounded-xl hover:bg-indigo-700 transition-colors">Añadir al Carrito</button>
+            <button type="button" onClick={() => setIsCustomSaleOpen(false)} className="px-5 py-2.5 bg-gray-100 text-gray-700 font-medium rounded-xl hover:bg-gray-200">
+              Cancelar
+            </button>
+            <button type="submit" className="px-5 py-2.5 bg-indigo-600 text-white font-medium rounded-xl hover:bg-indigo-700">
+              Añadir al Carrito
+            </button>
           </div>
         </form>
       </Modal>
 
-      {/* MODAL: TICKET / PROFORMA (VISIBLE ON PRINT) */}
-      <Modal isOpen={showTicket} onClose={() => setShowTicket(false)} title="Venta Completada">
+      {/* MODAL: TICKET */}
+      <Modal isOpen={showTicket} onClose={() => setShowTicket(false)} title="✅ Venta Completada">
         {lastSale && (
           <div className="flex flex-col items-center">
-            {/* Ticket Contenedor (Lo que se imprime) */}
-            <div id="printable-ticket" className="bg-white border border-gray-200 p-6 rounded-lg w-full max-w-sm mx-auto shadow-sm font-mono text-sm text-gray-800">
-              <div className="text-center mb-6">
-                <h2 className="text-xl font-black mb-1">FINANZAS PRO</h2>
-                <p className="text-xs text-gray-500">Ticket de Venta (Proforma)</p>
-                <div className="border-b-2 border-dashed border-gray-300 my-4"></div>
-                <div className="flex justify-between text-xs mb-1">
+            {/* Preview ticket (decorative, not used for export) */}
+            <div className="bg-white border border-gray-200 p-5 rounded-xl w-full max-w-xs mx-auto shadow-sm font-mono text-xs text-gray-800 mb-4">
+              <div className="text-center mb-4">
+                <div className="font-black text-base">FINANZAS PRO</div>
+                <div className="text-[10px] text-gray-500">Ticket de Venta</div>
+                <div className="border-b border-dashed border-gray-300 my-3"></div>
+                <div className="flex justify-between text-[10px] mb-1">
                   <span>Fecha:</span>
                   <span>{format(lastSale.date, "dd/MM/yyyy HH:mm")}</span>
                 </div>
-                <div className="flex justify-between text-xs mb-1">
+                <div className="flex justify-between text-[10px] mb-1">
                   <span>Ticket #:</span>
                   <span>{lastSale.txId.slice(0, 8).toUpperCase()}</span>
                 </div>
-                <div className="flex justify-between text-xs">
+                <div className="flex justify-between text-[10px]">
                   <span>Pago:</span>
-                  <span>{lastSale.paymentMethod}</span>
+                  <span>{paymentLabel[lastSale.paymentMethod] || lastSale.paymentMethod}</span>
                 </div>
               </div>
-              
-              <div className="border-b-2 border-dashed border-gray-300 my-4"></div>
-              
-              <div className="space-y-3 mb-4">
-                <div className="flex justify-between text-xs font-bold mb-2">
-                  <span>CANT. DESCRIPCION</span>
-                  <span>IMPORTE</span>
-                </div>
-                {lastSale.items.map((item: any, i: number) => (
-                  <div key={i} className="flex justify-between text-xs">
-                    <span className="flex-1 pr-2 truncate">{item.quantity}x {item.name}</span>
-                    <span>S/ {(item.quantity * item.salePrice).toFixed(2)}</span>
-                  </div>
-                ))}
+
+              <div className="border-b border-dashed border-gray-300 my-3"></div>
+
+              <div className="space-y-1 mb-3">
+                {lastSale.items.map((item: any, i: number) => {
+                  const pres = item.presentations?.find((p: any) => p.id === item.presentationId);
+                  const presName = pres ? pres.name : item.unit;
+                  return (
+                    <div key={i} className="flex justify-between text-[10px]">
+                      <span className="flex-1 pr-2 truncate">{item.quantity}x {item.name} [{presName}]</span>
+                      <span>S/ {(item.quantity * item.salePrice).toFixed(2)}</span>
+                    </div>
+                  );
+                })}
               </div>
-              
-              <div className="border-b-2 border-dashed border-gray-300 my-4"></div>
-              
-              <div className="flex justify-between font-black text-lg">
+
+              <div className="border-b border-dashed border-gray-300 my-3"></div>
+
+              <div className="flex justify-between font-black text-sm">
                 <span>TOTAL</span>
                 <span>S/ {lastSale.total.toFixed(2)}</span>
               </div>
-              
-              <div className="text-center mt-8 text-xs text-gray-500">
-                <p>¡Gracias por tu preferencia!</p>
-                <p className="mt-1">Documento no válido como factura</p>
-              </div>
 
-              {/* Comprobante adjunto si existe */}
               {lastSale.receiptUrl && (
-                <div className="mt-4 pt-4 border-t border-dashed border-gray-300">
-                  <p className="text-[10px] text-gray-400 text-center mb-2 font-bold uppercase">Comprobante de pago adjunto</p>
-                  <img 
-                    src={getReceiptAbsoluteUrl(lastSale.receiptUrl) || ''} 
-                    alt="Comprobante" 
-                    className="w-full rounded-lg object-cover max-h-48"
-                    onError={(e) => (e.target as HTMLImageElement).style.display = 'none'}
+                <div className="mt-3 pt-3 border-t border-dashed border-gray-300">
+                  <div className="text-[9px] text-gray-400 text-center mb-2 font-bold">COMPROBANTE</div>
+                  <img
+                    src={getReceiptAbsoluteUrl(lastSale.receiptUrl) || lastSale.receiptUrl}
+                    alt="Comprobante"
+                    className="w-full rounded-lg"
+                    onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}
                   />
                 </div>
               )}
             </div>
 
-            <style>
-              {`
-                @media print {
-                  body * { visibility: hidden; }
-                  #printable-ticket, #printable-ticket * { visibility: visible; }
-                  #printable-ticket { position: fixed; left: 50%; top: 0; transform: translateX(-50%); width: 80mm; border: none; box-shadow: none; padding: 5mm; }
-                }
-              `}
-            </style>
-
-            <div className="mt-5 flex w-full gap-2 print:hidden flex-wrap">
-              <button onClick={() => setShowTicket(false)} className="flex-1 py-3 bg-gray-100 text-gray-600 font-bold rounded-xl hover:bg-gray-200 transition-colors text-center text-sm">
+            <div className="grid grid-cols-2 gap-2 w-full">
+              <button
+                onClick={() => setShowTicket(false)}
+                className="py-3 bg-gray-100 text-gray-600 font-bold rounded-xl hover:bg-gray-200 text-sm"
+              >
                 Cerrar
               </button>
-              <button onClick={downloadTicketPng} className="flex-1 py-3 bg-sky-500 text-white font-bold rounded-xl hover:bg-sky-600 transition-colors flex items-center justify-center gap-1.5 text-sm">
+              <button
+                onClick={downloadTicketImage}
+                className="py-3 bg-sky-500 text-white font-bold rounded-xl hover:bg-sky-600 flex items-center justify-center gap-1.5 text-sm"
+              >
                 <Download className="w-4 h-4" /> Imagen
               </button>
-              <button onClick={downloadTicketPdf} className="flex-1 py-3 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 transition-colors flex items-center justify-center gap-1.5 text-sm">
-                <Download className="w-4 h-4" /> PDF
+              <button
+                onClick={downloadTicketPdf}
+                className="py-3 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 flex items-center justify-center gap-1.5 text-sm"
+              >
+                <FileText className="w-4 h-4" /> PDF
               </button>
-              <button onClick={printTicket} className="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-colors flex items-center justify-center gap-1.5 text-sm">
+              <button
+                onClick={printTicket}
+                className="py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 flex items-center justify-center gap-1.5 text-sm"
+              >
                 <Printer className="w-4 h-4" /> Imprimir
               </button>
             </div>
           </div>
         )}
       </Modal>
-
     </Appshell>
   );
 }

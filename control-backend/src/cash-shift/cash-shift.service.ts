@@ -11,7 +11,7 @@ export class CashShiftService {
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async handleAutoCloseShifts() {
     this.logger.log('Iniciando cierre de caja automático de medianoche...');
-    
+
     const openShifts = await this.prisma.cashShift.findMany({
       where: { status: 'OPEN' },
     });
@@ -19,12 +19,17 @@ export class CashShiftService {
     for (const shift of openShifts) {
       try {
         await this.closeShift(shift.userId);
-        this.logger.log(`Caja cerrada automáticamente para usuario ${shift.userId}`);
+        this.logger.log(
+          `Caja cerrada automáticamente para usuario ${shift.userId}`,
+        );
       } catch (error) {
-        this.logger.error(`Error al cerrar caja automática para usuario ${shift.userId}:`, error.message);
+        this.logger.error(
+          `Error al cerrar caja automática para usuario ${shift.userId}:`,
+          error.message,
+        );
       }
     }
-    
+
     this.logger.log('Cierre de caja automático finalizado.');
   }
 

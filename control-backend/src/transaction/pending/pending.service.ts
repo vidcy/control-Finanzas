@@ -7,13 +7,16 @@ import { Currency, TransactionStatus, TransactionType } from '@prisma/client';
 
 @Injectable()
 export class PendingTransactionService {
-  constructor(private prisma: PrismaService) { }
+  constructor(private prisma: PrismaService) {}
 
   // =========================================================
   // CREATE
   // El frontend YA envía fechas en UTC → solo validamos y guardamos
   // =========================================================
-  async createPendingTransaction(userId: string, dto: CreatePendingTransactionDto) {
+  async createPendingTransaction(
+    userId: string,
+    dto: CreatePendingTransactionDto,
+  ) {
     const isUSD = dto.currency === Currency.USD;
 
     // Calculamos monto en soles SOLO para reporting interno
@@ -30,7 +33,7 @@ export class PendingTransactionService {
 
         // 🔥 IMPORTANTE: fechas llegan en UTC → guardar tal cual
         date: new Date(dto.date),
-        dueDate: new Date(dto.dueDate),
+        dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
         paidAt: dto.paidAt ? new Date(dto.paidAt) : null,
 
         paymentMethod: dto.paymentMethod || 'CASH',
@@ -44,7 +47,7 @@ export class PendingTransactionService {
         exchangeRate: dto.exchangeRate,
 
         status: TransactionStatus.PENDING,
-        workspace: dto.workspace || "PERSONAL",
+        workspace: dto.workspace || 'PERSONAL',
       },
     });
   }
@@ -53,7 +56,11 @@ export class PendingTransactionService {
   // LIST
   // Siempre devolver UTC. El frontend convertirá.
   // =========================================================
-  async listPendingTransactions(userId: string, type?: TransactionType, workspace: string = "PERSONAL") {
+  async listPendingTransactions(
+    userId: string,
+    type?: TransactionType,
+    workspace: string = 'PERSONAL',
+  ) {
     return this.prisma.transaction.findMany({
       where: {
         userId,
@@ -94,7 +101,9 @@ export class PendingTransactionService {
   // Fechas siempre llegan en UTC desde el frontend
   // =========================================================
   async updatePendingTransaction(id: string, dto: UpdatePendingTransactionDto) {
-    const existing = await this.prisma.transaction.findUnique({ where: { id } });
+    const existing = await this.prisma.transaction.findUnique({
+      where: { id },
+    });
 
     if (!existing) {
       throw new NotFoundException('Transacción no encontrada');

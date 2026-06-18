@@ -23,7 +23,7 @@ import { MailModule } from 'src/mail/mail.module';
         secret: configService.get('JWT_SECRET'),
         signOptions: { expiresIn: '7d' },
       }),
-    })
+    }),
   ],
   controllers: [AuthController],
   providers: [
@@ -33,4 +33,4 @@ import { MailModule } from 'src/mail/mail.module';
   ],
   exports: [AuthService],
 })
-export class AuthModule { }
+export class AuthModule {}

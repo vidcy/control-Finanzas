@@ -1,6 +1,6 @@
 export class CreateCategoryDto {
-    name: string;
-    type: 'INCOME' | 'EXPENSE';
-    parentId?: string;
-    color?: string;
+  name: string;
+  type: 'INCOME' | 'EXPENSE';
+  parentId?: string;
+  color?: string;
 }

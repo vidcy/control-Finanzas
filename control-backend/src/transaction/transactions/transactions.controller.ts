@@ -1,9 +1,7 @@
 import { Controller, Param, Req } from '@nestjs/common';
 import { TransactionService } from './transaction.service';
 import { Body, Post, Get, Patch, Delete, Query } from '@nestjs/common';
-import {
-  CreateTransactionDto,
-} from './create-transaction.dto';
+import { CreateTransactionDto } from './create-transaction.dto';
 import { UpdateTransactionDto } from './update-transaction.dto';
 import { MarkAsPendingDto } from './mark-transaction.dto';
 import { AuthGuard } from '@nestjs/passport';
@@ -11,7 +9,7 @@ import { UseGuards } from '@nestjs/common';
 
 @Controller('transactions')
 export class TransactionController {
-  constructor(private readonly transactionService: TransactionService) { }
+  constructor(private readonly transactionService: TransactionService) {}
   @UseGuards(AuthGuard('jwt'))
   @Post()
   createTransaction(@Req() req, @Body() dto: CreateTransactionDto) {

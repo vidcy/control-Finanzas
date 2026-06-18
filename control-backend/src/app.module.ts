@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AppController } from './app.controller';
 import { AuthModule } from './auth/auth.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { UsersModule } from './users/users.module';
@@ -9,11 +10,15 @@ import { PendingTransactionModule } from './transaction/pending/peding.module';
 import { TransactionsModule } from './transaction/transactions/transactions.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ProductsModule } from './products/products.module';
-import { NestModule, MiddlewareConsumer } from '@nestjs/common'
-import { TimezoneMiddleware } from './middlewares/timezone.middleware'
+import { NestModule, MiddlewareConsumer } from '@nestjs/common';
+import { TimezoneMiddleware } from './middlewares/timezone.middleware';
 import { CashShiftModule } from './cash-shift/cash-shift.module';
 import { UploadModule } from './upload/upload.module';
 import { ScheduleModule } from '@nestjs/schedule';
+import { APP_INTERCEPTOR } from '@nestjs/core';
+import { UserContextInterceptor } from './common/interceptors/user-context.interceptor';
+import { AnalyticsModule } from './analytics/analytics.module';
+import { InventoryMovementsModule } from './inventory-movements/inventory-movements.module';
 
 @Module({
   imports: [
@@ -29,15 +34,22 @@ import { ScheduleModule } from '@nestjs/schedule';
     PrismaModule,
     UsersModule,
     CategoriesModule,
+    AnalyticsModule,
+    InventoryMovementsModule,
     ConfigModule.forRoot({
       isGlobal: true,
     }),
   ],
+  controllers: [AppController],
+  providers: [
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: UserContextInterceptor,
+    },
+  ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer
-      .apply(TimezoneMiddleware)
-      .forRoutes('*') // ← se aplica a TODAS las rutas
+    consumer.apply(TimezoneMiddleware).forRoutes('*'); // ← se aplica a TODAS las rutas
   }
 }

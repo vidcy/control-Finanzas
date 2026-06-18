@@ -193,12 +193,17 @@ model Product {
   sku         String?
   costPrice   Float    // Precio de compra/costo
   salePrice   Float    // Precio de venta
-  stock       Int      @default(0)
-  minStock    Int      @default(5)
+  stock       Float    @default(0)
+  minStock    Float    @default(5)
+  unit        String   @default("UNIDAD") // Unidad de medida principal
+  imageUrl    String?  // Foto/imagen opcional del producto
   
   userId      String
   user        User     @relation(fields: [userId], references: [id])
   
+  presentations Presentation[]
+  movements     InventoryMovement[]
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -223,3 +228,59 @@ model CashShift {
   userId          String
   user            User        @relation(fields: [userId], references: [id])
 }
+
+// =========================
+// 📝 BITÁCORA DE AUDITORÍA
+// =========================
+model AuditLog {
+  id         String   @id @default(uuid())
+  action     String   // "INSERT", "UPDATE", "DELETE"
+  tableName  String   // Nombre de la tabla afectada
+  recordId   String   // ID del registro afectado
+  oldValues  Json?    // Estado anterior
+  newValues  Json?    // Estado posterior
+  userId     String?  // Quién realizó la acción (opcional)
+  userEmail  String?  // Email del usuario que realizó la acción
+  createdAt  DateTime @default(now())
+}
+
+// =========================
+// 📦 MOVIMIENTOS DE INVENTARIO
+// =========================
+enum MovementType {
+  IN
+  OUT
+}
+
+model Presentation {
+  id          String   @id @default(uuid())
+  name        String   // "Saco", "Medio saco", "Kg"
+  equivalence Float    // Cuántas unidades principales equivale (ej. 60, 30, 1)
+  price       Float    // Precio de venta para esta presentación
+  
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  movements   InventoryMovement[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model InventoryMovement {
+  id              String        @id @default(uuid())
+  productId       String
+  product         Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity        Float         // Cantidad en la unidad principal del producto
+  type            MovementType
+  reason          String?       // "SALE", "PURCHASE", "ADJUSTMENT"
+  
+  presentationId  String?
+  presentation    Presentation? @relation(fields: [presentationId], references: [id], onDelete: Restrict)
+  presentationName String?      // Snapshot de la presentación usada (ej: "Saco")
+  presentationQty  Float?       // Snapshot de la cantidad de presentaciones (ej: 2)
+  
+  userId          String
+  createdAt       DateTime      @default(now())
+}
+

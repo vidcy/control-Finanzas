@@ -17,6 +17,7 @@ import IncomePage from "../pages/IncomePage";
 import ExpensesPage from "../pages/ExpensesPage";
 import CategoriesPage from "../pages/CategoriesPage";
 import PendingPage from "../pages/PendingPage";
+import BusinessHistoryPage from "../pages/BusinessHistoryPage";
 
 export default function AppRoutes() {
   return (
@@ -89,6 +90,14 @@ export default function AppRoutes() {
         element={
           <ProtectedRoute>
             <BusinessCashRegisterPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/business-history"
+        element={
+          <ProtectedRoute>
+            <BusinessHistoryPage />
           </ProtectedRoute>
         }
       />
