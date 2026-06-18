@@ -33,6 +33,7 @@ type User = {
   password?: string;
   role: "ADMIN" | "USER";
   status: "TRUE" | "FALSE";
+  profiles: string[];
 };
 
 export default function UserPage() {
@@ -57,6 +58,7 @@ export default function UserPage() {
     email: "",
     role: "USER",
     password: "",
+    profiles: [] as string[],
   });
 
   const handleOpenCreate = () => {
@@ -66,6 +68,7 @@ export default function UserPage() {
       email: "",
       role: "USER",
       password: "",
+      profiles: ["PERSONAL"], // default
     });
     setIsCreateOpen(true);
   };
@@ -78,6 +81,7 @@ export default function UserPage() {
       email: user.email,
       role: user.role,
       password: "",
+      profiles: user.profiles || [],
     });
     setIsEditOpen(true);
   };
@@ -93,6 +97,7 @@ export default function UserPage() {
         formData.password,
         formData.role,
         true,
+        formData.profiles
       );
       toast.success("Usuario creado exitosamente");
       await fetchUsers();
@@ -114,6 +119,7 @@ export default function UserPage() {
         name: formData.name,
         lastName: formData.lastName,
         role: formData.role,
+        profiles: formData.profiles,
       };
       if (formData.password && formData.password.trim() !== "") {
         payload.password = formData.password;
@@ -161,6 +167,7 @@ export default function UserPage() {
         email: u.email,
         role: u.role === "ADMIN" ? "ADMIN" : "USER",
         status: u.isActive ? "TRUE" : "FALSE",
+        profiles: Array.isArray(u.profiles) ? u.profiles : [],
       }));
       setUsers(formattedUsers);
     } catch (error: unknown) {

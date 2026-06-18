@@ -33,8 +33,8 @@ export class PendingTransactionController {
   }
   @UseGuards(JwtAuthGuard)
   @Get()
-  listPendingTransactions(@Req() req, @Query('type') type?: TransactionType) {
-    return this.service.listPendingTransactions(req.user.id, type);
+  listPendingTransactions(@Req() req, @Query('type') type?: TransactionType, @Query('workspace') workspace?: string) {
+    return this.service.listPendingTransactions(req.user.id, type, workspace);
   }
   @UseGuards(JwtAuthGuard)
   @Get(':id')

@@ -70,6 +70,10 @@ export class CreatePendingTransactionDto {
   @IsOptional()
   @IsNumber()
   exchangeRate?: number;
+
+  @IsOptional()
+  @IsString()
+  workspace?: string;
 }
 
 

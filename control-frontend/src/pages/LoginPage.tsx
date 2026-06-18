@@ -26,9 +26,19 @@ export default function LoginPage() {
 
         // 👇 SOLO NAVEGA SI LOGIN ES CORRECTO
         if (success) {
-            console.log("Login correcto → dashboard");
+            console.log("Login correcto → evaluando perfiles");
             toast.success("¡Bienvenido de vuelta!");
-            navigate("/dashboard");
+            
+            const storedUser = JSON.parse(localStorage.getItem("user") || "{}");
+            const profiles = storedUser.profiles || ["PERSONAL", "BUSINESS"];
+            
+            if (profiles.length > 1) {
+                navigate("/workspace-selection");
+            } else if (profiles[0] === "BUSINESS") {
+                navigate("/business-dashboard");
+            } else {
+                navigate("/dashboard");
+            }
         } else {
             console.log("Login incorrecto");
             setError("Credenciales incorrectas");
@@ -133,6 +143,18 @@ export default function LoginPage() {
                             )}
                         </button>
                     </form>
+
+                    <div className="mt-8 text-center">
+                        <p className="text-sm text-gray-600 font-medium">
+                            ¿No tienes cuenta?{' '}
+                            <Link 
+                                to="/register" 
+                                className="text-indigo-600 hover:text-indigo-700 font-bold hover:underline transition-all"
+                            >
+                                Regístrate aquí
+                            </Link>
+                        </p>
+                    </div>
                 </div>
 
                 <p className="text-center text-sm text-gray-500 mt-8 font-medium">

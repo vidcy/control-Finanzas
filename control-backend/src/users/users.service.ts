@@ -22,6 +22,7 @@ export class UsersService {
         email: data.email,
         password: hashedPassword,
         role: data.role as 'ADMIN' | 'USER',
+        profiles: data.profiles || [],
       },
     });
     //seed categories
@@ -82,7 +83,19 @@ export class UsersService {
         email: true,
         role: true,
         isActive: true,
+        profiles: true,
       },
+    });
+  }
+
+  async updateProfiles(id: string, profiles: string[]) {
+    return this.prisma.user.update({
+      where: { id },
+      data: { profiles },
+      select: {
+        id: true,
+        profiles: true,
+      }
     });
   }
 }

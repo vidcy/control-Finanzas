@@ -60,6 +60,7 @@ model User {
   role      Role @default(USER)
   currency  String   @default("PEN")
   isActive  Boolean  @default(true)
+  profiles  Json?
 
   resetToken       String?
   resetTokenExpiry DateTime?
@@ -70,6 +71,8 @@ model User {
   categories   Category[]
   transactions Transaction[]
   notifications Notification[]
+  products     Product[]
+  cashShifts   CashShift[]
 }
 
 // =========================
@@ -169,7 +172,54 @@ model Transaction {
   programmed Boolean @default(false)
   justified Boolean @default(false)
 
+  // 📎 COMPROBANTE/VOUCHER (URL de la imagen/pdf)
+  receiptUrl String?
+
+  // 🏢 ESPACIO DE TRABAJO (PERSONAL o BUSINESS)
+  workspace String @default("PERSONAL")
+
   // ⏱ CONTROL
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// =========================
+// 📦 PRODUCTOS (INVENTARIO SIMPLE)
+// =========================
+model Product {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  sku         String?
+  costPrice   Float    // Precio de compra/costo
+  salePrice   Float    // Precio de venta
+  stock       Int      @default(0)
+  minStock    Int      @default(5)
+  
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// =========================
+// 🗄️ CIERRE DE CAJA (CASH SHIFT)
+// =========================
+enum ShiftStatus {
+  OPEN
+  CLOSED
+}
+
+model CashShift {
+  id              String      @id @default(uuid())
+  openedAt        DateTime    @default(now())
+  closedAt        DateTime?
+  initialBalance  Float       @default(0)
+  finalBalance    Float?
+  totalSales      Float       @default(0)
+  status          ShiftStatus @default(OPEN)
+
+  userId          String
+  user            User        @relation(fields: [userId], references: [id])
 }

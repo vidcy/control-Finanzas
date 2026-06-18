@@ -32,6 +32,12 @@ export class UsersController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Patch('me/profiles')
+  updateProfiles(@Req() req, @Body('profiles') profiles: string[]) {
+    return this.usersService.updateProfiles(req.user.id, profiles);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get(':id')
   findUser(@Param('id') id: string) {
     return this.usersService.findUser(id);

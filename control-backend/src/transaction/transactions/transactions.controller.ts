@@ -1,6 +1,6 @@
 import { Controller, Param, Req } from '@nestjs/common';
 import { TransactionService } from './transaction.service';
-import { Body, Post, Get, Patch, Delete } from '@nestjs/common';
+import { Body, Post, Get, Patch, Delete, Query } from '@nestjs/common';
 import {
   CreateTransactionDto,
 } from './create-transaction.dto';
@@ -19,8 +19,8 @@ export class TransactionController {
   }
   @UseGuards(AuthGuard('jwt'))
   @Get()
-  listTransactions(@Req() req) {
-    return this.transactionService.listTransactions(req.user.id);
+  listTransactions(@Req() req, @Query('workspace') workspace?: string) {
+    return this.transactionService.listTransactions(req.user.id, workspace);
   }
   @UseGuards(AuthGuard('jwt'))
   @Get(':id')

@@ -44,6 +44,8 @@ export class TransactionService {
 
         status: dto.status || TransactionStatus.PAID,
         amountSoles,
+        workspace: dto.workspace || "PERSONAL",
+        receiptUrl: dto.receiptUrl || null,
       },
     });
   }
@@ -52,11 +54,12 @@ export class TransactionService {
   // LIST
   // Backend devuelve UTC sin tocar fechas
   // =========================================================
-  async listTransactions(userId: string) {
+  async listTransactions(userId: string, workspace: string = "PERSONAL") {
     return this.prisma.transaction.findMany({
       where: {
         userId,
         status: TransactionStatus.PAID,
+        workspace,
       },
       orderBy: { date: 'desc' },
       include: {
@@ -125,6 +128,7 @@ export class TransactionService {
         currency,
         exchangeRate,
         amountSoles,
+        ...(dto.receiptUrl !== undefined && { receiptUrl: dto.receiptUrl }),
       },
     });
   }

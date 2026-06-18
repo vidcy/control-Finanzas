@@ -8,9 +8,12 @@ import { ConfigModule } from '@nestjs/config';
 import { PendingTransactionModule } from './transaction/pending/peding.module';
 import { TransactionsModule } from './transaction/transactions/transactions.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { ProductsModule } from './products/products.module';
 import { NestModule, MiddlewareConsumer } from '@nestjs/common'
 import { TimezoneMiddleware } from './middlewares/timezone.middleware'
-
+import { CashShiftModule } from './cash-shift/cash-shift.module';
+import { UploadModule } from './upload/upload.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
@@ -19,6 +22,10 @@ import { TimezoneMiddleware } from './middlewares/timezone.middleware'
     PendingTransactionModule,
     TransactionsModule,
     NotificationsModule,
+    ProductsModule,
+    CashShiftModule,
+    UploadModule,
+    ScheduleModule.forRoot(),
     PrismaModule,
     UsersModule,
     CategoriesModule,

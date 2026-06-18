@@ -17,6 +17,12 @@ export class AuthController {
             body.password,
         )
     }
+
+    @Post('register')
+    register(@Body() body: any) {
+        return this.authService.register(body);
+    }
+
     @Post('forgot-password')
     forgotPassword(@Body() body: { email: string }) {
         return this.authService.forgotPassword(body.email);

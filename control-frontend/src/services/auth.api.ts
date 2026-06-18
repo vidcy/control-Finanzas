@@ -2,7 +2,7 @@ import API from "./axios";
 
 export interface LoginResponse {
     access_token: string;
-    user: string;
+    user: any;
 }
 
 /**
@@ -75,6 +75,20 @@ export const changePasswordRequest = async (
     } catch (error: any) {
         throw new Error(
             error?.response?.data?.message || "Error al cambiar contraseña"
+        );
+    }
+};
+
+export const registerRequest = async (data: any): Promise<LoginResponse> => {
+    try {
+        const res = await API.post("/auth/register", data);
+        if (res.data.access_token) {
+            localStorage.setItem("token", res.data.access_token);
+        }
+        return res.data;
+    } catch (error: any) {
+        throw new Error(
+            error?.response?.data?.message || "Error al registrarse"
         );
     }
 };

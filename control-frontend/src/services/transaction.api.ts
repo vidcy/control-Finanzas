@@ -14,6 +14,7 @@ export const createTransactionRequest = async (data: {
   exchangeRate?: number;
   paymentMethod: string;
   description?: string;
+  workspace?: string;
 }) => {
   try {
     const res = await API.post("/transactions", data);
@@ -25,12 +26,9 @@ export const createTransactionRequest = async (data: {
   }
 };
 
-export const getTransactionsRequest = async () => {
+export const getTransactionsRequest = async (workspace: string = "PERSONAL") => {
   try {
-    console.log("API URL:", import.meta.env.VITE_API_URL);
-    console.log("llamdo al api de transacciones");
-    const res = await API.get("/transactions");
-    console.log("🔥 RAW API RESPONSE:", res);
+    const res = await API.get(`/transactions?workspace=${workspace}`);
     return res.data;
   } catch (error: any) {
     throw new Error(

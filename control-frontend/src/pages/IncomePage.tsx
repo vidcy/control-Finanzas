@@ -19,6 +19,7 @@ import {
   RotateCcw,
   User,
 } from "lucide-react";
+import ImageUploader from "../components/ui/ImageUploader";
 import { toast } from "react-hot-toast";
 import { listCategoriesRequest } from "../services/category.api";
 import ConfirmModal from "../components/ui/ConfirmModal";
@@ -86,6 +87,7 @@ export default function IncomePage() {
     exchangeRate: "1",
     paymentMethod: "TRANSFER" as "CASH" | "TRANSFER" | "YAPE" | "PLIN" | "CARD",
     status: "PAID" as "PAID" | "PENDING",
+    receiptUrl: "" as string | null,
   });
 
 
@@ -259,6 +261,7 @@ export default function IncomePage() {
       exchangeRate: "1",
       paymentMethod: "TRANSFER",
       status: "PAID",
+      receiptUrl: null,
     });
     setSelectedCategoryId("");
     setSelectedSubCategoryId("");
@@ -277,6 +280,7 @@ export default function IncomePage() {
       exchangeRate: item.exchangeRate.toString(),
       paymentMethod: (item.paymentMethod as any) || "TRANSFER",
       status: "PAID",
+      receiptUrl: (item as any).receiptUrl || null,
     });
     setSelectedCategoryId(item.categoryId || "");
     setSelectedSubCategoryId(item.subCategoryId || "");
@@ -337,6 +341,7 @@ export default function IncomePage() {
       type: "INCOME",
       categoryId: selectedCategoryId,
       subCategoryId: selectedSubCategoryId || null,
+      receiptUrl: formData.receiptUrl,
     };
 
     setSaving(true);
@@ -1024,6 +1029,15 @@ export default function IncomePage() {
                         {method.label}
                       </button>
                     ))}
+                  </div>
+
+                  <div className="pt-2">
+                    <ImageUploader 
+                      currentImageUrl={formData.receiptUrl}
+                      onUploadSuccess={(url) => setFormData({...formData, receiptUrl: url})}
+                      onClear={() => setFormData({...formData, receiptUrl: null})}
+                      label="Comprobante / Voucher"
+                    />
                   </div>
                 </div>
 

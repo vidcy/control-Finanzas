@@ -15,6 +15,7 @@ export const registerRequest = async (
   password: string,
   role?: string,
   status?: boolean,
+  profiles?: string[]
 ) => {
   try {
     const res = await API.post("/users", {
@@ -24,6 +25,7 @@ export const registerRequest = async (
       password,
       role,
       isActive: status,
+      profiles,
     });
 
     // 👇 SI LLEGAMOS AQUÍ = backend respondió 200 OK
@@ -63,6 +65,7 @@ export const inactiveUserRequest = async (id: string) => {
     );
   }
 };
+export const updateUserProfilesRequest = (profiles: string[]) => API.patch('/users/me/profiles', { profiles });
 export const activeUserRequest = async (id: string) => {
   try {
     const res = await API.patch(`/users/${id}/active`);

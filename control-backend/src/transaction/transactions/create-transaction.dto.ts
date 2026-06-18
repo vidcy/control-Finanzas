@@ -102,4 +102,12 @@ export class CreateTransactionDto {
   @IsOptional()
   @IsBoolean()
   programmed?: boolean;
+
+  @IsOptional()
+  @IsString()
+  workspace?: string;
+
+  @IsOptional()
+  @IsString()
+  receiptUrl?: string;
 }

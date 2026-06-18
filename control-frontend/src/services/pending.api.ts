@@ -1,7 +1,7 @@
 import API from "./axios";
-export const listPendingTransactionsRequest = async () => {
+export const listPendingTransactionsRequest = async (workspace: string = "PERSONAL") => {
   try {
-    const res = await API.get("/pending");
+    const res = await API.get(`/pending?workspace=${workspace}`);
     return res.data;
   } catch (error: any) {
     throw new Error(
@@ -22,6 +22,7 @@ export const createPendingTransactionRequest = async (data: {
   currency: "PEN" | "USD";
   exchangeRate?: number;
   description?: string;
+  workspace?: string;
 }) => {
   try {
     const res = await API.post("/pending", data);

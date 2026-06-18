@@ -44,6 +44,7 @@ export class PendingTransactionService {
         exchangeRate: dto.exchangeRate,
 
         status: TransactionStatus.PENDING,
+        workspace: dto.workspace || "PERSONAL",
       },
     });
   }
@@ -52,11 +53,12 @@ export class PendingTransactionService {
   // LIST
   // Siempre devolver UTC. El frontend convertirá.
   // =========================================================
-  async listPendingTransactions(userId: string, type?: TransactionType) {
+  async listPendingTransactions(userId: string, type?: TransactionType, workspace: string = "PERSONAL") {
     return this.prisma.transaction.findMany({
       where: {
         userId,
         status: TransactionStatus.PENDING,
+        workspace,
         ...(type ? { type } : {}),
       },
       orderBy: { date: 'desc' },

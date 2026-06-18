@@ -89,5 +89,9 @@ export class UpdateTransactionDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsString()
+  receiptUrl?: string;
 }
 

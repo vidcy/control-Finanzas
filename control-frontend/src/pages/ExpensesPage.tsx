@@ -19,6 +19,7 @@ import {
   ArrowUpRight,
   RotateCcw,
 } from "lucide-react";
+import ImageUploader from "../components/ui/ImageUploader";
 import { toast } from "react-hot-toast";
 import { listCategoriesRequest } from "../services/category.api";
 import ConfirmModal from "../components/ui/ConfirmModal";
@@ -89,6 +90,7 @@ export default function ExpensesPage() {
     justified: false,
     programmed: false,
     paymentMethod: "CASH" as "CASH" | "TRANSFER" | "YAPE" | "PLIN" | "CARD",
+    receiptUrl: "" as string | null,
   });
 
 
@@ -274,6 +276,7 @@ export default function ExpensesPage() {
       paymentMethod: "CASH",
       justified: false,
       programmed: false,
+      receiptUrl: null,
     });
     setSelectedCategoryId("");
     setSelectedSubCategoryId("");
@@ -294,6 +297,7 @@ export default function ExpensesPage() {
       paymentMethod: (item.paymentMethod as any) || "CASH",
       justified: item.justified || false,
       programmed: item.programmed || false,
+      receiptUrl: (item as any).receiptUrl || null,
     });
     setSelectedCategoryId(item.categoryId || "");
     setSelectedSubCategoryId(item.subCategoryId || "");
@@ -357,6 +361,7 @@ export default function ExpensesPage() {
       subCategoryId: selectedSubCategoryId || null,
       justified: formData.justified,
       programmed: formData.programmed,
+      receiptUrl: formData.receiptUrl,
     };
 
     setSaving(true);
@@ -1116,6 +1121,15 @@ export default function ExpensesPage() {
                         {method.label}
                       </button>
                     ))}
+                  </div>
+
+                  <div className="pt-2">
+                    <ImageUploader 
+                      currentImageUrl={formData.receiptUrl}
+                      onUploadSuccess={(url) => setFormData({...formData, receiptUrl: url})}
+                      onClear={() => setFormData({...formData, receiptUrl: null})}
+                      label="Comprobante / Voucher"
+                    />
                   </div>
                 </div>
 

@@ -16,15 +16,25 @@ import {
   Menu,
   X,
   Clock,
+  Briefcase,
+  Store,
+  PackageSearch,
+  PieChart,
+  Vault,
+  DollarSign,
+  Target
 } from "lucide-react";
+import { toast } from "react-hot-toast";
+import { updateUserProfilesRequest } from "../../services/user.api";
 import NotificationDropdown from "./NotificationDropdown";
 import { formatPeruTime } from "../../utils/date.utils";
 import Modal from "../ui/Modal";
 import { changePasswordRequest } from "../../services/auth.api";
+import { FloatingSaveButton } from "../../pages/PiggPage";
 
 export default function FinanceAppShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, setUser, activeWorkspace, setActiveWorkspace } = useAuth();
   const location = useLocation();
 
   const [currentTime, setCurrentTime] = useState("");
@@ -44,6 +54,46 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
   const [isSavingPassword, setIsSavingPassword] = useState(false);
   const [passwordChanged, setPasswordChanged] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Profile module toggles
+  const [activeProfiles, setActiveProfiles] = useState<string[]>(
+    user?.profiles || [],
+  );
+  const [isSavingProfiles, setIsSavingProfiles] = useState(false);
+
+  const handleToggleProfile = async (profile: string) => {
+    let updatedProfiles = [...activeProfiles];
+    if (updatedProfiles.includes(profile)) {
+      if (updatedProfiles.length === 1) {
+        toast.error("Debes tener al menos un módulo activado");
+        return;
+      }
+      if (activeWorkspace === profile) {
+        toast.error(`No puedes desactivar el módulo en el que te encuentras (${profile === "BUSINESS" ? "Negocio" : "Personal"}).`);
+        return;
+      }
+      updatedProfiles = updatedProfiles.filter(p => p !== profile);
+    } else {
+      updatedProfiles.push(profile);
+    }
+    
+    setIsSavingProfiles(true);
+    setActiveProfiles(updatedProfiles);
+    
+    try {
+      await updateUserProfilesRequest(updatedProfiles);
+      // Update local storage and context
+      const updatedUser = { ...user, profiles: updatedProfiles };
+      setUser(updatedUser as any);
+      localStorage.setItem("user", JSON.stringify(updatedUser));
+      toast.success("Módulos actualizados correctamente");
+    } catch (error) {
+      toast.error("Error al actualizar módulos");
+      setActiveProfiles(activeProfiles); // revert
+    } finally {
+      setIsSavingProfiles(false);
+    }
+  };
 
   // Cerrar menú móvil al cambiar de ruta
   useEffect(() => {
@@ -71,8 +121,6 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       alert(message);
     }
   };
-
-
 
   const menu = [
     {
@@ -112,16 +160,77 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
     },
     ...(user?.role === "ADMIN"
       ? [
-        {
-          name: "Usuarios",
-          path: "/users",
-          icon: Users,
-          color: "from-purple-400 to-purple-600",
-          bgActive: "bg-purple-50 text-purple-700",
-        },
-      ]
+          {
+            name: "Usuarios",
+            path: "/users",
+            icon: Users,
+            color: "from-purple-400 to-purple-600",
+            bgActive: "bg-purple-50 text-purple-700",
+          },
+        ]
       : []),
   ];
+
+  const businessMenu = [
+    {
+      name: "Dashboard Negocio",
+      path: "/business-dashboard",
+      icon: Store,
+      color: "from-purple-500 to-indigo-600",
+      bgActive: "bg-purple-50 text-purple-700",
+    },
+    {
+      name: "Punto de Venta (POS)",
+      path: "/business-pos",
+      icon: Briefcase,
+      color: "from-blue-500 to-indigo-600",
+      bgActive: "bg-blue-50 text-blue-700",
+    },
+    {
+      name: "Inventario",
+      path: "/business-inventory",
+      icon: PackageSearch,
+      color: "from-emerald-500 to-teal-600",
+      bgActive: "bg-emerald-50 text-emerald-700",
+    },
+    {
+      name: "Caja / Tesorería",
+      path: "/business-finance",
+      icon: Vault,
+      color: "from-amber-400 to-amber-600",
+      bgActive: "bg-amber-50 text-amber-700",
+    },
+    {
+      name: "Cierre de Caja",
+      path: "/business-cash-register",
+      icon: DollarSign,
+      color: "from-blue-400 to-blue-600",
+      bgActive: "bg-blue-50 text-blue-700",
+    },
+    {
+      name: "Cuentas Pendientes",
+      path: "/business-pending",
+      icon: Clock,
+      color: "from-cyan-400 to-cyan-600",
+      bgActive: "bg-cyan-50 text-cyan-700",
+    },
+    {
+      name: "Reportes",
+      path: "/business-reports",
+      icon: PieChart,
+      color: "from-orange-400 to-rose-500",
+      bgActive: "bg-orange-50 text-orange-700",
+    },
+    {
+      name: "Categorías",
+      path: "/categories",
+      icon: Tags,
+      color: "from-amber-400 to-amber-600",
+      bgActive: "bg-amber-50 text-amber-700",
+    },
+  ];
+
+  const activeMenu = activeWorkspace === "BUSINESS" ? businessMenu : menu;
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -180,7 +289,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4 mt-2 px-4">
             Menú Principal
           </p>
-          {menu.map((item) => {
+          {activeMenu.map((item) => {
             const active = location.pathname.startsWith(item.path);
             const Icon = item.icon;
 
@@ -190,10 +299,11 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                 onClick={() => navigate(item.path)}
                 className={`
                                     w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all duration-300 ease-out group relative overflow-hidden
-                                    ${active
-                    ? `${item.bgActive} shadow-sm font-semibold`
-                    : "text-gray-500 hover:bg-gray-100/80 hover:text-gray-900"
-                  }
+                                    ${
+                                      active
+                                        ? `${item.bgActive} shadow-sm font-semibold`
+                                        : "text-gray-500 hover:bg-gray-100/80 hover:text-gray-900"
+                                    }
                                 `}
               >
                 {active && (
@@ -266,7 +376,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
             </button>
             <div className="flex flex-col">
               <h2 className="text-lg lg:text-2xl font-bold text-gray-800 leading-tight">
-                {menu.find((m) => location.pathname.startsWith(m.path))?.name ||
+                {activeMenu.find((m) => location.pathname.startsWith(m.path))?.name ||
                   "Panel de Control"}
               </h2>
               <p className="hidden sm:block text-xs lg:text-sm text-gray-500">
@@ -275,12 +385,12 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
             </div>
           </div>
 
-
-
           <div className="flex items-center gap-3 lg:gap-4">
             <div className="flex items-center gap-2 bg-white/70 backdrop-blur-md border border-white/80 rounded-2xl py-2 px-3 shadow-sm text-gray-700 select-none">
               <Clock className="w-3.5 h-3.5 text-indigo-500 animate-pulse" />
-              <span className="text-xs font-black tracking-tight font-mono whitespace-nowrap">{currentTime || "--:--:-- --"}</span>
+              <span className="text-xs font-black tracking-tight font-mono whitespace-nowrap">
+                {currentTime || "--:--:-- --"}
+              </span>
             </div>
             <NotificationDropdown />
           </div>
@@ -325,9 +435,120 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
             </span>
           </div>
 
-          {/* CHANGE PASSWORD SIDE */}
-          <div className="md:w-2/3 flex flex-col">
-            <div className="flex items-center gap-2 mb-6">
+          <div className="md:w-2/3 flex flex-col gap-6">
+            {/* PROFILE MODULE TOGGLES */}
+            <div className="bg-white border border-gray-100 p-6 rounded-3xl shadow-sm">
+              <h3 className="text-base font-bold text-gray-800 mb-2">Módulos de tu Cuenta</h3>
+              <p className="text-sm text-gray-500 mb-5">Activa o desactiva los módulos a los que tienes acceso.</p>
+              
+              <div className="flex flex-col gap-4">
+                <label className="flex items-center justify-between p-4 rounded-xl border border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors">
+                  <div className="flex items-center gap-3">
+                    <Target className="w-5 h-5 text-blue-500" />
+                    <div>
+                      <h4 className="text-sm font-bold text-gray-800">Módulo Personal</h4>
+                      <p className="text-xs text-gray-500">Gestión de finanzas personales</p>
+                    </div>
+                  </div>
+                  <div className="relative">
+                    <input 
+                      type="checkbox" 
+                      className="sr-only peer" 
+                      checked={activeProfiles.includes("PERSONAL")}
+                      onChange={() => handleToggleProfile("PERSONAL")}
+                      disabled={isSavingProfiles}
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
+                  </div>
+                </label>
+
+                <label className="flex items-center justify-between p-4 rounded-xl border border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors">
+                  <div className="flex items-center gap-3">
+                    <Briefcase className="w-5 h-5 text-purple-500" />
+                    <div>
+                      <h4 className="text-sm font-bold text-gray-800">Módulo Negocio PRO</h4>
+                      <p className="text-xs text-gray-500">Control ERP, POS y reportes</p>
+                    </div>
+                  </div>
+                  <div className="relative">
+                    <input 
+                      type="checkbox" 
+                      className="sr-only peer" 
+                      checked={activeProfiles.includes("BUSINESS")}
+                      onChange={() => handleToggleProfile("BUSINESS")}
+                      disabled={isSavingProfiles}
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-500"></div>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            {/* WORKSPACE SWITCHER (PERFILES) */}
+            <div className="bg-white border border-gray-100 p-6 rounded-3xl shadow-sm">
+              <h3 className="text-base font-bold text-gray-800 mb-2">Espacio de Trabajo Activo</h3>
+              <p className="text-sm text-gray-500 mb-5">Selecciona el perfil que deseas usar en este momento. La plataforma se adaptará al entorno seleccionado.</p>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Personal Card */}
+                {activeProfiles.includes("PERSONAL") && (
+                  <div 
+                    onClick={() => {
+                      setActiveWorkspace("PERSONAL");
+                      navigate("/dashboard");
+                      setIsProfileModalOpen(false);
+                    }}
+                    className={`relative p-5 rounded-2xl cursor-pointer transition-all duration-300 border-2 overflow-hidden group ${
+                      activeWorkspace === "PERSONAL" 
+                        ? "border-blue-500 bg-blue-50 shadow-md shadow-blue-500/10" 
+                        : "border-gray-100 hover:border-blue-300 hover:bg-gray-50 opacity-60 hover:opacity-100"
+                    }`}
+                  >
+                    {activeWorkspace === "PERSONAL" && (
+                      <div className="absolute top-4 right-4 text-blue-500">
+                        <CheckCircle2 className="w-6 h-6" />
+                      </div>
+                    )}
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 shadow-sm ${activeWorkspace === "PERSONAL" ? "bg-blue-500 text-white" : "bg-blue-100 text-blue-500 group-hover:bg-blue-500 group-hover:text-white transition-colors"}`}>
+                      <Target className="w-6 h-6" />
+                    </div>
+                    <h4 className="text-lg font-bold text-gray-900 mb-1">Personal</h4>
+                    <p className="text-xs text-gray-600 font-medium">Finanzas del día a día</p>
+                  </div>
+                )}
+
+                {/* Business Card */}
+                {activeProfiles.includes("BUSINESS") && (
+                  <div 
+                    onClick={() => {
+                      setActiveWorkspace("BUSINESS");
+                      navigate("/business-dashboard");
+                      setIsProfileModalOpen(false);
+                    }}
+                    className={`relative p-5 rounded-2xl cursor-pointer transition-all duration-300 border-2 overflow-hidden group ${
+                      activeWorkspace === "BUSINESS" 
+                        ? "border-purple-500 bg-purple-50 shadow-md shadow-purple-500/10" 
+                        : "border-gray-100 hover:border-purple-300 hover:bg-gray-50 opacity-60 hover:opacity-100"
+                    }`}
+                  >
+                    {activeWorkspace === "BUSINESS" && (
+                      <div className="absolute top-4 right-4 text-purple-500">
+                        <CheckCircle2 className="w-6 h-6" />
+                      </div>
+                    )}
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 shadow-sm ${activeWorkspace === "BUSINESS" ? "bg-purple-600 text-white" : "bg-purple-100 text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition-colors"}`}>
+                      <Briefcase className="w-6 h-6" />
+                    </div>
+                    <h4 className="text-lg font-bold text-gray-900 mb-1">Negocio PRO</h4>
+                    <p className="text-xs text-gray-600 font-medium">Control ERP y Ventas</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* CHANGE PASSWORD SIDE */}
+            <div className="flex flex-col">
+              <div className="flex items-center gap-2 mb-6">
               <Settings className="w-5 h-5 text-indigo-500" />
               <h3 className="text-lg font-bold text-gray-800">
                 Cambiar Contraseña
@@ -434,8 +655,11 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
               </div>
             </form>
           </div>
+          </div>
         </div>
       </Modal>
+
+      {activeWorkspace === "PERSONAL" && <FloatingSaveButton />}
     </div>
   );
 }
