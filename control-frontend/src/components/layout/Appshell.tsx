@@ -98,9 +98,19 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
     }
   };
 
-  // Cerrar menú móvil al cambiar de ruta
+  // Cerrar menú móvil y sincronizar workspace al cambiar de ruta
   useEffect(() => {
     setIsMobileMenuOpen(false);
+    const path = location.pathname;
+    if (path.startsWith("/business-")) {
+      if (activeWorkspace !== "BUSINESS") {
+        setActiveWorkspace("BUSINESS");
+      }
+    } else if (["/dashboard", "/income", "/expenses", "/pending", "/users"].some(p => path === p || path.startsWith(p + "/"))) {
+      if (activeWorkspace !== "PERSONAL") {
+        setActiveWorkspace("PERSONAL");
+      }
+    }
   }, [location.pathname]);
 
   const handlePasswordSubmit = async (e: React.FormEvent) => {
@@ -274,15 +284,15 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
         {/* BRAND */}
         <div className="h-20 flex items-center justify-between px-8 border-b border-gray-100/50">
           <div className="flex items-center">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/30">
-              <TrendingUp className="text-white w-6 h-6" />
+            <div className="w-10 h-10 rounded-xl overflow-hidden shadow-md">
+              <img src="/logo.png" alt="THINK Logo" className="w-full h-full object-cover" />
             </div>
             <div className="ml-3">
-              <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600">
-                FinanzasPro
+              <h1 className="text-xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600 tracking-wider">
+                THINK
               </h1>
-              <p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">
-                Control Total
+              <p className="text-[9px] uppercase tracking-widest text-indigo-500 font-bold">
+                App Financiera
               </p>
             </div>
           </div>

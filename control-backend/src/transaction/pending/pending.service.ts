@@ -48,6 +48,7 @@ export class PendingTransactionService {
 
         status: TransactionStatus.PENDING,
         workspace: dto.workspace || 'PERSONAL',
+        receiptUrl: dto.receiptUrl || null,
       },
     });
   }
@@ -134,6 +135,7 @@ export class PendingTransactionService {
         ...(dto.name !== undefined && { name: dto.name }),
         ...(dto.description !== undefined && { description: dto.description }),
         ...(dto.status && { status: dto.status }),
+        ...(dto.receiptUrl !== undefined && { receiptUrl: dto.receiptUrl }),
 
         amount,
         currency,

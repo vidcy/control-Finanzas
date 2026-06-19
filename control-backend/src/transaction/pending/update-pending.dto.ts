@@ -55,6 +55,10 @@ export class UpdatePendingTransactionDto {
   @IsOptional()
   @IsNumber()
   amountSoles?: number;
+
+  @IsOptional()
+  @IsString()
+  receiptUrl?: string;
 }
 
 export class MarkAsPaidDto {

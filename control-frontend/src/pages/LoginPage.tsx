@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { useNavigate, Link } from "react-router-dom";
-import { Mail, Lock, ArrowRight, TrendingUp, AlertCircle } from "lucide-react";
+import { Mail, Lock, ArrowRight, AlertCircle } from "lucide-react";
 import { toast } from "react-hot-toast";
 
 export default function LoginPage() {
@@ -58,12 +58,15 @@ export default function LoginPage() {
             <div className="w-full max-w-md p-5 sm:p-8 relative z-10 animate-fade-in-up">
                 {/* BRAND */}
                 <div className="flex flex-col items-center mb-10">
-                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-xl shadow-blue-500/30 mb-4 transform hover:scale-105 transition-transform duration-300">
-                        <TrendingUp className="text-white w-8 h-8" />
+                    <div className="w-16 h-16 rounded-2xl overflow-hidden shadow-xl mb-4 transform hover:scale-105 transition-transform duration-300">
+                        <img src="/logo.png" alt="THINK Logo" className="w-full h-full object-cover" />
                     </div>
-                    <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600">
-                        FinanzasPro
+                    <h1 className="text-3xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600 tracking-wider">
+                        THINK
                     </h1>
+                    <p className="text-[10px] uppercase tracking-widest text-indigo-500 font-black mt-1">
+                        Plataforma Financiera
+                    </p>
                     <p className="text-sm font-medium text-gray-500 mt-2 tracking-wide">
                         Bienvenido de nuevo, controla tus finanzas.
                     </p>
@@ -158,7 +161,7 @@ export default function LoginPage() {
                 </div>
 
                 <p className="text-center text-sm text-gray-500 mt-8 font-medium">
-                    &copy; {new Date().getFullYear()} FinanzasPro. Todos los derechos reservados.
+                    &copy; {new Date().getFullYear()} THINK. Todos los derechos reservados.
                 </p>
             </div>
         </div>

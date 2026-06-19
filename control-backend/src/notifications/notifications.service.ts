@@ -5,16 +5,19 @@ import { PrismaService } from 'src/prisma/prisma.service';
 export class NotificationsService {
   constructor(private prisma: PrismaService) {}
 
-  async getNotifications(userId: string) {
-    // Auto-generate notifications for pending accounts
+  async getNotifications(userId: string, workspace: string = 'PERSONAL') {
+    // Auto-generate notifications for pending accounts matching the current workspace
     const pendingTransactions = await this.prisma.transaction.findMany({
-      where: { userId, status: 'PENDING' },
+      where: { userId, status: 'PENDING', workspace },
       include: { category: true },
     });
 
     for (const t of pendingTransactions) {
-      // Create a unique link based on transaction id to avoid duplicates
-      const uniqueLink = `/pending?id=${t.id}`;
+      // Create a unique link based on workspace to separate alerts
+      const uniqueLink = workspace === 'BUSINESS'
+        ? `/business-pending?id=${t.id}`
+        : `/pending?id=${t.id}`;
+        
       const existing = await this.prisma.notification.findFirst({
         where: { userId, link: uniqueLink },
       });
@@ -43,8 +46,16 @@ export class NotificationsService {
       }
     }
 
+    // Classify by link patterns: `/business` routes go to BUSINESS workspace, others go to PERSONAL
+    const linkFilter = workspace === 'BUSINESS'
+      ? { contains: '/business' }
+      : { not: { contains: '/business' } };
+
     return this.prisma.notification.findMany({
-      where: { userId },
+      where: { 
+        userId,
+        link: linkFilter,
+      },
       orderBy: { createdAt: 'desc' },
       take: 20,
     });
@@ -57,9 +68,13 @@ export class NotificationsService {
     });
   }
 
-  async markAllAsRead(userId: string) {
+  async markAllAsRead(userId: string, workspace: string = 'PERSONAL') {
+    const linkFilter = workspace === 'BUSINESS'
+      ? { contains: '/business' }
+      : { not: { contains: '/business' } };
+
     return this.prisma.notification.updateMany({
-      where: { userId, read: false },
+      where: { userId, read: false, link: linkFilter },
       data: { read: true },
     });
   }

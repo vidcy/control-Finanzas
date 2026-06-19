@@ -9,8 +9,8 @@ export interface NotificationDto {
   createdAt: string;
 }
 
-export const getNotificationsRequest = async (): Promise<NotificationDto[]> => {
-  const res = await axios.get('/notifications');
+export const getNotificationsRequest = async (workspace?: string): Promise<NotificationDto[]> => {
+  const res = await axios.get(workspace ? `/notifications?workspace=${workspace}` : '/notifications');
   return res.data;
 };
 
@@ -18,6 +18,6 @@ export const markNotificationAsReadRequest = async (id: string): Promise<void> =
   await axios.patch(`/notifications/${id}/read`);
 };
 
-export const markAllNotificationsAsReadRequest = async (): Promise<void> => {
-  await axios.patch(`/notifications/read-all`);
+export const markAllNotificationsAsReadRequest = async (workspace?: string): Promise<void> => {
+  await axios.patch(workspace ? `/notifications/read-all?workspace=${workspace}` : `/notifications/read-all`);
 };

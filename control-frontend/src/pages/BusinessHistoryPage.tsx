@@ -3,36 +3,35 @@ import Appshell from "../components/layout/Appshell";
 import {
   ShoppingBag,
   Search,
-  Trash2,
-  Edit2,
   TrendingDown,
   TrendingUp,
   ArrowUpDown,
   Package,
-  Eye,
+  Clock,
+  User,
+  Info,
+  Lock,
+  Unlock,
+  PlusCircle,
+  Trash2,
 } from "lucide-react";
 import {
   getInventoryMovementsRequest,
-  deleteInventoryMovementRequest,
 } from "../services/product.api";
 import type { InventoryMovement } from "../services/product.api";
-import {
-  getTransactionsRequest,
-  deleteTransactionRequest,
-  updateTransactionRequest,
-} from "../services/transaction.api";
+import { getAuditLogsRequest } from "../services/transaction.api";
 import { format } from "date-fns";
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
 import { getReceiptAbsoluteUrl } from "../components/ui/ImageUploader";
 
 export default function BusinessHistoryPage() {
-  const [activeTab, setActiveTab] = useState<"sales" | "movements">("sales");
+  const [activeTab, setActiveTab] = useState<"audit" | "movements">("audit");
 
-  // Sales
-  const [salesTx, setSalesTx] = useState<any[]>([]);
-  const [loadingSales, setLoadingSales] = useState(true);
-  const [searchSales, setSearchSales] = useState("");
+  // Audit Logs
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [loadingAudit, setLoadingAudit] = useState(true);
+  const [searchAudit, setSearchAudit] = useState("");
 
   // Movements (Kardex)
   const [movements, setMovements] = useState<InventoryMovement[]>([]);
@@ -40,26 +39,18 @@ export default function BusinessHistoryPage() {
   const [searchMovements, setSearchMovements] = useState("");
   const [filterType, setFilterType] = useState<"" | "IN" | "OUT">("");
 
-  // Edit sale modal
-  const [editSale, setEditSale] = useState<any>(null);
-  const [editAmount, setEditAmount] = useState(0);
-  const [editDesc, setEditDesc] = useState("");
-  const [editPayment, setEditPayment] = useState("CASH");
+  // Detail Modal
+  const [viewLogDetail, setViewLogDetail] = useState<any>(null);
 
-  // View sale modal
-  const [viewSale, setViewSale] = useState<any>(null);
-
-  const loadSales = async () => {
-    setLoadingSales(true);
+  const loadAuditLogs = async () => {
+    setLoadingAudit(true);
     try {
-      const data = await getTransactionsRequest("BUSINESS");
-      // Filter only POS sales (INCOME type from BUSINESS workspace)
-      const posSales = data.filter((t: any) => t.workspace === "BUSINESS" && t.type === "INCOME");
-      setSalesTx(posSales.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+      const data = await getAuditLogsRequest();
+      setAuditLogs(data);
     } catch {
-      toast.error("Error al cargar historial de ventas");
+      toast.error("Error al cargar la bitácora de auditoría");
     } finally {
-      setLoadingSales(false);
+      setLoadingAudit(false);
     }
   };
 
@@ -75,65 +66,125 @@ export default function BusinessHistoryPage() {
     }
   };
 
-  useEffect(() => { loadSales(); }, []);
-  useEffect(() => { loadMovements(); }, [filterType]);
-
-  const handleDeleteSale = async (id: string) => {
-    if (!window.confirm("¿Eliminar este registro de venta? El stock NO se revertirá automáticamente.")) return;
-    try {
-      await deleteTransactionRequest(id);
-      toast.success("Registro eliminado");
-      loadSales();
-    } catch {
-      toast.error("Error al eliminar");
-    }
-  };
-
-  const handleSaveEdit = async () => {
-    if (!editSale) return;
-    try {
-      await updateTransactionRequest(editSale.id, {
-        categoryId: editSale.categoryId,
-        subCategoryId: editSale.subCategoryId || "",
-        amount: editAmount,
-        date: new Date(editSale.date),
-        paymentMethod: editPayment,
-        description: editDesc,
-        name: editSale.name,
-        currency: editSale.currency,
-      });
-      toast.success("Venta actualizada");
-      setEditSale(null);
-      loadSales();
-    } catch {
-      toast.error("Error al actualizar");
-    }
-  };
-
-  const handleDeleteMovement = async (id: string) => {
-    if (!window.confirm("¿Eliminar este movimiento de inventario? El stock NO se revertirá.")) return;
-    try {
-      await deleteInventoryMovementRequest(id);
-      toast.success("Movimiento eliminado");
+  useEffect(() => {
+    if (activeTab === "audit") {
+      loadAuditLogs();
+    } else {
       loadMovements();
-    } catch (e: any) {
-      toast.error(e?.response?.data?.message || "Error al eliminar movimiento");
     }
+  }, [activeTab, filterType]);
+
+  // Map database logs to human readable timeline entries
+  const getAuditLogDetails = (log: any) => {
+    const table = log.tableName;
+    const action = log.action;
+    const newV = log.newValues ? (typeof log.newValues === "string" ? JSON.parse(log.newValues) : log.newValues) : null;
+    const oldV = log.oldValues ? (typeof log.oldValues === "string" ? JSON.parse(log.oldValues) : log.oldValues) : null;
+
+    let title = `${action} en ${table}`;
+    let description = `Registro ID: ${log.recordId}`;
+    let type = "generic";
+    let color = "bg-gray-100 text-gray-700 border-gray-200";
+    let IconComponent = Info;
+
+    if (table === "CashShift") {
+      type = "shift";
+      color = "bg-amber-50 text-amber-700 border-amber-200";
+      if (action === "INSERT") {
+        title = "Apertura de Caja 🔓";
+        description = `Caja abierta con saldo inicial de S/ ${Number(newV?.initialBalance || 0).toFixed(2)}`;
+        IconComponent = Unlock;
+      } else if (action === "UPDATE") {
+        if (newV?.status === "CLOSED") {
+          title = "Cierre de Caja 🔒";
+          description = `Caja cerrada. Ventas: S/ ${Number(newV?.totalSales || 0).toFixed(2)}. Saldo final: S/ ${Number(newV?.finalBalance || 0).toFixed(2)}`;
+          IconComponent = Lock;
+        } else {
+          title = "Caja Modificada ✏️";
+          description = `Se actualizaron los datos de la caja.`;
+          IconComponent = Info;
+        }
+      }
+    } else if (table === "Transaction") {
+      type = "transaction";
+      const txType = newV?.type || oldV?.type;
+      const amount = newV?.amount || oldV?.amount || 0;
+      const name = newV?.name || oldV?.name || "Transacción";
+
+      if (action === "INSERT") {
+        color = txType === "INCOME" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-rose-50 text-rose-700 border-rose-200";
+        title = txType === "INCOME" ? "Cobro Registrado 💰" : "Egreso Registrado 💸";
+        description = `Registro de S/ ${Number(amount).toFixed(2)} vía ${newV?.paymentMethod || "Efectivo"} por "${name}"`;
+        IconComponent = txType === "INCOME" ? TrendingUp : TrendingDown;
+      } else if (action === "UPDATE") {
+        color = "bg-blue-50 text-blue-700 border-blue-200";
+        title = "Operación Contable Editada ✏️";
+        description = `Transacción "${name}" editada de S/ ${Number(oldV?.amount || 0).toFixed(2)} a S/ ${Number(newV?.amount || 0).toFixed(2)}`;
+        IconComponent = Info;
+      } else if (action === "DELETE") {
+        color = "bg-rose-100 text-rose-800 border-rose-300";
+        title = txType === "INCOME" ? "Cobro Eliminado ❌" : "Egreso Eliminado ❌";
+        description = `Se eliminó la transacción "${name}" por un monto de S/ ${Number(amount).toFixed(2)}`;
+        IconComponent = Trash2;
+      }
+    } else if (table === "Product") {
+      type = "product";
+      color = "bg-purple-50 text-purple-700 border-purple-200";
+      const prodName = newV?.name || oldV?.name || "Producto";
+
+      if (action === "INSERT") {
+        title = "Producto Creado 📦";
+        description = `Se creó el producto "${prodName}" con precio S/ ${Number(newV?.salePrice || 0).toFixed(2)}`;
+        IconComponent = PlusCircle;
+      } else if (action === "UPDATE") {
+        title = "Producto Modificado 📦";
+        description = `Se actualizó el producto "${prodName}" (Stock: ${newV?.stock})`;
+        IconComponent = Info;
+      } else if (action === "DELETE") {
+        color = "bg-red-50 text-red-700 border-red-200";
+        title = "Producto Eliminado 📦 ❌";
+        description = `Se eliminó el producto "${prodName}"`;
+        IconComponent = Trash2;
+      }
+    } else if (table === "Category") {
+      type = "category";
+      color = "bg-indigo-50 text-indigo-700 border-indigo-200";
+      const catName = newV?.name || oldV?.name || "Categoría";
+
+      if (action === "INSERT") {
+        title = "Categoría Creada 🏷️";
+        description = `Se creó la categoría "${catName}"`;
+        IconComponent = PlusCircle;
+      } else if (action === "UPDATE") {
+        title = "Categoría Modificada 🏷️";
+        description = `Se modificó la categoría "${catName}"`;
+        IconComponent = Info;
+      } else if (action === "DELETE") {
+        color = "bg-red-50 text-red-700 border-red-200";
+        title = "Categoría Eliminada 🏷️ ❌";
+        description = `Se eliminó la categoría "${catName}"`;
+        IconComponent = Trash2;
+      }
+    }
+
+    return { title, description, color, IconComponent, type };
   };
 
-  const filteredSales = salesTx.filter((t) =>
-    (t.name || "").toLowerCase().includes(searchSales.toLowerCase()) ||
-    (t.description || "").toLowerCase().includes(searchSales.toLowerCase())
-  );
+  const filteredAudit = auditLogs.filter((log) => {
+    const details = getAuditLogDetails(log);
+    const search = searchAudit.toLowerCase();
+    return (
+      details.title.toLowerCase().includes(search) ||
+      details.description.toLowerCase().includes(search) ||
+      (log.userEmail || "").toLowerCase().includes(search) ||
+      log.tableName.toLowerCase().includes(search)
+    );
+  });
 
   const filteredMovements = movements.filter((m) =>
     (m.product?.name || "").toLowerCase().includes(searchMovements.toLowerCase()) ||
     (m.presentationName || "").toLowerCase().includes(searchMovements.toLowerCase())
   );
-
-  const paymentLabel: Record<string, string> = {
-    CASH: "Efectivo", YAPE: "Yape", PLIN: "Plin", CARD: "Tarjeta", TRANSFER: "Transferencia"
-  };
 
   return (
     <Appshell>
@@ -145,9 +196,9 @@ export default function BusinessHistoryPage() {
             <div className="inline-flex items-center justify-center p-3 bg-white rounded-2xl mb-4 border border-violet-100 shadow-sm">
               <ShoppingBag className="w-8 h-8 text-violet-600" />
             </div>
-            <h1 className="text-4xl font-black tracking-tight text-gray-900">Historial</h1>
+            <h1 className="text-4xl font-black tracking-tight text-gray-900">Historial del Sistema</h1>
             <p className="text-gray-500 font-medium mt-2">
-              Revisa, edita y elimina registros de ventas y movimientos de inventario.
+              Bitácora de auditoría histórica e inmutable de movimientos y actividades operativas.
             </p>
           </div>
         </div>
@@ -155,10 +206,10 @@ export default function BusinessHistoryPage() {
         {/* TABS */}
         <div className="flex bg-white rounded-2xl border border-gray-100 p-1.5 shadow-sm gap-1">
           <button
-            onClick={() => setActiveTab("sales")}
-            className={`flex-1 py-2.5 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${activeTab === "sales" ? "bg-violet-600 text-white shadow-md" : "text-gray-500 hover:text-gray-800 hover:bg-gray-50"}`}
+            onClick={() => setActiveTab("audit")}
+            className={`flex-1 py-2.5 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${activeTab === "audit" ? "bg-violet-600 text-white shadow-md" : "text-gray-500 hover:text-gray-800 hover:bg-gray-50"}`}
           >
-            <ShoppingBag className="w-4 h-4" /> Ventas POS
+            <Clock className="w-4 h-4" /> Bitácora de Auditoría
           </button>
           <button
             onClick={() => setActiveTab("movements")}
@@ -168,114 +219,77 @@ export default function BusinessHistoryPage() {
           </button>
         </div>
 
-        {/* SALES TAB */}
-        {activeTab === "sales" && (
+        {/* AUDIT LOG TAB */}
+        {activeTab === "audit" && (
           <div className="space-y-4">
             <div className="flex gap-3">
               <div className="flex-1 flex items-center bg-white border border-gray-100 rounded-xl px-4 shadow-sm">
                 <Search className="w-4 h-4 text-gray-400 mr-2" />
                 <input
                   type="text"
-                  placeholder="Buscar por concepto o descripción..."
+                  placeholder="Buscar en la bitácora por título, descripción, usuario o tabla..."
                   className="flex-1 py-3 outline-none text-sm"
-                  value={searchSales}
-                  onChange={(e) => setSearchSales(e.target.value)}
+                  value={searchAudit}
+                  onChange={(e) => setSearchAudit(e.target.value)}
                 />
               </div>
             </div>
 
-            <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
-              {loadingSales ? (
-                <div className="p-8 text-center text-gray-400">Cargando ventas...</div>
-              ) : filteredSales.length === 0 ? (
+            <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-6">
+              {loadingAudit ? (
+                <div className="p-8 text-center text-gray-400 font-bold">Cargando bitácora del sistema...</div>
+              ) : filteredAudit.length === 0 ? (
                 <div className="p-12 text-center">
-                  <ShoppingBag className="w-12 h-12 text-gray-200 mx-auto mb-3" />
-                  <p className="text-gray-400 font-medium">No hay ventas registradas aún.</p>
+                  <Clock className="w-12 h-12 text-gray-200 mx-auto mb-3" />
+                  <p className="text-gray-400 font-medium">No hay eventos registrados en la bitácora.</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50 text-gray-500 uppercase text-xs">
-                      <tr>
-                        <th className="px-5 py-4 text-left">Fecha</th>
-                        <th className="px-5 py-4 text-left">Concepto</th>
-                        <th className="px-5 py-4 text-left">Descripción</th>
-                        <th className="px-5 py-4 text-center">Pago</th>
-                        <th className="px-5 py-4 text-right">Total</th>
-                        <th className="px-5 py-4 text-center">Acciones</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {filteredSales.map((sale) => (
-                        <tr key={sale.id} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-5 py-4 text-gray-500 whitespace-nowrap text-xs">
-                            {format(new Date(sale.date), "dd/MM/yyyy HH:mm")}
-                          </td>
-                          <td className="px-5 py-4">
-                            <span className="font-semibold text-gray-900">{sale.name || "Venta en Caja"}</span>
-                          </td>
-                          <td className="px-5 py-4 max-w-[240px]">
-                            <span className="text-gray-500 text-xs truncate block">{sale.description}</span>
-                            {sale.receiptUrl && (
-                              <a
-                                href={getReceiptAbsoluteUrl(sale.receiptUrl) || "#"}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-indigo-500 text-[10px] font-bold mt-0.5 block hover:underline"
-                              >
-                                📎 Ver comprobante
-                              </a>
-                            )}
-                          </td>
-                          <td className="px-5 py-4 text-center">
-                            <span className="text-xs font-bold bg-gray-100 text-gray-600 px-2 py-1 rounded-lg">
-                              {paymentLabel[sale.paymentMethod] || sale.paymentMethod}
-                            </span>
-                          </td>
-                          <td className="px-5 py-4 text-right">
-                            <span className="font-black text-emerald-600">S/ {Number(sale.amount).toFixed(2)}</span>
-                          </td>
-                          <td className="px-5 py-4">
-                            <div className="flex items-center justify-center gap-2">
-                              <button
-                                onClick={() => setViewSale(sale)}
-                                className="p-1.5 text-gray-400 hover:text-violet-600 hover:bg-violet-50 rounded-lg transition-colors"
-                                title="Ver detalles"
-                              >
-                                <Eye className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setEditSale(sale);
-                                  setEditAmount(sale.amount);
-                                  setEditDesc(sale.description || "");
-                                  setEditPayment(sale.paymentMethod);
-                                }}
-                                className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
-                                title="Editar"
-                              >
-                                <Edit2 className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteSale(sale.id)}
-                                className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                title="Eliminar"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                <div className="relative border-l-2 border-indigo-100 ml-4 md:ml-6 space-y-6">
+                  {filteredAudit.map((log) => {
+                    const details = getAuditLogDetails(log);
+                    return (
+                      <div key={log.id} className="relative pl-6 md:pl-8 group">
+                        {/* Dot indicator */}
+                        <div className={`absolute -left-[13px] top-1.5 p-1 rounded-full border-2 border-white shadow-md ${details.color}`}>
+                          <details.IconComponent className="w-3.5 h-3.5" />
+                        </div>
+
+                        {/* Log Item Card */}
+                        <div className="bg-white hover:bg-gray-50/50 border border-gray-100 hover:border-gray-200 rounded-2xl p-4 transition-all shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-black tracking-tight text-gray-800">{details.title}</span>
+                              <span className="text-[10px] bg-gray-100 text-gray-500 font-bold px-1.5 py-0.5 rounded-md uppercase">
+                                {log.tableName}
+                              </span>
                             </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                            <p className="text-gray-600 text-xs mt-1 font-semibold">{details.description}</p>
+                            <div className="flex items-center gap-3 text-[10px] text-gray-400 mt-2 font-medium">
+                              <span className="flex items-center gap-1">
+                                <User className="w-3 h-3" /> {log.userEmail || "Sistema Automático"}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Clock className="w-3 h-3" /> {format(new Date(log.createdAt), "dd/MM/yyyy HH:mm:ss")}
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => setViewLogDetail(log)}
+                            className="text-xs font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100/70 px-3 py-1.5 rounded-xl transition-all self-end md:self-auto"
+                          >
+                            Ver Datos
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
           </div>
         )}
 
-        {/* MOVEMENTS TAB */}
+        {/* INVENTORY MOVEMENTS TAB */}
         {activeTab === "movements" && (
           <div className="space-y-4">
             <div className="flex gap-3">
@@ -304,7 +318,7 @@ export default function BusinessHistoryPage() {
 
             <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
               {loadingMovements ? (
-                <div className="p-8 text-center text-gray-400">Cargando movimientos...</div>
+                <div className="p-8 text-center text-gray-400 font-bold">Cargando movimientos...</div>
               ) : filteredMovements.length === 0 ? (
                 <div className="p-12 text-center">
                   <Package className="w-12 h-12 text-gray-200 mx-auto mb-3" />
@@ -313,15 +327,14 @@ export default function BusinessHistoryPage() {
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead className="bg-gray-50 text-gray-500 uppercase text-xs">
+                    <thead className="bg-gray-50 text-gray-500 uppercase text-xs font-bold">
                       <tr>
                         <th className="px-5 py-4 text-left">Fecha</th>
                         <th className="px-5 py-4 text-left">Producto</th>
                         <th className="px-5 py-4 text-center">Tipo</th>
                         <th className="px-5 py-4 text-left">Presentación</th>
-                        <th className="px-5 py-4 text-right">Qty (Base)</th>
+                        <th className="px-5 py-4 text-right">Cantidad (Base)</th>
                         <th className="px-5 py-4 text-center">Motivo</th>
-                        <th className="px-5 py-4 text-center">Acción</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
@@ -360,31 +373,22 @@ export default function BusinessHistoryPage() {
                           </td>
                           <td className="px-5 py-4">
                             {m.presentationQty && m.presentationName ? (
-                              <span className="text-xs text-gray-600">
+                              <span className="text-xs text-gray-600 font-semibold">
                                 {m.presentationQty} × {m.presentationName}
                               </span>
                             ) : (
                               <span className="text-gray-400 text-xs">—</span>
                             )}
                           </td>
-                          <td className="px-5 py-4 text-right">
-                            <span className={`font-black text-sm ${m.type === "IN" ? "text-emerald-600" : "text-rose-600"}`}>
+                          <td className="px-5 py-4 text-right font-black">
+                            <span className={m.type === "IN" ? "text-emerald-600" : "text-rose-600"}>
                               {m.type === "IN" ? "+" : "−"}{m.quantity} {m.product?.unit}
                             </span>
                           </td>
                           <td className="px-5 py-4 text-center">
-                            <span className="text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded-lg font-medium">
+                            <span className="text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded-lg font-bold">
                               {m.reason === "SALE" ? "Venta" : m.reason === "PURCHASE" ? "Compra" : m.reason || "—"}
                             </span>
-                          </td>
-                          <td className="px-5 py-4 text-center">
-                            <button
-                              onClick={() => handleDeleteMovement(m.id)}
-                              className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                              title="Eliminar movimiento"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
                           </td>
                         </tr>
                       ))}
@@ -397,100 +401,57 @@ export default function BusinessHistoryPage() {
         )}
       </div>
 
-      {/* MODAL: View Sale */}
-      <Modal isOpen={!!viewSale} onClose={() => setViewSale(null)} title="Detalle de Venta">
-        {viewSale && (
-          <div className="space-y-3 text-sm">
+      {/* DETAIL MODAL: VIEW RAW LOG STATE */}
+      <Modal isOpen={!!viewLogDetail} onClose={() => setViewLogDetail(null)} title="🔍 Detalle de Cambios de Auditoría" maxWidth="max-w-2xl">
+        {viewLogDetail && (
+          <div className="space-y-4 text-sm text-gray-800">
             <div className="grid grid-cols-2 gap-3">
-              <div className="bg-gray-50 p-3 rounded-xl">
-                <div className="text-xs text-gray-400 font-semibold mb-1">Fecha</div>
-                <div className="font-bold text-gray-800">{format(new Date(viewSale.date), "dd/MM/yyyy HH:mm")}</div>
+              <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
+                <div className="text-xs text-gray-400 font-bold mb-1">Tabla Afectada</div>
+                <div className="font-bold text-indigo-700 font-mono text-xs">{viewLogDetail.tableName}</div>
               </div>
-              <div className="bg-emerald-50 p-3 rounded-xl">
-                <div className="text-xs text-gray-400 font-semibold mb-1">Total</div>
-                <div className="font-black text-emerald-600 text-lg">S/ {Number(viewSale.amount).toFixed(2)}</div>
+              <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
+                <div className="text-xs text-gray-400 font-bold mb-1">Operación</div>
+                <div className={`font-black text-xs px-2 py-0.5 rounded-md inline-block uppercase ${
+                  viewLogDetail.action === "INSERT" ? "bg-emerald-50 text-emerald-700" :
+                  viewLogDetail.action === "UPDATE" ? "bg-blue-50 text-blue-700" :
+                  "bg-rose-50 text-rose-700"
+                }`}>{viewLogDetail.action}</div>
               </div>
-              <div className="bg-gray-50 p-3 rounded-xl">
-                <div className="text-xs text-gray-400 font-semibold mb-1">Método de Pago</div>
-                <div className="font-bold text-gray-800">{paymentLabel[viewSale.paymentMethod] || viewSale.paymentMethod}</div>
+              <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
+                <div className="text-xs text-gray-400 font-bold mb-1">Usuario</div>
+                <div className="font-semibold text-gray-700">{viewLogDetail.userEmail || "Sistema"}</div>
               </div>
-              <div className="bg-gray-50 p-3 rounded-xl">
-                <div className="text-xs text-gray-400 font-semibold mb-1">Estado</div>
-                <div className="font-bold text-emerald-600">{viewSale.status}</div>
+              <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
+                <div className="text-xs text-gray-400 font-bold mb-1">Fecha / Hora</div>
+                <div className="font-semibold text-gray-700">{format(new Date(viewLogDetail.createdAt), "dd/MM/yyyy HH:mm:ss")}</div>
               </div>
             </div>
-            <div className="bg-gray-50 p-3 rounded-xl">
-              <div className="text-xs text-gray-400 font-semibold mb-1">Descripción / Items</div>
-              <div className="text-gray-700 text-xs leading-relaxed">{viewSale.description || "—"}</div>
-            </div>
-            {viewSale.receiptUrl && (
-              <div className="bg-gray-50 p-3 rounded-xl">
-                <div className="text-xs text-gray-400 font-semibold mb-2">Comprobante adjunto</div>
-                <img
-                  src={getReceiptAbsoluteUrl(viewSale.receiptUrl) || viewSale.receiptUrl}
-                  alt="Comprobante"
-                  className="w-full max-h-64 object-contain rounded-lg"
-                  onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}
-                />
+
+            {viewLogDetail.oldValues && (
+              <div className="space-y-1">
+                <div className="text-xs text-gray-500 font-bold">Estado Anterior (Antes):</div>
+                <pre className="bg-rose-50/50 text-rose-800 border border-rose-100 rounded-xl p-3 text-xs font-mono max-h-48 overflow-y-auto whitespace-pre-wrap">
+                  {JSON.stringify(typeof viewLogDetail.oldValues === "string" ? JSON.parse(viewLogDetail.oldValues) : viewLogDetail.oldValues, null, 2)}
+                </pre>
               </div>
             )}
-          </div>
-        )}
-      </Modal>
 
-      {/* MODAL: Edit Sale */}
-      <Modal isOpen={!!editSale} onClose={() => setEditSale(null)} title="Editar Registro de Venta">
-        {editSale && (
-          <div className="space-y-4">
-            <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl text-xs text-amber-700 font-medium">
-              ⚠ Solo se edita el registro financiero. El stock <b>no</b> se modifica automáticamente.
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Monto Total (S/)</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={editAmount}
-                onChange={(e) => setEditAmount(Number(e.target.value))}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Método de Pago</label>
-              <select
-                value={editPayment}
-                onChange={(e) => setEditPayment(e.target.value)}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-              >
-                <option value="CASH">Efectivo</option>
-                <option value="YAPE">Yape</option>
-                <option value="PLIN">Plin</option>
-                <option value="CARD">Tarjeta</option>
-                <option value="TRANSFER">Transferencia</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Descripción / Nota</label>
-              <textarea
-                rows={3}
-                value={editDesc}
-                onChange={(e) => setEditDesc(e.target.value)}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none resize-none text-sm"
-              />
-            </div>
-            <div className="flex gap-3 justify-end">
+            {viewLogDetail.newValues && (
+              <div className="space-y-1">
+                <div className="text-xs text-gray-500 font-bold">Estado Nuevo (Después):</div>
+                <pre className="bg-emerald-50/50 text-emerald-800 border border-emerald-100 rounded-xl p-3 text-xs font-mono max-h-48 overflow-y-auto whitespace-pre-wrap">
+                  {JSON.stringify(typeof viewLogDetail.newValues === "string" ? JSON.parse(viewLogDetail.newValues) : viewLogDetail.newValues, null, 2)}
+                </pre>
+              </div>
+            )}
+
+            <div className="flex justify-end pt-2">
               <button
-                onClick={() => setEditSale(null)}
-                className="px-5 py-2.5 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200"
+                onClick={() => setViewLogDetail(null)}
+                className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs transition-colors"
               >
-                Cancelar
-              </button>
-              <button
-                onClick={handleSaveEdit}
-                className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 shadow-sm"
-              >
-                Guardar cambios
+                Cerrar
               </button>
             </div>
           </div>

@@ -5,6 +5,7 @@ import {
   Param,
   UseGuards,
   Request,
+  Query,
 } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { JwtAuthGuard } from '../auth/jwt.guard';
@@ -15,13 +16,13 @@ export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
   @Get()
-  getNotifications(@Request() req) {
-    return this.notificationsService.getNotifications(req.user.id);
+  getNotifications(@Request() req, @Query('workspace') workspace: string) {
+    return this.notificationsService.getNotifications(req.user.id, workspace);
   }
 
   @Patch('read-all')
-  markAllAsRead(@Request() req) {
-    return this.notificationsService.markAllAsRead(req.user.id);
+  markAllAsRead(@Request() req, @Query('workspace') workspace: string) {
+    return this.notificationsService.markAllAsRead(req.user.id, workspace);
   }
 
   @Patch(':id/read')

@@ -166,7 +166,7 @@ export class AnalyticsService {
             data: {
               title: 'Alerta de Stock Mínimo',
               description: `El producto "${product.name}" tiene un stock crítico de ${product.stock} unidades (mínimo requerido: ${product.minStock}).`,
-              link: `/inventario`,
+              link: `/business-inventory`,
               userId,
             },
           });

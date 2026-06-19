@@ -74,4 +74,8 @@ export class CreatePendingTransactionDto {
   @IsOptional()
   @IsString()
   workspace?: string;
+
+  @IsOptional()
+  @IsString()
+  receiptUrl?: string;
 }

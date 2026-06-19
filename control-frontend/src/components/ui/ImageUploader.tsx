@@ -19,10 +19,14 @@ import { toast } from "react-hot-toast";
 // ─────────────────────────────────────────────────────────
 export function getReceiptAbsoluteUrl(url: string | null | undefined): string | null {
   if (!url) return null;
+
+  // Si ya es una URL completa (http/https/blob/cloudinary), devuélvela como está.
+  // Cloudinary devuelve URLs que empiezan por https, así que esto funcionará directo.
   if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("blob:")) {
     return url;
   }
-  // Relative path like /uploads/receipts/file.jpg → prepend backend base
+
+  // Si por algún motivo aún llega una ruta relativa (tu antiguo sistema), mantén la lógica:
   const base = (import.meta.env.VITE_API_URL as string)?.replace("/api", "") || "http://localhost:3000";
   return `${base}${url}`;
 }

@@ -147,7 +147,7 @@ export default function BusinessInventoryPage() {
     try {
       const payload = {
         ...formData,
-        imageUrl: formData.imageUrl || null,
+        imageUrl: formData.imageUrl || undefined,
       };
       if (editingProduct) {
         await updateProductRequest(editingProduct.id, payload);

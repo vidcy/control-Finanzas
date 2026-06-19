@@ -240,7 +240,7 @@ export default function BusinessAiAdvisor({ metrics }: AiAdvisorProps) {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-xl font-black text-gray-900">FinanzasPro AI Advisor</h3>
+                <h3 className="text-xl font-black text-gray-900">THINK AI Advisor</h3>
                 <span className="text-[10px] font-bold px-2 py-0.5 bg-violet-100 text-violet-700 rounded-full uppercase tracking-widest">BETA</span>
               </div>
               <p className="text-sm text-gray-500 font-medium">Motor de análisis inteligente • {insights.length} hallazgo{insights.length !== 1 ? "s" : ""} detectado{insights.length !== 1 ? "s" : ""}</p>

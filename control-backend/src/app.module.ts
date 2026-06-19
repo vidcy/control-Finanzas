@@ -19,6 +19,7 @@ import { APP_INTERCEPTOR } from '@nestjs/core';
 import { UserContextInterceptor } from './common/interceptors/user-context.interceptor';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { InventoryMovementsModule } from './inventory-movements/inventory-movements.module';
+import { AuditModule } from './audit/audit.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { InventoryMovementsModule } from './inventory-movements/inventory-moveme
     CategoriesModule,
     AnalyticsModule,
     InventoryMovementsModule,
+    AuditModule,
     ConfigModule.forRoot({
       isGlobal: true,
     }),

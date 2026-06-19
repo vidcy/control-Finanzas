@@ -10,7 +10,7 @@ import { UpdateTransactionDto } from './update-transaction.dto';
 
 @Injectable()
 export class TransactionService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   // =========================================================
   // CREATE

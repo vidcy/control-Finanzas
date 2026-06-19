@@ -4,6 +4,11 @@ import { getProductsRequest, checkoutCartRequest } from "../services/product.api
 import type { Product } from "../services/product.api";
 import { listCategoriesRequest } from "../services/category.api";
 import { getActiveCashShiftRequest } from "../services/cash-shift.api";
+import {
+  getTransactionsRequest,
+  updateTransactionRequest,
+  deleteTransactionRequest,
+} from "../services/transaction.api";
 import ReceiptUploader, { getReceiptAbsoluteUrl } from "../components/ui/ImageUploader";
 
 import { formatStock } from "./BusinessInventoryPage";
@@ -21,10 +26,48 @@ import {
   X,
   Package,
   FileText,
+  Edit2,
+  Trash2,
+  Loader2,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
 import { format } from "date-fns";
+
+const parseDescription = (desc: string) => {
+  if (!desc) return [];
+  const prefix = "Venta en POS: ";
+  if (desc.startsWith(prefix)) {
+    const itemsStr = desc.substring(prefix.length);
+    return itemsStr.split(", ").map(item => {
+      // Matches: "1x Arroz Extra [Kg] (S/ 5.00 c/u)" or "2x Delivery (Libre) (S/ 10.00 c/u)" or "1x Arroz Extra [Kg]"
+      const regex = /^(\d+(?:\.\d+)?)x\s+(.*?)(?:\s+\[(.*?)\]|\s+\(Libre\))?(?:\s+\(S\/\s*(\d+(?:\.\d+)?)\s*c\/u\))?$/;
+      const match = item.match(regex);
+      if (match) {
+        const qty = parseFloat(match[1]);
+        const name = match[2];
+        const presName = match[3] || (item.includes("(Libre)") ? "Libre" : "");
+        const price = match[4] ? parseFloat(match[4]) : 0;
+        return {
+          quantity: qty,
+          name,
+          unit: presName || "UNIDAD",
+          salePrice: price,
+          presentationId: presName ? "dummy" : undefined,
+          presentations: presName ? [{ id: "dummy", name: presName, price }] : []
+        };
+      }
+      return {
+        quantity: 1,
+        name: item,
+        unit: "UNIDAD",
+        salePrice: 0,
+        presentations: []
+      };
+    });
+  }
+  return [{ quantity: 1, name: desc, unit: "UNIDAD", salePrice: 0, presentations: [] }];
+};
 
 interface CartItem extends Product {
   quantity: number;
@@ -53,6 +96,80 @@ export default function BusinessPosPage() {
   const [showTicket, setShowTicket] = useState(false);
   const [lastSale, setLastSale] = useState<any>(null);
   const ticketRef = useRef<HTMLDivElement>(null);
+
+  // Historial de Ventas POS
+  const [isSalesListOpen, setIsSalesListOpen] = useState(false);
+  const [sales, setSales] = useState<any[]>([]);
+  const [loadingSales, setLoadingSales] = useState(false);
+
+  // Editar Venta POS
+  const [editSale, setEditSale] = useState<any>(null);
+  const [editAmount, setEditAmount] = useState(0);
+  const [editDesc, setEditDesc] = useState("");
+  const [editPayment, setEditPayment] = useState("CASH");
+
+  const loadSales = async () => {
+    setLoadingSales(true);
+    try {
+      const data = await getTransactionsRequest("BUSINESS");
+      const posSales = data.filter((t: any) => t.workspace === "BUSINESS" && t.type === "INCOME");
+      setSales(posSales.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+    } catch {
+      toast.error("Error al cargar ventas");
+    } finally {
+      setLoadingSales(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isSalesListOpen) {
+      loadSales();
+    }
+  }, [isSalesListOpen]);
+
+  const handleSaveEdit = async () => {
+    if (!editSale) return;
+    try {
+      await updateTransactionRequest(editSale.id, {
+        categoryId: editSale.categoryId,
+        subCategoryId: editSale.subCategoryId || "",
+        amount: editAmount,
+        date: new Date(editSale.date),
+        currency: editSale.currency,
+        paymentMethod: editPayment,
+        description: editDesc,
+        name: editSale.name,
+      });
+      toast.success("Venta actualizada correctamente");
+      setEditSale(null);
+      loadSales();
+    } catch {
+      toast.error("Error al actualizar la venta");
+    }
+  };
+
+  const handleDeleteSale = async (id: string) => {
+    if (!window.confirm("¿Eliminar este registro de venta? El stock NO se revertirá automáticamente.")) return;
+    try {
+      await deleteTransactionRequest(id);
+      toast.success("Venta eliminada correctamente");
+      loadSales();
+    } catch {
+      toast.error("Error al eliminar la venta");
+    }
+  };
+
+  const handleDownloadPastTicket = (sale: any) => {
+    setLastSale({
+      items: parseDescription(sale.description || ""),
+      total: sale.amount,
+      paymentMethod: sale.paymentMethod,
+      date: new Date(sale.date),
+      txId: sale.id,
+      receiptUrl: sale.receiptUrl,
+    });
+    setShowTicket(true);
+  };
 
   const loadData = async () => {
     try {
@@ -145,7 +262,7 @@ export default function BusinessPosPage() {
     if (newQ < 1) return;
 
     if (!item.isCustom) {
-      const pres = item.presentations?.find((p) => p.id === item.presentationId);
+      const pres = item.presentations?.find((p: any) => p.id === item.presentationId);
       const equivalence = pres ? pres.equivalence : 1;
       if (newQ * equivalence > item.stock) {
         toast.error("Supera el stock disponible");
@@ -292,7 +409,7 @@ export default function BusinessPosPage() {
       <style>{`
         @media print {
           body > * { display: none !important; }
-          #printable-ticket-wrapper {
+          .print-ticket-container {
             display: block !important;
             position: fixed !important;
             top: 0 !important;
@@ -300,6 +417,8 @@ export default function BusinessPosPage() {
             width: 80mm !important;
             background: white !important;
             z-index: 99999 !important;
+            opacity: 1 !important;
+            pointer-events: auto !important;
           }
           #printable-ticket {
             width: 80mm !important;
@@ -322,7 +441,18 @@ export default function BusinessPosPage() {
 
       {/* HIDDEN TICKET for printing/export — lives outside the modal */}
       {lastSale && (
-        <div id="printable-ticket-wrapper" style={{ display: "none" }}>
+        <div
+          id="printable-ticket-wrapper"
+          className="print-ticket-container"
+          style={{
+            position: "absolute",
+            left: "-9999px",
+            top: "-9999px",
+            opacity: 0,
+            pointerEvents: "none",
+            overflow: "visible",
+          }}
+        >
           <div
             id="printable-ticket"
             ref={ticketRef}
@@ -337,8 +467,8 @@ export default function BusinessPosPage() {
             }}
           >
             <div style={{ textAlign: "center", marginBottom: "12px" }}>
-              <div style={{ fontWeight: 900, fontSize: "16px", letterSpacing: "1px" }}>FINANZAS PRO</div>
-              <div style={{ fontSize: "10px", color: "#666" }}>Ticket de Venta (Proforma)</div>
+              <div style={{ fontWeight: 900, fontSize: "16px", letterSpacing: "1px" }}>THINK</div>
+              <div style={{ fontSize: "10px", color: "#666" }}>Ticket de Venta / App Financiera</div>
               <div style={{ borderBottom: "1px dashed #ccc", margin: "8px 0" }}></div>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: "10px" }}>
                 <span>Fecha:</span>
@@ -346,7 +476,7 @@ export default function BusinessPosPage() {
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: "10px" }}>
                 <span>Ticket #:</span>
-                <span>{lastSale.txId.slice(0, 8).toUpperCase()}</span>
+                <span>{lastSale.txId?.slice(0, 8).toUpperCase()}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: "10px" }}>
                 <span>Pago:</span>
@@ -369,7 +499,9 @@ export default function BusinessPosPage() {
                     <span style={{ flex: 1, paddingRight: "8px" }}>
                       {item.quantity}x {item.name} [{presName}]
                     </span>
-                    <span>S/ {(item.quantity * item.salePrice).toFixed(2)}</span>
+                    <span>
+                      {item.salePrice > 0 ? `S/ ${(item.quantity * item.salePrice).toFixed(2)}` : "—"}
+                    </span>
                   </div>
                 );
               })}
@@ -545,7 +677,7 @@ export default function BusinessPosPage() {
                         value={item.presentationId || ""}
                         onChange={(e) => {
                           const presId = e.target.value;
-                          const pres = item.presentations?.find((p) => p.id === presId);
+                          const pres = item.presentations?.find((p: any) => p.id === presId);
                           const newPrice = pres ? pres.price : item.originalSalePrice;
                           setCart(
                             cart.map((c, i) =>
@@ -558,7 +690,7 @@ export default function BusinessPosPage() {
                         className="mt-1 text-[10px] border border-gray-200 rounded-lg px-2 py-1 outline-none font-bold text-gray-700 bg-white w-full"
                       >
                         <option value="">{item.unit} (S/ {item.originalSalePrice.toFixed(2)})</option>
-                        {item.presentations.map((pres) => (
+                        {item.presentations.map((pres: any) => (
                           <option key={pres.id} value={pres.id}>
                             {pres.name} (S/ {pres.price.toFixed(2)})
                           </option>
@@ -663,7 +795,7 @@ export default function BusinessPosPage() {
               </div>
             )}
 
-            <button
+             <button
               onClick={handleCheckout}
               disabled={cart.length === 0 || isProcessing || !activeShift}
               className={`w-full py-4 rounded-2xl font-black text-lg flex items-center justify-center gap-2 transition-all ${cart.length === 0 || !activeShift
@@ -676,6 +808,13 @@ export default function BusinessPosPage() {
               ) : (
                 "Cobrar Venta"
               )}
+            </button>
+
+            <button
+              onClick={() => setIsSalesListOpen(true)}
+              className="w-full mt-3 py-3 border border-indigo-200 text-indigo-600 rounded-2xl font-black text-xs flex items-center justify-center gap-2 hover:bg-indigo-50 transition-all shadow-sm"
+            >
+              <FileText className="w-4 h-4" /> Ver Ventas Recientes (Editar/Eliminar)
             </button>
           </div>
         </div>
@@ -739,8 +878,8 @@ export default function BusinessPosPage() {
             {/* Preview ticket (decorative, not used for export) */}
             <div className="bg-white border border-gray-200 p-5 rounded-xl w-full max-w-xs mx-auto shadow-sm font-mono text-xs text-gray-800 mb-4">
               <div className="text-center mb-4">
-                <div className="font-black text-base">FINANZAS PRO</div>
-                <div className="text-[10px] text-gray-500">Ticket de Venta</div>
+                <div className="font-black text-base">THINK</div>
+                <div className="text-[10px] text-gray-500">Ticket de Venta / App Financiera</div>
                 <div className="border-b border-dashed border-gray-300 my-3"></div>
                 <div className="flex justify-between text-[10px] mb-1">
                   <span>Fecha:</span>
@@ -815,6 +954,183 @@ export default function BusinessPosPage() {
                 className="py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 flex items-center justify-center gap-1.5 text-sm"
               >
                 <Printer className="w-4 h-4" /> Imprimir
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* MODAL: HISTORIAL DE VENTAS POS */}
+      <Modal
+        isOpen={isSalesListOpen}
+        onClose={() => setIsSalesListOpen(false)}
+        title="📋 Registro de Ventas POS (Turno Actual)"
+        maxWidth="max-w-4xl"
+      >
+        <div className="space-y-4">
+          <div className="flex gap-2">
+            <button
+              onClick={loadSales}
+              className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs font-bold text-gray-700 transition-colors"
+            >
+              🔄 Actualizar lista
+            </button>
+          </div>
+          <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
+            {loadingSales ? (
+              <div className="p-12 text-center text-gray-500 flex flex-col items-center justify-center gap-2">
+                <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+                <span className="font-bold">Cargando ventas del sistema...</span>
+              </div>
+            ) : sales.length === 0 ? (
+              <div className="p-12 text-center text-gray-400">
+                <FileText className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                <p className="font-bold">No hay ventas registradas en este turno.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto max-h-[50vh] custom-scrollbar">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 text-gray-500 uppercase text-[10px] font-bold tracking-wider">
+                    <tr>
+                      <th className="px-4 py-3 text-left">Fecha/Hora</th>
+                      <th className="px-4 py-3 text-left">Detalle de Productos</th>
+                      <th className="px-4 py-3 text-center">Método</th>
+                      <th className="px-4 py-3 text-right">Monto</th>
+                      <th className="px-4 py-3 text-center">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {sales.map((sale) => (
+                      <tr key={sale.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-3 text-gray-500 whitespace-nowrap text-xs font-medium">
+                          {format(new Date(sale.date), "dd/MM/yyyy HH:mm")}
+                        </td>
+                        <td className="px-4 py-3">
+                          <p className="font-semibold text-gray-800 text-xs truncate max-w-xs" title={sale.description}>
+                            {sale.description?.replace("Venta en POS: ", "") || "Venta Manual"}
+                          </p>
+                          {sale.receiptUrl && (
+                            <a
+                              href={getReceiptAbsoluteUrl(sale.receiptUrl) || "#"}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-indigo-500 text-[10px] font-bold block mt-0.5 hover:underline"
+                            >
+                              📎 Ver comprobante adjunto
+                            </a>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span className="text-[10px] font-bold bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md">
+                            {paymentLabel[sale.paymentMethod] || sale.paymentMethod}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <span className="font-black text-emerald-600 text-xs">
+                            S/ {Number(sale.amount).toFixed(2)}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={() => handleDownloadPastTicket(sale)}
+                              className="p-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors"
+                              title="Reconstruir y Descargar Ticket"
+                            >
+                              <Printer className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                setEditSale(sale);
+                                setEditAmount(sale.amount);
+                                setEditDesc(sale.description || "");
+                                setEditPayment(sale.paymentMethod);
+                              }}
+                              className="p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
+                              title="Editar Monto/Método"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteSale(sale.id)}
+                              className="p-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors"
+                              title="Eliminar registro"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end pt-2">
+            <button
+              onClick={() => setIsSalesListOpen(false)}
+              className="px-5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs transition-colors"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* MODAL: EDITAR VENTA POS */}
+      <Modal isOpen={!!editSale} onClose={() => setEditSale(null)} title="✏️ Editar Venta Registrada">
+        {editSale && (
+          <div className="space-y-4">
+            <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl text-xs text-amber-700 font-medium">
+              ⚠ Recuerda: Esto modificará el registro contable de la caja. El stock de inventario no se revertirá automáticamente.
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Monto Total de Venta (S/)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={editAmount}
+                onChange={(e) => setEditAmount(Number(e.target.value))}
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-semibold"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Método de Pago</label>
+              <select
+                value={editPayment}
+                onChange={(e) => setEditPayment(e.target.value)}
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-semibold bg-white"
+              >
+                <option value="CASH">Efectivo</option>
+                <option value="YAPE">Yape</option>
+                <option value="PLIN">Plin</option>
+                <option value="CARD">Tarjeta</option>
+                <option value="TRANSFER">Transferencia</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Descripción / Nota</label>
+              <textarea
+                rows={3}
+                value={editDesc}
+                onChange={(e) => setEditDesc(e.target.value)}
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none resize-none text-sm font-medium"
+              />
+            </div>
+            <div className="flex gap-3 justify-end pt-2">
+              <button
+                onClick={() => setEditSale(null)}
+                className="px-5 py-2.5 bg-gray-100 text-gray-700 font-bold rounded-xl text-xs hover:bg-gray-200 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                className="px-5 py-2.5 bg-indigo-600 text-white font-bold rounded-xl text-xs hover:bg-indigo-700 shadow-sm transition-all"
+              >
+                Guardar cambios
               </button>
             </div>
           </div>

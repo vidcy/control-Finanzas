@@ -105,3 +105,14 @@ export const markAsPendingRequest = async (
     );
   }
 };
+
+export const getAuditLogsRequest = async () => {
+  try {
+    const res = await API.get("/audit-logs");
+    return res.data;
+  } catch (error: any) {
+    throw new Error(
+      error?.response?.data?.message || "Error al obtener la bitácora de auditoría",
+    );
+  }
+};

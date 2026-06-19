@@ -99,11 +99,11 @@ export default function RegisterPage() {
       <div className="w-full max-w-2xl p-5 sm:p-8 relative z-10">
         {/* BRAND */}
         <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-xl shadow-blue-500/30 mb-4 transform hover:scale-105 transition-transform duration-300">
-            <TrendingUp className="text-white w-8 h-8" />
+          <div className="w-16 h-16 rounded-2xl overflow-hidden shadow-xl mb-4 transform hover:scale-105 transition-transform duration-300">
+            <img src="/logo.png" alt="THINK Logo" className="w-full h-full object-cover" />
           </div>
-          <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600">
-            Únete a FinanzasPro
+          <h1 className="text-3xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600 tracking-wider">
+            Únete a THINK
           </h1>
           <p className="text-sm font-medium text-gray-500 mt-2 tracking-wide text-center">
             El primer paso hacia tu libertad y control financiero.
@@ -235,7 +235,7 @@ export default function RegisterPage() {
                   </button>
                   <div className="flex-1 text-center pr-9">
                     <h2 className="text-xl font-bold text-gray-900">
-                      ¿Cómo usarás FinanzasPro?
+                      ¿Cómo usarás THINK?
                     </h2>
                     <p className="text-sm text-gray-500 mt-1">
                       Selecciona uno o ambos perfiles (puedes cambiarlo después)

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useAuth } from '../auth/AuthContext';
 import type { NotificationDto } from '../services/notification.api';
 import {
   getNotificationsRequest,
@@ -7,12 +8,13 @@ import {
 } from '../services/notification.api';
 
 export const useNotifications = () => {
+  const { activeWorkspace } = useAuth();
   const [notifications, setNotifications] = useState<NotificationDto[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchNotifications = async () => {
     try {
-      const data = await getNotificationsRequest();
+      const data = await getNotificationsRequest(activeWorkspace || undefined);
       setNotifications(data);
     } catch (error) {
       console.error(error);
@@ -35,7 +37,7 @@ export const useNotifications = () => {
   const markAllAsRead = async () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
     try {
-      await markAllNotificationsAsReadRequest();
+      await markAllNotificationsAsReadRequest(activeWorkspace || undefined);
     } catch (e) {
       console.error('Failed to mark all as read', e);
     }
@@ -43,7 +45,7 @@ export const useNotifications = () => {
 
   useEffect(() => {
     fetchNotifications();
-  }, []);
+  }, [activeWorkspace]);
 
   return { notifications, loading, markAsRead, markAllAsRead, refresh: fetchNotifications };
 };

@@ -288,7 +288,7 @@ export class ProductsService {
           const qty = parseFloat(item.quantity);
           const price = parseFloat(item.salePrice);
           totalAmount += qty * price;
-          salesDetails.push(`${qty}x ${item.name} (Libre)`);
+          salesDetails.push(`${qty}x ${item.name} (Libre) (S/ ${price.toFixed(2)} c/u)`);
           continue;
         }
 
@@ -350,7 +350,7 @@ export class ProductsService {
         });
 
         totalAmount += requiredQty * salePrice;
-        salesDetails.push(`${requiredQty}x ${product.name} [${presentationName}]`);
+        salesDetails.push(`${requiredQty}x ${product.name} [${presentationName}] (S/ ${salePrice.toFixed(2)} c/u)`);
       }
 
       // Create Financial Transaction (Income)
