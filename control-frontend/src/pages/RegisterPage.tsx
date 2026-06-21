@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   User,
@@ -17,7 +17,6 @@ import { useAuth } from "../auth/AuthContext";
 import type { WorkspaceType } from "../auth/AuthContext";
 
 export default function RegisterPage() {
-  const navigate = useNavigate();
   const { register } = useAuth();
   const [step, setStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
@@ -59,7 +58,9 @@ export default function RegisterPage() {
         return;
       }
       if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
-        toast.error("La contraseña debe incluir al menos un carácter especial (ej: !@#$%)");
+        toast.error(
+          "La contraseña debe incluir al menos un carácter especial (ej: !@#$%)",
+        );
         return;
       }
       setStep(2);
@@ -85,9 +86,14 @@ export default function RegisterPage() {
       if (res && res.activationRequired) {
         if (res.alreadyExists) {
           // Cuenta ya existe pero inactiva — reenviamos correo
-          toast.success("Ya tienes una cuenta. Hemos reenviado el correo de activación.", { duration: 6000 });
+          toast.success(
+            "Ya tienes una cuenta. Hemos reenviado el correo de activación.",
+            { duration: 6000 },
+          );
         } else {
-          toast.success("¡Registro completado! Verifica tu correo para activar tu cuenta.");
+          toast.success(
+            "¡Registro completado! Verifica tu correo para activar tu cuenta.",
+          );
         }
         setStep(3);
       } else if (res.error) {
@@ -102,7 +108,6 @@ export default function RegisterPage() {
     }
   };
 
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#f8fafc] font-sans relative overflow-hidden">
       {/* BACKGROUND DECORATIVE ELEMENTS */}
@@ -116,7 +121,11 @@ export default function RegisterPage() {
         {/* BRAND */}
         <div className="flex flex-col items-center mb-8">
           <div className="w-16 h-16 rounded-2xl overflow-hidden shadow-xl mb-4 transform hover:scale-105 transition-transform duration-300">
-            <img src="/logo.png" alt="THINK Logo" className="w-full h-full object-cover" />
+            <img
+              src="/logo.png"
+              alt="THINK Logo"
+              className="w-full h-full object-cover"
+            />
           </div>
           <h1 className="text-3xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600 tracking-wider">
             Únete a THINK
@@ -357,8 +366,10 @@ export default function RegisterPage() {
                   ¡Verifica tu correo electrónico!
                 </h2>
                 <p className="text-sm text-gray-600 max-w-md mx-auto leading-relaxed">
-                  Hemos enviado un enlace de activación de cuenta a <strong className="text-indigo-600">{email}</strong>.
-                  Por favor, revisa tu bandeja de entrada (y la carpeta de correo no deseado/spam) y haz clic en el enlace para activar tu cuenta.
+                  Hemos enviado un enlace de activación de cuenta a{" "}
+                  <strong className="text-indigo-600">{email}</strong>. Por
+                  favor, revisa tu bandeja de entrada (y la carpeta de correo no
+                  deseado/spam) y haz clic en el enlace para activar tu cuenta.
                 </p>
                 <div className="pt-6">
                   <Link
@@ -383,7 +394,8 @@ export default function RegisterPage() {
           </Link>
         </p>
         <p className="text-center text-[11px] text-gray-400 mt-6 font-medium">
-          &copy; {new Date().getFullYear()} Think - Global Ccoplex. Todos los derechos reservados.
+          &copy; {new Date().getFullYear()} Think - Global Ccoplex. Todos los
+          derechos reservados.
         </p>
       </div>
     </div>
