@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import Appshell from "../components/layout/Appshell";
 import {
   ShoppingBag,
@@ -24,11 +24,10 @@ import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
 import { getReceiptAbsoluteUrl } from "../components/ui/ImageUploader";
 import DateRangePicker from "../components/ui/DateRangePicker";
-import { exportToExcel, filterByDateRange } from "../utils/exportExcel";
+import { exportToExcel } from "../utils/exportExcel";
 
 export default function BusinessHistoryPage() {
   const [activeTab, setActiveTab] = useState<"audit" | "movements">("audit");
-  const kardexTableRef = useRef<HTMLDivElement>(null);
 
   // Audit Logs
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
@@ -64,7 +63,9 @@ export default function BusinessHistoryPage() {
   const loadMovements = async () => {
     setLoadingMovements(true);
     try {
-      const data = await getInventoryMovementsRequest(filterType ? { type: filterType } : undefined);
+      const data = await getInventoryMovementsRequest(
+        filterType ? { type: filterType } : undefined,
+      );
       setMovements(data);
     } catch {
       toast.error("Error al cargar movimientos");
@@ -89,15 +90,32 @@ export default function BusinessHistoryPage() {
     setIsExporting(true);
     try {
       const { jsPDF } = await import("jspdf");
-      const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+      const doc = new jsPDF({
+        orientation: "landscape",
+        unit: "mm",
+        format: "a4",
+      });
 
       // Totals
-      const totalIn = filteredMovements.filter(m => m.type === "IN").reduce((s, m) => s + m.quantity, 0);
-      const totalOut = filteredMovements.filter(m => m.type === "OUT").reduce((s, m) => s + m.quantity, 0);
-      const byProduct: Record<string, { name: string; unit: string; in: number; out: number }> = {};
-      filteredMovements.forEach(m => {
+      const totalIn = filteredMovements
+        .filter((m) => m.type === "IN")
+        .reduce((s, m) => s + m.quantity, 0);
+      const totalOut = filteredMovements
+        .filter((m) => m.type === "OUT")
+        .reduce((s, m) => s + m.quantity, 0);
+      const byProduct: Record<
+        string,
+        { name: string; unit: string; in: number; out: number }
+      > = {};
+      filteredMovements.forEach((m) => {
         const key = m.productId;
-        if (!byProduct[key]) byProduct[key] = { name: m.product?.name || "—", unit: m.product?.unit || "", in: 0, out: 0 };
+        if (!byProduct[key])
+          byProduct[key] = {
+            name: m.product?.name || "—",
+            unit: m.product?.unit || "",
+            in: 0,
+            out: 0,
+          };
         if (m.type === "IN") byProduct[key].in += m.quantity;
         else byProduct[key].out += m.quantity;
       });
@@ -112,7 +130,11 @@ export default function BusinessHistoryPage() {
       doc.setFontSize(10);
       doc.text("Kardex de Inventario", 14, 14);
       doc.setFontSize(8);
-      doc.text(`Generado: ${format(new Date(), "dd/MM/yyyy HH:mm")}  |  Total registros: ${filteredMovements.length}`, 180, 14);
+      doc.text(
+        `Generado: ${format(new Date(), "dd/MM/yyyy HH:mm")}  |  Total registros: ${filteredMovements.length}`,
+        180,
+        14,
+      );
 
       // Summary boxes
       doc.setTextColor(30, 30, 30);
@@ -145,35 +167,60 @@ export default function BusinessHistoryPage() {
       // Kardex table
       const startY = 46;
       const colW = [32, 50, 24, 40, 30, 28, 28, 28];
-      const headers = ["Fecha", "Producto", "Tipo", "Presentación", "Cantidad", "Base", "Motivo", "Usuario"];
+      const headers = [
+        "Fecha",
+        "Producto",
+        "Tipo",
+        "Presentación",
+        "Cantidad",
+        "Base",
+        "Motivo",
+        "Usuario",
+      ];
       doc.setFillColor(99, 102, 241);
       doc.rect(14, startY, 269, 7, "F");
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(7);
       doc.setFont("helvetica", "bold");
       let cx = 14;
-      headers.forEach((h, i) => { doc.text(h, cx + 1, startY + 5); cx += colW[i]; });
+      headers.forEach((h, i) => {
+        doc.text(h, cx + 1, startY + 5);
+        cx += colW[i];
+      });
 
       doc.setFont("helvetica", "normal");
       let y = startY + 7;
       filteredMovements.forEach((m, idx) => {
-        if (y > 185) { doc.addPage(); y = 14; }
+        if (y > 185) {
+          doc.addPage();
+          y = 14;
+        }
         const bg = idx % 2 === 0;
-        if (bg) { doc.setFillColor(248, 250, 252); doc.rect(14, y, 269, 6.5, "F"); }
+        if (bg) {
+          doc.setFillColor(248, 250, 252);
+          doc.rect(14, y, 269, 6.5, "F");
+        }
         doc.setTextColor(30, 30, 30);
         doc.setFontSize(6.5);
         const row = [
           format(new Date(m.createdAt), "dd/MM/yy HH:mm"),
           m.product?.name || "—",
           m.type === "IN" ? "ENTRADA" : "SALIDA",
-          m.presentationQty ? `${m.presentationQty}x ${m.presentationName}` : "—",
+          m.presentationQty
+            ? `${m.presentationQty}x ${m.presentationName}`
+            : "—",
           `${m.type === "IN" ? "+" : "-"}${m.quantity}`,
           m.product?.unit || "",
-          m.reason === "SALE" ? "Venta" : m.reason === "PURCHASE" ? "Compra" : "Ajuste",
+          m.reason === "SALE"
+            ? "Venta"
+            : m.reason === "PURCHASE"
+              ? "Compra"
+              : "Ajuste",
           "",
         ];
         cx = 14;
-        if (m.type === "IN") doc.setTextColor(4, 120, 87); else doc.setTextColor(190, 18, 60);
+        if (m.type === "IN") doc.setTextColor(4, 120, 87);
+        else doc.setTextColor(190, 18, 60);
         row.forEach((val, i) => {
           if (i !== 0 && i !== 4) doc.setTextColor(30, 30, 30);
           doc.text(String(val).substring(0, 22), cx + 1, y + 4.5);
@@ -192,9 +239,15 @@ export default function BusinessHistoryPage() {
       doc.text("Análisis por Producto", 14, 10);
       y = 20;
       Object.values(byProduct).forEach((p, idx) => {
-        if (y > 185) { doc.addPage(); y = 14; }
+        if (y > 185) {
+          doc.addPage();
+          y = 14;
+        }
         const bg2 = idx % 2 === 0;
-        if (bg2) { doc.setFillColor(248, 250, 252); doc.rect(14, y - 3, 260, 10, "F"); }
+        if (bg2) {
+          doc.setFillColor(248, 250, 252);
+          doc.rect(14, y - 3, 260, 10, "F");
+        }
         doc.setTextColor(30, 30, 30);
         doc.setFontSize(8);
         doc.setFont("helvetica", "bold");
@@ -206,7 +259,11 @@ export default function BusinessHistoryPage() {
         doc.text(`Salidas: -${p.out.toFixed(2)} ${p.unit}`, 150, y + 3);
         doc.setTextColor(29, 78, 216);
         const bal = p.in - p.out;
-        doc.text(`Balance: ${bal >= 0 ? "+" : ""}${bal.toFixed(2)} ${p.unit}`, 210, y + 3);
+        doc.text(
+          `Balance: ${bal >= 0 ? "+" : ""}${bal.toFixed(2)} ${p.unit}`,
+          210,
+          y + 3,
+        );
         y += 11;
       });
 
@@ -216,7 +273,11 @@ export default function BusinessHistoryPage() {
         doc.setPage(i);
         doc.setFontSize(7);
         doc.setTextColor(150, 150, 150);
-        doc.text(`Global Ccoplex © ${new Date().getFullYear()} – THINK Plataforma Financiera`, 14, 205);
+        doc.text(
+          `Global Ccoplex © ${new Date().getFullYear()} – THINK Plataforma Financiera`,
+          14,
+          205,
+        );
         doc.text(`Pág. ${i}/${pages}`, 278, 205);
       }
 
@@ -234,8 +295,16 @@ export default function BusinessHistoryPage() {
   const getAuditLogDetails = (log: any) => {
     const table = log.tableName;
     const action = log.action;
-    const newV = log.newValues ? (typeof log.newValues === "string" ? JSON.parse(log.newValues) : log.newValues) : null;
-    const oldV = log.oldValues ? (typeof log.oldValues === "string" ? JSON.parse(log.oldValues) : log.oldValues) : null;
+    const newV = log.newValues
+      ? typeof log.newValues === "string"
+        ? JSON.parse(log.newValues)
+        : log.newValues
+      : null;
+    const oldV = log.oldValues
+      ? typeof log.oldValues === "string"
+        ? JSON.parse(log.oldValues)
+        : log.oldValues
+      : null;
 
     let title = `${action} en ${table}`;
     let description = `Registro ID: ${log.recordId}`;
@@ -268,8 +337,12 @@ export default function BusinessHistoryPage() {
       const name = newV?.name || oldV?.name || "Transacción";
 
       if (action === "INSERT") {
-        color = txType === "INCOME" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-rose-50 text-rose-700 border-rose-200";
-        title = txType === "INCOME" ? "Cobro Registrado 💰" : "Egreso Registrado 💸";
+        color =
+          txType === "INCOME"
+            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+            : "bg-rose-50 text-rose-700 border-rose-200";
+        title =
+          txType === "INCOME" ? "Cobro Registrado 💰" : "Egreso Registrado 💸";
         description = `Registro de S/ ${Number(amount).toFixed(2)} vía ${newV?.paymentMethod || "Efectivo"} por "${name}"`;
         IconComponent = txType === "INCOME" ? TrendingUp : TrendingDown;
       } else if (action === "UPDATE") {
@@ -279,7 +352,8 @@ export default function BusinessHistoryPage() {
         IconComponent = Info;
       } else if (action === "DELETE") {
         color = "bg-rose-100 text-rose-800 border-rose-300";
-        title = txType === "INCOME" ? "Cobro Eliminado ❌" : "Egreso Eliminado ❌";
+        title =
+          txType === "INCOME" ? "Cobro Eliminado ❌" : "Egreso Eliminado ❌";
         description = `Se eliminó la transacción "${name}" por un monto de S/ ${Number(amount).toFixed(2)}`;
         IconComponent = Trash2;
       }
@@ -343,8 +417,12 @@ export default function BusinessHistoryPage() {
 
   const filteredMovements = movements.filter((m) => {
     const matchSearch =
-      (m.product?.name || "").toLowerCase().includes(searchMovements.toLowerCase()) ||
-      (m.presentationName || "").toLowerCase().includes(searchMovements.toLowerCase());
+      (m.product?.name || "")
+        .toLowerCase()
+        .includes(searchMovements.toLowerCase()) ||
+      (m.presentationName || "")
+        .toLowerCase()
+        .includes(searchMovements.toLowerCase());
     if (!matchSearch) return false;
     const day = (m.createdAt || "").slice(0, 10);
     if (movDateFrom && day < movDateFrom) return false;
@@ -354,14 +432,21 @@ export default function BusinessHistoryPage() {
 
   const handleMovementsExcel = async () => {
     await exportToExcel(
-      filteredMovements.map(m => ({
+      filteredMovements.map((m) => ({
         fecha: format(new Date(m.createdAt), "dd/MM/yyyy HH:mm"),
         producto: m.product?.name || "—",
         tipo: m.type === "IN" ? "Entrada" : "Salida",
-        presentacion: m.presentationQty ? `${m.presentationQty}x ${m.presentationName}` : "—",
+        presentacion: m.presentationQty
+          ? `${m.presentationQty}x ${m.presentationName}`
+          : "—",
         cantidad: `${m.type === "IN" ? "+" : "-"}${m.quantity}`,
         unidad: m.product?.unit || "",
-        motivo: m.reason === "SALE" ? "Venta" : m.reason === "PURCHASE" ? "Compra" : "Ajuste",
+        motivo:
+          m.reason === "SALE"
+            ? "Venta"
+            : m.reason === "PURCHASE"
+              ? "Compra"
+              : "Ajuste",
       })),
       [
         { key: "fecha", label: "Fecha" },
@@ -372,7 +457,7 @@ export default function BusinessHistoryPage() {
         { key: "unidad", label: "Unidad" },
         { key: "motivo", label: "Motivo" },
       ],
-      `Kardex_${new Date().toISOString().slice(0, 10)}`
+      `Kardex_${new Date().toISOString().slice(0, 10)}`,
     );
     toast.success("Excel exportado");
   };
@@ -387,9 +472,12 @@ export default function BusinessHistoryPage() {
             <div className="inline-flex items-center justify-center p-3 bg-white rounded-2xl mb-4 border border-violet-100 shadow-sm">
               <ShoppingBag className="w-8 h-8 text-violet-600" />
             </div>
-            <h1 className="text-4xl font-black tracking-tight text-gray-900">Historial del Sistema</h1>
+            <h1 className="text-4xl font-black tracking-tight text-gray-900">
+              Historial del Sistema
+            </h1>
             <p className="text-gray-500 font-medium mt-2">
-              Bitácora de auditoría histórica e inmutable de movimientos y actividades operativas.
+              Bitácora de auditoría histórica e inmutable de movimientos y
+              actividades operativas.
             </p>
           </div>
         </div>
@@ -413,7 +501,7 @@ export default function BusinessHistoryPage() {
         {/* AUDIT LOG TAB */}
         {activeTab === "audit" && (
           <div className="space-y-4">
-          <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap gap-3">
               <div className="flex-1 flex items-center bg-white border border-gray-100 rounded-xl px-4 shadow-sm">
                 <Search className="w-4 h-4 text-gray-400 mr-2" />
                 <input
@@ -429,17 +517,24 @@ export default function BusinessHistoryPage() {
                 dateTo={auditDateTo}
                 onDateFromChange={setAuditDateFrom}
                 onDateToChange={setAuditDateTo}
-                onClear={() => { setAuditDateFrom(""); setAuditDateTo(""); }}
+                onClear={() => {
+                  setAuditDateFrom("");
+                  setAuditDateTo("");
+                }}
               />
             </div>
 
             <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-6">
               {loadingAudit ? (
-                <div className="p-8 text-center text-gray-400 font-bold">Cargando bitácora del sistema...</div>
+                <div className="p-8 text-center text-gray-400 font-bold">
+                  Cargando bitácora del sistema...
+                </div>
               ) : filteredAudit.length === 0 ? (
                 <div className="p-12 text-center">
                   <Clock className="w-12 h-12 text-gray-200 mx-auto mb-3" />
-                  <p className="text-gray-400 font-medium">No hay eventos registrados en la bitácora.</p>
+                  <p className="text-gray-400 font-medium">
+                    No hay eventos registrados en la bitácora.
+                  </p>
                 </div>
               ) : (
                 <div className="relative border-l-2 border-indigo-100 ml-4 md:ml-6 space-y-6">
@@ -448,7 +543,9 @@ export default function BusinessHistoryPage() {
                     return (
                       <div key={log.id} className="relative pl-6 md:pl-8 group">
                         {/* Dot indicator */}
-                        <div className={`absolute -left-[13px] top-1.5 p-1 rounded-full border-2 border-white shadow-md ${details.color}`}>
+                        <div
+                          className={`absolute -left-[13px] top-1.5 p-1 rounded-full border-2 border-white shadow-md ${details.color}`}
+                        >
                           <details.IconComponent className="w-3.5 h-3.5" />
                         </div>
 
@@ -456,18 +553,27 @@ export default function BusinessHistoryPage() {
                         <div className="bg-white hover:bg-gray-50/50 border border-gray-100 hover:border-gray-200 rounded-2xl p-4 transition-all shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                           <div>
                             <div className="flex items-center gap-2">
-                              <span className="text-xs font-black tracking-tight text-gray-800">{details.title}</span>
+                              <span className="text-xs font-black tracking-tight text-gray-800">
+                                {details.title}
+                              </span>
                               <span className="text-[10px] bg-gray-100 text-gray-500 font-bold px-1.5 py-0.5 rounded-md uppercase">
                                 {log.tableName}
                               </span>
                             </div>
-                            <p className="text-gray-600 text-xs mt-1 font-semibold">{details.description}</p>
+                            <p className="text-gray-600 text-xs mt-1 font-semibold">
+                              {details.description}
+                            </p>
                             <div className="flex items-center gap-3 text-[10px] text-gray-400 mt-2 font-medium">
                               <span className="flex items-center gap-1">
-                                <User className="w-3 h-3" /> {log.userEmail || "Sistema Automático"}
+                                <User className="w-3 h-3" />{" "}
+                                {log.userEmail || "Sistema Automático"}
                               </span>
                               <span className="flex items-center gap-1">
-                                <Clock className="w-3 h-3" /> {format(new Date(log.createdAt), "dd/MM/yyyy HH:mm:ss")}
+                                <Clock className="w-3 h-3" />{" "}
+                                {format(
+                                  new Date(log.createdAt),
+                                  "dd/MM/yyyy HH:mm:ss",
+                                )}
                               </span>
                             </div>
                           </div>
@@ -517,7 +623,10 @@ export default function BusinessHistoryPage() {
                 dateTo={movDateTo}
                 onDateFromChange={setMovDateFrom}
                 onDateToChange={setMovDateTo}
-                onClear={() => { setMovDateFrom(""); setMovDateTo(""); }}
+                onClear={() => {
+                  setMovDateFrom("");
+                  setMovDateTo("");
+                }}
               />
               <button
                 onClick={handleMovementsExcel}
@@ -535,15 +644,17 @@ export default function BusinessHistoryPage() {
               </button>
             </div>
 
-
-
             <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
               {loadingMovements ? (
-                <div className="p-8 text-center text-gray-400 font-bold">Cargando movimientos...</div>
+                <div className="p-8 text-center text-gray-400 font-bold">
+                  Cargando movimientos...
+                </div>
               ) : filteredMovements.length === 0 ? (
                 <div className="p-12 text-center">
                   <Package className="w-12 h-12 text-gray-200 mx-auto mb-3" />
-                  <p className="text-gray-400 font-medium">No hay movimientos de inventario.</p>
+                  <p className="text-gray-400 font-medium">
+                    No hay movimientos de inventario.
+                  </p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -554,13 +665,18 @@ export default function BusinessHistoryPage() {
                         <th className="px-5 py-4 text-left">Producto</th>
                         <th className="px-5 py-4 text-center">Tipo</th>
                         <th className="px-5 py-4 text-left">Presentación</th>
-                        <th className="px-5 py-4 text-right">Cantidad (Base)</th>
+                        <th className="px-5 py-4 text-right">
+                          Cantidad (Base)
+                        </th>
                         <th className="px-5 py-4 text-center">Motivo</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
                       {filteredMovements.map((m) => (
-                        <tr key={m.id} className="hover:bg-gray-50 transition-colors">
+                        <tr
+                          key={m.id}
+                          className="hover:bg-gray-50 transition-colors"
+                        >
                           <td className="px-5 py-4 text-gray-500 whitespace-nowrap text-xs">
                             {format(new Date(m.createdAt), "dd/MM/yyyy HH:mm")}
                           </td>
@@ -568,17 +684,26 @@ export default function BusinessHistoryPage() {
                             <div className="flex items-center gap-2">
                               {m.product?.imageUrl ? (
                                 <img
-                                  src={getReceiptAbsoluteUrl(m.product.imageUrl) || m.product.imageUrl}
+                                  src={
+                                    getReceiptAbsoluteUrl(m.product.imageUrl) ||
+                                    m.product.imageUrl
+                                  }
                                   alt={m.product.name}
                                   className="w-8 h-8 rounded-lg object-cover border border-gray-100"
-                                  onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}
+                                  onError={(e) =>
+                                    ((
+                                      e.target as HTMLImageElement
+                                    ).style.display = "none")
+                                  }
                                 />
                               ) : (
                                 <div className="w-8 h-8 bg-indigo-50 rounded-lg flex items-center justify-center">
                                   <Package className="w-4 h-4 text-indigo-300" />
                                 </div>
                               )}
-                              <span className="font-semibold text-gray-900">{m.product?.name || "—"}</span>
+                              <span className="font-semibold text-gray-900">
+                                {m.product?.name || "—"}
+                              </span>
                             </div>
                           </td>
                           <td className="px-5 py-4 text-center">
@@ -602,13 +727,24 @@ export default function BusinessHistoryPage() {
                             )}
                           </td>
                           <td className="px-5 py-4 text-right font-black">
-                            <span className={m.type === "IN" ? "text-emerald-600" : "text-rose-600"}>
-                              {m.type === "IN" ? "+" : "−"}{m.quantity} {m.product?.unit}
+                            <span
+                              className={
+                                m.type === "IN"
+                                  ? "text-emerald-600"
+                                  : "text-rose-600"
+                              }
+                            >
+                              {m.type === "IN" ? "+" : "−"}
+                              {m.quantity} {m.product?.unit}
                             </span>
                           </td>
                           <td className="px-5 py-4 text-center">
                             <span className="text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded-lg font-bold">
-                              {m.reason === "SALE" ? "Venta" : m.reason === "PURCHASE" ? "Compra" : m.reason || "—"}
+                              {m.reason === "SALE"
+                                ? "Venta"
+                                : m.reason === "PURCHASE"
+                                  ? "Compra"
+                                  : m.reason || "—"}
                             </span>
                           </td>
                         </tr>
@@ -623,46 +759,90 @@ export default function BusinessHistoryPage() {
       </div>
 
       {/* DETAIL MODAL: VIEW RAW LOG STATE */}
-      <Modal isOpen={!!viewLogDetail} onClose={() => setViewLogDetail(null)} title="🔍 Detalle de Cambios de Auditoría" maxWidth="max-w-2xl">
+      <Modal
+        isOpen={!!viewLogDetail}
+        onClose={() => setViewLogDetail(null)}
+        title="🔍 Detalle de Cambios de Auditoría"
+        maxWidth="max-w-2xl"
+      >
         {viewLogDetail && (
           <div className="space-y-4 text-sm text-gray-800">
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
-                <div className="text-xs text-gray-400 font-bold mb-1">Tabla Afectada</div>
-                <div className="font-bold text-indigo-700 font-mono text-xs">{viewLogDetail.tableName}</div>
+                <div className="text-xs text-gray-400 font-bold mb-1">
+                  Tabla Afectada
+                </div>
+                <div className="font-bold text-indigo-700 font-mono text-xs">
+                  {viewLogDetail.tableName}
+                </div>
               </div>
               <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
-                <div className="text-xs text-gray-400 font-bold mb-1">Operación</div>
-                <div className={`font-black text-xs px-2 py-0.5 rounded-md inline-block uppercase ${
-                  viewLogDetail.action === "INSERT" ? "bg-emerald-50 text-emerald-700" :
-                  viewLogDetail.action === "UPDATE" ? "bg-blue-50 text-blue-700" :
-                  "bg-rose-50 text-rose-700"
-                }`}>{viewLogDetail.action}</div>
+                <div className="text-xs text-gray-400 font-bold mb-1">
+                  Operación
+                </div>
+                <div
+                  className={`font-black text-xs px-2 py-0.5 rounded-md inline-block uppercase ${
+                    viewLogDetail.action === "INSERT"
+                      ? "bg-emerald-50 text-emerald-700"
+                      : viewLogDetail.action === "UPDATE"
+                        ? "bg-blue-50 text-blue-700"
+                        : "bg-rose-50 text-rose-700"
+                  }`}
+                >
+                  {viewLogDetail.action}
+                </div>
               </div>
               <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
-                <div className="text-xs text-gray-400 font-bold mb-1">Usuario</div>
-                <div className="font-semibold text-gray-700">{viewLogDetail.userEmail || "Sistema"}</div>
+                <div className="text-xs text-gray-400 font-bold mb-1">
+                  Usuario
+                </div>
+                <div className="font-semibold text-gray-700">
+                  {viewLogDetail.userEmail || "Sistema"}
+                </div>
               </div>
               <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
-                <div className="text-xs text-gray-400 font-bold mb-1">Fecha / Hora</div>
-                <div className="font-semibold text-gray-700">{format(new Date(viewLogDetail.createdAt), "dd/MM/yyyy HH:mm:ss")}</div>
+                <div className="text-xs text-gray-400 font-bold mb-1">
+                  Fecha / Hora
+                </div>
+                <div className="font-semibold text-gray-700">
+                  {format(
+                    new Date(viewLogDetail.createdAt),
+                    "dd/MM/yyyy HH:mm:ss",
+                  )}
+                </div>
               </div>
             </div>
 
             {viewLogDetail.oldValues && (
               <div className="space-y-1">
-                <div className="text-xs text-gray-500 font-bold">Estado Anterior (Antes):</div>
+                <div className="text-xs text-gray-500 font-bold">
+                  Estado Anterior (Antes):
+                </div>
                 <pre className="bg-rose-50/50 text-rose-800 border border-rose-100 rounded-xl p-3 text-xs font-mono max-h-48 overflow-y-auto whitespace-pre-wrap">
-                  {JSON.stringify(typeof viewLogDetail.oldValues === "string" ? JSON.parse(viewLogDetail.oldValues) : viewLogDetail.oldValues, null, 2)}
+                  {JSON.stringify(
+                    typeof viewLogDetail.oldValues === "string"
+                      ? JSON.parse(viewLogDetail.oldValues)
+                      : viewLogDetail.oldValues,
+                    null,
+                    2,
+                  )}
                 </pre>
               </div>
             )}
 
             {viewLogDetail.newValues && (
               <div className="space-y-1">
-                <div className="text-xs text-gray-500 font-bold">Estado Nuevo (Después):</div>
+                <div className="text-xs text-gray-500 font-bold">
+                  Estado Nuevo (Después):
+                </div>
                 <pre className="bg-emerald-50/50 text-emerald-800 border border-emerald-100 rounded-xl p-3 text-xs font-mono max-h-48 overflow-y-auto whitespace-pre-wrap">
-                  {JSON.stringify(typeof viewLogDetail.newValues === "string" ? JSON.parse(viewLogDetail.newValues) : viewLogDetail.newValues, null, 2)}
+                  {JSON.stringify(
+                    typeof viewLogDetail.newValues === "string"
+                      ? JSON.parse(viewLogDetail.newValues)
+                      : viewLogDetail.newValues,
+                    null,
+                    2,
+                  )}
                 </pre>
               </div>
             )}
