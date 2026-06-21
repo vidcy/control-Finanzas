@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Appshell from "../components/layout/Appshell";
 import {
   ShoppingBag,
@@ -14,30 +14,37 @@ import {
   Unlock,
   PlusCircle,
   Trash2,
+  FileDown,
 } from "lucide-react";
-import {
-  getInventoryMovementsRequest,
-} from "../services/product.api";
+import { getInventoryMovementsRequest } from "../services/product.api";
 import type { InventoryMovement } from "../services/product.api";
 import { getAuditLogsRequest } from "../services/transaction.api";
 import { format } from "date-fns";
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
 import { getReceiptAbsoluteUrl } from "../components/ui/ImageUploader";
+import DateRangePicker from "../components/ui/DateRangePicker";
+import { exportToExcel, filterByDateRange } from "../utils/exportExcel";
 
 export default function BusinessHistoryPage() {
   const [activeTab, setActiveTab] = useState<"audit" | "movements">("audit");
+  const kardexTableRef = useRef<HTMLDivElement>(null);
 
   // Audit Logs
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [loadingAudit, setLoadingAudit] = useState(true);
   const [searchAudit, setSearchAudit] = useState("");
+  const [auditDateFrom, setAuditDateFrom] = useState("");
+  const [auditDateTo, setAuditDateTo] = useState("");
 
   // Movements (Kardex)
   const [movements, setMovements] = useState<InventoryMovement[]>([]);
   const [loadingMovements, setLoadingMovements] = useState(true);
   const [searchMovements, setSearchMovements] = useState("");
   const [filterType, setFilterType] = useState<"" | "IN" | "OUT">("");
+  const [isExporting, setIsExporting] = useState(false);
+  const [movDateFrom, setMovDateFrom] = useState("");
+  const [movDateTo, setMovDateTo] = useState("");
 
   // Detail Modal
   const [viewLogDetail, setViewLogDetail] = useState<any>(null);
@@ -73,6 +80,155 @@ export default function BusinessHistoryPage() {
       loadMovements();
     }
   }, [activeTab, filterType]);
+
+  const exportKardexPdf = async () => {
+    if (filteredMovements.length === 0) {
+      toast.error("No hay movimientos para exportar");
+      return;
+    }
+    setIsExporting(true);
+    try {
+      const { jsPDF } = await import("jspdf");
+      const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+
+      // Totals
+      const totalIn = filteredMovements.filter(m => m.type === "IN").reduce((s, m) => s + m.quantity, 0);
+      const totalOut = filteredMovements.filter(m => m.type === "OUT").reduce((s, m) => s + m.quantity, 0);
+      const byProduct: Record<string, { name: string; unit: string; in: number; out: number }> = {};
+      filteredMovements.forEach(m => {
+        const key = m.productId;
+        if (!byProduct[key]) byProduct[key] = { name: m.product?.name || "—", unit: m.product?.unit || "", in: 0, out: 0 };
+        if (m.type === "IN") byProduct[key].in += m.quantity;
+        else byProduct[key].out += m.quantity;
+      });
+
+      // Header
+      doc.setFillColor(99, 102, 241);
+      doc.rect(0, 0, 297, 20, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(14);
+      doc.setFont("helvetica", "bold");
+      doc.text("THINK – Global Ccoplex", 14, 8);
+      doc.setFontSize(10);
+      doc.text("Kardex de Inventario", 14, 14);
+      doc.setFontSize(8);
+      doc.text(`Generado: ${format(new Date(), "dd/MM/yyyy HH:mm")}  |  Total registros: ${filteredMovements.length}`, 180, 14);
+
+      // Summary boxes
+      doc.setTextColor(30, 30, 30);
+      doc.setFillColor(236, 253, 245);
+      doc.roundedRect(14, 24, 60, 16, 2, 2, "F");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.setTextColor(4, 120, 87);
+      doc.text("TOTAL ENTRADAS", 17, 29);
+      doc.setFontSize(14);
+      doc.text(`+${totalIn.toFixed(2)} uds`, 17, 37);
+
+      doc.setFillColor(255, 241, 242);
+      doc.roundedRect(80, 24, 60, 16, 2, 2, "F");
+      doc.setTextColor(190, 18, 60);
+      doc.setFontSize(8);
+      doc.text("TOTAL SALIDAS", 83, 29);
+      doc.setFontSize(14);
+      doc.text(`-${totalOut.toFixed(2)} uds`, 83, 37);
+
+      doc.setFillColor(239, 246, 255);
+      doc.roundedRect(146, 24, 60, 16, 2, 2, "F");
+      doc.setTextColor(29, 78, 216);
+      doc.setFontSize(8);
+      doc.text("BALANCE NETO", 149, 29);
+      doc.setFontSize(14);
+      const net = totalIn - totalOut;
+      doc.text(`${net >= 0 ? "+" : ""}${net.toFixed(2)} uds`, 149, 37);
+
+      // Kardex table
+      const startY = 46;
+      const colW = [32, 50, 24, 40, 30, 28, 28, 28];
+      const headers = ["Fecha", "Producto", "Tipo", "Presentación", "Cantidad", "Base", "Motivo", "Usuario"];
+      doc.setFillColor(99, 102, 241);
+      doc.rect(14, startY, 269, 7, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(7);
+      doc.setFont("helvetica", "bold");
+      let cx = 14;
+      headers.forEach((h, i) => { doc.text(h, cx + 1, startY + 5); cx += colW[i]; });
+
+      doc.setFont("helvetica", "normal");
+      let y = startY + 7;
+      filteredMovements.forEach((m, idx) => {
+        if (y > 185) { doc.addPage(); y = 14; }
+        const bg = idx % 2 === 0;
+        if (bg) { doc.setFillColor(248, 250, 252); doc.rect(14, y, 269, 6.5, "F"); }
+        doc.setTextColor(30, 30, 30);
+        doc.setFontSize(6.5);
+        const row = [
+          format(new Date(m.createdAt), "dd/MM/yy HH:mm"),
+          m.product?.name || "—",
+          m.type === "IN" ? "ENTRADA" : "SALIDA",
+          m.presentationQty ? `${m.presentationQty}x ${m.presentationName}` : "—",
+          `${m.type === "IN" ? "+" : "-"}${m.quantity}`,
+          m.product?.unit || "",
+          m.reason === "SALE" ? "Venta" : m.reason === "PURCHASE" ? "Compra" : "Ajuste",
+          "",
+        ];
+        cx = 14;
+        if (m.type === "IN") doc.setTextColor(4, 120, 87); else doc.setTextColor(190, 18, 60);
+        row.forEach((val, i) => {
+          if (i !== 0 && i !== 4) doc.setTextColor(30, 30, 30);
+          doc.text(String(val).substring(0, 22), cx + 1, y + 4.5);
+          cx += colW[i];
+        });
+        y += 6.5;
+      });
+
+      // Per-product analysis
+      doc.addPage();
+      doc.setFillColor(99, 102, 241);
+      doc.rect(0, 0, 297, 14, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.text("Análisis por Producto", 14, 10);
+      y = 20;
+      Object.values(byProduct).forEach((p, idx) => {
+        if (y > 185) { doc.addPage(); y = 14; }
+        const bg2 = idx % 2 === 0;
+        if (bg2) { doc.setFillColor(248, 250, 252); doc.rect(14, y - 3, 260, 10, "F"); }
+        doc.setTextColor(30, 30, 30);
+        doc.setFontSize(8);
+        doc.setFont("helvetica", "bold");
+        doc.text(p.name, 16, y + 3);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(4, 120, 87);
+        doc.text(`Entradas: +${p.in.toFixed(2)} ${p.unit}`, 90, y + 3);
+        doc.setTextColor(190, 18, 60);
+        doc.text(`Salidas: -${p.out.toFixed(2)} ${p.unit}`, 150, y + 3);
+        doc.setTextColor(29, 78, 216);
+        const bal = p.in - p.out;
+        doc.text(`Balance: ${bal >= 0 ? "+" : ""}${bal.toFixed(2)} ${p.unit}`, 210, y + 3);
+        y += 11;
+      });
+
+      // Footer
+      const pages = doc.getNumberOfPages();
+      for (let i = 1; i <= pages; i++) {
+        doc.setPage(i);
+        doc.setFontSize(7);
+        doc.setTextColor(150, 150, 150);
+        doc.text(`Global Ccoplex © ${new Date().getFullYear()} – THINK Plataforma Financiera`, 14, 205);
+        doc.text(`Pág. ${i}/${pages}`, 278, 205);
+      }
+
+      doc.save(`Kardex_${format(new Date(), "yyyyMMdd_HHmm")}.pdf`);
+      toast.success("PDF exportado correctamente");
+    } catch (err) {
+      console.error(err);
+      toast.error("Error al generar el PDF");
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   // Map database logs to human readable timeline entries
   const getAuditLogDetails = (log: any) => {
@@ -173,18 +329,53 @@ export default function BusinessHistoryPage() {
   const filteredAudit = auditLogs.filter((log) => {
     const details = getAuditLogDetails(log);
     const search = searchAudit.toLowerCase();
-    return (
+    const matchSearch =
       details.title.toLowerCase().includes(search) ||
       details.description.toLowerCase().includes(search) ||
       (log.userEmail || "").toLowerCase().includes(search) ||
-      log.tableName.toLowerCase().includes(search)
-    );
+      log.tableName.toLowerCase().includes(search);
+    if (!matchSearch) return false;
+    const day = (log.createdAt || "").slice(0, 10);
+    if (auditDateFrom && day < auditDateFrom) return false;
+    if (auditDateTo && day > auditDateTo) return false;
+    return true;
   });
 
-  const filteredMovements = movements.filter((m) =>
-    (m.product?.name || "").toLowerCase().includes(searchMovements.toLowerCase()) ||
-    (m.presentationName || "").toLowerCase().includes(searchMovements.toLowerCase())
-  );
+  const filteredMovements = movements.filter((m) => {
+    const matchSearch =
+      (m.product?.name || "").toLowerCase().includes(searchMovements.toLowerCase()) ||
+      (m.presentationName || "").toLowerCase().includes(searchMovements.toLowerCase());
+    if (!matchSearch) return false;
+    const day = (m.createdAt || "").slice(0, 10);
+    if (movDateFrom && day < movDateFrom) return false;
+    if (movDateTo && day > movDateTo) return false;
+    return true;
+  });
+
+  const handleMovementsExcel = async () => {
+    await exportToExcel(
+      filteredMovements.map(m => ({
+        fecha: format(new Date(m.createdAt), "dd/MM/yyyy HH:mm"),
+        producto: m.product?.name || "—",
+        tipo: m.type === "IN" ? "Entrada" : "Salida",
+        presentacion: m.presentationQty ? `${m.presentationQty}x ${m.presentationName}` : "—",
+        cantidad: `${m.type === "IN" ? "+" : "-"}${m.quantity}`,
+        unidad: m.product?.unit || "",
+        motivo: m.reason === "SALE" ? "Venta" : m.reason === "PURCHASE" ? "Compra" : "Ajuste",
+      })),
+      [
+        { key: "fecha", label: "Fecha" },
+        { key: "producto", label: "Producto" },
+        { key: "tipo", label: "Tipo" },
+        { key: "presentacion", label: "Presentación" },
+        { key: "cantidad", label: "Cantidad" },
+        { key: "unidad", label: "Unidad" },
+        { key: "motivo", label: "Motivo" },
+      ],
+      `Kardex_${new Date().toISOString().slice(0, 10)}`
+    );
+    toast.success("Excel exportado");
+  };
 
   return (
     <Appshell>
@@ -222,7 +413,7 @@ export default function BusinessHistoryPage() {
         {/* AUDIT LOG TAB */}
         {activeTab === "audit" && (
           <div className="space-y-4">
-            <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3">
               <div className="flex-1 flex items-center bg-white border border-gray-100 rounded-xl px-4 shadow-sm">
                 <Search className="w-4 h-4 text-gray-400 mr-2" />
                 <input
@@ -233,6 +424,13 @@ export default function BusinessHistoryPage() {
                   onChange={(e) => setSearchAudit(e.target.value)}
                 />
               </div>
+              <DateRangePicker
+                dateFrom={auditDateFrom}
+                dateTo={auditDateTo}
+                onDateFromChange={setAuditDateFrom}
+                onDateToChange={setAuditDateTo}
+                onClear={() => { setAuditDateFrom(""); setAuditDateTo(""); }}
+              />
             </div>
 
             <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-6">
@@ -292,7 +490,7 @@ export default function BusinessHistoryPage() {
         {/* INVENTORY MOVEMENTS TAB */}
         {activeTab === "movements" && (
           <div className="space-y-4">
-            <div className="flex gap-3">
+            <div className="flex gap-3 flex-wrap">
               <div className="flex-1 flex items-center bg-white border border-gray-100 rounded-xl px-4 shadow-sm">
                 <Search className="w-4 h-4 text-gray-400 mr-2" />
                 <input
@@ -314,7 +512,30 @@ export default function BusinessHistoryPage() {
                   </button>
                 ))}
               </div>
+              <DateRangePicker
+                dateFrom={movDateFrom}
+                dateTo={movDateTo}
+                onDateFromChange={setMovDateFrom}
+                onDateToChange={setMovDateTo}
+                onClear={() => { setMovDateFrom(""); setMovDateTo(""); }}
+              />
+              <button
+                onClick={handleMovementsExcel}
+                className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 text-xs font-bold rounded-xl shadow-sm hover:bg-emerald-50 hover:border-emerald-200 hover:text-emerald-700 transition-all"
+              >
+                <FileDown className="w-4 h-4" /> Excel
+              </button>
+              <button
+                onClick={exportKardexPdf}
+                disabled={isExporting}
+                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-xs font-bold rounded-xl shadow hover:from-indigo-700 hover:to-purple-700 transition-all disabled:opacity-60"
+              >
+                <FileDown className="w-4 h-4" />
+                {isExporting ? "Generando..." : "Exportar PDF"}
+              </button>
             </div>
+
+
 
             <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
               {loadingMovements ? (

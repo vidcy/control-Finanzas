@@ -19,7 +19,7 @@ import {
   ArrowUpRight,
   RotateCcw,
 } from "lucide-react";
-import ImageUploader from "../components/ui/ImageUploader";
+import ImageUploader, { getReceiptAbsoluteUrl } from "../components/ui/ImageUploader";
 import { toast } from "react-hot-toast";
 import { listCategoriesRequest } from "../services/category.api";
 import ConfirmModal from "../components/ui/ConfirmModal";
@@ -37,6 +37,9 @@ import {
   formatPeruDate,
   formatPeruTime,
 } from "../utils/date.utils";
+import DateRangePicker from "../components/ui/DateRangePicker";
+import { exportToExcel, filterByDateRange } from "../utils/exportExcel";
+import { FileDown } from "lucide-react";
 type Expense = {
   id: string;
   date: string;
@@ -54,6 +57,7 @@ type Expense = {
   programmed: boolean;
   status: "PENDING" | "PAID";
   paymentMethod: string;
+  receiptUrl?: string | null;
 };
 
 export default function ExpensesPage() {
@@ -61,6 +65,8 @@ export default function ExpensesPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [categories, setCategories] = useState<any[]>([]);
 
   // Modal states
@@ -90,7 +96,7 @@ export default function ExpensesPage() {
     justified: false,
     programmed: false,
     paymentMethod: "CASH" as "CASH" | "TRANSFER" | "YAPE" | "PLIN" | "CARD",
-    receiptUrl: "" as string | null,
+    receiptUrl: null as string | File | null,
   });
 
 
@@ -154,27 +160,41 @@ export default function ExpensesPage() {
   // 2️⃣ FILTRO PRINCIPAL (SIN LÍMITES, 100% FLEXIBLE)
   // =============================================
   const filtered = useMemo(() => {
-    // 🔹 Normalizar el término de búsqueda (solo minúsculas, sin tildes)
     const searchTermNormalized = searchTerm
       .toLowerCase()
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
       .trim();
 
-    // Si no hay término, devolver todo
-    if (!searchTermNormalized) return items;
+    let result = items;
+    result = filterByDateRange(result, "date", dateFrom, dateTo);
+    if (!searchTermNormalized) return result;
 
-    // Filtrar: si ALGÚN valor del item contiene el término (sin importar qué)
-    return items.filter((item) => {
+    return result.filter((item) => {
       const allStrings = getAllPossibleStrings(item).map((str) =>
-        str
-          .toLowerCase()
-          .normalize("NFD")
-          .replace(/[\u0300-\u036f]/g, "")
+        str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
       );
       return allStrings.some((str) => str.includes(searchTermNormalized));
     });
-  }, [items, searchTerm]);
+  }, [items, searchTerm, dateFrom, dateTo]);
+
+  const handleExcelExport = async () => {
+    await exportToExcel(
+      filtered,
+      [
+        { key: "date", label: "Fecha" },
+        { key: "name", label: "Descripción" },
+        { key: "category", label: "Categoría" },
+        { key: "subCategory", label: "Subcategoría" },
+        { key: "amount", label: "Monto" },
+        { key: "currency", label: "Moneda" },
+        { key: "paymentMethod", label: "Método de Pago" },
+        { key: "status", label: "Estado" },
+      ],
+      `Egresos_${new Date().toISOString().slice(0, 10)}`
+    );
+    toast.success("Excel exportado");
+  };
 
   // 🔥 Separa por tipo (INCOME/EXPENSE) si es necesario
   const expense = filtered;
@@ -226,6 +246,7 @@ export default function ExpensesPage() {
             programmed: t.programmed || false,
             status: t.status || "PAID",
             paymentMethod: t.paymentMethod || "CASH",
+            receiptUrl: t.receiptUrl || null,
           })),
       );
       setCategories(categoriesData);
@@ -348,24 +369,39 @@ export default function ExpensesPage() {
       return toast.error("Ingresa un tipo de cambio válido");
 
     const originalItem = editingId ? items.find((i) => i.id === editingId) : undefined;
-    const payload = {
-      ...formData,
-      date: peruInputDateToUtcISO(formData.date, originalItem?.date),
-      paidAt: peruInputDateToUtcISO(formData.paidAt, originalItem?.paidAt),
-      name: formData.name || "Egreso",
-      description: formData.description || "Egreso",
-      amount: Number(formData.amount),
-      exchangeRate: Number(formData.exchangeRate),
-      type: "EXPENSE",
-      categoryId: selectedCategoryId,
-      subCategoryId: selectedSubCategoryId || null,
-      justified: formData.justified,
-      programmed: formData.programmed,
-      receiptUrl: formData.receiptUrl,
-    };
-
     setSaving(true);
     try {
+      let finalReceiptUrl = formData.receiptUrl;
+      if (formData.receiptUrl instanceof File) {
+        const uploadToast = toast.loading("Subiendo comprobante...");
+        try {
+          const { uploadReceiptFile } = await import("../components/ui/ImageUploader");
+          finalReceiptUrl = await uploadReceiptFile(formData.receiptUrl);
+          toast.dismiss(uploadToast);
+        } catch (uploadError) {
+          toast.dismiss(uploadToast);
+          toast.error("Error al subir el comprobante");
+          setSaving(false);
+          return;
+        }
+      }
+
+      const payload = {
+        ...formData,
+        date: peruInputDateToUtcISO(formData.date, originalItem?.date),
+        paidAt: peruInputDateToUtcISO(formData.paidAt, originalItem?.paidAt),
+        name: formData.name || "Egreso",
+        description: formData.description || "Egreso",
+        amount: Number(formData.amount),
+        exchangeRate: Number(formData.exchangeRate),
+        type: "EXPENSE",
+        categoryId: selectedCategoryId,
+        subCategoryId: selectedSubCategoryId || null,
+        justified: formData.justified,
+        programmed: formData.programmed,
+        receiptUrl: finalReceiptUrl,
+      };
+
       if (editingId) {
         await updateTransactionRequest(editingId, payload as any);
         toast.success("Actualizado correctamente");
@@ -500,6 +536,19 @@ export default function ExpensesPage() {
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
+            <DateRangePicker
+              dateFrom={dateFrom}
+              dateTo={dateTo}
+              onDateFromChange={setDateFrom}
+              onDateToChange={setDateTo}
+              onClear={() => { setDateFrom(""); setDateTo(""); }}
+            />
+            <button
+              onClick={handleExcelExport}
+              className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-3 rounded-2xl font-bold text-sm shadow-sm hover:bg-rose-50 hover:border-rose-200 hover:text-rose-700 transition-all"
+            >
+              <FileDown className="w-4 h-4" /> Excel
+            </button>
             <button
               onClick={handleOpenCreate}
               className="flex items-center gap-2 bg-gradient-to-r from-rose-600 to-rose-800 text-white px-6 py-3.5 rounded-2xl font-black shadow-lg shadow-rose-200 hover:-translate-y-1 transition-all active:scale-95 text-sm"
@@ -525,6 +574,7 @@ export default function ExpensesPage() {
                   <th className="p-5 text-center">Moneda</th>
                   <th className="p-5 text-center">T.C</th>
                   <th className="p-5 text-right">Monto Soles</th>
+                  <th className="p-5 text-center">Comprobante</th>
                   <th className="p-5 pr-8 text-center">Acciones</th>
                 </tr>
               </thead>
@@ -614,6 +664,29 @@ export default function ExpensesPage() {
                         {montoSoles.toLocaleString(undefined, {
                           minimumFractionDigits: 2,
                         })}
+                      </td>
+                      <td className="p-5 text-center">
+                        {exp.receiptUrl ? (
+                          <div className="relative group inline-block">
+                            <a
+                              href={getReceiptAbsoluteUrl(exp.receiptUrl) || "#"}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex p-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl transition-all shadow-sm active:scale-95"
+                              title="Ver/Descargar Comprobante"
+                              download
+                            >
+                              <FileText className="w-4 h-4" />
+                            </a>
+                            <span className="hidden group-hover:block absolute left-1/2 -translate-x-1/2 bottom-12 z-50 whitespace-nowrap rounded-full px-3 py-1 text-[10px] font-medium text-white shadow-lg bg-slate-900">
+                              Descargar
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-gray-300 font-bold uppercase tracking-wider">
+                            Sin archivo
+                          </span>
+                        )}
                       </td>
                       <td className="p-5 pr-8 text-center">
                         <div className="flex gap-2 ml-4">
@@ -777,6 +850,20 @@ export default function ExpensesPage() {
                       <p className="text-[10px] text-gray-400 font-bold mt-1 uppercase">
                         Método: {getMethodBadge(exp.paymentMethod)}
                       </p>
+                      {exp.receiptUrl && (
+                        <p className="text-[10px] text-gray-400 font-bold mt-2 uppercase flex items-center gap-1.5">
+                          Comprobante:{" "}
+                          <a
+                            href={getReceiptAbsoluteUrl(exp.receiptUrl) || "#"}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-100 rounded-lg transition-all"
+                            download
+                          >
+                            <FileText className="w-3.5 h-3.5" /> Descargar
+                          </a>
+                        </p>
+                      )}
                     </div>
                     <div className="flex gap-2 ml-4">
                       {/* Editar */}

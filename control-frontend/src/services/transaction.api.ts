@@ -15,6 +15,7 @@ export const createTransactionRequest = async (data: {
   paymentMethod: string;
   description?: string;
   workspace?: string;
+  receiptUrl?: string | null;
 }) => {
   try {
     const res = await API.post("/transactions", data);
@@ -62,6 +63,7 @@ export const updateTransactionRequest = async (
     paymentMethod: string;
     description?: string;
     name?: string;
+    receiptUrl?: string | null;
   },
 ) => {
   try {

@@ -1,37 +1,68 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "../auth/AuthContext";
-import { useNavigate, Link } from "react-router-dom";
-import { Mail, Lock, ArrowRight, AlertCircle } from "lucide-react";
+import { useNavigate, Link, useSearchParams } from "react-router-dom";
+import { Mail, Lock, ArrowRight, AlertCircle, Loader2 } from "lucide-react";
 import { toast } from "react-hot-toast";
+import { activateRequest } from "../services/auth.api";
 
 export default function LoginPage() {
     const { login } = useAuth(); // función login global
     const navigate = useNavigate(); // navegación entre páginas
+    const [searchParams, setSearchParams] = useSearchParams();
 
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
     const [isLoading, setIsLoading] = useState(false);
+    const [isActivating, setIsActivating] = useState(false);
+
+    useEffect(() => {
+        const token = searchParams.get("activate_token");
+        if (token) {
+            const activateAccount = async () => {
+                setIsActivating(true);
+                toast.loading("Activando tu cuenta...", { id: "activation" });
+                try {
+                    await activateRequest(token);
+                    toast.success("¡Cuenta activada con éxito! Ya puedes iniciar sesión.", { id: "activation" });
+                } catch (err: any) {
+                    toast.error(err.message || "Error al activar la cuenta.", { id: "activation" });
+                    setError(err.message || "Error al activar la cuenta.");
+                } finally {
+                    setIsActivating(false);
+                    // Remove the query parameter from URL
+                    const newParams = new URLSearchParams(searchParams);
+                    newParams.delete("activate_token");
+                    setSearchParams(newParams);
+                }
+            };
+            activateAccount();
+        }
+    }, [searchParams, setSearchParams]);
 
     // submit del formulario
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-
         setIsLoading(true);
-        console.log("Intentando login...");
 
-        const success = await login(email, password);
-
+        const res = await login(email, password);
         setIsLoading(false);
 
-        // 👇 SOLO NAVEGA SI LOGIN ES CORRECTO
-        if (success) {
-            console.log("Login correcto → evaluando perfiles");
+        if (res.success) {
             toast.success("¡Bienvenido de vuelta!");
-            
+
             const storedUser = JSON.parse(localStorage.getItem("user") || "{}");
-            const profiles = storedUser.profiles || ["PERSONAL", "BUSINESS"];
-            
+            const role = storedUser.role;
+            const profiles: string[] = Array.isArray(storedUser.profiles)
+                ? storedUser.profiles
+                : [];
+
+            // ADMIN siempre va al panel de administración
+            if (role === "ADMIN") {
+                navigate("/users");
+                return;
+            }
+
             if (profiles.length > 1) {
                 navigate("/workspace-selection");
             } else if (profiles[0] === "BUSINESS") {
@@ -40,11 +71,11 @@ export default function LoginPage() {
                 navigate("/dashboard");
             }
         } else {
-            console.log("Login incorrecto");
-            setError("Credenciales incorrectas");
-            toast.error("Credenciales incorrectas");
+            setError(res.error || "Credenciales incorrectas");
+            toast.error(res.error || "Credenciales incorrectas");
         }
     };
+
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-[#f8fafc] font-sans relative overflow-hidden">
@@ -73,7 +104,13 @@ export default function LoginPage() {
                 </div>
 
                 {/* LOGIN CARD */}
-                <div className="bg-white/70 backdrop-blur-2xl p-6 sm:p-8 rounded-3xl shadow-[0_8px_40px_rgb(0,0,0,0.08)] border border-white/50">
+                <div className="bg-white/70 backdrop-blur-2xl p-6 sm:p-8 rounded-3xl shadow-[0_8px_40px_rgb(0,0,0,0.08)] border border-white/50 relative">
+                    {isActivating && (
+                        <div className="absolute inset-0 bg-white/80 rounded-3xl z-20 flex flex-col items-center justify-center gap-3">
+                            <Loader2 className="w-10 h-10 text-indigo-600 animate-spin" />
+                            <p className="text-sm font-bold text-gray-800">Activando tu cuenta...</p>
+                        </div>
+                    )}
                     <form onSubmit={handleSubmit} className="space-y-6">
 
                         {error && (
@@ -161,7 +198,7 @@ export default function LoginPage() {
                 </div>
 
                 <p className="text-center text-sm text-gray-500 mt-8 font-medium">
-                    &copy; {new Date().getFullYear()} THINK. Todos los derechos reservados.
+                    &copy; {new Date().getFullYear()} Think - Global Ccoplex. Todos los derechos reservados.
                 </p>
             </div>
         </div>

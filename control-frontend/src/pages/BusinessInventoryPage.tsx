@@ -8,7 +8,6 @@ import {
   Trash2,
   TrendingUp,
   Image,
-  X,
 } from "lucide-react";
 import {
   getProductsRequest,
@@ -21,12 +20,17 @@ import type { Product, Presentation } from "../services/product.api";
 import { listCategoriesRequest } from "../services/category.api";
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
-import { getReceiptAbsoluteUrl, ProductImageUploader } from "../components/ui/ImageUploader";
-
-
+import {
+  getReceiptAbsoluteUrl,
+  ProductImageUploader,
+} from "../components/ui/ImageUploader";
 
 // Helper to format stock quantities into mixed presentations dynamically
-export function formatStock(stock: number, unit: string, presentations?: Presentation[]) {
+export function formatStock(
+  stock: number,
+  unit: string,
+  presentations?: Presentation[],
+) {
   if (!presentations || presentations.length === 0) {
     return `${parseFloat(stock.toFixed(2))} ${unit}`;
   }
@@ -77,7 +81,7 @@ export default function BusinessInventoryPage() {
     stock: 0,
     minStock: 5,
     unit: "Kg",
-    imageUrl: "",
+    imageUrl: "" as string | File,
     presentations: [] as Presentation[],
   });
 
@@ -145,21 +149,38 @@ export default function BusinessInventoryPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      let finalImageUrl = formData.imageUrl;
+      if (formData.imageUrl instanceof File) {
+        const uploadToast = toast.loading("Subiendo foto del producto...");
+        try {
+          const { uploadProductImageFile } =
+            await import("../components/ui/ImageUploader");
+          finalImageUrl = await uploadProductImageFile(formData.imageUrl);
+          toast.dismiss(uploadToast);
+        } catch {
+          toast.dismiss(uploadToast);
+          toast.error("Error al subir la imagen del producto");
+          return;
+        }
+      }
+
       const payload = {
         ...formData,
-        imageUrl: formData.imageUrl || undefined,
+        imageUrl: finalImageUrl || undefined,
       };
       if (editingProduct) {
-        await updateProductRequest(editingProduct.id, payload);
+        await updateProductRequest(editingProduct.id, payload as any);
         toast.success("Producto actualizado");
       } else {
-        await createProductRequest(payload);
+        await createProductRequest(payload as any);
         toast.success("Producto creado");
       }
       setIsModalOpen(false);
       loadData();
     } catch (error: any) {
-      toast.error(error?.response?.data?.message || "Error al guardar producto");
+      toast.error(
+        error?.response?.data?.message || "Error al guardar producto",
+      );
     }
   };
 
@@ -211,7 +232,9 @@ export default function BusinessInventoryPage() {
     p.name.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
-  const selectedPres = restockProduct?.presentations?.find((p) => p.id === restockData.presentationId);
+  const selectedPres = restockProduct?.presentations?.find(
+    (p) => p.id === restockData.presentationId,
+  );
   const restockEquivalence = selectedPres ? selectedPres.equivalence : 1;
   const restockEquivalencyText = `${restockData.quantity * restockEquivalence} ${restockProduct?.unit || ""}`;
 
@@ -228,7 +251,8 @@ export default function BusinessInventoryPage() {
               </div>
               <h1 className="text-4xl font-black tracking-tight">Inventario</h1>
               <p className="text-gray-500 font-medium mt-2 max-w-lg">
-                Mantén el control exacto de tus productos, presentaciones y stock de forma intuitiva.
+                Mantén el control exacto de tus productos, presentaciones y
+                stock de forma intuitiva.
               </p>
             </div>
             <button
@@ -259,7 +283,10 @@ export default function BusinessInventoryPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {loading ? (
             Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="bg-white rounded-2xl p-4 animate-pulse border border-gray-100">
+              <div
+                key={i}
+                className="bg-white rounded-2xl p-4 animate-pulse border border-gray-100"
+              >
                 <div className="w-full h-32 bg-gray-100 rounded-xl mb-3"></div>
                 <div className="h-4 bg-gray-100 rounded w-3/4 mb-2"></div>
                 <div className="h-3 bg-gray-100 rounded w-1/2"></div>
@@ -268,7 +295,9 @@ export default function BusinessInventoryPage() {
           ) : filteredProducts.length === 0 ? (
             <div className="col-span-full text-center py-16 text-gray-400">
               <Package className="w-16 h-16 mx-auto mb-4 opacity-30" />
-              <p className="font-bold text-lg">No hay productos. ¡Agrega uno nuevo!</p>
+              <p className="font-bold text-lg">
+                No hay productos. ¡Agrega uno nuevo!
+              </p>
             </div>
           ) : (
             filteredProducts.map((p) => (
@@ -293,7 +322,9 @@ export default function BusinessInventoryPage() {
                     </div>
                   )}
                   {/* Stock badge */}
-                  <div className={`absolute top-2 right-2 px-2 py-1 rounded-lg text-[10px] font-black shadow-sm ${p.stock <= p.minStock ? "bg-red-500 text-white" : "bg-emerald-500 text-white"}`}>
+                  <div
+                    className={`absolute top-2 right-2 px-2 py-1 rounded-lg text-[10px] font-black shadow-sm ${p.stock <= p.minStock ? "bg-red-500 text-white" : "bg-emerald-500 text-white"}`}
+                  >
                     {p.stock <= p.minStock ? "⚠ Stock bajo" : "✓ En stock"}
                   </div>
                 </div>
@@ -301,39 +332,57 @@ export default function BusinessInventoryPage() {
                 {/* Content */}
                 <div className="p-4 flex-1 flex flex-col">
                   <div className="flex-1">
-                    <h3 className="font-black text-gray-900 text-sm leading-tight mb-1">{p.name}</h3>
-                    {p.sku && <p className="text-[10px] text-gray-400 font-mono mb-1">SKU: {p.sku}</p>}
+                    <h3 className="font-black text-gray-900 text-sm leading-tight mb-1">
+                      {p.name}
+                    </h3>
+                    {p.sku && (
+                      <p className="text-[10px] text-gray-400 font-mono mb-1">
+                        SKU: {p.sku}
+                      </p>
+                    )}
 
                     <div className="flex flex-wrap gap-1 mb-2">
-                      {p.presentations && p.presentations.length > 0 ? (
-                        p.presentations.slice(0, 2).map((pres) => (
-                          <span
-                            key={pres.id}
-                            className="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded-md text-[9px] font-bold"
-                            title={`Equivale a ${pres.equivalence} ${p.unit}`}
-                          >
-                            {pres.name}
-                          </span>
-                        ))
-                      ) : null}
+                      {p.presentations && p.presentations.length > 0
+                        ? p.presentations.slice(0, 2).map((pres) => (
+                            <span
+                              key={pres.id}
+                              className="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded-md text-[9px] font-bold"
+                              title={`Equivale a ${pres.equivalence} ${p.unit}`}
+                            >
+                              {pres.name}
+                            </span>
+                          ))
+                        : null}
                     </div>
 
                     <div className="bg-gray-50 rounded-xl p-2 mb-3">
-                      <div className="text-[10px] text-gray-500 font-semibold mb-0.5">Stock actual</div>
+                      <div className="text-[10px] text-gray-500 font-semibold mb-0.5">
+                        Stock actual
+                      </div>
                       <div className="font-black text-gray-900 text-xs">
                         {formatStock(p.stock, p.unit, p.presentations)}
                       </div>
-                      <div className="text-[9px] text-gray-400">{p.stock} {p.unit} base</div>
+                      <div className="text-[9px] text-gray-400">
+                        {p.stock} {p.unit} base
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <div className="text-[9px] text-gray-400 font-medium">Costo</div>
-                        <div className="text-sm font-bold text-gray-700">S/ {p.costPrice.toFixed(2)}</div>
+                        <div className="text-[9px] text-gray-400 font-medium">
+                          Costo
+                        </div>
+                        <div className="text-sm font-bold text-gray-700">
+                          S/ {p.costPrice.toFixed(2)}
+                        </div>
                       </div>
                       <div>
-                        <div className="text-[9px] text-gray-400 font-medium">Venta</div>
-                        <div className="text-sm font-black text-indigo-600">S/ {p.salePrice.toFixed(2)}</div>
+                        <div className="text-[9px] text-gray-400 font-medium">
+                          Venta
+                        </div>
+                        <div className="text-sm font-black text-indigo-600">
+                          S/ {p.salePrice.toFixed(2)}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -346,7 +395,9 @@ export default function BusinessInventoryPage() {
                         setRestockData({
                           quantity: 1,
                           presentationId: p.presentations?.[0]?.id || "",
-                          totalCost: p.costPrice * (p.presentations?.[0]?.equivalence || 1),
+                          totalCost:
+                            p.costPrice *
+                            (p.presentations?.[0]?.equivalence || 1),
                           categoryId: "",
                           paymentMethod: "CASH",
                         });
@@ -390,68 +441,68 @@ export default function BusinessInventoryPage() {
               <Image className="w-4 h-4 text-indigo-500" />
               Foto del Producto (opcional)
             </label>
-            {formData.imageUrl ? (
-              <div className="relative">
-                <img
-                  src={getReceiptAbsoluteUrl(formData.imageUrl) || formData.imageUrl}
-                  alt="Producto"
-                  className="w-full h-40 object-cover rounded-xl border border-gray-200"
-                />
-                <button
-                  type="button"
-                  onClick={() => setFormData({ ...formData, imageUrl: "" })}
-                  className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </div>
-            ) : (
-              <ProductImageUploader
-                currentImageUrl={null}
-                onUploadSuccess={(url) => setFormData({ ...formData, imageUrl: url })}
-                onClear={() => setFormData({ ...formData, imageUrl: "" })}
-              />
-
-            )}
+            <ProductImageUploader
+              currentImageUrl={formData.imageUrl}
+              onUploadSuccess={(url) =>
+                setFormData({ ...formData, imageUrl: url })
+              }
+              onClear={() => setFormData({ ...formData, imageUrl: "" })}
+            />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="md:col-span-2">
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Nombre *</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                Nombre *
+              </label>
               <input
                 type="text"
                 required
                 value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, name: e.target.value })
+                }
                 className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                 placeholder="Ej. Arroz Extra"
               />
             </div>
             <div className="md:col-span-2">
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Descripción</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                Descripción
+              </label>
               <input
                 type="text"
                 value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, description: e.target.value })
+                }
                 className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                 placeholder="Opcional"
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">SKU / Código</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                SKU / Código
+              </label>
               <input
                 type="text"
                 value={formData.sku}
-                onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, sku: e.target.value })
+                }
                 className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                 placeholder="Ej. ARR-001"
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Unidad Principal</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                Unidad Principal
+              </label>
               <select
                 value={formData.unit}
-                onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, unit: e.target.value })
+                }
                 className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
               >
                 <option value="Kg">Kg</option>
@@ -466,50 +517,72 @@ export default function BusinessInventoryPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Stock Inicial ({formData.unit})</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                Stock Inicial ({formData.unit})
+              </label>
               <input
                 type="number"
                 required
                 min="0"
                 step="any"
                 value={formData.stock}
-                onChange={(e) => setFormData({ ...formData, stock: Number(e.target.value) })}
+                onChange={(e) =>
+                  setFormData({ ...formData, stock: Number(e.target.value) })
+                }
                 className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Stock Mínimo (Alerta)</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                Stock Mínimo (Alerta)
+              </label>
               <input
                 type="number"
                 required
                 min="0"
                 step="any"
                 value={formData.minStock}
-                onChange={(e) => setFormData({ ...formData, minStock: Number(e.target.value) })}
+                onChange={(e) =>
+                  setFormData({ ...formData, minStock: Number(e.target.value) })
+                }
                 className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">P. Compra (Costo Base) S/</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                P. Compra (Costo Base) S/
+              </label>
               <input
                 type="number"
                 required
                 min="0"
                 step="0.01"
                 value={formData.costPrice}
-                onChange={(e) => setFormData({ ...formData, costPrice: Number(e.target.value) })}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    costPrice: Number(e.target.value),
+                  })
+                }
                 className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">P. Venta (Base) S/</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                P. Venta (Base) S/
+              </label>
               <input
                 type="number"
                 required
                 min="0"
                 step="0.01"
                 value={formData.salePrice}
-                onChange={(e) => setFormData({ ...formData, salePrice: Number(e.target.value) })}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    salePrice: Number(e.target.value),
+                  })
+                }
                 className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
               />
             </div>
@@ -517,7 +590,9 @@ export default function BusinessInventoryPage() {
             {/* PRESENTATIONS */}
             <div className="md:col-span-2 border-t border-gray-100 pt-4">
               <div className="flex justify-between items-center mb-3">
-                <h3 className="text-sm font-bold text-gray-700">Presentaciones / Empaques</h3>
+                <h3 className="text-sm font-bold text-gray-700">
+                  Presentaciones / Empaques
+                </h3>
                 <button
                   type="button"
                   onClick={() =>
@@ -537,12 +612,16 @@ export default function BusinessInventoryPage() {
 
               {formData.presentations.length === 0 ? (
                 <p className="text-xs text-gray-400 italic bg-gray-50 p-3 rounded-xl">
-                  Sin presentaciones adicionales. Se venderá por {formData.unit}.
+                  Sin presentaciones adicionales. Se venderá por {formData.unit}
+                  .
                 </p>
               ) : (
                 <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                   {formData.presentations.map((pres, index) => (
-                    <div key={index} className="flex gap-2 items-center bg-gray-50 p-2 rounded-xl border border-gray-100">
+                    <div
+                      key={index}
+                      className="flex gap-2 items-center bg-gray-50 p-2 rounded-xl border border-gray-100"
+                    >
                       <input
                         type="text"
                         required
@@ -550,7 +629,10 @@ export default function BusinessInventoryPage() {
                         value={pres.name}
                         onChange={(e) => {
                           const newPres = [...formData.presentations];
-                          newPres[index] = { ...newPres[index], name: e.target.value };
+                          newPres[index] = {
+                            ...newPres[index],
+                            name: e.target.value,
+                          };
                           setFormData({ ...formData, presentations: newPres });
                         }}
                         className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
@@ -565,12 +647,20 @@ export default function BusinessInventoryPage() {
                           value={pres.equivalence}
                           onChange={(e) => {
                             const newPres = [...formData.presentations];
-                            newPres[index] = { ...newPres[index], equivalence: Number(e.target.value) };
-                            setFormData({ ...formData, presentations: newPres });
+                            newPres[index] = {
+                              ...newPres[index],
+                              equivalence: Number(e.target.value),
+                            };
+                            setFormData({
+                              ...formData,
+                              presentations: newPres,
+                            });
                           }}
                           className="w-14 px-2 py-1.5 border border-gray-200 rounded-lg outline-none text-center focus:ring-1 focus:ring-indigo-500 bg-white text-xs"
                         />
-                        <span className="text-gray-500 font-bold text-[10px]">{formData.unit}</span>
+                        <span className="text-gray-500 font-bold text-[10px]">
+                          {formData.unit}
+                        </span>
                       </div>
                       <div className="flex items-center gap-1 text-xs">
                         <span className="text-gray-400 text-[10px]">S/</span>
@@ -582,8 +672,14 @@ export default function BusinessInventoryPage() {
                           value={pres.price}
                           onChange={(e) => {
                             const newPres = [...formData.presentations];
-                            newPres[index] = { ...newPres[index], price: Number(e.target.value) };
-                            setFormData({ ...formData, presentations: newPres });
+                            newPres[index] = {
+                              ...newPres[index],
+                              price: Number(e.target.value),
+                            };
+                            setFormData({
+                              ...formData,
+                              presentations: newPres,
+                            });
                           }}
                           className="w-18 px-2 py-1.5 border border-gray-200 rounded-lg outline-none text-right focus:ring-1 focus:ring-indigo-500 bg-white text-xs"
                         />
@@ -591,7 +687,9 @@ export default function BusinessInventoryPage() {
                       <button
                         type="button"
                         onClick={() => {
-                          const newPres = formData.presentations.filter((_, i) => i !== index);
+                          const newPres = formData.presentations.filter(
+                            (_, i) => i !== index,
+                          );
                           setFormData({ ...formData, presentations: newPres });
                         }}
                         className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg"
@@ -633,28 +731,46 @@ export default function BusinessInventoryPage() {
           <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-xl mb-4 flex gap-4 items-center">
             {restockProduct?.imageUrl && (
               <img
-                src={getReceiptAbsoluteUrl(restockProduct.imageUrl) || restockProduct.imageUrl}
+                src={
+                  getReceiptAbsoluteUrl(restockProduct.imageUrl) ||
+                  restockProduct.imageUrl
+                }
                 alt={restockProduct.name}
                 className="w-14 h-14 object-cover rounded-xl border border-indigo-200"
-                onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}
+                onError={(e) =>
+                  ((e.target as HTMLImageElement).style.display = "none")
+                }
               />
             )}
             <div>
-              <h4 className="font-bold text-indigo-900">{restockProduct?.name}</h4>
+              <h4 className="font-bold text-indigo-900">
+                {restockProduct?.name}
+              </h4>
               <p className="text-sm text-indigo-700 font-medium mt-1">
-                Stock Actual: {restockProduct ? formatStock(restockProduct.stock, restockProduct.unit, restockProduct.presentations) : ""}
+                Stock Actual:{" "}
+                {restockProduct
+                  ? formatStock(
+                      restockProduct.stock,
+                      restockProduct.unit,
+                      restockProduct.presentations,
+                    )
+                  : ""}
               </p>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Comprar en presentación</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                Comprar en presentación
+              </label>
               <select
                 value={restockData.presentationId}
                 onChange={(e) => {
                   const presId = e.target.value;
-                  const pres = restockProduct?.presentations?.find((p) => p.id === presId);
+                  const pres = restockProduct?.presentations?.find(
+                    (p) => p.id === presId,
+                  );
                   const equiv = pres ? pres.equivalence : 1;
                   const qty = restockData.quantity || 1;
                   setRestockData({
@@ -665,17 +781,22 @@ export default function BusinessInventoryPage() {
                 }}
                 className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
               >
-                <option value="">{restockProduct?.unit} (Unidad Principal)</option>
+                <option value="">
+                  {restockProduct?.unit} (Unidad Principal)
+                </option>
                 {restockProduct?.presentations?.map((pres) => (
                   <option key={pres.id} value={pres.id}>
-                    {pres.name} (Equivale a {pres.equivalence} {restockProduct.unit})
+                    {pres.name} (Equivale a {pres.equivalence}{" "}
+                    {restockProduct.unit})
                   </option>
                 ))}
               </select>
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Cantidad a comprar</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                Cantidad a comprar
+              </label>
               <input
                 type="number"
                 required
@@ -687,14 +808,19 @@ export default function BusinessInventoryPage() {
                   setRestockData({
                     ...restockData,
                     quantity: qty,
-                    totalCost: qty * (restockProduct?.costPrice || 0) * restockEquivalence,
+                    totalCost:
+                      qty *
+                      (restockProduct?.costPrice || 0) *
+                      restockEquivalence,
                   });
                 }}
                 className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Costo Total (S/)</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                Costo Total (S/)
+              </label>
               <input
                 type="number"
                 required
@@ -702,7 +828,10 @@ export default function BusinessInventoryPage() {
                 step="0.01"
                 value={restockData.totalCost}
                 onChange={(e) =>
-                  setRestockData({ ...restockData, totalCost: Number(e.target.value) })
+                  setRestockData({
+                    ...restockData,
+                    totalCost: Number(e.target.value),
+                  })
                 }
                 className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
               />
@@ -710,30 +839,45 @@ export default function BusinessInventoryPage() {
 
             <div className="col-span-2 text-xs font-bold text-gray-600 bg-emerald-50 p-2.5 rounded-xl border border-emerald-100 flex justify-between">
               <span>Total a cargar al inventario:</span>
-              <span className="text-emerald-600 font-extrabold">{restockEquivalencyText}</span>
+              <span className="text-emerald-600 font-extrabold">
+                {restockEquivalencyText}
+              </span>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Categoría del Gasto</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                Categoría del Gasto
+              </label>
               <select
                 required
                 value={restockData.categoryId}
-                onChange={(e) => setRestockData({ ...restockData, categoryId: e.target.value })}
+                onChange={(e) =>
+                  setRestockData({ ...restockData, categoryId: e.target.value })
+                }
                 className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
               >
                 <option value="">Seleccione...</option>
                 {categories.map((c: any) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
                 ))}
               </select>
             </div>
             <div className="col-span-2">
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Método de Pago</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                Método de Pago
+              </label>
               <select
                 value={restockData.paymentMethod}
-                onChange={(e) => setRestockData({ ...restockData, paymentMethod: e.target.value })}
+                onChange={(e) =>
+                  setRestockData({
+                    ...restockData,
+                    paymentMethod: e.target.value,
+                  })
+                }
                 className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
               >
                 <option value="CASH">Efectivo</option>

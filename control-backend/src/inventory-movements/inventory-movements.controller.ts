@@ -28,7 +28,9 @@ export class InventoryMovementsController {
         ...(type ? { type: type as any } : {}),
       },
       include: {
-        product: { select: { id: true, name: true, unit: true, imageUrl: true } },
+        product: {
+          select: { id: true, name: true, unit: true, imageUrl: true },
+        },
         presentation: { select: { id: true, name: true } },
       },
       orderBy: { createdAt: 'desc' },

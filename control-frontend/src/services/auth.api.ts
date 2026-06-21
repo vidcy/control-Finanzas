@@ -1,8 +1,10 @@
 import API from "./axios";
 
 export interface LoginResponse {
-    access_token: string;
-    user: any;
+  access_token?: string;
+  user?: any;
+  activationRequired?: boolean;
+  message?: string;
 }
 
 /**
@@ -10,85 +12,92 @@ export interface LoginResponse {
  * SOLO devuelve token si backend responde 200
  */
 export const loginRequest = async (
-    email: string,
-    password: string
+  email: string,
+  password: string,
 ): Promise<LoginResponse> => {
-    console.log(email, password)
-    try {
-        const res = await API.post("/auth/login", {
-            email,
-            password,
-        });
+  try {
+    const res = await API.post("/auth/login", {
+      email,
+      password,
+    });
 
-        localStorage.setItem("token", res.data.access_token);
-        // 👇 SI LLEGAMOS AQUÍ = backend respondió 200 OK
-        return res.data;
-    } catch (error: any) {
-        // 👇 SI BACKEND RESPONDE 401 CAEMOS AQUÍ
-        throw new Error(
-            error?.response?.data?.message || "Credenciales incorrectas"
-        );
-    }
+    localStorage.setItem("token", res.data.access_token);
+    // 👇 SI LLEGAMOS AQUÍ = backend respondió 200 OK
+    return res.data;
+  } catch (error: any) {
+    // 👇 SI BACKEND RESPONDE 401 CAEMOS AQUÍ
+    throw new Error(
+      error?.response?.data?.message || "Credenciales incorrectas",
+    );
+  }
 };
 
-
 export const forgotPasswordRequest = async (email: string) => {
-    try {
-        const res = await API.post("/auth/forgot-password", {
-            email,
-        });
-        return res.data;
-    } catch (error: any) {
-        throw new Error(
-            error?.response?.data?.message || "Error al enviar el correo"
-        );
-    }
-}
+  try {
+    const res = await API.post("/auth/forgot-password", {
+      email,
+    });
+    return res.data;
+  } catch (error: any) {
+    throw new Error(
+      error?.response?.data?.message || "Error al enviar el correo",
+    );
+  }
+};
 export const resetPasswordRequest = async (
-    token: string | null,
-    newPassword: string
+  token: string | null,
+  newPassword: string,
 ) => {
-    console.log(token, newPassword)
-    try {
-        const res = await API.post("/auth/reset-password", {
-            token,
-            newPassword,
-        });
-        return res.data;
-    } catch (error: any) {
-        throw new Error(
-            error?.response?.data?.message || "Error al restablecer la contraseña"
-        );
-    }
-}
+  console.log(token, newPassword);
+  try {
+    const res = await API.post("/auth/reset-password", {
+      token,
+      newPassword,
+    });
+    return res.data;
+  } catch (error: any) {
+    throw new Error(
+      error?.response?.data?.message || "Error al restablecer la contraseña",
+    );
+  }
+};
 export const changePasswordRequest = async (
-    currentPassword: string,
-    newPassword: string
+  currentPassword: string,
+  newPassword: string,
 ) => {
-    try {
-        const res = await API.post("/auth/change-password", {
-            currentPassword,   // 👈 ESTE NOMBRE ES CLAVE
-            newPassword,
-        });
+  try {
+    const res = await API.post("/auth/change-password", {
+      currentPassword, // 👈 ESTE NOMBRE ES CLAVE
+      newPassword,
+    });
 
-        return res.data;
-    } catch (error: any) {
-        throw new Error(
-            error?.response?.data?.message || "Error al cambiar contraseña"
-        );
-    }
+    return res.data;
+  } catch (error: any) {
+    throw new Error(
+      error?.response?.data?.message || "Error al cambiar contraseña",
+    );
+  }
 };
 
 export const registerRequest = async (data: any): Promise<LoginResponse> => {
-    try {
-        const res = await API.post("/auth/register", data);
-        if (res.data.access_token) {
-            localStorage.setItem("token", res.data.access_token);
-        }
-        return res.data;
-    } catch (error: any) {
-        throw new Error(
-            error?.response?.data?.message || "Error al registrarse"
-        );
+  try {
+    const res = await API.post("/users/register", data);
+    if (res.data.access_token) {
+      localStorage.setItem("token", res.data.access_token);
     }
+    return res.data;
+  } catch (error: any) {
+    throw new Error(error?.response?.data?.message || "Error al registrarse");
+  }
+};
+
+export const activateRequest = async (token: string) => {
+  try {
+    const res = await API.post("/users/activate", { token });
+    return res.data;
+  } catch (error: any) {
+    throw new Error(
+      error?.response?.data?.message || "Error al activar la cuenta",
+    );
+  }
 };

@@ -234,6 +234,8 @@ export default function UserPage() {
                 <tr className="bg-gray-50/50 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-100">
                   <th className="p-6 pl-8">Identidad del Usuario</th>
                   <th className="p-6">Rol de Acceso</th>
+                  <th className="p-6">Módulo Personal</th>
+                  <th className="p-6">Módulo Negocios</th>
                   <th className="p-6">Estado</th>
                   <th className="p-6 pr-8 text-center">Acciones</th>
                 </tr>
@@ -241,7 +243,7 @@ export default function UserPage() {
               <tbody className="divide-y divide-gray-50/50">
                 {loading ? (
                   <tr>
-                    <td colSpan={4} className="p-20 text-center">
+                    <td colSpan={6} className="p-20 text-center">
                       <Loader2 className="w-10 h-10 text-purple-500 animate-spin mx-auto mb-4" />
                       <p className="text-xs font-black text-gray-400 uppercase tracking-widest">
                         Sincronizando base de datos...
@@ -277,6 +279,52 @@ export default function UserPage() {
                           <ShieldCheck className="w-3.5 h-3.5" />
                           {user.role}
                         </span>
+                      </td>
+                      <td className="p-6">
+                        <input
+                          type="checkbox"
+                          checked={user.profiles.includes("PERSONAL")}
+                          onChange={async (e) => {
+                            const newProfiles = e.target.checked
+                              ? [...user.profiles, "PERSONAL"]
+                              : user.profiles.filter((p) => p !== "PERSONAL");
+                            if (newProfiles.length === 0) {
+                              toast.error("El usuario debe tener al menos un módulo");
+                              return;
+                            }
+                            try {
+                              await updateUserRequest(user.id, { profiles: newProfiles });
+                              toast.success("Módulos actualizados");
+                              await fetchUsers();
+                            } catch (err: any) {
+                              toast.error(err.message || "Error al actualizar módulos");
+                            }
+                          }}
+                          className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500 cursor-pointer"
+                        />
+                      </td>
+                      <td className="p-6">
+                        <input
+                          type="checkbox"
+                          checked={user.profiles.includes("BUSINESS")}
+                          onChange={async (e) => {
+                            const newProfiles = e.target.checked
+                              ? [...user.profiles, "BUSINESS"]
+                              : user.profiles.filter((p) => p !== "BUSINESS");
+                            if (newProfiles.length === 0) {
+                              toast.error("El usuario debe tener al menos un módulo");
+                              return;
+                            }
+                            try {
+                              await updateUserRequest(user.id, { profiles: newProfiles });
+                              toast.success("Módulos actualizados");
+                              await fetchUsers();
+                            } catch (err: any) {
+                              toast.error(err.message || "Error al actualizar módulos");
+                            }
+                          }}
+                          className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500 cursor-pointer"
+                        />
                       </td>
                       <td className="p-6">
                         <button
@@ -347,6 +395,58 @@ export default function UserPage() {
                     >
                       {user.status === "TRUE" ? "Activo" : "Inactivo"}
                     </button>
+                  </div>
+
+                  {/* CHECKBOXES MÓVILES PARA MÓDULOS */}
+                  <div className="flex items-center gap-6 pt-3 border-t border-gray-50/80 justify-between text-xs text-gray-500 font-bold">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={user.profiles.includes("PERSONAL")}
+                        onChange={async (e) => {
+                          const newProfiles = e.target.checked
+                            ? [...user.profiles, "PERSONAL"]
+                            : user.profiles.filter((p) => p !== "PERSONAL");
+                          if (newProfiles.length === 0) {
+                            toast.error("El usuario debe tener al menos un módulo");
+                            return;
+                          }
+                          try {
+                            await updateUserRequest(user.id, { profiles: newProfiles });
+                            toast.success("Módulos actualizados");
+                            await fetchUsers();
+                          } catch (err: any) {
+                            toast.error(err.message || "Error al actualizar módulos");
+                          }
+                        }}
+                        className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                      />
+                      Personal
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={user.profiles.includes("BUSINESS")}
+                        onChange={async (e) => {
+                          const newProfiles = e.target.checked
+                            ? [...user.profiles, "BUSINESS"]
+                            : user.profiles.filter((p) => p !== "BUSINESS");
+                          if (newProfiles.length === 0) {
+                            toast.error("El usuario debe tener al menos un módulo");
+                            return;
+                          }
+                          try {
+                            await updateUserRequest(user.id, { profiles: newProfiles });
+                            toast.success("Módulos actualizados");
+                            await fetchUsers();
+                          } catch (err: any) {
+                            toast.error(err.message || "Error al actualizar módulos");
+                          }
+                        }}
+                        className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                      />
+                      Negocios
+                    </label>
                   </div>
                 </div>
               ))
@@ -451,6 +551,43 @@ export default function UserPage() {
                       setFormData({ ...formData, password: e.target.value })
                     }
                   />
+                </div>
+              </div>
+
+              {/* MÓDULOS DE ACCESO */}
+              <div className="space-y-3 pt-4 border-t border-purple-100/50">
+                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">
+                  Módulos de Acceso Habilitados
+                </label>
+                <div className="flex gap-8 pl-1">
+                  <label className="flex items-center gap-2 cursor-pointer font-bold text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={formData.profiles.includes("PERSONAL")}
+                      onChange={(e) => {
+                        const updated = e.target.checked
+                          ? [...formData.profiles, "PERSONAL"]
+                          : formData.profiles.filter(p => p !== "PERSONAL");
+                        setFormData({ ...formData, profiles: updated });
+                      }}
+                      className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                    />
+                    Personal
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer font-bold text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={formData.profiles.includes("BUSINESS")}
+                      onChange={(e) => {
+                        const updated = e.target.checked
+                          ? [...formData.profiles, "BUSINESS"]
+                          : formData.profiles.filter(p => p !== "BUSINESS");
+                        setFormData({ ...formData, profiles: updated });
+                      }}
+                      className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                    />
+                    Negocios
+                  </label>
                 </div>
               </div>
             </div>
@@ -563,6 +700,43 @@ export default function UserPage() {
                       setFormData({ ...formData, password: e.target.value })
                     }
                   />
+                </div>
+              </div>
+
+              {/* MÓDULOS DE ACCESO */}
+              <div className="space-y-3 pt-4 border-t border-gray-100">
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                  Módulos de Acceso Habilitados
+                </label>
+                <div className="flex gap-8 pl-1">
+                  <label className="flex items-center gap-2 cursor-pointer font-bold text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={formData.profiles.includes("PERSONAL")}
+                      onChange={(e) => {
+                        const updated = e.target.checked
+                          ? [...formData.profiles, "PERSONAL"]
+                          : formData.profiles.filter(p => p !== "PERSONAL");
+                        setFormData({ ...formData, profiles: updated });
+                      }}
+                      className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                    />
+                    Personal
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer font-bold text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={formData.profiles.includes("BUSINESS")}
+                      onChange={(e) => {
+                        const updated = e.target.checked
+                          ? [...formData.profiles, "BUSINESS"]
+                          : formData.profiles.filter(p => p !== "BUSINESS");
+                        setFormData({ ...formData, profiles: updated });
+                      }}
+                      className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                    />
+                    Negocios
+                  </label>
                 </div>
               </div>
             </div>

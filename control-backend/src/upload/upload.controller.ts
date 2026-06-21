@@ -27,7 +27,9 @@ export class UploadController {
   )
   async uploadProductImage(@UploadedFile() file: Express.Multer.File) {
     if (!file) {
-      throw new BadRequestException('No se envió ningún archivo o el tipo no es soportado.');
+      throw new BadRequestException(
+        'No se envió ningún archivo o el tipo no es soportado.',
+      );
     }
     const url = await this.filesService.uploadProductImage(file);
     return {
@@ -49,7 +51,9 @@ export class UploadController {
   )
   async uploadReceipt(@UploadedFile() file: Express.Multer.File) {
     if (!file) {
-      throw new BadRequestException('No se envió ningún archivo o el tipo no es soportado.');
+      throw new BadRequestException(
+        'No se envió ningún archivo o el tipo no es soportado.',
+      );
     }
     const url = await this.filesService.uploadReceipt(file);
     return {

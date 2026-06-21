@@ -23,15 +23,18 @@ export class AuthService {
 
     if (!user) throw new UnauthorizedException('Usuario no existe');
 
+    // ✅ Check account activation BEFORE password so the error is clear
+    if (!user.isActive)
+      throw new UnauthorizedException('Tu cuenta no está activa. Por favor, revisa tu correo y haz clic en el enlace de activación.');
+
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) throw new UnauthorizedException('Password incorrecto');
+    if (!isMatch) throw new UnauthorizedException('Contraseña incorrecta');
+
     const payload = {
       sub: user.id,
       email: user.email,
       role: user.role,
     };
-    if (!user.isActive)
-      throw new UnauthorizedException('Usuario fuera de servicio');
     const token = this.jwtService.sign(payload);
     return {
       message: 'Usuario logueado correctamente',
@@ -41,52 +44,30 @@ export class AuthService {
         name: user.name,
         email: user.email,
         role: user.role,
+        profiles: user.profiles || [],
       },
     };
   }
 
-  async register(data: any) {
-    const existing = await this.usersService.findByEmail(data.email);
-    if (existing) {
-      throw new BadRequestException('El correo ya está en uso');
+  generateActivationToken(email: string): string {
+    return this.jwtService.sign({ email }, { expiresIn: '24h' });
+  }
+
+  verifyActivationToken(token: string): { email: string } {
+    try {
+      return this.jwtService.verify(token);
+    } catch (err) {
+      throw new BadRequestException('Token de activación inválido o expirado');
     }
+  }
 
-    const hashedPassword = await bcrypt.hash(data.password, 10);
-
-    // Extract lastName if provided in single name field
-    const parts = data.name ? data.name.split(' ') : ['Usuario'];
-    const firstName = parts[0];
-    const lastName = parts.length > 1 ? parts.slice(1).join(' ') : '';
-
-    const user = await this.prisma.user.create({
-      data: {
-        name: firstName,
-        lastName: lastName,
-        email: data.email,
-        password: hashedPassword,
-        profiles: data.profiles || ['PERSONAL'],
-      },
-    });
-
+  generateTokenForUser(user: any) {
     const payload = {
       sub: user.id,
       email: user.email,
       role: user.role,
     };
-
-    const token = this.jwtService.sign(payload);
-
-    return {
-      message: 'Usuario registrado correctamente',
-      access_token: token,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        profiles: user.profiles,
-      },
-    };
+    return this.jwtService.sign(payload);
   }
   async forgotPassword(email: string) {
     const user = await this.prisma.user.findUnique({ where: { email } });

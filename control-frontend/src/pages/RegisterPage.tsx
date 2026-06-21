@@ -42,8 +42,24 @@ export default function RegisterPage() {
         toast.error("Por favor completa todos los campos");
         return;
       }
-      if (password.length < 6) {
-        toast.error("La contraseña debe tener al menos 6 caracteres");
+      if (password.length < 8) {
+        toast.error("La contraseña debe tener al menos 8 caracteres");
+        return;
+      }
+      if (!/[A-Z]/.test(password)) {
+        toast.error("La contraseña debe incluir al menos una letra mayúscula");
+        return;
+      }
+      if (!/[a-z]/.test(password)) {
+        toast.error("La contraseña debe incluir al menos una letra minúscula");
+        return;
+      }
+      if (!/[0-9]/.test(password)) {
+        toast.error("La contraseña debe incluir al menos un número");
+        return;
+      }
+      if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
+        toast.error("La contraseña debe incluir al menos un carácter especial (ej: !@#$%)");
         return;
       }
       setStep(2);
@@ -59,33 +75,33 @@ export default function RegisterPage() {
 
     setIsLoading(true);
     try {
-      const success = await register({
+      const res = await register({
         name,
         email,
         password,
         profiles: selectedProfiles,
       });
-      
-      if (success) {
-        toast.success("¡Cuenta creada exitosamente!");
-        // We are already logged in via context, it handles token and user storage
-        // and workspace redirection happens in AppRouter or we can navigate here:
-        if (selectedProfiles.length > 1) {
-            navigate("/workspace-selection");
-        } else if (selectedProfiles[0] === "BUSINESS") {
-            navigate("/business-dashboard");
+
+      if (res && res.activationRequired) {
+        if (res.alreadyExists) {
+          // Cuenta ya existe pero inactiva — reenviamos correo
+          toast.success("Ya tienes una cuenta. Hemos reenviado el correo de activación.", { duration: 6000 });
         } else {
-            navigate("/dashboard");
+          toast.success("¡Registro completado! Verifica tu correo para activar tu cuenta.");
         }
+        setStep(3);
+      } else if (res.error) {
+        toast.error(res.error);
       } else {
         toast.error("Error al registrar la cuenta");
       }
-    } catch (error) {
-      toast.error("Error al registrar la cuenta");
+    } catch (error: any) {
+      toast.error(error.message || "Error al registrar la cuenta");
     } finally {
       setIsLoading(false);
     }
   };
+
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#f8fafc] font-sans relative overflow-hidden">
@@ -325,6 +341,35 @@ export default function RegisterPage() {
                 </button>
               </motion.div>
             )}
+
+            {step === 3 && (
+              <motion.div
+                key="step3"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.3 }}
+                className="space-y-6 text-center py-6"
+              >
+                <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
+                  <Mail className="w-10 h-10 text-indigo-600" />
+                </div>
+                <h2 className="text-2xl font-black text-gray-900">
+                  ¡Verifica tu correo electrónico!
+                </h2>
+                <p className="text-sm text-gray-600 max-w-md mx-auto leading-relaxed">
+                  Hemos enviado un enlace de activación de cuenta a <strong className="text-indigo-600">{email}</strong>.
+                  Por favor, revisa tu bandeja de entrada (y la carpeta de correo no deseado/spam) y haz clic en el enlace para activar tu cuenta.
+                </p>
+                <div className="pt-6">
+                  <Link
+                    to="/login"
+                    className="inline-block px-8 py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold rounded-2xl shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50 transition-all duration-300"
+                  >
+                    Ir al Inicio de Sesión
+                  </Link>
+                </div>
+              </motion.div>
+            )}
           </AnimatePresence>
         </div>
 
@@ -336,6 +381,9 @@ export default function RegisterPage() {
           >
             Inicia Sesión
           </Link>
+        </p>
+        <p className="text-center text-[11px] text-gray-400 mt-6 font-medium">
+          &copy; {new Date().getFullYear()} Think - Global Ccoplex. Todos los derechos reservados.
         </p>
       </div>
     </div>

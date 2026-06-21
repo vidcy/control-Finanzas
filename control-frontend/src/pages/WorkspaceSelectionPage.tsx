@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { motion, type Variants } from "framer-motion";
 import { useAuth, type WorkspaceType } from "../auth/AuthContext";
 import { useNavigate } from "react-router-dom";
@@ -6,6 +7,22 @@ import { User, Briefcase, ChevronRight, LogOut, Sparkles } from "lucide-react";
 export default function WorkspaceSelectionPage() {
   const { user, setActiveWorkspace, logout } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const profiles = user?.profiles || [];
+    if (profiles.length === 1) {
+      const single = profiles[0];
+      setActiveWorkspace(single);
+      if (single === "PERSONAL") {
+        navigate("/dashboard");
+      } else {
+        navigate("/business-dashboard");
+      }
+    } else if (profiles.length === 0) {
+      logout();
+      navigate("/login");
+    }
+  }, [user, navigate, setActiveWorkspace, logout]);
 
   const handleSelect = (workspace: WorkspaceType) => {
     setActiveWorkspace(workspace);
@@ -79,52 +96,56 @@ export default function WorkspaceSelectionPage() {
           className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-3xl"
         >
           {/* PERSONAL CARD */}
-          <motion.button
-            variants={itemVariants}
-            onClick={() => handleSelect("PERSONAL")}
-            className="group relative bg-white rounded-3xl p-8 text-left shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 hover:border-blue-200 hover:shadow-[0_20px_40px_rgb(59,130,246,0.1)] transition-all duration-300 overflow-hidden"
-          >
-            <div className="absolute inset-0 bg-gradient-to-br from-blue-50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-            <div className="relative z-10 flex flex-col h-full">
-              <div className="w-14 h-14 bg-blue-100 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
-                <User className="w-7 h-7 text-blue-600" />
+          {(user?.profiles || []).includes("PERSONAL") && (
+            <motion.button
+              variants={itemVariants}
+              onClick={() => handleSelect("PERSONAL")}
+              className="group relative bg-white rounded-3xl p-8 text-left shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 hover:border-blue-200 hover:shadow-[0_20px_40px_rgb(59,130,246,0.1)] transition-all duration-300 overflow-hidden"
+            >
+              <div className="absolute inset-0 bg-gradient-to-br from-blue-50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+              <div className="relative z-10 flex flex-col h-full">
+                <div className="w-14 h-14 bg-blue-100 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
+                  <User className="w-7 h-7 text-blue-600" />
+                </div>
+                <h2 className="text-2xl font-bold text-slate-900 mb-2">
+                  Mi Dinero
+                </h2>
+                <p className="text-slate-500 font-medium mb-8 flex-grow">
+                  Controla tus finanzas personales, ingresos, gastos y ahorros.
+                </p>
+                <div className="flex items-center text-blue-600 font-semibold mt-auto">
+                  <span>Entrar al espacio personal</span>
+                  <ChevronRight className="w-5 h-5 ml-1 group-hover:translate-x-1 transition-transform" />
+                </div>
               </div>
-              <h2 className="text-2xl font-bold text-slate-900 mb-2">
-                Mi Dinero
-              </h2>
-              <p className="text-slate-500 font-medium mb-8 flex-grow">
-                Controla tus finanzas personales, ingresos, gastos y ahorros.
-              </p>
-              <div className="flex items-center text-blue-600 font-semibold mt-auto">
-                <span>Entrar al espacio personal</span>
-                <ChevronRight className="w-5 h-5 ml-1 group-hover:translate-x-1 transition-transform" />
-              </div>
-            </div>
-          </motion.button>
+            </motion.button>
+          )}
 
           {/* BUSINESS CARD */}
-          <motion.button
-            variants={itemVariants}
-            onClick={() => handleSelect("BUSINESS")}
-            className="group relative bg-white rounded-3xl p-8 text-left shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 hover:border-purple-200 hover:shadow-[0_20px_40px_rgb(168,85,247,0.1)] transition-all duration-300 overflow-hidden"
-          >
-            <div className="absolute inset-0 bg-gradient-to-br from-purple-50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-            <div className="relative z-10 flex flex-col h-full">
-              <div className="w-14 h-14 bg-purple-100 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
-                <Briefcase className="w-7 h-7 text-purple-600" />
+          {(user?.profiles || []).includes("BUSINESS") && (
+            <motion.button
+              variants={itemVariants}
+              onClick={() => handleSelect("BUSINESS")}
+              className="group relative bg-white rounded-3xl p-8 text-left shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 hover:border-purple-200 hover:shadow-[0_20px_40px_rgb(168,85,247,0.1)] transition-all duration-300 overflow-hidden"
+            >
+              <div className="absolute inset-0 bg-gradient-to-br from-purple-50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+              <div className="relative z-10 flex flex-col h-full">
+                <div className="w-14 h-14 bg-purple-100 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
+                  <Briefcase className="w-7 h-7 text-purple-600" />
+                </div>
+                <h2 className="text-2xl font-bold text-slate-900 mb-2">
+                  Mi Negocio
+                </h2>
+                <p className="text-slate-500 font-medium mb-8 flex-grow">
+                  Gestiona ventas, inventario, caja y flujo de tu negocio.
+                </p>
+                <div className="flex items-center text-purple-600 font-semibold mt-auto">
+                  <span>Entrar al espacio de negocio</span>
+                  <ChevronRight className="w-5 h-5 ml-1 group-hover:translate-x-1 transition-transform" />
+                </div>
               </div>
-              <h2 className="text-2xl font-bold text-slate-900 mb-2">
-                Mi Negocio
-              </h2>
-              <p className="text-slate-500 font-medium mb-8 flex-grow">
-                Gestiona ventas, inventario, caja y flujo de tu negocio.
-              </p>
-              <div className="flex items-center text-purple-600 font-semibold mt-auto">
-                <span>Entrar al espacio de negocio</span>
-                <ChevronRight className="w-5 h-5 ml-1 group-hover:translate-x-1 transition-transform" />
-              </div>
-            </div>
-          </motion.button>
+            </motion.button>
+          )}
         </motion.div>
 
         <motion.div

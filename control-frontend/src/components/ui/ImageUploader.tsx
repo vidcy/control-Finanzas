@@ -2,7 +2,6 @@ import React, { useState, useRef } from "react";
 import {
   Upload,
   X,
-  Loader2,
   Camera,
   ImageIcon,
   Download,
@@ -17,26 +16,52 @@ import { toast } from "react-hot-toast";
 // Utility: resolve a stored URL to a fully qualified absolute URL
 // Handles: http:// → pass through | /uploads/... → prepend backend base
 // ─────────────────────────────────────────────────────────
-export function getReceiptAbsoluteUrl(url: string | null | undefined): string | null {
+export function getReceiptAbsoluteUrl(
+  url: string | null | undefined,
+): string | null {
   if (!url) return null;
 
-  // Si ya es una URL completa (http/https/blob/cloudinary), devuélvela como está.
-  // Cloudinary devuelve URLs que empiezan por https, así que esto funcionará directo.
-  if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("blob:")) {
+  if (
+    url.startsWith("http://") ||
+    url.startsWith("https://") ||
+    url.startsWith("blob:")
+  ) {
     return url;
   }
 
-  // Si por algún motivo aún llega una ruta relativa (tu antiguo sistema), mantén la lógica:
-  const base = (import.meta.env.VITE_API_URL as string)?.replace("/api", "") || "http://localhost:3000";
+  const base =
+    (import.meta.env.VITE_API_URL as string)?.replace("/api", "") ||
+    "http://localhost:3000";
   return `${base}${url}`;
 }
+
+// ─────────────────────────────────────────────────────────
+// Helpers: Deferred upload execution functions
+// ─────────────────────────────────────────────────────────
+export const uploadReceiptFile = async (file: File): Promise<string> => {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await axios.post("/upload/receipt", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return res.data.url;
+};
+
+export const uploadProductImageFile = async (file: File): Promise<string> => {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await axios.post("/upload/product-image", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return res.data.url;
+};
 
 // ─────────────────────────────────────────────────────────
 // ProductImageUploader — ONLY for product photos (no PDF)
 // ─────────────────────────────────────────────────────────
 interface ProductImageUploaderProps {
-  currentImageUrl?: string | null;
-  onUploadSuccess: (url: string) => void;
+  currentImageUrl?: string | File | null;
+  onUploadSuccess: (fileOrUrl: string | File) => void;
   onClear: () => void;
 }
 
@@ -45,40 +70,43 @@ export function ProductImageUploader({
   onUploadSuccess,
   onClear,
 }: ProductImageUploaderProps) {
-  const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
-  const absoluteUrl = getReceiptAbsoluteUrl(currentImageUrl);
 
-  const uploadFile = async (file: File) => {
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("La imagen es demasiado grande (máximo 5MB)");
-      return;
+  const isFile = currentImageUrl instanceof File;
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (isFile) {
+      const url = URL.createObjectURL(currentImageUrl as File);
+      setObjectUrl(url);
+      return () => {
+        URL.revokeObjectURL(url);
+      };
+    } else {
+      setObjectUrl(null);
     }
+  }, [currentImageUrl, isFile]);
 
-    const formData = new FormData();
-    formData.append("file", file);
-
-    try {
-      setUploading(true);
-      const res = await axios.post("/upload/product-image", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      onUploadSuccess(res.data.url);
-      toast.success("✅ Imagen del producto subida correctamente");
-    } catch (error: any) {
-      const msg = error?.response?.data?.message || "Error al subir la imagen";
-      toast.error(msg);
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      if (cameraInputRef.current) cameraInputRef.current.value = "";
-    }
-  };
+  const absoluteUrl = isFile
+    ? objectUrl
+    : getReceiptAbsoluteUrl(currentImageUrl as string | null | undefined);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) uploadFile(file);
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error("La imagen es demasiado grande (máximo 5MB)");
+        return;
+      }
+      onUploadSuccess(file);
+    }
+  };
+
+  const handleClear = () => {
+    onClear();
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (cameraInputRef.current) cameraInputRef.current.value = "";
   };
 
   if (currentImageUrl && absoluteUrl) {
@@ -95,7 +123,7 @@ export function ProductImageUploader({
         />
         <button
           type="button"
-          onClick={onClear}
+          onClick={handleClear}
           className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors shadow-md"
           title="Quitar imagen"
         >
@@ -108,28 +136,20 @@ export function ProductImageUploader({
   return (
     <div className="flex flex-col gap-2">
       <div
-        onClick={() => !uploading && fileInputRef.current?.click()}
-        className={`w-full h-32 border-2 border-dashed border-indigo-200 rounded-xl flex flex-col items-center justify-center text-gray-400 transition-all ${uploading ? "cursor-not-allowed opacity-70" : "cursor-pointer hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50/50"}`}
+        onClick={() => fileInputRef.current?.click()}
+        className="w-full h-32 border-2 border-dashed border-indigo-200 rounded-xl flex flex-col items-center justify-center text-gray-400 transition-all cursor-pointer hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50/50"
       >
-        {uploading ? (
-          <div className="flex flex-col items-center gap-2">
-            <Loader2 className="w-7 h-7 animate-spin text-indigo-500" />
-            <span className="text-sm font-bold text-indigo-600">Subiendo imagen...</span>
-          </div>
-        ) : (
-          <>
-            <ImageIcon className="w-7 h-7 mb-1" />
-            <span className="text-sm font-bold">Sube una foto del producto</span>
-            <span className="text-[10px] mt-0.5 opacity-60">JPG · PNG · WEBP (máx. 5MB)</span>
-          </>
-        )}
+        <ImageIcon className="w-7 h-7 mb-1" />
+        <span className="text-sm font-bold">Sube una foto del producto</span>
+        <span className="text-[10px] mt-0.5 opacity-60">
+          JPG · PNG · WEBP (máx. 5MB)
+        </span>
       </div>
 
       <button
         type="button"
-        disabled={uploading}
         onClick={() => cameraInputRef.current?.click()}
-        className="w-full py-2 border border-dashed border-violet-200 rounded-xl text-violet-600 hover:bg-violet-50 hover:border-violet-400 transition-all font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-40"
+        className="w-full py-2 border border-dashed border-violet-200 rounded-xl text-violet-600 hover:bg-violet-50 hover:border-violet-400 transition-all font-bold text-sm flex items-center justify-center gap-2"
       >
         <Camera className="w-4 h-4" />
         Tomar foto con cámara
@@ -158,8 +178,8 @@ export function ProductImageUploader({
 // ReceiptUploader — for payment receipts/comprobantes (image or PDF)
 // ─────────────────────────────────────────────────────────
 interface ReceiptUploaderProps {
-  currentImageUrl?: string | null;
-  onUploadSuccess: (url: string) => void;
+  currentImageUrl?: string | File | null;
+  onUploadSuccess: (fileOrUrl: string | File) => void;
   onClear: () => void;
   label?: string;
 }
@@ -170,86 +190,92 @@ export default function ReceiptUploader({
   onClear,
   label = "Comprobante / Voucher",
 }: ReceiptUploaderProps) {
-  const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
-  const absoluteUrl = getReceiptAbsoluteUrl(currentImageUrl);
-  const isPdf = currentImageUrl?.toLowerCase().endsWith(".pdf");
 
-  const uploadFile = async (file: File) => {
-    if (file.size > 8 * 1024 * 1024) {
-      toast.error("El archivo es demasiado grande (máximo 8MB)");
-      return;
+  const isFile = currentImageUrl instanceof File;
+  const isPdf = isFile
+    ? (currentImageUrl as File).type === "application/pdf" ||
+      (currentImageUrl as File).name.toLowerCase().endsWith(".pdf")
+    : (currentImageUrl as string)?.toLowerCase().endsWith(".pdf");
+
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (isFile) {
+      const url = URL.createObjectURL(currentImageUrl as File);
+      setObjectUrl(url);
+      return () => {
+        URL.revokeObjectURL(url);
+      };
+    } else {
+      setObjectUrl(null);
     }
+  }, [currentImageUrl, isFile]);
 
-    const formData = new FormData();
-    formData.append("file", file);
-
-    try {
-      setUploading(true);
-      const res = await axios.post("/upload/receipt", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      onUploadSuccess(res.data.url);
-      toast.success("✅ Comprobante adjuntado");
-    } catch (error: any) {
-      const msg = error?.response?.data?.message || "Error al subir el comprobante";
-      toast.error(msg);
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      if (cameraInputRef.current) cameraInputRef.current.value = "";
-    }
-  };
+  const absoluteUrl = isFile
+    ? objectUrl
+    : getReceiptAbsoluteUrl(currentImageUrl as string | null | undefined);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) uploadFile(file);
+    if (file) {
+      if (file.size > 8 * 1024 * 1024) {
+        toast.error("El archivo es demasiado grande (máximo 8MB)");
+        return;
+      }
+      onUploadSuccess(file);
+    }
   };
 
   const handleDownload = () => {
     if (!absoluteUrl) return;
     const link = document.createElement("a");
     link.href = absoluteUrl;
-    link.download = `comprobante-${Date.now()}${isPdf ? ".pdf" : ".jpg"}`;
+    link.download = isFile
+      ? (currentImageUrl as File).name
+      : `comprobante-${Date.now()}${isPdf ? ".pdf" : ".jpg"}`;
     link.target = "_blank";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
+  const handleClear = () => {
+    onClear();
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (cameraInputRef.current) cameraInputRef.current.value = "";
+  };
+
   return (
     <div className="w-full">
       <label className="block text-xs font-black text-gray-500 uppercase tracking-widest mb-2 ml-1">
-        📎 {label} <span className="text-gray-300 font-medium normal-case">(Opcional)</span>
+        📎 {label}{" "}
+        <span className="text-gray-300 font-medium normal-case">
+          (Opcional)
+        </span>
       </label>
 
       {!currentImageUrl ? (
         <div className="flex flex-col gap-2">
           <div
-            onClick={() => !uploading && fileInputRef.current?.click()}
-            className={`w-full h-28 border-2 border-dashed border-indigo-200 rounded-2xl flex flex-col items-center justify-center text-gray-400 transition-all ${uploading ? "cursor-not-allowed opacity-70" : "cursor-pointer hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50/50"}`}
+            onClick={() => fileInputRef.current?.click()}
+            className="w-full h-28 border-2 border-dashed border-indigo-200 rounded-2xl flex flex-col items-center justify-center text-gray-400 transition-all cursor-pointer hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50/50"
           >
-            {uploading ? (
-              <div className="flex flex-col items-center gap-2">
-                <Loader2 className="w-7 h-7 animate-spin text-indigo-500" />
-                <span className="text-sm font-bold text-indigo-600">Subiendo...</span>
-              </div>
-            ) : (
-              <>
-                <Upload className="w-7 h-7 mb-1" />
-                <span className="text-sm font-bold">Arrastra o haz clic para adjuntar</span>
-                <span className="text-[10px] mt-0.5 opacity-60">PNG · JPG · PDF (máx. 8MB)</span>
-              </>
-            )}
+            <Upload className="w-7 h-7 mb-1" />
+            <span className="text-sm font-bold">
+              Arrastra o haz clic para adjuntar
+            </span>
+            <span className="text-[10px] mt-0.5 opacity-60">
+              PNG · JPG · PDF (máx. 8MB)
+            </span>
           </div>
 
           <button
             type="button"
-            disabled={uploading}
             onClick={() => cameraInputRef.current?.click()}
-            className="w-full py-2.5 border border-dashed border-violet-200 rounded-xl text-violet-600 hover:bg-violet-50 hover:border-violet-400 transition-all font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-40"
+            className="w-full py-2.5 border border-dashed border-violet-200 rounded-xl text-violet-600 hover:bg-violet-50 hover:border-violet-400 transition-all font-bold text-sm flex items-center justify-center gap-2"
           >
             <Camera className="w-4 h-4" />
             Tomar Foto con Cámara
@@ -275,7 +301,9 @@ export default function ReceiptUploader({
         <div className="relative w-full rounded-2xl border border-emerald-200 bg-emerald-50/30 overflow-hidden shadow-sm">
           <div className="flex items-center gap-2 px-4 py-2 border-b border-emerald-100 bg-emerald-50">
             <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-            <span className="text-xs font-bold text-emerald-700 flex-1">Comprobante adjuntado</span>
+            <span className="text-xs font-bold text-emerald-700 flex-1">
+              {isFile ? "Archivo seleccionado (Local)" : "Comprobante guardado"}
+            </span>
             <div className="flex gap-1">
               {!isPdf && (
                 <button
@@ -297,7 +325,7 @@ export default function ReceiptUploader({
               </button>
               <button
                 type="button"
-                onClick={onClear}
+                onClick={handleClear}
                 className="p-1.5 rounded-lg bg-rose-100 text-rose-600 hover:bg-rose-200 transition-colors"
                 title="Quitar comprobante"
               >
@@ -312,7 +340,9 @@ export default function ReceiptUploader({
                 <FileText className="w-5 h-5 text-rose-600" />
               </div>
               <div>
-                <p className="text-sm font-bold text-gray-800">Documento PDF</p>
+                <p className="text-sm font-bold text-gray-800 truncate max-w-[200px]">
+                  {isFile ? (currentImageUrl as File).name : "Documento PDF"}
+                </p>
                 <a
                   href={absoluteUrl || "#"}
                   target="_blank"
@@ -324,7 +354,10 @@ export default function ReceiptUploader({
               </div>
             </div>
           ) : (
-            <div className="relative h-32 cursor-pointer" onClick={() => setPreview(true)}>
+            <div
+              className="relative h-32 cursor-pointer"
+              onClick={() => setPreview(true)}
+            >
               <img
                 src={absoluteUrl || ""}
                 alt="Comprobante"
@@ -351,7 +384,9 @@ export default function ReceiptUploader({
             <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 bg-gray-50">
               <div className="flex items-center gap-2">
                 <ImageIcon className="w-4 h-4 text-indigo-500" />
-                <span className="text-sm font-bold text-gray-700">Comprobante</span>
+                <span className="text-sm font-bold text-gray-700">
+                  Comprobante
+                </span>
               </div>
               <button
                 onClick={() => setPreview(false)}

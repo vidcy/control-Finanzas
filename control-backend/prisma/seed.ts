@@ -14,6 +14,7 @@ async function main() {
       password,
       role: 'ADMIN',
       isActive: true,
+      profiles: '["PERSONAL"]',
     },
   });
 }

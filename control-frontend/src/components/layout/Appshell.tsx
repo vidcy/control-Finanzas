@@ -98,20 +98,52 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
     }
   };
 
-  // Cerrar menú móvil y sincronizar workspace al cambiar de ruta
+  // Synchronize profiles state when user.profiles changes
+  useEffect(() => {
+    if (user?.profiles) {
+      setActiveProfiles(user.profiles);
+    }
+  }, [user?.profiles]);
+
+  // Cerrar menú móvil y sincronizar workspace al cambiar de ruta + control de accesos
   useEffect(() => {
     setIsMobileMenuOpen(false);
     const path = location.pathname;
+
+    const profiles = user?.profiles || [];
+    let targetWorkspace: "PERSONAL" | "BUSINESS" | null = null;
     if (path.startsWith("/business-")) {
-      if (activeWorkspace !== "BUSINESS") {
-        setActiveWorkspace("BUSINESS");
-      }
+      targetWorkspace = "BUSINESS";
     } else if (["/dashboard", "/income", "/expenses", "/pending", "/users"].some(p => path === p || path.startsWith(p + "/"))) {
-      if (activeWorkspace !== "PERSONAL") {
-        setActiveWorkspace("PERSONAL");
+      targetWorkspace = "PERSONAL";
+    }
+
+    if (targetWorkspace) {
+      if (!profiles.includes(targetWorkspace)) {
+        // Acceso denegado: Redirigir
+        toast.error("No tienes acceso a este módulo");
+        if (profiles.length === 1) {
+          const single = profiles[0];
+          setActiveWorkspace(single);
+          navigate(single === "BUSINESS" ? "/business-dashboard" : "/dashboard");
+        } else if (profiles.length > 1) {
+          navigate("/workspace-selection");
+        } else {
+          localStorage.removeItem("token");
+          localStorage.removeItem("user");
+          localStorage.removeItem("activeWorkspace");
+          setUser(null);
+          setActiveWorkspace(null);
+          navigate("/login");
+        }
+        return;
+      }
+
+      if (activeWorkspace !== targetWorkspace) {
+        setActiveWorkspace(targetWorkspace);
       }
     }
-  }, [location.pathname]);
+  }, [location.pathname, user?.profiles, activeWorkspace, navigate, setActiveWorkspace, setUser]);
 
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -380,6 +412,16 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
               <LogOut className="w-5 h-5" />
             </button>
           </div>
+        </div>
+        
+        {/* COPYRIGHT INFO */}
+        <div className="px-6 pb-4 text-center mt-auto">
+          <p className="text-[10px] text-gray-400 font-medium tracking-wide">
+            © {new Date().getFullYear()} Think - Global Ccoplex
+          </p>
+          <p className="text-[9px] text-gray-400/80">
+            Todos los derechos reservados.
+          </p>
         </div>
       </aside>
 

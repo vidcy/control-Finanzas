@@ -1,3 +1,9 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-this-alias */
+
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { userContextStorage } from '../common/context/user-context';
@@ -10,11 +16,25 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
     super();
     const self = this; // Capture the base PrismaClient instance
 
+    // Helper to get camelCase model key for Prisma client property mapping
+    const getModelKey = (modelName: string): string => {
+      if (!modelName) return '';
+      return modelName.charAt(0).toLowerCase() + modelName.slice(1);
+    };
+
     // We extend the client to intercept writes (create, update, delete)
     const extended = this.$extends({
       query: {
         $allModels: {
-          async create({ model, args, query }) {
+          async create({
+            model,
+            args,
+            query,
+          }: {
+            model: string;
+            args: any;
+            query: (args: any) => Promise<any>;
+          }) {
             if (model === 'AuditLog') {
               return query(args);
             }
@@ -27,7 +47,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
                 data: {
                   action: 'INSERT',
                   tableName: model,
-                  recordId: String((result as any).id || ''),
+                  recordId: String(result.id || ''),
                   oldValues: null,
                   newValues: JSON.parse(JSON.stringify(result)),
                   userId: context?.userId || null,
@@ -39,7 +59,15 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
             }
             return result;
           },
-          async update({ model, args, query }) {
+          async update({
+            model,
+            args,
+            query,
+          }: {
+            model: string;
+            args: any;
+            query: (args: any) => Promise<any>;
+          }) {
             if (model === 'AuditLog') {
               return query(args);
             }
@@ -47,7 +75,8 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
             let oldValues: any = null;
             try {
               // Retrieve old record from the base client instance (self)
-              oldValues = await (self as any)[model].findUnique({
+              const modelKey = getModelKey(model);
+              oldValues = await (self as any)[modelKey].findUnique({
                 where: args.where,
               });
             } catch (e) {
@@ -61,8 +90,10 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
                 data: {
                   action: 'UPDATE',
                   tableName: model,
-                  recordId: String((result as any).id || args.where?.id || ''),
-                  oldValues: oldValues ? JSON.parse(JSON.stringify(oldValues)) : null,
+                  recordId: String(result.id || args.where?.id || ''),
+                  oldValues: oldValues
+                    ? JSON.parse(JSON.stringify(oldValues))
+                    : null,
                   newValues: JSON.parse(JSON.stringify(result)),
                   userId: context?.userId || null,
                   userEmail: context?.userEmail || null,
@@ -73,7 +104,15 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
             }
             return result;
           },
-          async delete({ model, args, query }) {
+          async delete({
+            model,
+            args,
+            query,
+          }: {
+            model: string;
+            args: any;
+            query: (args: any) => Promise<any>;
+          }) {
             if (model === 'AuditLog') {
               return query(args);
             }
@@ -81,11 +120,15 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
             let oldValues: any = null;
             try {
               // Retrieve old record from the base client instance (self)
-              oldValues = await (self as any)[model].findUnique({
+              const modelKey = getModelKey(model);
+              oldValues = await (self as any)[modelKey].findUnique({
                 where: args.where,
               });
             } catch (e) {
-              console.error('AuditLog: failed to fetch record before delete', e);
+              console.error(
+                'AuditLog: failed to fetch record before delete',
+                e,
+              );
             }
 
             const result = await query(args);
@@ -95,8 +138,10 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
                 data: {
                   action: 'DELETE',
                   tableName: model,
-                  recordId: String(args.where?.id || (result as any).id || ''),
-                  oldValues: oldValues ? JSON.parse(JSON.stringify(oldValues)) : null,
+                  recordId: String(args.where?.id || result.id || ''),
+                  oldValues: oldValues
+                    ? JSON.parse(JSON.stringify(oldValues))
+                    : null,
                   newValues: null,
                   userId: context?.userId || null,
                   userEmail: context?.userEmail || null,

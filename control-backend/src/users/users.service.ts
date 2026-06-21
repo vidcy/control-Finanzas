@@ -14,15 +14,26 @@ export class UsersService {
     if (existingUser) {
       throw new ConflictException('Usuario ya existe');
     }
+
+    // Split name into first and last name if lastName is not provided
+    let firstName = data.name || '';
+    let lastName = data.lastName || '';
+    if (!lastName && firstName.includes(' ')) {
+      const parts = firstName.trim().split(/\s+/);
+      firstName = parts[0];
+      lastName = parts.slice(1).join(' ');
+    }
+
     const hashedPassword = await bcrypt.hash(data.password, 10);
     const user = await this.prisma.user.create({
       data: {
-        name: data.name,
-        lastName: data.lastName,
+        name: firstName,
+        lastName: lastName,
         email: data.email,
         password: hashedPassword,
-        role: data.role as 'ADMIN' | 'USER',
-        profiles: data.profiles || [],
+        role: (data.role || 'USER') as 'ADMIN' | 'USER',
+        profiles: data.profiles && data.profiles.length > 0 ? data.profiles : ['PERSONAL'],
+        isActive: data.isActive !== undefined ? data.isActive : true,
       },
     });
     //seed categories

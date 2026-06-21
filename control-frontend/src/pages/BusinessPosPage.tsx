@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import Appshell from "../components/layout/Appshell";
-import { getProductsRequest, checkoutCartRequest } from "../services/product.api";
+import {
+  getProductsRequest,
+  checkoutCartRequest,
+} from "../services/product.api";
 import type { Product } from "../services/product.api";
 import { listCategoriesRequest } from "../services/category.api";
 import { getActiveCashShiftRequest } from "../services/cash-shift.api";
@@ -9,7 +12,9 @@ import {
   updateTransactionRequest,
   deleteTransactionRequest,
 } from "../services/transaction.api";
-import ReceiptUploader, { getReceiptAbsoluteUrl } from "../components/ui/ImageUploader";
+import ReceiptUploader, {
+  getReceiptAbsoluteUrl,
+} from "../components/ui/ImageUploader";
 
 import { formatStock } from "./BusinessInventoryPage";
 import {
@@ -39,9 +44,10 @@ const parseDescription = (desc: string) => {
   const prefix = "Venta en POS: ";
   if (desc.startsWith(prefix)) {
     const itemsStr = desc.substring(prefix.length);
-    return itemsStr.split(", ").map(item => {
+    return itemsStr.split(", ").map((item) => {
       // Matches: "1x Arroz Extra [Kg] (S/ 5.00 c/u)" or "2x Delivery (Libre) (S/ 10.00 c/u)" or "1x Arroz Extra [Kg]"
-      const regex = /^(\d+(?:\.\d+)?)x\s+(.*?)(?:\s+\[(.*?)\]|\s+\(Libre\))?(?:\s+\(S\/\s*(\d+(?:\.\d+)?)\s*c\/u\))?$/;
+      const regex =
+        /^(\d+(?:\.\d+)?)x\s+(.*?)(?:\s+\[(.*?)\]|\s+\(Libre\))?(?:\s+\(S\/\s*(\d+(?:\.\d+)?)\s*c\/u\))?$/;
       const match = item.match(regex);
       if (match) {
         const qty = parseFloat(match[1]);
@@ -54,7 +60,9 @@ const parseDescription = (desc: string) => {
           unit: presName || "UNIDAD",
           salePrice: price,
           presentationId: presName ? "dummy" : undefined,
-          presentations: presName ? [{ id: "dummy", name: presName, price }] : []
+          presentations: presName
+            ? [{ id: "dummy", name: presName, price }]
+            : [],
         };
       }
       return {
@@ -62,11 +70,19 @@ const parseDescription = (desc: string) => {
         name: item,
         unit: "UNIDAD",
         salePrice: 0,
-        presentations: []
+        presentations: [],
       };
     });
   }
-  return [{ quantity: 1, name: desc, unit: "UNIDAD", salePrice: 0, presentations: [] }];
+  return [
+    {
+      quantity: 1,
+      name: desc,
+      unit: "UNIDAD",
+      salePrice: 0,
+      presentations: [],
+    },
+  ];
 };
 
 interface CartItem extends Product {
@@ -86,11 +102,15 @@ export default function BusinessPosPage() {
   const [selectedCategory, setSelectedCategory] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeShift, setActiveShift] = useState<any>(null);
-  const [receiptUrl, setReceiptUrl] = useState<string | null>(null);
+  const [receiptUrl, setReceiptUrl] = useState<string | File | null>(null);
 
   // Venta Libre Modal
   const [isCustomSaleOpen, setIsCustomSaleOpen] = useState(false);
-  const [customSaleData, setCustomSaleData] = useState({ name: "", price: 0, quantity: 1 });
+  const [customSaleData, setCustomSaleData] = useState({
+    name: "",
+    price: 0,
+    quantity: 1,
+  });
 
   // Ticket
   const [showTicket, setShowTicket] = useState(false);
@@ -107,13 +127,23 @@ export default function BusinessPosPage() {
   const [editAmount, setEditAmount] = useState(0);
   const [editDesc, setEditDesc] = useState("");
   const [editPayment, setEditPayment] = useState("CASH");
+  const [editReceiptUrl, setEditReceiptUrl] = useState<string | File | null>(
+    null,
+  );
 
   const loadSales = async () => {
     setLoadingSales(true);
     try {
       const data = await getTransactionsRequest("BUSINESS");
-      const posSales = data.filter((t: any) => t.workspace === "BUSINESS" && t.type === "INCOME");
-      setSales(posSales.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+      const posSales = data.filter(
+        (t: any) => t.workspace === "BUSINESS" && t.type === "INCOME",
+      );
+      setSales(
+        posSales.sort(
+          (a: any, b: any) =>
+            new Date(b.date).getTime() - new Date(a.date).getTime(),
+        ),
+      );
     } catch {
       toast.error("Error al cargar ventas");
     } finally {
@@ -130,6 +160,21 @@ export default function BusinessPosPage() {
   const handleSaveEdit = async () => {
     if (!editSale) return;
     try {
+      let finalReceiptUrl = editReceiptUrl;
+      if (editReceiptUrl instanceof File) {
+        const uploadToast = toast.loading("Subiendo comprobante...");
+        try {
+          const { uploadReceiptFile } =
+            await import("../components/ui/ImageUploader");
+          finalReceiptUrl = await uploadReceiptFile(editReceiptUrl);
+          toast.dismiss(uploadToast);
+        } catch {
+          toast.dismiss(uploadToast);
+          toast.error("Error al subir el comprobante");
+          return;
+        }
+      }
+
       await updateTransactionRequest(editSale.id, {
         categoryId: editSale.categoryId,
         subCategoryId: editSale.subCategoryId || "",
@@ -139,6 +184,7 @@ export default function BusinessPosPage() {
         paymentMethod: editPayment,
         description: editDesc,
         name: editSale.name,
+        receiptUrl: finalReceiptUrl as string | null,
       });
       toast.success("Venta actualizada correctamente");
       setEditSale(null);
@@ -149,7 +195,12 @@ export default function BusinessPosPage() {
   };
 
   const handleDeleteSale = async (id: string) => {
-    if (!window.confirm("¿Eliminar este registro de venta? El stock NO se revertirá automáticamente.")) return;
+    if (
+      !window.confirm(
+        "¿Eliminar este registro de venta? El stock NO se revertirá automáticamente.",
+      )
+    )
+      return;
     try {
       await deleteTransactionRequest(id);
       toast.success("Venta eliminada correctamente");
@@ -160,6 +211,7 @@ export default function BusinessPosPage() {
   };
 
   const handleDownloadPastTicket = (sale: any) => {
+    setIsSalesListOpen(false); // Close history list modal first
     setLastSale({
       items: parseDescription(sale.description || ""),
       total: sale.amount,
@@ -181,7 +233,9 @@ export default function BusinessPosPage() {
       ]);
       setProducts(prods);
 
-      const allIncomeCats = cats.filter((c: any) => c.type === "INCOME" && !c.parentId);
+      const allIncomeCats = cats.filter(
+        (c: any) => c.type === "INCOME" && !c.parentId,
+      );
       setCategories(allIncomeCats);
 
       if (allIncomeCats.length > 0) {
@@ -213,7 +267,8 @@ export default function BusinessPosPage() {
 
     // Check if already in cart (same product, same presentation = no presentation)
     const existingIndex = cart.findIndex(
-      (item) => item.id === product.id && !item.isCustom && !item.presentationId,
+      (item) =>
+        item.id === product.id && !item.isCustom && !item.presentationId,
     );
     if (existingIndex > -1) {
       const existing = cart[existingIndex];
@@ -222,15 +277,26 @@ export default function BusinessPosPage() {
         toast.error("Stock máximo alcanzado");
         return;
       }
-      setCart(cart.map((item, idx) => (idx === existingIndex ? { ...item, quantity: newQty } : item)));
+      setCart(
+        cart.map((item, idx) =>
+          idx === existingIndex ? { ...item, quantity: newQty } : item,
+        ),
+      );
     } else {
-      setCart([...cart, { ...product, quantity: 1, originalSalePrice: product.salePrice }]);
+      setCart([
+        ...cart,
+        { ...product, quantity: 1, originalSalePrice: product.salePrice },
+      ]);
     }
   };
 
   const addCustomSale = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!customSaleData.name || customSaleData.price <= 0 || customSaleData.quantity <= 0) {
+    if (
+      !customSaleData.name ||
+      customSaleData.price <= 0 ||
+      customSaleData.quantity <= 0
+    ) {
       toast.error("Datos inválidos para venta libre");
       return;
     }
@@ -262,7 +328,9 @@ export default function BusinessPosPage() {
     if (newQ < 1) return;
 
     if (!item.isCustom) {
-      const pres = item.presentations?.find((p: any) => p.id === item.presentationId);
+      const pres = item.presentations?.find(
+        (p: any) => p.id === item.presentationId,
+      );
       const equivalence = pres ? pres.equivalence : 1;
       if (newQ * equivalence > item.stock) {
         toast.error("Supera el stock disponible");
@@ -270,16 +338,22 @@ export default function BusinessPosPage() {
       }
     }
 
-    setCart(cart.map((c, idx) => (idx === cartIndex ? { ...c, quantity: newQ } : c)));
+    setCart(
+      cart.map((c, idx) => (idx === cartIndex ? { ...c, quantity: newQ } : c)),
+    );
   };
 
   const removeFromCart = (cartIndex: number) => {
     setCart(cart.filter((_, idx) => idx !== cartIndex));
   };
 
-  const total = cart.reduce((acc, item) => acc + item.salePrice * item.quantity, 0);
+  const total = cart.reduce(
+    (acc, item) => acc + item.salePrice * item.quantity,
+    0,
+  );
 
   const handleCheckout = async () => {
+    // 1. Validaciones iniciales de negocio
     if (!activeShift) {
       toast.error("Debes ABRIR CAJA antes de poder registrar ventas.");
       return;
@@ -293,6 +367,30 @@ export default function BusinessPosPage() {
     setIsProcessing(true);
 
     try {
+      // 2. Normalización de la URL del comprobante
+      // finalReceiptUrl siempre será un string (URL) o undefined (si no hay nada)
+      let finalReceiptUrl: string | undefined = undefined;
+
+      if (receiptUrl instanceof File) {
+        // Caso A: El usuario seleccionó un archivo nuevo -> Subimos a Cloudinary
+        const uploadToast = toast.loading("Subiendo comprobante...");
+        try {
+          const { uploadReceiptFile } =
+            await import("../components/ui/ImageUploader");
+          finalReceiptUrl = await uploadReceiptFile(receiptUrl);
+          toast.dismiss(uploadToast);
+        } catch (err) {
+          toast.dismiss(uploadToast);
+          toast.error("Error al subir el comprobante");
+          setIsProcessing(false);
+          return; // Detenemos el proceso si la subida falla
+        }
+      } else if (typeof receiptUrl === "string" && receiptUrl.length > 0) {
+        // Caso B: Ya teníamos una URL (string) válida
+        finalReceiptUrl = receiptUrl;
+      }
+
+      // 3. Ejecución de la petición a la API
       const txResult = await checkoutCartRequest({
         items: cart.map((c) => ({
           id: c.id,
@@ -304,20 +402,22 @@ export default function BusinessPosPage() {
         })),
         paymentMethod,
         categoryId: selectedCategory,
-        receiptUrl,
+        receiptUrl: finalReceiptUrl, // TypeScript ya no se quejará aquí
       });
 
       toast.success("¡Venta completada con éxito!");
 
+      // 4. Actualización del estado para el ticket
       setLastSale({
         items: [...cart],
         total,
         paymentMethod,
         date: new Date(),
         txId: txResult?.transactionId || `TX-${Date.now()}`,
-        receiptUrl,
+        receiptUrl: finalReceiptUrl,
       });
 
+      // 5. Limpieza de estados
       setCart([]);
       setReceiptUrl(null);
       setShowTicket(true);
@@ -385,7 +485,11 @@ export default function BusinessPosPage() {
 
       const pdfW = 80; // 80mm thermal printer width
       const pdfH = (img.naturalHeight / img.naturalWidth) * pdfW;
-      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: [pdfW, pdfH] });
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: [pdfW, pdfH],
+      });
       pdf.addImage(dataUrl, "PNG", 0, 0, pdfW, pdfH);
       pdf.save(`Ticket_${lastSale.txId?.slice(0, 8) || Date.now()}.pdf`);
       toast.success("PDF descargado");
@@ -400,7 +504,11 @@ export default function BusinessPosPage() {
   );
 
   const paymentLabel: Record<string, string> = {
-    CASH: "Efectivo", YAPE: "Yape", PLIN: "Plin", CARD: "Tarjeta", TRANSFER: "Transferencia"
+    CASH: "Efectivo",
+    YAPE: "Yape",
+    PLIN: "Plin",
+    CARD: "Tarjeta",
+    TRANSFER: "Transferencia",
   };
 
   return (
@@ -467,77 +575,143 @@ export default function BusinessPosPage() {
             }}
           >
             <div style={{ textAlign: "center", marginBottom: "12px" }}>
-              <div style={{ fontWeight: 900, fontSize: "16px", letterSpacing: "1px" }}>THINK</div>
-              <div style={{ fontSize: "10px", color: "#666" }}>Ticket de Venta / App Financiera</div>
-              <div style={{ borderBottom: "1px dashed #ccc", margin: "8px 0" }}></div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "10px" }}>
+              <div
+                style={{
+                  fontWeight: 900,
+                  fontSize: "16px",
+                  letterSpacing: "1px",
+                }}
+              >
+                THINK
+              </div>
+              <div style={{ fontSize: "10px", color: "#666" }}>
+                Ticket de Venta / App Financiera
+              </div>
+              <div
+                style={{ borderBottom: "1px dashed #ccc", margin: "8px 0" }}
+              ></div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontSize: "10px",
+                }}
+              >
                 <span>Fecha:</span>
                 <span>{format(lastSale.date, "dd/MM/yyyy HH:mm")}</span>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "10px" }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontSize: "10px",
+                }}
+              >
                 <span>Ticket #:</span>
                 <span>{lastSale.txId?.slice(0, 8).toUpperCase()}</span>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "10px" }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontSize: "10px",
+                }}
+              >
                 <span>Pago:</span>
-                <span>{paymentLabel[lastSale.paymentMethod] || lastSale.paymentMethod}</span>
+                <span>
+                  {paymentLabel[lastSale.paymentMethod] ||
+                    lastSale.paymentMethod}
+                </span>
               </div>
             </div>
 
-            <div style={{ borderBottom: "1px dashed #ccc", margin: "8px 0" }}></div>
+            <div
+              style={{ borderBottom: "1px dashed #ccc", margin: "8px 0" }}
+            ></div>
 
             <div style={{ marginBottom: "8px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: "10px", marginBottom: "4px" }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontWeight: 700,
+                  fontSize: "10px",
+                  marginBottom: "4px",
+                }}
+              >
                 <span>CANT. DESCRIPCION</span>
                 <span>IMPORTE</span>
               </div>
               {lastSale.items.map((item: any, i: number) => {
-                const pres = item.presentations?.find((p: any) => p.id === item.presentationId);
+                const pres = item.presentations?.find(
+                  (p: any) => p.id === item.presentationId,
+                );
                 const presName = pres ? pres.name : item.unit;
                 return (
-                  <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: "10px", marginBottom: "2px" }}>
+                  <div
+                    key={i}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      fontSize: "10px",
+                      marginBottom: "2px",
+                    }}
+                  >
                     <span style={{ flex: 1, paddingRight: "8px" }}>
                       {item.quantity}x {item.name} [{presName}]
                     </span>
                     <span>
-                      {item.salePrice > 0 ? `S/ ${(item.quantity * item.salePrice).toFixed(2)}` : "—"}
+                      {item.salePrice > 0
+                        ? `S/ ${(item.quantity * item.salePrice).toFixed(2)}`
+                        : "—"}
                     </span>
                   </div>
                 );
               })}
             </div>
 
-            <div style={{ borderBottom: "1px dashed #ccc", margin: "8px 0" }}></div>
+            <div
+              style={{ borderBottom: "1px dashed #ccc", margin: "8px 0" }}
+            ></div>
 
-            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, fontSize: "16px" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                fontWeight: 900,
+                fontSize: "16px",
+              }}
+            >
               <span>TOTAL</span>
               <span>S/ {lastSale.total.toFixed(2)}</span>
             </div>
 
-            <div style={{ textAlign: "center", marginTop: "16px", fontSize: "10px", color: "#666" }}>
+            <div
+              style={{
+                textAlign: "center",
+                marginTop: "16px",
+                fontSize: "10px",
+                color: "#666",
+              }}
+            >
               <div>¡Gracias por tu preferencia!</div>
-              <div>Documento no válido como factura</div>
-            </div>
-
-            {/* Receipt image — fully rendered */}
-            {lastSale.receiptUrl && (
-              <div style={{ marginTop: "12px", borderTop: "1px dashed #ccc", paddingTop: "8px" }}>
-                <div style={{ fontSize: "9px", color: "#999", textAlign: "center", marginBottom: "6px", fontWeight: 700 }}>
-                  COMPROBANTE DE PAGO
-                </div>
-                <img
-                  src={getReceiptAbsoluteUrl(lastSale.receiptUrl) || lastSale.receiptUrl}
-                  alt="Comprobante"
-                  style={{
-                    width: "100%",
-                    height: "auto",
-                    display: "block",
-                    borderRadius: "4px",
-                  }}
-                  crossOrigin="anonymous"
-                />
+              <div style={{ fontSize: "8px", color: "#999", marginTop: "4px" }}>
+                Boleta o Factura
               </div>
-            )}
+              <div
+                style={{
+                  fontSize: "8px",
+                  fontWeight: 700,
+                  marginTop: "10px",
+                  color: "#333",
+                }}
+              >
+                Global Ccoplex
+              </div>
+              <div style={{ fontSize: "7px", color: "#999" }}>
+                &copy; Todos los derechos reservados
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -551,7 +725,9 @@ export default function BusinessPosPage() {
                 <div className="w-20 h-20 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-4">
                   <Landmark className="w-10 h-10 text-rose-600" />
                 </div>
-                <h3 className="text-2xl font-black text-gray-900 mb-2">Caja Cerrada</h3>
+                <h3 className="text-2xl font-black text-gray-900 mb-2">
+                  Caja Cerrada
+                </h3>
                 <p className="text-gray-500 font-medium mb-6">
                   Para vender, abre la caja primero desde el módulo de Finanzas.
                 </p>
@@ -609,7 +785,8 @@ export default function BusinessPosPage() {
                           alt={p.name}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                           onError={(e) => {
-                            (e.target as HTMLImageElement).style.display = "none";
+                            (e.target as HTMLImageElement).style.display =
+                              "none";
                           }}
                         />
                       ) : (
@@ -624,7 +801,9 @@ export default function BusinessPosPage() {
                         <h3 className="font-bold text-gray-800 group-hover:text-indigo-600 transition-colors line-clamp-2 text-sm">
                           {p.name}
                         </h3>
-                        <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full inline-block mt-1 ${p.stock > 0 ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>
+                        <span
+                          className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full inline-block mt-1 ${p.stock > 0 ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}
+                        >
                           {formatStock(p.stock, p.unit, p.presentations)}
                         </span>
                       </div>
@@ -658,13 +837,20 @@ export default function BusinessPosPage() {
               </div>
             ) : (
               cart.map((item, index) => (
-                <div key={index} className="flex gap-3 p-3 bg-gray-50 rounded-2xl border border-gray-100 relative group">
+                <div
+                  key={index}
+                  className="flex gap-3 p-3 bg-gray-50 rounded-2xl border border-gray-100 relative group"
+                >
                   {item.imageUrl && (
                     <img
-                      src={getReceiptAbsoluteUrl(item.imageUrl) || item.imageUrl}
+                      src={
+                        getReceiptAbsoluteUrl(item.imageUrl) || item.imageUrl
+                      }
                       alt={item.name}
                       className="w-12 h-12 rounded-xl object-cover border border-gray-100 flex-shrink-0"
-                      onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}
+                      onError={(e) =>
+                        ((e.target as HTMLImageElement).style.display = "none")
+                      }
                     />
                   )}
                   <div className="flex-1 min-w-0">
@@ -672,24 +858,36 @@ export default function BusinessPosPage() {
                       {item.name}
                     </h4>
 
-                    {!item.isCustom && item.presentations && item.presentations.length > 0 ? (
+                    {!item.isCustom &&
+                    item.presentations &&
+                    item.presentations.length > 0 ? (
                       <select
                         value={item.presentationId || ""}
                         onChange={(e) => {
                           const presId = e.target.value;
-                          const pres = item.presentations?.find((p: any) => p.id === presId);
-                          const newPrice = pres ? pres.price : item.originalSalePrice;
+                          const pres = item.presentations?.find(
+                            (p: any) => p.id === presId,
+                          );
+                          const newPrice = pres
+                            ? pres.price
+                            : item.originalSalePrice;
                           setCart(
                             cart.map((c, i) =>
                               i === index
-                                ? { ...c, presentationId: presId || undefined, salePrice: newPrice }
+                                ? {
+                                    ...c,
+                                    presentationId: presId || undefined,
+                                    salePrice: newPrice,
+                                  }
                                 : c,
                             ),
                           );
                         }}
                         className="mt-1 text-[10px] border border-gray-200 rounded-lg px-2 py-1 outline-none font-bold text-gray-700 bg-white w-full"
                       >
-                        <option value="">{item.unit} (S/ {item.originalSalePrice.toFixed(2)})</option>
+                        <option value="">
+                          {item.unit} (S/ {item.originalSalePrice.toFixed(2)})
+                        </option>
                         {item.presentations.map((pres: any) => (
                           <option key={pres.id} value={pres.id}>
                             {pres.name} (S/ {pres.price.toFixed(2)})
@@ -740,7 +938,9 @@ export default function BusinessPosPage() {
           <div className="p-5 border-t border-gray-100 bg-gray-50 space-y-4">
             {/* Payment Method */}
             <div>
-              <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wider">1. Método de Pago</p>
+              <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wider">
+                1. Método de Pago
+              </p>
               <div className="grid grid-cols-5 gap-1.5">
                 {[
                   { id: "CASH", icon: Banknote, label: "Efectivo" },
@@ -755,7 +955,9 @@ export default function BusinessPosPage() {
                     className={`flex flex-col items-center gap-1 p-2 rounded-xl border transition-all ${paymentMethod === method.id ? "bg-indigo-600 text-white border-indigo-600 shadow-md" : "bg-white text-gray-500 border-gray-200 hover:border-indigo-300 hover:text-indigo-600"}`}
                   >
                     <method.icon className="w-4 h-4" />
-                    <span className="text-[8px] font-black uppercase">{method.label}</span>
+                    <span className="text-[8px] font-black uppercase">
+                      {method.label}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -763,7 +965,9 @@ export default function BusinessPosPage() {
 
             {/* Category */}
             <div>
-              <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wider">2. Categoría Contable</p>
+              <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wider">
+                2. Categoría Contable
+              </p>
               <select
                 value={selectedCategory}
                 onChange={(e) => setSelectedCategory(e.target.value)}
@@ -771,7 +975,9 @@ export default function BusinessPosPage() {
               >
                 <option value="">Seleccionar Categoría...</option>
                 {categories.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
                 ))}
               </select>
             </div>
@@ -779,7 +985,9 @@ export default function BusinessPosPage() {
             {/* Total */}
             <div className="flex justify-between items-end pt-3 border-t border-gray-200 border-dashed">
               <span className="text-gray-500 font-medium">Total a cobrar:</span>
-              <span className="text-3xl font-black text-gray-900">S/ {total.toFixed(2)}</span>
+              <span className="text-3xl font-black text-gray-900">
+                S/ {total.toFixed(2)}
+              </span>
             </div>
 
             {/* Receipt upload */}
@@ -791,17 +999,17 @@ export default function BusinessPosPage() {
                   onClear={() => setReceiptUrl(null)}
                   label="Comprobante de Pago"
                 />
-
               </div>
             )}
 
-             <button
+            <button
               onClick={handleCheckout}
               disabled={cart.length === 0 || isProcessing || !activeShift}
-              className={`w-full py-4 rounded-2xl font-black text-lg flex items-center justify-center gap-2 transition-all ${cart.length === 0 || !activeShift
-                ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-xl shadow-indigo-200 hover:-translate-y-1"
-                }`}
+              className={`w-full py-4 rounded-2xl font-black text-lg flex items-center justify-center gap-2 transition-all ${
+                cart.length === 0 || !activeShift
+                  ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                  : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-xl shadow-indigo-200 hover:-translate-y-1"
+              }`}
             >
               {isProcessing ? (
                 <div className="w-6 h-6 border-4 border-white/30 border-t-white rounded-full animate-spin"></div>
@@ -814,57 +1022,87 @@ export default function BusinessPosPage() {
               onClick={() => setIsSalesListOpen(true)}
               className="w-full mt-3 py-3 border border-indigo-200 text-indigo-600 rounded-2xl font-black text-xs flex items-center justify-center gap-2 hover:bg-indigo-50 transition-all shadow-sm"
             >
-              <FileText className="w-4 h-4" /> Ver Ventas Recientes (Editar/Eliminar)
+              <FileText className="w-4 h-4" /> Ver Ventas Recientes
+              (Editar/Eliminar)
             </button>
           </div>
         </div>
       </div>
 
       {/* MODAL: FREE SALE */}
-      <Modal isOpen={isCustomSaleOpen} onClose={() => setIsCustomSaleOpen(false)} title="Venta Libre / Manual">
+      <Modal
+        isOpen={isCustomSaleOpen}
+        onClose={() => setIsCustomSaleOpen(false)}
+        title="Venta Libre / Manual"
+      >
         <form onSubmit={addCustomSale} className="space-y-4 mt-2">
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1">Concepto / Producto</label>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">
+              Concepto / Producto
+            </label>
             <input
               type="text"
               autoFocus
               required
               value={customSaleData.name}
-              onChange={(e) => setCustomSaleData({ ...customSaleData, name: e.target.value })}
+              onChange={(e) =>
+                setCustomSaleData({ ...customSaleData, name: e.target.value })
+              }
               className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
               placeholder="Ej: Servicio de Delivery..."
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Precio Unitario (S/)</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                Precio Unitario (S/)
+              </label>
               <input
                 type="number"
                 required
                 min="0.1"
                 step="0.01"
                 value={customSaleData.price || ""}
-                onChange={(e) => setCustomSaleData({ ...customSaleData, price: Number(e.target.value) })}
+                onChange={(e) =>
+                  setCustomSaleData({
+                    ...customSaleData,
+                    price: Number(e.target.value),
+                  })
+                }
                 className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Cantidad</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                Cantidad
+              </label>
               <input
                 type="number"
                 required
                 min="1"
                 value={customSaleData.quantity}
-                onChange={(e) => setCustomSaleData({ ...customSaleData, quantity: Number(e.target.value) })}
+                onChange={(e) =>
+                  setCustomSaleData({
+                    ...customSaleData,
+                    quantity: Number(e.target.value),
+                  })
+                }
                 className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
               />
             </div>
           </div>
           <div className="pt-4 flex justify-end gap-3">
-            <button type="button" onClick={() => setIsCustomSaleOpen(false)} className="px-5 py-2.5 bg-gray-100 text-gray-700 font-medium rounded-xl hover:bg-gray-200">
+            <button
+              type="button"
+              onClick={() => setIsCustomSaleOpen(false)}
+              className="px-5 py-2.5 bg-gray-100 text-gray-700 font-medium rounded-xl hover:bg-gray-200"
+            >
               Cancelar
             </button>
-            <button type="submit" className="px-5 py-2.5 bg-indigo-600 text-white font-medium rounded-xl hover:bg-indigo-700">
+            <button
+              type="submit"
+              className="px-5 py-2.5 bg-indigo-600 text-white font-medium rounded-xl hover:bg-indigo-700"
+            >
               Añadir al Carrito
             </button>
           </div>
@@ -872,14 +1110,20 @@ export default function BusinessPosPage() {
       </Modal>
 
       {/* MODAL: TICKET */}
-      <Modal isOpen={showTicket} onClose={() => setShowTicket(false)} title="✅ Venta Completada">
+      <Modal
+        isOpen={showTicket}
+        onClose={() => setShowTicket(false)}
+        title="✅ Venta Completada"
+      >
         {lastSale && (
           <div className="flex flex-col items-center">
             {/* Preview ticket (decorative, not used for export) */}
             <div className="bg-white border border-gray-200 p-5 rounded-xl w-full max-w-xs mx-auto shadow-sm font-mono text-xs text-gray-800 mb-4">
               <div className="text-center mb-4">
                 <div className="font-black text-base">THINK</div>
-                <div className="text-[10px] text-gray-500">Ticket de Venta / App Financiera</div>
+                <div className="text-[10px] text-gray-500">
+                  Ticket de Venta / App Financiera
+                </div>
                 <div className="border-b border-dashed border-gray-300 my-3"></div>
                 <div className="flex justify-between text-[10px] mb-1">
                   <span>Fecha:</span>
@@ -891,7 +1135,10 @@ export default function BusinessPosPage() {
                 </div>
                 <div className="flex justify-between text-[10px]">
                   <span>Pago:</span>
-                  <span>{paymentLabel[lastSale.paymentMethod] || lastSale.paymentMethod}</span>
+                  <span>
+                    {paymentLabel[lastSale.paymentMethod] ||
+                      lastSale.paymentMethod}
+                  </span>
                 </div>
               </div>
 
@@ -899,12 +1146,18 @@ export default function BusinessPosPage() {
 
               <div className="space-y-1 mb-3">
                 {lastSale.items.map((item: any, i: number) => {
-                  const pres = item.presentations?.find((p: any) => p.id === item.presentationId);
+                  const pres = item.presentations?.find(
+                    (p: any) => p.id === item.presentationId,
+                  );
                   const presName = pres ? pres.name : item.unit;
                   return (
                     <div key={i} className="flex justify-between text-[10px]">
-                      <span className="flex-1 pr-2 truncate">{item.quantity}x {item.name} [{presName}]</span>
-                      <span>S/ {(item.quantity * item.salePrice).toFixed(2)}</span>
+                      <span className="flex-1 pr-2 truncate">
+                        {item.quantity}x {item.name} [{presName}]
+                      </span>
+                      <span>
+                        S/ {(item.quantity * item.salePrice).toFixed(2)}
+                      </span>
                     </div>
                   );
                 })}
@@ -912,22 +1165,23 @@ export default function BusinessPosPage() {
 
               <div className="border-b border-dashed border-gray-300 my-3"></div>
 
-              <div className="flex justify-between font-black text-sm">
+              <div className="flex justify-between font-black text-sm mb-4">
                 <span>TOTAL</span>
                 <span>S/ {lastSale.total.toFixed(2)}</span>
               </div>
 
-              {lastSale.receiptUrl && (
-                <div className="mt-3 pt-3 border-t border-dashed border-gray-300">
-                  <div className="text-[9px] text-gray-400 text-center mb-2 font-bold">COMPROBANTE</div>
-                  <img
-                    src={getReceiptAbsoluteUrl(lastSale.receiptUrl) || lastSale.receiptUrl}
-                    alt="Comprobante"
-                    className="w-full rounded-lg"
-                    onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}
-                  />
+              <div className="text-center text-gray-500 pt-2 border-t border-dashed border-gray-200">
+                <div className="text-[10px]">¡Gracias por tu preferencia!</div>
+                <div className="text-[8px] text-gray-400 mt-0.5">
+                  Boleta o Factura
                 </div>
-              )}
+                <div className="text-[8px] font-bold text-gray-700 mt-2">
+                  Global Ccoplex
+                </div>
+                <div className="text-[7px] text-gray-400">
+                  &copy; Todos los derechos reservados
+                </div>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-2 w-full">
@@ -980,12 +1234,16 @@ export default function BusinessPosPage() {
             {loadingSales ? (
               <div className="p-12 text-center text-gray-500 flex flex-col items-center justify-center gap-2">
                 <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
-                <span className="font-bold">Cargando ventas del sistema...</span>
+                <span className="font-bold">
+                  Cargando ventas del sistema...
+                </span>
               </div>
             ) : sales.length === 0 ? (
               <div className="p-12 text-center text-gray-400">
                 <FileText className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                <p className="font-bold">No hay ventas registradas en este turno.</p>
+                <p className="font-bold">
+                  No hay ventas registradas en este turno.
+                </p>
               </div>
             ) : (
               <div className="overflow-x-auto max-h-[50vh] custom-scrollbar">
@@ -993,7 +1251,9 @@ export default function BusinessPosPage() {
                   <thead className="bg-gray-50 text-gray-500 uppercase text-[10px] font-bold tracking-wider">
                     <tr>
                       <th className="px-4 py-3 text-left">Fecha/Hora</th>
-                      <th className="px-4 py-3 text-left">Detalle de Productos</th>
+                      <th className="px-4 py-3 text-left">
+                        Detalle de Productos
+                      </th>
                       <th className="px-4 py-3 text-center">Método</th>
                       <th className="px-4 py-3 text-right">Monto</th>
                       <th className="px-4 py-3 text-center">Acciones</th>
@@ -1001,17 +1261,26 @@ export default function BusinessPosPage() {
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {sales.map((sale) => (
-                      <tr key={sale.id} className="hover:bg-gray-50 transition-colors">
+                      <tr
+                        key={sale.id}
+                        className="hover:bg-gray-50 transition-colors"
+                      >
                         <td className="px-4 py-3 text-gray-500 whitespace-nowrap text-xs font-medium">
                           {format(new Date(sale.date), "dd/MM/yyyy HH:mm")}
                         </td>
                         <td className="px-4 py-3">
-                          <p className="font-semibold text-gray-800 text-xs truncate max-w-xs" title={sale.description}>
-                            {sale.description?.replace("Venta en POS: ", "") || "Venta Manual"}
+                          <p
+                            className="font-semibold text-gray-800 text-xs truncate max-w-xs"
+                            title={sale.description}
+                          >
+                            {sale.description?.replace("Venta en POS: ", "") ||
+                              "Venta Manual"}
                           </p>
                           {sale.receiptUrl && (
                             <a
-                              href={getReceiptAbsoluteUrl(sale.receiptUrl) || "#"}
+                              href={
+                                getReceiptAbsoluteUrl(sale.receiptUrl) || "#"
+                              }
                               target="_blank"
                               rel="noreferrer"
                               className="text-indigo-500 text-[10px] font-bold block mt-0.5 hover:underline"
@@ -1022,7 +1291,8 @@ export default function BusinessPosPage() {
                         </td>
                         <td className="px-4 py-3 text-center">
                           <span className="text-[10px] font-bold bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md">
-                            {paymentLabel[sale.paymentMethod] || sale.paymentMethod}
+                            {paymentLabel[sale.paymentMethod] ||
+                              sale.paymentMethod}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right">
@@ -1045,6 +1315,7 @@ export default function BusinessPosPage() {
                                 setEditAmount(sale.amount);
                                 setEditDesc(sale.description || "");
                                 setEditPayment(sale.paymentMethod);
+                                setEditReceiptUrl(sale.receiptUrl || null);
                               }}
                               className="p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
                               title="Editar Monto/Método"
@@ -1079,14 +1350,21 @@ export default function BusinessPosPage() {
       </Modal>
 
       {/* MODAL: EDITAR VENTA POS */}
-      <Modal isOpen={!!editSale} onClose={() => setEditSale(null)} title="✏️ Editar Venta Registrada">
+      <Modal
+        isOpen={!!editSale}
+        onClose={() => setEditSale(null)}
+        title="✏️ Editar Venta Registrada"
+      >
         {editSale && (
           <div className="space-y-4">
             <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl text-xs text-amber-700 font-medium">
-              ⚠ Recuerda: Esto modificará el registro contable de la caja. El stock de inventario no se revertirá automáticamente.
+              ⚠ Recuerda: Esto modificará el registro contable de la caja. El
+              stock de inventario no se revertirá automáticamente.
             </div>
             <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Monto Total de Venta (S/)</label>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
+                Monto Total de Venta (S/)
+              </label>
               <input
                 type="number"
                 min="0"
@@ -1097,7 +1375,9 @@ export default function BusinessPosPage() {
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Método de Pago</label>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
+                Método de Pago
+              </label>
               <select
                 value={editPayment}
                 onChange={(e) => setEditPayment(e.target.value)}
@@ -1111,12 +1391,25 @@ export default function BusinessPosPage() {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Descripción / Nota</label>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
+                Descripción / Nota
+              </label>
               <textarea
                 rows={3}
                 value={editDesc}
                 onChange={(e) => setEditDesc(e.target.value)}
                 className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none resize-none text-sm font-medium"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
+                Comprobante de Pago (Yape/Plin/Boucher)
+              </label>
+              <ReceiptUploader
+                currentImageUrl={editReceiptUrl}
+                onUploadSuccess={(url) => setEditReceiptUrl(url)}
+                onClear={() => setEditReceiptUrl(null)}
+                label="Subir voucher/comprobante"
               />
             </div>
             <div className="flex gap-3 justify-end pt-2">

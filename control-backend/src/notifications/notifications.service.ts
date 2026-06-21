@@ -14,10 +14,11 @@ export class NotificationsService {
 
     for (const t of pendingTransactions) {
       // Create a unique link based on workspace to separate alerts
-      const uniqueLink = workspace === 'BUSINESS'
-        ? `/business-pending?id=${t.id}`
-        : `/pending?id=${t.id}`;
-        
+      const uniqueLink =
+        workspace === 'BUSINESS'
+          ? `/business-pending?id=${t.id}`
+          : `/pending?id=${t.id}`;
+
       const existing = await this.prisma.notification.findFirst({
         where: { userId, link: uniqueLink },
       });
@@ -47,12 +48,13 @@ export class NotificationsService {
     }
 
     // Classify by link patterns: `/business` routes go to BUSINESS workspace, others go to PERSONAL
-    const linkFilter = workspace === 'BUSINESS'
-      ? { contains: '/business' }
-      : { not: { contains: '/business' } };
+    const linkFilter =
+      workspace === 'BUSINESS'
+        ? { contains: '/business' }
+        : { not: { contains: '/business' } };
 
     return this.prisma.notification.findMany({
-      where: { 
+      where: {
         userId,
         link: linkFilter,
       },
@@ -69,9 +71,10 @@ export class NotificationsService {
   }
 
   async markAllAsRead(userId: string, workspace: string = 'PERSONAL') {
-    const linkFilter = workspace === 'BUSINESS'
-      ? { contains: '/business' }
-      : { not: { contains: '/business' } };
+    const linkFilter =
+      workspace === 'BUSINESS'
+        ? { contains: '/business' }
+        : { not: { contains: '/business' } };
 
     return this.prisma.notification.updateMany({
       where: { userId, read: false, link: linkFilter },

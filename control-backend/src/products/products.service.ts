@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -18,10 +22,14 @@ export class ProductsService {
     const presentationsList = presentations || [];
     for (const pres of presentationsList) {
       if (pres.equivalence <= 0) {
-        throw new BadRequestException('La equivalencia de la presentación debe ser mayor a cero.');
+        throw new BadRequestException(
+          'La equivalencia de la presentación debe ser mayor a cero.',
+        );
       }
       if (pres.price < 0) {
-        throw new BadRequestException('El precio de la presentación no puede ser negativo.');
+        throw new BadRequestException(
+          'El precio de la presentación no puede ser negativo.',
+        );
       }
     }
 
@@ -37,6 +45,22 @@ export class ProductsService {
           userId,
         },
       });
+
+      // If initial stock is greater than 0, create an initial inventory movement
+      if (stock > 0) {
+        await tx.inventoryMovement.create({
+          data: {
+            productId: product.id,
+            quantity: stock,
+            type: 'IN',
+            reason: 'ADJUSTMENT',
+            presentationId: null,
+            presentationName: unit || 'UNIDAD',
+            presentationQty: stock,
+            userId,
+          },
+        });
+      }
 
       // If no presentations were sent, create a default one for the main unit
       if (presentationsList.length === 0) {
@@ -92,10 +116,14 @@ export class ProductsService {
 
     // Cast floats
     const updateData: any = { ...productData };
-    if (updateData.stock !== undefined) updateData.stock = parseFloat(updateData.stock);
-    if (updateData.minStock !== undefined) updateData.minStock = parseFloat(updateData.minStock);
-    if (updateData.costPrice !== undefined) updateData.costPrice = parseFloat(updateData.costPrice);
-    if (updateData.salePrice !== undefined) updateData.salePrice = parseFloat(updateData.salePrice);
+    if (updateData.stock !== undefined)
+      updateData.stock = parseFloat(updateData.stock);
+    if (updateData.minStock !== undefined)
+      updateData.minStock = parseFloat(updateData.minStock);
+    if (updateData.costPrice !== undefined)
+      updateData.costPrice = parseFloat(updateData.costPrice);
+    if (updateData.salePrice !== undefined)
+      updateData.salePrice = parseFloat(updateData.salePrice);
     if (unit !== undefined) updateData.unit = unit;
 
     return this.prisma.$transaction(async (tx) => {
@@ -104,17 +132,25 @@ export class ProductsService {
         const presentationsList = presentations || [];
         for (const pres of presentationsList) {
           if (pres.equivalence <= 0) {
-            throw new BadRequestException('La equivalencia de la presentación debe ser mayor a cero.');
+            throw new BadRequestException(
+              'La equivalencia de la presentación debe ser mayor a cero.',
+            );
           }
           if (pres.price < 0) {
-            throw new BadRequestException('El precio de la presentación no puede ser negativo.');
+            throw new BadRequestException(
+              'El precio de la presentación no puede ser negativo.',
+            );
           }
         }
 
         // Handle deletions of omitted presentations
         const existingPres = product.presentations;
-        const incomingIds = presentationsList.map((p: any) => p.id).filter(Boolean);
-        const toDelete = existingPres.filter((p) => !incomingIds.includes(p.id));
+        const incomingIds = presentationsList
+          .map((p: any) => p.id)
+          .filter(Boolean);
+        const toDelete = existingPres.filter(
+          (p) => !incomingIds.includes(p.id),
+        );
 
         for (const p of toDelete) {
           // Verify if presentation has movements in DB
@@ -159,6 +195,26 @@ export class ProductsService {
         }
       }
 
+      // If stock is changing, log adjustment
+      if (updateData.stock !== undefined && updateData.stock !== product.stock) {
+        const diff = updateData.stock - product.stock;
+        const type = diff > 0 ? 'IN' : 'OUT';
+        const quantity = Math.abs(diff);
+
+        await tx.inventoryMovement.create({
+          data: {
+            productId: id,
+            quantity,
+            type,
+            reason: 'ADJUSTMENT',
+            presentationId: null,
+            presentationName: product.unit,
+            presentationQty: quantity,
+            userId,
+          },
+        });
+      }
+
       await tx.product.update({
         where: { id },
         data: updateData,
@@ -193,10 +249,13 @@ export class ProductsService {
    * Secure restock (purchase) flow
    */
   async restock(userId: string, productId: string, restockDto: any) {
-    const { quantity, presentationId, totalCost, categoryId, paymentMethod } = restockDto;
+    const { quantity, presentationId, totalCost, categoryId, paymentMethod } =
+      restockDto;
 
     if (quantity <= 0) {
-      throw new BadRequestException('La cantidad a reponer debe ser mayor a cero.');
+      throw new BadRequestException(
+        'La cantidad a reponer debe ser mayor a cero.',
+      );
     }
     if (totalCost < 0) {
       throw new BadRequestException('El costo total no puede ser negativo.');
@@ -288,7 +347,9 @@ export class ProductsService {
           const qty = parseFloat(item.quantity);
           const price = parseFloat(item.salePrice);
           totalAmount += qty * price;
-          salesDetails.push(`${qty}x ${item.name} (Libre) (S/ ${price.toFixed(2)} c/u)`);
+          salesDetails.push(
+            `${qty}x ${item.name} (Libre) (S/ ${price.toFixed(2)} c/u)`,
+          );
           continue;
         }
 
@@ -298,7 +359,9 @@ export class ProductsService {
           include: { presentations: true },
         });
         if (!product) {
-          throw new NotFoundException(`Producto "${item.name || item.id}" no encontrado.`);
+          throw new NotFoundException(
+            `Producto "${item.name || item.id}" no encontrado.`,
+          );
         }
 
         let equivalence = 1;
@@ -306,7 +369,9 @@ export class ProductsService {
         let salePrice = product.salePrice;
 
         if (item.presentationId) {
-          const pres = product.presentations.find((p) => p.id === item.presentationId);
+          const pres = product.presentations.find(
+            (p) => p.id === item.presentationId,
+          );
           if (!pres) {
             throw new NotFoundException(
               `Presentación no encontrada en el producto "${product.name}".`,
@@ -350,7 +415,9 @@ export class ProductsService {
         });
 
         totalAmount += requiredQty * salePrice;
-        salesDetails.push(`${requiredQty}x ${product.name} [${presentationName}] (S/ ${salePrice.toFixed(2)} c/u)`);
+        salesDetails.push(
+          `${requiredQty}x ${product.name} [${presentationName}] (S/ ${salePrice.toFixed(2)} c/u)`,
+        );
       }
 
       // Create Financial Transaction (Income)

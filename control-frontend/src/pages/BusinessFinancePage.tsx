@@ -18,7 +18,7 @@ import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
 import { format } from "date-fns";
 import BusinessAiAdvisor from "../components/dashboard/BusinessAiAdvisor";
-import ImageUploader from "../components/ui/ImageUploader";
+import ImageUploader, { getReceiptAbsoluteUrl } from "../components/ui/ImageUploader";
 
 export default function BusinessFinancePage() {
   const [transactions, setTransactions] = useState<any[]>([]);
@@ -34,7 +34,7 @@ export default function BusinessFinancePage() {
     subCategoryId: "",
     paymentMethod: "CASH",
     description: "",
-    receiptUrl: null as string | null,
+    receiptUrl: null as string | File | null,
   });
 
   const loadData = async () => {
@@ -73,6 +73,20 @@ export default function BusinessFinancePage() {
     }
 
     try {
+      let finalReceiptUrl = formData.receiptUrl;
+      if (formData.receiptUrl instanceof File) {
+        const uploadToast = toast.loading("Subiendo comprobante...");
+        try {
+          const { uploadReceiptFile } = await import("../components/ui/ImageUploader");
+          finalReceiptUrl = await uploadReceiptFile(formData.receiptUrl);
+          toast.dismiss(uploadToast);
+        } catch {
+          toast.dismiss(uploadToast);
+          toast.error("Error al subir el comprobante");
+          return;
+        }
+      }
+
       await createTransactionRequest({
         name:
           formData.name ||
@@ -87,7 +101,7 @@ export default function BusinessFinancePage() {
         paymentMethod: formData.paymentMethod,
         description: formData.description,
         workspace: "BUSINESS",
-        receiptUrl: formData.receiptUrl || undefined,
+        receiptUrl: (finalReceiptUrl || undefined) as any,
       } as any);
       toast.success("Operación registrada con éxito");
       setIsModalOpen(false);
@@ -221,6 +235,7 @@ export default function BusinessFinancePage() {
                       <th className="px-6 py-4">Concepto</th>
                       <th className="px-6 py-4">Categoría</th>
                       <th className="px-6 py-4">Método</th>
+                      <th className="px-6 py-4 text-center">Comprobante</th>
                       <th className="px-6 py-4 text-right">Monto</th>
                     </tr>
                   </thead>
@@ -228,7 +243,7 @@ export default function BusinessFinancePage() {
                     {transactions.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={5}
+                          colSpan={6}
                           className="px-6 py-10 text-center text-gray-400"
                         >
                           No hay movimientos registrados en la tesorería del
@@ -261,6 +276,29 @@ export default function BusinessFinancePage() {
                           </td>
                           <td className="px-6 py-4 text-gray-500 text-xs font-bold">
                             {t.paymentMethod}
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            {t.receiptUrl ? (
+                              <div className="relative group inline-block">
+                                <a
+                                  href={getReceiptAbsoluteUrl(t.receiptUrl) || "#"}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex p-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl transition-all shadow-sm active:scale-95"
+                                  title="Ver/Descargar Comprobante"
+                                  download
+                                >
+                                  <FileText className="w-4 h-4" />
+                                </a>
+                                <span className="hidden group-hover:block absolute left-1/2 -translate-x-1/2 bottom-12 z-50 whitespace-nowrap rounded-full px-3 py-1 text-[10px] font-medium text-white shadow-lg bg-slate-900">
+                                  Descargar
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-[10px] text-gray-300 font-bold uppercase tracking-wider">
+                                Sin archivo
+                              </span>
+                            )}
                           </td>
                           <td
                             className={`px-6 py-4 text-right font-black ${t.type === "INCOME" ? "text-emerald-600" : "text-rose-600"}`}
