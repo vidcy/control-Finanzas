@@ -14,7 +14,7 @@ export const createPendingTransactionRequest = async (data: {
   name: string;
   type: "INCOME" | "EXPENSE";
   categoryId: string;
-  subCategoryId: string;
+  subCategoryId?: string | null;
   amount: number;
   date: string;
   dueDate?: string;
@@ -58,7 +58,7 @@ export const updatePendingTransactionRequest = async (
     exchangeRate?: number;
     amountSoles?: number;
     categoryId?: string;
-    subCategoryId?: string;
+    subCategoryId?: string | null;
   },
 ) => {
   try {

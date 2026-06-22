@@ -31,7 +31,7 @@ export default function BusinessFinancePage() {
     name: "",
     amount: 0,
     categoryId: "",
-    subCategoryId: null,
+    subCategoryId: "",
     paymentMethod: "CASH",
     description: "",
     receiptUrl: null as string | File | null,
@@ -109,7 +109,7 @@ export default function BusinessFinancePage() {
         name: "",
         amount: 0,
         categoryId: "",
-        subCategoryId: null,
+        subCategoryId: "",
         paymentMethod: "CASH",
         description: "",
         receiptUrl: null,
@@ -419,18 +419,17 @@ export default function BusinessFinancePage() {
             )}
           </div>
           {subcategories.length > 0 && (
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Subcategoría
-              </label>
-              <select
-                required
-                value={formData.subCategoryId}
-                onChange={(e) =>
-                  setFormData({ ...formData, subCategoryId: e.target.value })
-                }
-                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-              >
+              <div className="space-y-1">
+                <label className="text-sm font-semibold text-gray-700">
+                  Subcategoría (Opcional)
+                </label>
+                <select
+                  value={formData.subCategoryId}
+                  onChange={(e) =>
+                    setFormData({ ...formData, subCategoryId: e.target.value })
+                  }
+                  className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                >
                 <option value="">Selecciona una subcategoría...</option>
                 {subcategories.map((sub: any) => (
                   <option key={sub.id} value={sub.id}>
