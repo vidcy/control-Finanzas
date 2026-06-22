@@ -65,7 +65,7 @@ export default function BusinessPendingPage() {
         type,
         amount: formData.amount,
         categoryId: formData.categoryId,
-        subCategoryId: "",
+        subCategoryId: null,
         date: new Date().toISOString(),
         dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : undefined,
         status: "PENDING",

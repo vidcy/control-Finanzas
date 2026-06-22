@@ -365,7 +365,7 @@ export default function PendingPage() {
             category: t.category?.name ?? "Otros",
             categoryId: t.categoryId || t.category?.id || "",
             subCategory: t.subCategory?.name ?? "",
-            subCategoryId: t.subCategoryId || t.subCategory?.id || "",
+            subCategoryId: t.subCategoryId || t.subCategory?.id || null,
             currency: t.currency || "PEN",
             exchangeRate: t.exchangeRate || 1,
           };

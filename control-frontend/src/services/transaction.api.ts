@@ -4,7 +4,7 @@ export const createTransactionRequest = async (data: {
   name: string;
   type: "INCOME" | "EXPENSE";
   categoryId: string;
-  subCategoryId: string;
+  subCategoryId?: string | null;
   amount: number;
   date: string;
   dueDate?: string;
@@ -53,7 +53,7 @@ export const updateTransactionRequest = async (
   id: string,
   data: {
     categoryId: string;
-    subCategoryId: string;
+    subCategoryId?: string | null;
     amount: number;
     date: Date;
     dueDate?: Date;

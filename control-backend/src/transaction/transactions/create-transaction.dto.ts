@@ -8,6 +8,7 @@ import {
   IsUUID,
   IsDateString,
   IsBoolean,
+  ValidateIf,
 } from 'class-validator';
 
 export enum TransactionType {
@@ -49,8 +50,9 @@ export class CreateTransactionDto {
 
   // 👇 subcategoría (OPCIONAL 💥 muy importante)
   @IsOptional()
+  @ValidateIf((o) => o.subCategoryId !== null && o.subCategoryId !== '')
   @IsUUID()
-  subCategoryId?: string;
+  subCategoryId?: string | null;
 
   // 📅 fecha
   @IsDateString()
@@ -108,6 +110,7 @@ export class CreateTransactionDto {
   workspace?: string;
 
   @IsOptional()
+  @ValidateIf((o) => o.receiptUrl !== null)
   @IsString()
-  receiptUrl?: string;
+  receiptUrl?: string | null;
 }

@@ -177,7 +177,7 @@ export default function BusinessPosPage() {
 
       await updateTransactionRequest(editSale.id, {
         categoryId: editSale.categoryId,
-        subCategoryId: editSale.subCategoryId || "",
+        subCategoryId: editSale.subCategoryId || null,
         amount: editAmount,
         date: new Date(editSale.date),
         currency: editSale.currency,

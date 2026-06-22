@@ -8,6 +8,7 @@ import {
   IsUUID,
   IsDateString,
   IsBoolean,
+  ValidateIf,
 } from 'class-validator';
 
 export enum TransactionType {
@@ -39,8 +40,9 @@ export class UpdateTransactionDto {
   categoryId?: string;
 
   @IsOptional()
+  @ValidateIf((o) => o.subCategoryId !== null && o.subCategoryId !== '')
   @IsUUID()
-  subCategoryId?: string;
+  subCategoryId?: string | null;
 
   @IsOptional()
   @IsNumber()
@@ -91,6 +93,7 @@ export class UpdateTransactionDto {
   description?: string;
 
   @IsOptional()
+  @ValidateIf((o) => o.receiptUrl !== null)
   @IsString()
-  receiptUrl?: string;
+  receiptUrl?: string | null;
 }
