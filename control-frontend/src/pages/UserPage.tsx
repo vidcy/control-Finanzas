@@ -34,6 +34,7 @@ type User = {
   role: "ADMIN" | "USER";
   status: "TRUE" | "FALSE";
   profiles: string[];
+  blockedProfiles: string[];
 };
 
 export default function UserPage() {
@@ -168,6 +169,7 @@ export default function UserPage() {
         role: u.role === "ADMIN" ? "ADMIN" : "USER",
         status: u.isActive ? "TRUE" : "FALSE",
         profiles: Array.isArray(u.profiles) ? u.profiles : [],
+        blockedProfiles: Array.isArray(u.blockedProfiles) ? u.blockedProfiles : [],
       }));
       setUsers(formattedUsers);
     } catch (error: unknown) {
@@ -281,50 +283,106 @@ export default function UserPage() {
                         </span>
                       </td>
                       <td className="p-6">
-                        <input
-                          type="checkbox"
-                          checked={user.profiles.includes("PERSONAL")}
-                          onChange={async (e) => {
-                            const newProfiles = e.target.checked
-                              ? [...user.profiles, "PERSONAL"]
-                              : user.profiles.filter((p) => p !== "PERSONAL");
-                            if (newProfiles.length === 0) {
-                              toast.error("El usuario debe tener al menos un módulo");
-                              return;
-                            }
-                            try {
-                              await updateUserRequest(user.id, { profiles: newProfiles });
-                              toast.success("Módulos actualizados");
-                              await fetchUsers();
-                            } catch (err: any) {
-                              toast.error(err.message || "Error al actualizar módulos");
-                            }
-                          }}
-                          className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500 cursor-pointer"
-                        />
+                        <div className="flex flex-col gap-2">
+                          <label className="flex items-center gap-2 text-xs font-bold text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={user.profiles.includes("PERSONAL")}
+                              onChange={async (e) => {
+                                const newProfiles = e.target.checked
+                                  ? [...user.profiles, "PERSONAL"]
+                                  : user.profiles.filter((p) => p !== "PERSONAL");
+                                if (newProfiles.length === 0) {
+                                  toast.error("El usuario debe tener al menos un módulo");
+                                  return;
+                                }
+                                try {
+                                  await updateUserRequest(user.id, { profiles: newProfiles });
+                                  toast.success("Módulo actualizado");
+                                  await fetchUsers();
+                                } catch (err: any) {
+                                  toast.error(err.message || "Error al actualizar");
+                                }
+                              }}
+                              className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500 cursor-pointer"
+                            /> Activo
+                          </label>
+                          <label className="flex items-center gap-2 text-xs font-bold text-rose-600">
+                            <input
+                              type="checkbox"
+                              checked={user.blockedProfiles.includes("PERSONAL")}
+                              onChange={async (e) => {
+                                const newBlocked = e.target.checked
+                                  ? [...user.blockedProfiles, "PERSONAL"]
+                                  : user.blockedProfiles.filter((p) => p !== "PERSONAL");
+                                try {
+                                  // Si se bloquea, también lo quitamos de profiles activos
+                                  let newProfiles = [...user.profiles];
+                                  if (e.target.checked) {
+                                    newProfiles = newProfiles.filter(p => p !== "PERSONAL");
+                                  }
+                                  await updateUserRequest(user.id, { blockedProfiles: newBlocked, profiles: newProfiles });
+                                  toast.success("Bloqueo actualizado");
+                                  await fetchUsers();
+                                } catch (err: any) {
+                                  toast.error(err.message || "Error al actualizar bloqueo");
+                                }
+                              }}
+                              className="w-4 h-4 text-rose-600 border-gray-300 rounded focus:ring-rose-500 cursor-pointer"
+                            /> Bloqueado
+                          </label>
+                        </div>
                       </td>
                       <td className="p-6">
-                        <input
-                          type="checkbox"
-                          checked={user.profiles.includes("BUSINESS")}
-                          onChange={async (e) => {
-                            const newProfiles = e.target.checked
-                              ? [...user.profiles, "BUSINESS"]
-                              : user.profiles.filter((p) => p !== "BUSINESS");
-                            if (newProfiles.length === 0) {
-                              toast.error("El usuario debe tener al menos un módulo");
-                              return;
-                            }
-                            try {
-                              await updateUserRequest(user.id, { profiles: newProfiles });
-                              toast.success("Módulos actualizados");
-                              await fetchUsers();
-                            } catch (err: any) {
-                              toast.error(err.message || "Error al actualizar módulos");
-                            }
-                          }}
-                          className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500 cursor-pointer"
-                        />
+                        <div className="flex flex-col gap-2">
+                          <label className="flex items-center gap-2 text-xs font-bold text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={user.profiles.includes("BUSINESS")}
+                              onChange={async (e) => {
+                                const newProfiles = e.target.checked
+                                  ? [...user.profiles, "BUSINESS"]
+                                  : user.profiles.filter((p) => p !== "BUSINESS");
+                                if (newProfiles.length === 0) {
+                                  toast.error("El usuario debe tener al menos un módulo");
+                                  return;
+                                }
+                                try {
+                                  await updateUserRequest(user.id, { profiles: newProfiles });
+                                  toast.success("Módulo actualizado");
+                                  await fetchUsers();
+                                } catch (err: any) {
+                                  toast.error(err.message || "Error al actualizar");
+                                }
+                              }}
+                              className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500 cursor-pointer"
+                            /> Activo
+                          </label>
+                          <label className="flex items-center gap-2 text-xs font-bold text-rose-600">
+                            <input
+                              type="checkbox"
+                              checked={user.blockedProfiles.includes("BUSINESS")}
+                              onChange={async (e) => {
+                                const newBlocked = e.target.checked
+                                  ? [...user.blockedProfiles, "BUSINESS"]
+                                  : user.blockedProfiles.filter((p) => p !== "BUSINESS");
+                                try {
+                                  // Si se bloquea, también lo quitamos de profiles activos
+                                  let newProfiles = [...user.profiles];
+                                  if (e.target.checked) {
+                                    newProfiles = newProfiles.filter(p => p !== "BUSINESS");
+                                  }
+                                  await updateUserRequest(user.id, { blockedProfiles: newBlocked, profiles: newProfiles });
+                                  toast.success("Bloqueo actualizado");
+                                  await fetchUsers();
+                                } catch (err: any) {
+                                  toast.error(err.message || "Error al actualizar bloqueo");
+                                }
+                              }}
+                              className="w-4 h-4 text-rose-600 border-gray-300 rounded focus:ring-rose-500 cursor-pointer"
+                            /> Bloqueado
+                          </label>
+                        </div>
                       </td>
                       <td className="p-6">
                         <button
@@ -398,55 +456,106 @@ export default function UserPage() {
                   </div>
 
                   {/* CHECKBOXES MÓVILES PARA MÓDULOS */}
-                  <div className="flex items-center gap-6 pt-3 border-t border-gray-50/80 justify-between text-xs text-gray-500 font-bold">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={user.profiles.includes("PERSONAL")}
-                        onChange={async (e) => {
-                          const newProfiles = e.target.checked
-                            ? [...user.profiles, "PERSONAL"]
-                            : user.profiles.filter((p) => p !== "PERSONAL");
-                          if (newProfiles.length === 0) {
-                            toast.error("El usuario debe tener al menos un módulo");
-                            return;
-                          }
-                          try {
-                            await updateUserRequest(user.id, { profiles: newProfiles });
-                            toast.success("Módulos actualizados");
-                            await fetchUsers();
-                          } catch (err: any) {
-                            toast.error(err.message || "Error al actualizar módulos");
-                          }
-                        }}
-                        className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                      />
-                      Personal
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={user.profiles.includes("BUSINESS")}
-                        onChange={async (e) => {
-                          const newProfiles = e.target.checked
-                            ? [...user.profiles, "BUSINESS"]
-                            : user.profiles.filter((p) => p !== "BUSINESS");
-                          if (newProfiles.length === 0) {
-                            toast.error("El usuario debe tener al menos un módulo");
-                            return;
-                          }
-                          try {
-                            await updateUserRequest(user.id, { profiles: newProfiles });
-                            toast.success("Módulos actualizados");
-                            await fetchUsers();
-                          } catch (err: any) {
-                            toast.error(err.message || "Error al actualizar módulos");
-                          }
-                        }}
-                        className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                      />
-                      Negocios
-                    </label>
+                  <div className="flex flex-col gap-3 pt-3 border-t border-gray-50/80">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-gray-800">Personal</span>
+                      <div className="flex items-center gap-4">
+                        <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-gray-500">
+                          <input
+                            type="checkbox"
+                            checked={user.profiles.includes("PERSONAL")}
+                            onChange={async (e) => {
+                              const newProfiles = e.target.checked
+                                ? [...user.profiles, "PERSONAL"]
+                                : user.profiles.filter((p) => p !== "PERSONAL");
+                              if (newProfiles.length === 0) {
+                                toast.error("Debe tener al menos un módulo");
+                                return;
+                              }
+                              try {
+                                await updateUserRequest(user.id, { profiles: newProfiles });
+                                toast.success("Actualizado");
+                                await fetchUsers();
+                              } catch (err: any) {
+                                toast.error(err.message || "Error");
+                              }
+                            }}
+                            className="w-3.5 h-3.5 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                          /> Activo
+                        </label>
+                        <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-rose-500">
+                          <input
+                            type="checkbox"
+                            checked={user.blockedProfiles.includes("PERSONAL")}
+                            onChange={async (e) => {
+                              const newBlocked = e.target.checked
+                                ? [...user.blockedProfiles, "PERSONAL"]
+                                : user.blockedProfiles.filter((p) => p !== "PERSONAL");
+                              try {
+                                let newProfiles = [...user.profiles];
+                                if (e.target.checked) newProfiles = newProfiles.filter(p => p !== "PERSONAL");
+                                await updateUserRequest(user.id, { blockedProfiles: newBlocked, profiles: newProfiles });
+                                toast.success("Bloqueo actualizado");
+                                await fetchUsers();
+                              } catch (err: any) {
+                                toast.error(err.message || "Error");
+                              }
+                            }}
+                            className="w-3.5 h-3.5 text-rose-600 border-gray-300 rounded focus:ring-rose-500"
+                          /> Bloqueado
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-gray-800">Negocios</span>
+                      <div className="flex items-center gap-4">
+                        <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-gray-500">
+                          <input
+                            type="checkbox"
+                            checked={user.profiles.includes("BUSINESS")}
+                            onChange={async (e) => {
+                              const newProfiles = e.target.checked
+                                ? [...user.profiles, "BUSINESS"]
+                                : user.profiles.filter((p) => p !== "BUSINESS");
+                              if (newProfiles.length === 0) {
+                                toast.error("Debe tener al menos un módulo");
+                                return;
+                              }
+                              try {
+                                await updateUserRequest(user.id, { profiles: newProfiles });
+                                toast.success("Actualizado");
+                                await fetchUsers();
+                              } catch (err: any) {
+                                toast.error(err.message || "Error");
+                              }
+                            }}
+                            className="w-3.5 h-3.5 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                          /> Activo
+                        </label>
+                        <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-rose-500">
+                          <input
+                            type="checkbox"
+                            checked={user.blockedProfiles.includes("BUSINESS")}
+                            onChange={async (e) => {
+                              const newBlocked = e.target.checked
+                                ? [...user.blockedProfiles, "BUSINESS"]
+                                : user.blockedProfiles.filter((p) => p !== "BUSINESS");
+                              try {
+                                let newProfiles = [...user.profiles];
+                                if (e.target.checked) newProfiles = newProfiles.filter(p => p !== "BUSINESS");
+                                await updateUserRequest(user.id, { blockedProfiles: newBlocked, profiles: newProfiles });
+                                toast.success("Bloqueo actualizado");
+                                await fetchUsers();
+                              } catch (err: any) {
+                                toast.error(err.message || "Error");
+                              }
+                            }}
+                            className="w-3.5 h-3.5 text-rose-600 border-gray-300 rounded focus:ring-rose-500"
+                          /> Bloqueado
+                        </label>
+                      </div>
+                    </div>
                   </div>
                 </div>
               ))

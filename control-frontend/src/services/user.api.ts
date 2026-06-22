@@ -65,7 +65,16 @@ export const inactiveUserRequest = async (id: string) => {
     );
   }
 };
-export const updateUserProfilesRequest = (profiles: string[]) => API.patch('/users/me/profiles', { profiles });
+export const updateUserProfilesRequest = async (profiles: string[]) => {
+  try {
+    const res = await API.patch('/users/me/profiles', { profiles });
+    return res.data;
+  } catch (error: any) {
+    throw new Error(
+      error?.response?.data?.message || "Error al actualizar módulos",
+    );
+  }
+};
 export const activeUserRequest = async (id: string) => {
   try {
     const res = await API.patch(`/users/${id}/active`);

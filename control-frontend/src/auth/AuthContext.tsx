@@ -12,6 +12,7 @@ export interface User {
   email: string;
   role?: string;
   profiles: WorkspaceType[];
+  blockedProfiles?: WorkspaceType[];
   [key: string]: any;
 }
 
@@ -93,6 +94,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         const loggedUser: User = {
           ...freshUser,
           profiles: parseProfiles(freshUser.profiles),
+          blockedProfiles: parseProfiles(freshUser.blockedProfiles).filter(p => freshUser.blockedProfiles ? true : false),
         };
 
         localStorage.setItem("user", JSON.stringify(loggedUser));
@@ -128,6 +130,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const loggedUser: User = {
         ...data.user,
         profiles: parseProfiles(data.user?.profiles),
+        blockedProfiles: parseProfiles(data.user?.blockedProfiles).filter(p => data.user?.blockedProfiles ? true : false),
       };
 
       localStorage.setItem("user", JSON.stringify(loggedUser));
@@ -171,6 +174,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const loggedUser: User = {
         ...data.user,
         profiles: parseProfiles(data.user?.profiles ?? registerData.profiles),
+        blockedProfiles: parseProfiles(data.user?.blockedProfiles).filter(p => data.user?.blockedProfiles ? true : false),
       };
 
       localStorage.setItem("user", JSON.stringify(loggedUser));

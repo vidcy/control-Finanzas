@@ -46,7 +46,7 @@ export class FilesService {
           resolve(result.secure_url); // Esta URL es la que guardas en Prisma
         },
       );
-      Readable.from(file.buffer).pipe(uploadStream);
+      uploadStream.end(file.buffer);
     });
   }
 
@@ -81,7 +81,7 @@ export class FilesService {
           resolve(result.secure_url);
         },
       );
-      Readable.from(file.buffer).pipe(uploadStream);
+      uploadStream.end(file.buffer);
     });
   }
 }

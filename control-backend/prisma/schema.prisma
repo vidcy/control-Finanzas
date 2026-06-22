@@ -61,6 +61,7 @@ model User {
   currency  String   @default("PEN")
   isActive  Boolean  @default(true)
   profiles  Json?
+  blockedProfiles Json?
 
   resetToken       String?
   resetTokenExpiry DateTime?

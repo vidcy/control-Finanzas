@@ -4,37 +4,8 @@ import fetch from 'node-fetch';
 @Injectable()
 export class MailService {
   private async sendMail(to: string, subject: string, html: string) {
-    // 1. SendGrid integration
-    if (process.env.SENDGRID_API_KEY && process.env.SENDGRID_MAIL) {
-      console.log('Sending email via SendGrid to:', to);
-      const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${process.env.SENDGRID_API_KEY}`,
-        },
-        body: JSON.stringify({
-          personalizations: [{ to: [{ email: to }] }],
-          from: {
-            email: process.env.SENDGRID_MAIL,
-            name: 'Think - Global Ccoplex',
-          },
-          subject: subject,
-          content: [{ type: 'text/html', value: html }],
-        }),
-      });
-
-      if (!response.ok) {
-        const errText = await response.text();
-        console.error('SendGrid API error:', errText);
-        throw new Error(`SendGrid mail delivery failed: ${response.statusText}`);
-      }
-      return { success: true };
-    }
-
-    // 2. SMTP2GO integration fallback
     if (process.env.SMTP2GO_API_KEY && process.env.SMTP2GO_SENDER) {
-      console.log('Sending email via SMTP2GO to:', to);
+      console.log('Sending email via SMTP2GO API to:', to);
       const response = await fetch('https://api.smtp2go.com/v3/email/send', {
         method: 'POST',
         headers: {
@@ -57,7 +28,7 @@ export class MailService {
       return data;
     }
 
-    console.warn('No mail provider configured (SendGrid or SMTP2GO). Email not sent.');
+    console.warn('No mail provider configured (SMTP2GO). Email not sent.');
     return { skipped: true };
   }
 

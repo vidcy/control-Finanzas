@@ -1,4 +1,4 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { CategoriesService } from 'src/category/category.service';
@@ -46,7 +46,18 @@ export class UsersService {
     });
   }
   async listUser() {
-    return this.prisma.user.findMany();
+    return this.prisma.user.findMany({
+      select: {
+        id: true,
+        name: true,
+        lastName: true,
+        email: true,
+        role: true,
+        isActive: true,
+        profiles: true,
+        blockedProfiles: true,
+      }
+    });
   }
   async findUser(id: string) {
     return this.prisma.user.findUnique({
@@ -95,11 +106,22 @@ export class UsersService {
         role: true,
         isActive: true,
         profiles: true,
+        blockedProfiles: true,
       },
     });
   }
 
   async updateProfiles(id: string, profiles: string[]) {
+    const user = await this.prisma.user.findUnique({ where: { id }, select: { blockedProfiles: true } });
+    if (user?.blockedProfiles) {
+      const blocked = user.blockedProfiles as string[];
+      for (const p of profiles) {
+        if (blocked.includes(p)) {
+          throw new ForbiddenException("El módulo fue desabilitado, comuníquese con soporte-think@ccoplex.com o al 912509111");
+        }
+      }
+    }
+
     return this.prisma.user.update({
       where: { id },
       data: { profiles },

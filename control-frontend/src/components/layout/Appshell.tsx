@@ -37,7 +37,7 @@ import { FloatingSaveButton } from "../../pages/PiggPage";
 
 export default function FinanceAppShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
-  const { user, setUser, activeWorkspace, setActiveWorkspace } = useAuth();
+  const { user, setUser, activeWorkspace, setActiveWorkspace, logout } = useAuth();
   const location = useLocation();
 
   const [currentTime, setCurrentTime] = useState("");
@@ -64,7 +64,10 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
   );
   const [isSavingProfiles, setIsSavingProfiles] = useState(false);
 
+  const [profileError, setProfileError] = useState<string | null>(null);
+
   const handleToggleProfile = async (profile: string) => {
+    setProfileError(null);
     let updatedProfiles = [...activeProfiles];
     if (updatedProfiles.includes(profile)) {
       if (updatedProfiles.length === 1) {
@@ -79,10 +82,10 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
     } else {
       updatedProfiles.push(profile);
     }
-    
+
     setIsSavingProfiles(true);
     setActiveProfiles(updatedProfiles);
-    
+
     try {
       await updateUserProfilesRequest(updatedProfiles);
       // Update local storage and context
@@ -90,8 +93,12 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       setUser(updatedUser as any);
       localStorage.setItem("user", JSON.stringify(updatedUser));
       toast.success("Módulos actualizados correctamente");
-    } catch (error) {
-      toast.error("Error al actualizar módulos");
+    } catch (error: any) {
+      const errorMsg = error.message && error.message !== "Error al actualizar módulos"
+        ? error.message
+        : error?.response?.data?.message || "El módulo fue desabilitado, comuníquese con soporte-think@ccoplex.com o al 912509111";
+      setProfileError(errorMsg);
+      toast.error("No se puede actualizar este módulo", { duration: 6000 });
       setActiveProfiles(activeProfiles); // revert
     } finally {
       setIsSavingProfiles(false);
@@ -119,6 +126,20 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
     }
 
     if (targetWorkspace) {
+      if (user?.blockedProfiles?.includes(targetWorkspace)) {
+        toast.error("El módulo fue desabilitado, comuníquese con soporte-think@ccoplex.com o al 912509111", { duration: 5000 });
+        if (profiles.length === 1) {
+          const single = profiles[0];
+          setActiveWorkspace(single);
+          navigate(single === "BUSINESS" ? "/business-dashboard" : "/dashboard");
+        } else if (profiles.length > 1) {
+          navigate("/workspace-selection");
+        } else {
+          logout();
+        }
+        return;
+      }
+
       if (!profiles.includes(targetWorkspace)) {
         // Acceso denegado: Redirigir
         toast.error("No tienes acceso a este módulo");
@@ -129,12 +150,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
         } else if (profiles.length > 1) {
           navigate("/workspace-selection");
         } else {
-          localStorage.removeItem("token");
-          localStorage.removeItem("user");
-          localStorage.removeItem("activeWorkspace");
-          setUser(null);
-          setActiveWorkspace(null);
-          navigate("/login");
+          logout();
         }
         return;
       }
@@ -143,7 +159,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
         setActiveWorkspace(targetWorkspace);
       }
     }
-  }, [location.pathname, user?.profiles, activeWorkspace, navigate, setActiveWorkspace, setUser]);
+  }, [location.pathname, user?.profiles, user?.blockedProfiles, activeWorkspace, navigate, setActiveWorkspace, setUser, logout]);
 
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -205,14 +221,14 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
     },
     ...(user?.role === "ADMIN"
       ? [
-          {
-            name: "Usuarios",
-            path: "/users",
-            icon: Users,
-            color: "from-purple-400 to-purple-600",
-            bgActive: "bg-purple-50 text-purple-700",
-          },
-        ]
+        {
+          name: "Usuarios",
+          path: "/users",
+          icon: Users,
+          color: "from-purple-400 to-purple-600",
+          bgActive: "bg-purple-50 text-purple-700",
+        },
+      ]
       : []),
   ];
 
@@ -351,11 +367,10 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                 onClick={() => navigate(item.path)}
                 className={`
                                     w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all duration-300 ease-out group relative overflow-hidden
-                                    ${
-                                      active
-                                        ? `${item.bgActive} shadow-sm font-semibold`
-                                        : "text-gray-500 hover:bg-gray-100/80 hover:text-gray-900"
-                                    }
+                                    ${active
+                    ? `${item.bgActive} shadow-sm font-semibold`
+                    : "text-gray-500 hover:bg-gray-100/80 hover:text-gray-900"
+                  }
                                 `}
               >
                 {active && (
@@ -413,7 +428,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
             </button>
           </div>
         </div>
-        
+
         {/* COPYRIGHT INFO */}
         <div className="px-6 pb-4 text-center mt-auto">
           <p className="text-[10px] text-gray-400 font-medium tracking-wide">
@@ -502,7 +517,17 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
             <div className="bg-white border border-gray-100 p-6 rounded-3xl shadow-sm">
               <h3 className="text-base font-bold text-gray-800 mb-2">Módulos de tu Cuenta</h3>
               <p className="text-sm text-gray-500 mb-5">Activa o desactiva los módulos a los que tienes acceso.</p>
-              
+
+              {profileError && (
+                <div className="mb-4 bg-rose-50 border border-rose-200 text-rose-700 p-4 rounded-xl flex items-start gap-3 shadow-sm">
+                  <X className="w-5 h-5 flex-shrink-0 mt-0.5 text-rose-500" />
+                  <div>
+                    <h4 className="font-bold text-sm">Acción denegada</h4>
+                    <p className="text-xs mt-1">{profileError}</p>
+                  </div>
+                </div>
+              )}
+
               <div className="flex flex-col gap-4">
                 <label className="flex items-center justify-between p-4 rounded-xl border border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors">
                   <div className="flex items-center gap-3">
@@ -513,9 +538,9 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                     </div>
                   </div>
                   <div className="relative">
-                    <input 
-                      type="checkbox" 
-                      className="sr-only peer" 
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
                       checked={activeProfiles.includes("PERSONAL")}
                       onChange={() => handleToggleProfile("PERSONAL")}
                       disabled={isSavingProfiles}
@@ -533,9 +558,9 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                     </div>
                   </div>
                   <div className="relative">
-                    <input 
-                      type="checkbox" 
-                      className="sr-only peer" 
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
                       checked={activeProfiles.includes("BUSINESS")}
                       onChange={() => handleToggleProfile("BUSINESS")}
                       disabled={isSavingProfiles}
@@ -550,21 +575,20 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
             <div className="bg-white border border-gray-100 p-6 rounded-3xl shadow-sm">
               <h3 className="text-base font-bold text-gray-800 mb-2">Espacio de Trabajo Activo</h3>
               <p className="text-sm text-gray-500 mb-5">Selecciona el perfil que deseas usar en este momento. La plataforma se adaptará al entorno seleccionado.</p>
-              
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* Personal Card */}
                 {activeProfiles.includes("PERSONAL") && (
-                  <div 
+                  <div
                     onClick={() => {
                       setActiveWorkspace("PERSONAL");
                       navigate("/dashboard");
                       setIsProfileModalOpen(false);
                     }}
-                    className={`relative p-5 rounded-2xl cursor-pointer transition-all duration-300 border-2 overflow-hidden group ${
-                      activeWorkspace === "PERSONAL" 
-                        ? "border-blue-500 bg-blue-50 shadow-md shadow-blue-500/10" 
-                        : "border-gray-100 hover:border-blue-300 hover:bg-gray-50 opacity-60 hover:opacity-100"
-                    }`}
+                    className={`relative p-5 rounded-2xl cursor-pointer transition-all duration-300 border-2 overflow-hidden group ${activeWorkspace === "PERSONAL"
+                      ? "border-blue-500 bg-blue-50 shadow-md shadow-blue-500/10"
+                      : "border-gray-100 hover:border-blue-300 hover:bg-gray-50 opacity-60 hover:opacity-100"
+                      }`}
                   >
                     {activeWorkspace === "PERSONAL" && (
                       <div className="absolute top-4 right-4 text-blue-500">
@@ -581,17 +605,16 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
 
                 {/* Business Card */}
                 {activeProfiles.includes("BUSINESS") && (
-                  <div 
+                  <div
                     onClick={() => {
                       setActiveWorkspace("BUSINESS");
                       navigate("/business-dashboard");
                       setIsProfileModalOpen(false);
                     }}
-                    className={`relative p-5 rounded-2xl cursor-pointer transition-all duration-300 border-2 overflow-hidden group ${
-                      activeWorkspace === "BUSINESS" 
-                        ? "border-purple-500 bg-purple-50 shadow-md shadow-purple-500/10" 
-                        : "border-gray-100 hover:border-purple-300 hover:bg-gray-50 opacity-60 hover:opacity-100"
-                    }`}
+                    className={`relative p-5 rounded-2xl cursor-pointer transition-all duration-300 border-2 overflow-hidden group ${activeWorkspace === "BUSINESS"
+                      ? "border-purple-500 bg-purple-50 shadow-md shadow-purple-500/10"
+                      : "border-gray-100 hover:border-purple-300 hover:bg-gray-50 opacity-60 hover:opacity-100"
+                      }`}
                   >
                     {activeWorkspace === "BUSINESS" && (
                       <div className="absolute top-4 right-4 text-purple-500">
@@ -611,112 +634,112 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
             {/* CHANGE PASSWORD SIDE */}
             <div className="flex flex-col">
               <div className="flex items-center gap-2 mb-6">
-              <Settings className="w-5 h-5 text-indigo-500" />
-              <h3 className="text-lg font-bold text-gray-800">
-                Cambiar Contraseña
-              </h3>
+                <Settings className="w-5 h-5 text-indigo-500" />
+                <h3 className="text-lg font-bold text-gray-800">
+                  Cambiar Contraseña
+                </h3>
+              </div>
+
+              {passwordChanged && (
+                <div className="mb-6 bg-emerald-50 text-emerald-700 p-4 rounded-xl flex items-start gap-3 border border-emerald-100 animate-fade-in-up">
+                  <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-sm">
+                      ¡Contraseña actualizada!
+                    </p>
+                    <p className="text-xs text-emerald-600/80">
+                      Tu contraseña se ha cambiado correctamente.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <form onSubmit={handlePasswordSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                    Contraseña Actual
+                  </label>
+                  <div className="relative group">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                      <Key className="h-4 w-4 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
+                    </div>
+                    <input
+                      type="password"
+                      required
+                      className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder-gray-400"
+                      placeholder="••••••••"
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                      Nueva Contraseña
+                    </label>
+                    <div className="relative group">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                        <ShieldCheck className="h-4 w-4 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
+                      </div>
+                      <input
+                        type="password"
+                        required
+                        className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder-gray-400"
+                        placeholder="••••••••"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                      Confirmar Nueva
+                    </label>
+                    <div className="relative group">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                        <ShieldCheck className="h-4 w-4 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
+                      </div>
+                      <input
+                        type="password"
+                        required
+                        className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder-gray-400"
+                        placeholder="••••••••"
+                        value={confirmNewPassword}
+                        onChange={(e) => setConfirmNewPassword(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-4 flex justify-end gap-3 mt-6">
+                  <button
+                    type="button"
+                    onClick={() => setIsProfileModalOpen(false)}
+                    className="px-5 py-2.5 text-gray-600 font-medium hover:bg-gray-100 rounded-xl transition-colors text-sm"
+                  >
+                    Cerrar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={
+                      isSavingPassword ||
+                      !currentPassword ||
+                      !newPassword ||
+                      !confirmNewPassword
+                    }
+                    className="px-6 py-2.5 bg-indigo-600 text-white font-medium hover:bg-indigo-700 rounded-xl transition-all shadow-sm hover:shadow-indigo-500/30 text-sm flex items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+                  >
+                    {isSavingPassword ? (
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                    ) : (
+                      "Actualizar Contraseña"
+                    )}
+                  </button>
+                </div>
+              </form>
             </div>
-
-            {passwordChanged && (
-              <div className="mb-6 bg-emerald-50 text-emerald-700 p-4 rounded-xl flex items-start gap-3 border border-emerald-100 animate-fade-in-up">
-                <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-semibold text-sm">
-                    ¡Contraseña actualizada!
-                  </p>
-                  <p className="text-xs text-emerald-600/80">
-                    Tu contraseña se ha cambiado correctamente.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            <form onSubmit={handlePasswordSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                  Contraseña Actual
-                </label>
-                <div className="relative group">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                    <Key className="h-4 w-4 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
-                  </div>
-                  <input
-                    type="password"
-                    required
-                    className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder-gray-400"
-                    placeholder="••••••••"
-                    value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                    Nueva Contraseña
-                  </label>
-                  <div className="relative group">
-                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                      <ShieldCheck className="h-4 w-4 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
-                    </div>
-                    <input
-                      type="password"
-                      required
-                      className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder-gray-400"
-                      placeholder="••••••••"
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                    Confirmar Nueva
-                  </label>
-                  <div className="relative group">
-                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                      <ShieldCheck className="h-4 w-4 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
-                    </div>
-                    <input
-                      type="password"
-                      required
-                      className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder-gray-400"
-                      placeholder="••••••••"
-                      value={confirmNewPassword}
-                      onChange={(e) => setConfirmNewPassword(e.target.value)}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-4 flex justify-end gap-3 mt-6">
-                <button
-                  type="button"
-                  onClick={() => setIsProfileModalOpen(false)}
-                  className="px-5 py-2.5 text-gray-600 font-medium hover:bg-gray-100 rounded-xl transition-colors text-sm"
-                >
-                  Cerrar
-                </button>
-                <button
-                  type="submit"
-                  disabled={
-                    isSavingPassword ||
-                    !currentPassword ||
-                    !newPassword ||
-                    !confirmNewPassword
-                  }
-                  className="px-6 py-2.5 bg-indigo-600 text-white font-medium hover:bg-indigo-700 rounded-xl transition-all shadow-sm hover:shadow-indigo-500/30 text-sm flex items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
-                >
-                  {isSavingPassword ? (
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                  ) : (
-                    "Actualizar Contraseña"
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
           </div>
         </div>
       </Modal>

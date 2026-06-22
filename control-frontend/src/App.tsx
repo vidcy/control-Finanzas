@@ -10,7 +10,10 @@ function App() {
       <AuthProvider>
         <TransactionModalProvider>
           {/* 👈 Envuelve tu aplicación con el proveedor */}
-          <Toaster position="top-right" />
+          <Toaster 
+            position="top-right" 
+            containerStyle={{ zIndex: 99999 }} 
+          />
           <AppRoutes />
         </TransactionModalProvider>
       </AuthProvider>
