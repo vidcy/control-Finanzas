@@ -378,9 +378,9 @@ export default function ExpensesPage() {
           const { uploadReceiptFile } = await import("../components/ui/ImageUploader");
           finalReceiptUrl = await uploadReceiptFile(formData.receiptUrl);
           toast.dismiss(uploadToast);
-        } catch (uploadError) {
+        } catch (uploadError: any) {
           toast.dismiss(uploadToast);
-          toast.error("Error al subir el comprobante");
+          toast.error(uploadError.message || "Error al subir el comprobante");
           setSaving(false);
           return;
         }

@@ -39,21 +39,29 @@ export function getReceiptAbsoluteUrl(
 // Helpers: Deferred upload execution functions
 // ─────────────────────────────────────────────────────────
 export const uploadReceiptFile = async (file: File): Promise<string> => {
-  const formData = new FormData();
-  formData.append("file", file);
-  const res = await axios.post("/upload/receipt", formData, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
-  return res.data.url;
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await axios.post("/upload/receipt", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return res.data.url;
+  } catch (error: any) {
+    throw new Error(error?.response?.data?.message || "Error al subir el comprobante");
+  }
 };
 
 export const uploadProductImageFile = async (file: File): Promise<string> => {
-  const formData = new FormData();
-  formData.append("file", file);
-  const res = await axios.post("/upload/product-image", formData, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
-  return res.data.url;
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await axios.post("/upload/product-image", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return res.data.url;
+  } catch (error: any) {
+    throw new Error(error?.response?.data?.message || "Error al subir la imagen del producto");
+  }
 };
 
 // ─────────────────────────────────────────────────────────

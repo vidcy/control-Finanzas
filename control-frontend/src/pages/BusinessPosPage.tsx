@@ -168,9 +168,9 @@ export default function BusinessPosPage() {
             await import("../components/ui/ImageUploader");
           finalReceiptUrl = await uploadReceiptFile(editReceiptUrl);
           toast.dismiss(uploadToast);
-        } catch {
+        } catch (error: any) {
           toast.dismiss(uploadToast);
-          toast.error("Error al subir el comprobante");
+          toast.error(error.message || "Error al subir el comprobante");
           return;
         }
       }
@@ -189,8 +189,8 @@ export default function BusinessPosPage() {
       toast.success("Venta actualizada correctamente");
       setEditSale(null);
       loadSales();
-    } catch {
-      toast.error("Error al actualizar la venta");
+    } catch (err: any) {
+      toast.error(err.message || "Error al actualizar la venta");
     }
   };
 
@@ -379,9 +379,9 @@ export default function BusinessPosPage() {
             await import("../components/ui/ImageUploader");
           finalReceiptUrl = await uploadReceiptFile(receiptUrl);
           toast.dismiss(uploadToast);
-        } catch (err) {
+        } catch (err: any) {
           toast.dismiss(uploadToast);
-          toast.error("Error al subir el comprobante");
+          toast.error(err.message || "Error al subir el comprobante");
           setIsProcessing(false);
           return; // Detenemos el proceso si la subida falla
         }
