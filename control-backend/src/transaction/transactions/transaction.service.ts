@@ -28,7 +28,7 @@ export class TransactionService {
         userId,
         type: dto.type,
         categoryId: dto.categoryId,
-        subCategoryId: dto.subCategoryId || null,
+        subCategoryId: dto.subCategoryId === '' ? null : (dto.subCategoryId || null),
 
         // 🔥 SIEMPRE UTC
         date: dto.date ? new Date(dto.date) : new Date(),
@@ -114,7 +114,7 @@ export class TransactionService {
       where: { id },
       data: {
         ...(dto.categoryId && { categoryId: dto.categoryId }),
-        subCategoryId: dto.subCategoryId,
+        subCategoryId: dto.subCategoryId === '' ? null : dto.subCategoryId,
 
         // 🔥 IMPORTANTE: convertir string ISO → Date
         ...(dto.date && { date: new Date(dto.date) }),

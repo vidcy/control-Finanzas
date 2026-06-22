@@ -19,10 +19,13 @@ import CategoriesPage from "../pages/CategoriesPage";
 import PendingPage from "../pages/PendingPage";
 import BusinessHistoryPage from "../pages/BusinessHistoryPage";
 
+import LandingPage from "../pages/LandingPage";
+
 export default function AppRoutes() {
   return (
     <Routes>
       {/* ruta pública */}
+      <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/forgot-password" element={<RecoverPasswordPage />} />

@@ -29,7 +29,7 @@ export class PendingTransactionService {
         userId,
         type: dto.type,
         categoryId: dto.categoryId,
-        subCategoryId: dto.subCategoryId || null,
+        subCategoryId: dto.subCategoryId === '' ? null : (dto.subCategoryId || null),
 
         // 🔥 IMPORTANTE: fechas llegan en UTC → guardar tal cual
         date: new Date(dto.date),
@@ -126,7 +126,7 @@ export class PendingTransactionService {
       where: { id },
       data: {
         ...(dto.categoryId && { categoryId: dto.categoryId }),
-        subCategoryId: dto.subCategoryId,
+        subCategoryId: dto.subCategoryId === '' ? null : dto.subCategoryId,
 
         ...(dto.date && { date: new Date(dto.date) }),
         ...(dto.dueDate && { dueDate: new Date(dto.dueDate) }),
