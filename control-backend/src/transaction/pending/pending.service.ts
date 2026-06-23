@@ -4,10 +4,14 @@ import { CreatePendingTransactionDto } from './create-pending.dto';
 import { UpdatePendingTransactionDto } from './update-pending.dto';
 import { MarkAsPaidDto } from './mark-pending.dto';
 import { Currency, TransactionStatus, TransactionType } from '@prisma/client';
+import { FilesService } from '../../files/files.service';
 
 @Injectable()
 export class PendingTransactionService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private filesService: FilesService,
+  ) {}
 
   // =========================================================
   // CREATE
@@ -122,6 +126,10 @@ export class PendingTransactionService {
       amountSoles = isUSD ? amount * (exchangeRate || 1) : amount;
     }
 
+    if (dto.receiptUrl !== undefined && dto.receiptUrl !== existing.receiptUrl && existing.receiptUrl) {
+      await this.filesService.deleteFile(existing.receiptUrl);
+    }
+
     return this.prisma.transaction.update({
       where: { id },
       data: {
@@ -149,9 +157,14 @@ export class PendingTransactionService {
   // DELETE
   // =========================================================
   async deletePendingTransaction(id: string) {
-    return this.prisma.transaction.delete({
+    const existing = await this.getPendingTransactionDetails(id);
+    const result = await this.prisma.transaction.delete({
       where: { id },
     });
+    if (existing.receiptUrl) {
+      await this.filesService.deleteFile(existing.receiptUrl);
+    }
+    return result;
   }
 
   // =========================================================

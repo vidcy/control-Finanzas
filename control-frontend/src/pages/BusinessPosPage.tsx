@@ -104,6 +104,10 @@ export default function BusinessPosPage() {
   const [activeShift, setActiveShift] = useState<any>(null);
   const [receiptUrl, setReceiptUrl] = useState<string | File | null>(null);
 
+  // Checkout payment states
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [amountPaid, setAmountPaid] = useState("");
+
   // Venta Libre Modal
   const [isCustomSaleOpen, setIsCustomSaleOpen] = useState(false);
   const [customSaleData, setCustomSaleData] = useState({
@@ -352,6 +356,20 @@ export default function BusinessPosPage() {
     0,
   );
 
+  const handleOpenCheckoutModal = () => {
+    if (!activeShift) {
+      toast.error("Debes ABRIR CAJA antes de poder registrar ventas.");
+      return;
+    }
+    if (cart.length === 0) return;
+    if (!selectedCategory) {
+      toast.error("Selecciona una Categoría de Ingreso");
+      return;
+    }
+    setAmountPaid(total.toString());
+    setIsCheckoutOpen(true);
+  };
+
   const handleCheckout = async () => {
     // 1. Validaciones iniciales de negocio
     if (!activeShift) {
@@ -361,6 +379,13 @@ export default function BusinessPosPage() {
     if (cart.length === 0) return;
     if (!selectedCategory) {
       toast.error("Selecciona una Categoría de Ingreso");
+      return;
+    }
+
+    // Validar abono si es efectivo
+    const parsedPaid = paymentMethod === "CASH" ? Number(amountPaid) : total;
+    if (paymentMethod === "CASH" && parsedPaid < total) {
+      toast.error("El monto recibido no es suficiente para cubrir el total.");
       return;
     }
 
@@ -408,6 +433,7 @@ export default function BusinessPosPage() {
       toast.success("¡Venta completada con éxito!");
 
       // 4. Actualización del estado para el ticket
+      const changeDue = parsedPaid - total;
       setLastSale({
         items: [...cart],
         total,
@@ -415,11 +441,14 @@ export default function BusinessPosPage() {
         date: new Date(),
         txId: txResult?.transactionId || `TX-${Date.now()}`,
         receiptUrl: finalReceiptUrl,
+        amountPaid: parsedPaid,
+        changeDue: changeDue > 0 ? changeDue : 0,
       });
 
       // 5. Limpieza de estados
       setCart([]);
       setReceiptUrl(null);
+      setIsCheckoutOpen(false);
       setShowTicket(true);
       loadData();
     } catch (error: any) {
@@ -585,7 +614,7 @@ export default function BusinessPosPage() {
                 THINK
               </div>
               <div style={{ fontSize: "10px", color: "#666" }}>
-                Ticket de Venta / App Financiera
+                Ticket de Venta
               </div>
               <div
                 style={{ borderBottom: "1px dashed #ccc", margin: "8px 0" }}
@@ -680,11 +709,41 @@ export default function BusinessPosPage() {
                 justifyContent: "space-between",
                 fontWeight: 900,
                 fontSize: "16px",
+                marginBottom: "4px"
               }}
             >
               <span>TOTAL</span>
               <span>S/ {lastSale.total.toFixed(2)}</span>
             </div>
+
+            {lastSale.paymentMethod === "CASH" && (
+              <>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    fontSize: "10px",
+                    color: "#555"
+                  }}
+                >
+                  <span>EFECTIVO RECIBIDO</span>
+                  <span>S/ {(lastSale.amountPaid || lastSale.total).toFixed(2)}</span>
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    fontSize: "10px",
+                    fontWeight: 700,
+                    color: "#111",
+                    marginTop: "2px"
+                  }}
+                >
+                  <span>VUELTO</span>
+                  <span>S/ {(lastSale.changeDue || 0).toFixed(2)}</span>
+                </div>
+              </>
+            )}
 
             <div
               style={{
@@ -695,8 +754,8 @@ export default function BusinessPosPage() {
               }}
             >
               <div>¡Gracias por tu preferencia!</div>
-              <div style={{ fontSize: "8px", color: "#999", marginTop: "4px" }}>
-                Boleta o Factura
+              <div style={{ fontSize: "5px", color: "#999", marginTop: "4px" }}>
+                Solicita tu Boleta o Factura
               </div>
               <div
                 style={{
@@ -859,8 +918,8 @@ export default function BusinessPosPage() {
                     </h4>
 
                     {!item.isCustom &&
-                    item.presentations &&
-                    item.presentations.length > 0 ? (
+                      item.presentations &&
+                      item.presentations.length > 0 ? (
                       <select
                         value={item.presentationId || ""}
                         onChange={(e) => {
@@ -875,10 +934,10 @@ export default function BusinessPosPage() {
                             cart.map((c, i) =>
                               i === index
                                 ? {
-                                    ...c,
-                                    presentationId: presId || undefined,
-                                    salePrice: newPrice,
-                                  }
+                                  ...c,
+                                  presentationId: presId || undefined,
+                                  salePrice: newPrice,
+                                }
                                 : c,
                             ),
                           );
@@ -990,32 +1049,15 @@ export default function BusinessPosPage() {
               </span>
             </div>
 
-            {/* Receipt upload */}
-            {paymentMethod !== "CASH" && (
-              <div>
-                <ReceiptUploader
-                  currentImageUrl={receiptUrl}
-                  onUploadSuccess={(url) => setReceiptUrl(url)}
-                  onClear={() => setReceiptUrl(null)}
-                  label="Comprobante de Pago"
-                />
-              </div>
-            )}
-
             <button
-              onClick={handleCheckout}
-              disabled={cart.length === 0 || isProcessing || !activeShift}
-              className={`w-full py-4 rounded-2xl font-black text-lg flex items-center justify-center gap-2 transition-all ${
-                cart.length === 0 || !activeShift
-                  ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                  : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-xl shadow-indigo-200 hover:-translate-y-1"
-              }`}
+              onClick={handleOpenCheckoutModal}
+              disabled={cart.length === 0 || !activeShift}
+              className={`w-full py-4 rounded-2xl font-black text-lg flex items-center justify-center gap-2 transition-all ${cart.length === 0 || !activeShift
+                ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-xl shadow-indigo-200 hover:-translate-y-1"
+                }`}
             >
-              {isProcessing ? (
-                <div className="w-6 h-6 border-4 border-white/30 border-t-white rounded-full animate-spin"></div>
-              ) : (
-                "Cobrar Venta"
-              )}
+              Cobrar Venta
             </button>
 
             <button
@@ -1122,7 +1164,7 @@ export default function BusinessPosPage() {
               <div className="text-center mb-4">
                 <div className="font-black text-base">THINK</div>
                 <div className="text-[10px] text-gray-500">
-                  Ticket de Venta / App Financiera
+                  Ticket de Venta
                 </div>
                 <div className="border-b border-dashed border-gray-300 my-3"></div>
                 <div className="flex justify-between text-[10px] mb-1">
@@ -1165,15 +1207,28 @@ export default function BusinessPosPage() {
 
               <div className="border-b border-dashed border-gray-300 my-3"></div>
 
-              <div className="flex justify-between font-black text-sm mb-4">
+              <div className="flex justify-between font-black text-sm mb-2">
                 <span>TOTAL</span>
                 <span>S/ {lastSale.total.toFixed(2)}</span>
               </div>
 
+              {lastSale.paymentMethod === "CASH" && (
+                <div className="space-y-1 text-[10px] text-gray-600 border-t border-dashed border-gray-200 pt-2 mb-2">
+                  <div className="flex justify-between">
+                    <span>Efectivo Recibido:</span>
+                    <span className="font-bold">S/ {(lastSale.amountPaid || lastSale.total).toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-gray-900 font-bold">
+                    <span>Vuelto:</span>
+                    <span className="font-black text-xs text-emerald-600">S/ {(lastSale.changeDue || 0).toFixed(2)}</span>
+                  </div>
+                </div>
+              )}
+
               <div className="text-center text-gray-500 pt-2 border-t border-dashed border-gray-200">
                 <div className="text-[10px]">¡Gracias por tu preferencia!</div>
-                <div className="text-[8px] text-gray-400 mt-0.5">
-                  Boleta o Factura
+                <div className="text-[5px] text-gray-400 mt-0.5">
+                  Solicita tu Boleta o Factura
                 </div>
                 <div className="text-[8px] font-bold text-gray-700 mt-2">
                   Global Ccoplex
@@ -1212,6 +1267,186 @@ export default function BusinessPosPage() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* MODAL: CHECKOUT & CALCULADORA DE VUELTO */}
+      <Modal
+        isOpen={isCheckoutOpen}
+        onClose={() => {
+          if (!isProcessing) {
+            setIsCheckoutOpen(false);
+          }
+        }}
+        title="💰 Confirmación de Pago y Vuelto"
+      >
+        <div className="space-y-6 mt-2">
+          {/* TOTAL CARD */}
+          <div className="bg-gradient-to-br from-indigo-50 to-indigo-100/50 border border-indigo-100 rounded-[1.5rem] p-6 text-center shadow-inner relative overflow-hidden">
+            <p className="text-xs font-bold text-indigo-500 uppercase tracking-widest mb-1">Total a Pagar</p>
+            <h3 className="text-4xl font-black text-indigo-900 tracking-tight">S/ {total.toFixed(2)}</h3>
+          </div>
+
+          {/* PAYMENT METHOD SELECTOR INSIDE MODAL */}
+          <div className="space-y-2">
+            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">Método de Pago</label>
+            <div className="grid grid-cols-5 gap-2">
+              {[
+                { id: "CASH", icon: Banknote, label: "Efectivo" },
+                { id: "YAPE", icon: Smartphone, label: "Yape" },
+                { id: "PLIN", icon: Smartphone, label: "Plin" },
+                { id: "CARD", icon: CreditCard, label: "Tarjeta" },
+                { id: "TRANSFER", icon: Landmark, label: "Transf." },
+              ].map((method) => (
+                <button
+                  key={method.id}
+                  type="button"
+                  onClick={() => {
+                    setPaymentMethod(method.id);
+                    if (method.id === "CASH") {
+                      setAmountPaid(total.toString());
+                    }
+                  }}
+                  className={`flex flex-col items-center gap-1 p-3 rounded-xl border transition-all ${paymentMethod === method.id ? "bg-indigo-600 text-white border-indigo-600 shadow-md scale-[1.02]" : "bg-white text-gray-500 border-gray-200 hover:border-indigo-300"}`}
+                >
+                  <method.icon className="w-5 h-5" />
+                  <span className="text-[9px] font-black uppercase">{method.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* DYNAMIC VIEW FOR CASH (WITH CHANGE CALCULATOR) */}
+          {paymentMethod === "CASH" ? (
+            <div className="space-y-4 border-t border-gray-100 pt-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Paga Con (Monto Recibido)</label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-lg">S/</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                    value={amountPaid}
+                    onChange={(e) => setAmountPaid(e.target.value)}
+                    className="w-full pl-10 pr-4 py-3.5 border-2 border-gray-200 rounded-2xl focus:border-indigo-500 outline-none text-2xl font-black text-gray-800 transition-all shadow-sm"
+                  />
+                </div>
+              </div>
+
+              {/* QUICK CASH OPTIONS */}
+              <div className="space-y-2">
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Atajos de efectivo rápido</span>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAmountPaid(total.toString())}
+                    className={`px-4 py-2 border rounded-xl text-xs font-black transition-all ${Number(amountPaid) === total ? "bg-indigo-50 border-indigo-200 text-indigo-700 font-extrabold" : "bg-white border-gray-200 text-gray-600 hover:border-gray-300"}`}
+                  >
+                    Exacto
+                  </button>
+                  {(() => {
+                    const options = [10, 20, 50, 100, 200];
+                    const nextTen = Math.ceil(total / 10) * 10;
+                    const items: number[] = [];
+                    if (nextTen > total) items.push(nextTen);
+                    options.forEach(o => {
+                      if (o > total && !items.includes(o)) items.push(o);
+                    });
+                    return items.sort((a,b)=>a-b).slice(0, 4).map((opt) => (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => setAmountPaid(opt.toString())}
+                        className={`px-4 py-2 border rounded-xl text-xs font-black transition-all ${Number(amountPaid) === opt ? "bg-indigo-50 border-indigo-200 text-indigo-700 font-extrabold" : "bg-white border-gray-200 text-gray-600 hover:border-gray-300"}`}
+                      >
+                        S/ {opt}
+                      </button>
+                    ));
+                  })()}
+                </div>
+              </div>
+
+              {/* VUELTO DISPLAY */}
+              {(() => {
+                const paidNum = Number(amountPaid) || 0;
+                const change = paidNum - total;
+                if (paidNum >= total) {
+                  return (
+                    <div className="bg-emerald-50 border-2 border-emerald-100 rounded-2xl p-4 flex items-center justify-between shadow-sm animate-in fade-in slide-in-from-top-1 duration-200">
+                      <div>
+                        <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mb-0.5">Vuelto a entregar</p>
+                        <p className="text-xs font-bold text-emerald-700/80">Pago completo</p>
+                      </div>
+                      <p className="text-3xl font-black text-emerald-600 tracking-tight">S/ {change.toFixed(2)}</p>
+                    </div>
+                  );
+                } else {
+                  return (
+                    <div className="bg-rose-50 border-2 border-rose-100 rounded-2xl p-4 flex items-center justify-between shadow-sm animate-in fade-in slide-in-from-top-1 duration-200">
+                      <div>
+                        <p className="text-[10px] font-bold text-rose-600 uppercase tracking-widest mb-0.5">Monto Insuficiente</p>
+                        <p className="text-xs font-bold text-rose-700/80">Por favor completa el pago</p>
+                      </div>
+                      <p className="text-xl font-black text-rose-600 tracking-tight">Falta S/ {(total - paidNum).toFixed(2)}</p>
+                    </div>
+                  );
+                }
+              })()}
+            </div>
+          ) : (
+            /* PAYMENT RECEIPT FOR ELECTRONIC PAYMENTS */
+            <div className="space-y-4 border-t border-gray-100 pt-4">
+              <div className="bg-blue-50 border-2 border-blue-100 rounded-2xl p-4 text-blue-800 text-xs font-medium flex flex-col gap-1.5 shadow-sm">
+                <p className="font-bold flex items-center gap-1.5 uppercase text-[10px] tracking-wider text-blue-700">
+                  <Smartphone className="w-3.5 h-3.5" /> Pago Digital ({paymentLabel[paymentMethod] || paymentMethod})
+                </p>
+                <p className="text-blue-600">Se asume el cobro del monto exacto de **S/ {total.toFixed(2)}** en las cuentas de la empresa.</p>
+              </div>
+
+              <div>
+                <ReceiptUploader
+                  currentImageUrl={receiptUrl}
+                  onUploadSuccess={(url) => setReceiptUrl(url)}
+                  onClear={() => setReceiptUrl(null)}
+                  label="Voucher de Pago (Opcional)"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* FOOTER ACTIONS */}
+          <div className="pt-4 flex justify-end gap-3 border-t border-gray-100">
+            <button
+              type="button"
+              disabled={isProcessing}
+              onClick={() => setIsCheckoutOpen(false)}
+              className="px-5 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200 transition-colors text-sm"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleCheckout}
+              disabled={isProcessing || (paymentMethod === "CASH" && (Number(amountPaid) || 0) < total)}
+              className={`px-6 py-3 text-white font-black rounded-xl transition-all text-sm flex items-center gap-2 shadow-lg ${
+                paymentMethod === "CASH" && (Number(amountPaid) || 0) < total
+                  ? "bg-gray-300 text-gray-500 cursor-not-allowed shadow-none"
+                  : "bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200 hover:-translate-y-0.5 active:scale-95"
+              }`}
+            >
+              {isProcessing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" /> Procesando...
+                </>
+              ) : (
+                <>
+                  <ShoppingCart className="w-4 h-4" /> Finalizar Venta
+                </>
+              )}
+            </button>
+          </div>
+        </div>
       </Modal>
 
       {/* MODAL: HISTORIAL DE VENTAS POS */}

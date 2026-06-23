@@ -4,10 +4,14 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { FilesService } from '../files/files.service';
 
 @Injectable()
 export class ProductsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private filesService: FilesService,
+  ) {}
 
   async create(userId: string, data: any) {
     const { presentations, unit, ...productData } = data;
@@ -215,6 +219,10 @@ export class ProductsService {
         });
       }
 
+      if (updateData.imageUrl !== undefined && updateData.imageUrl !== product.imageUrl && product.imageUrl) {
+        await this.filesService.deleteFile(product.imageUrl);
+      }
+
       await tx.product.update({
         where: { id },
         data: updateData,
@@ -240,9 +248,15 @@ export class ProductsService {
       );
     }
 
-    return this.prisma.product.delete({
+    const result = await this.prisma.product.delete({
       where: { id },
     });
+
+    if (product.imageUrl) {
+      await this.filesService.deleteFile(product.imageUrl);
+    }
+
+    return result;
   }
 
   /**

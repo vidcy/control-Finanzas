@@ -656,7 +656,7 @@ export default function ExpensesPage() {
                       </td>
                       <td className="p-5 text-center text-xs font-bold text-gray-400">
                         {exp.currency === "USD"
-                          ? (exp.exchangeRate || 1).toFixed(2)
+                          ? (exp.exchangeRate || 1).toFixed(3)
                           : "-"}
                       </td>
                       <td className="p-5 text-right font-black text-rose-600">
@@ -1211,10 +1211,10 @@ export default function ExpensesPage() {
                   </div>
 
                   <div className="pt-2">
-                    <ImageUploader 
+                    <ImageUploader
                       currentImageUrl={formData.receiptUrl}
-                      onUploadSuccess={(url) => setFormData({...formData, receiptUrl: url})}
-                      onClear={() => setFormData({...formData, receiptUrl: null})}
+                      onUploadSuccess={(url) => setFormData({ ...formData, receiptUrl: url })}
+                      onClear={() => setFormData({ ...formData, receiptUrl: null })}
                       label="Comprobante / Voucher"
                     />
                   </div>

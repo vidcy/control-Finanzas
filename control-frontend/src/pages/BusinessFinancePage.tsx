@@ -3,6 +3,9 @@ import Appshell from "../components/layout/Appshell";
 import {
   getTransactionsRequest,
   createTransactionRequest,
+  updateTransactionRequest,
+  deleteTransactionRequest,
+  markAsPendingRequest,
 } from "../services/transaction.api";
 import { listCategoriesRequest } from "../services/category.api";
 import {
@@ -13,12 +16,18 @@ import {
   FileText,
   TrendingUp,
   TrendingDown,
+  Edit,
+  Trash2,
+  RotateCcw,
+  Search,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
 import { format } from "date-fns";
 import BusinessAiAdvisor from "../components/dashboard/BusinessAiAdvisor";
 import ImageUploader, { getReceiptAbsoluteUrl } from "../components/ui/ImageUploader";
+import DateRangePicker from "../components/ui/DateRangePicker";
+
 
 export default function BusinessFinancePage() {
   const [transactions, setTransactions] = useState<any[]>([]);
@@ -26,6 +35,16 @@ export default function BusinessFinancePage() {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [type, setType] = useState<"INCOME" | "EXPENSE">("EXPENSE");
+  
+  // Edit & Revert States
+  const [editingTransaction, setEditingTransaction] = useState<any>(null);
+
+  // Filter States
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterType, setFilterType] = useState<"ALL" | "INCOME" | "EXPENSE">("ALL");
+  const [filterCategory, setFilterCategory] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const [formData, setFormData] = useState({
     name: "",
@@ -35,7 +54,10 @@ export default function BusinessFinancePage() {
     paymentMethod: "CASH",
     description: "",
     receiptUrl: null as string | File | null,
+    currency: "PEN" as "PEN" | "USD",
+    exchangeRate: 1,
   });
+
 
   const loadData = async () => {
     try {
@@ -59,10 +81,10 @@ export default function BusinessFinancePage() {
 
   const totalCapitalInjected = transactions
     .filter((t) => t.type === "INCOME")
-    .reduce((acc, t) => acc + t.amount, 0);
+    .reduce((acc, t) => acc + (t.currency === "USD" ? t.amount * (t.exchangeRate || 1) : t.amount), 0);
   const totalOpex = transactions
     .filter((t) => t.type === "EXPENSE")
-    .reduce((acc, t) => acc + t.amount, 0);
+    .reduce((acc, t) => acc + (t.currency === "USD" ? t.amount * (t.exchangeRate || 1) : t.amount), 0);
   const liquidCash = totalCapitalInjected - totalOpex;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -87,24 +109,37 @@ export default function BusinessFinancePage() {
         }
       }
 
-      await createTransactionRequest({
+      const txPayload = {
         name:
           formData.name ||
           (type === "INCOME" ? "Inyección de Capital" : "Gasto Operativo"),
-        type,
         amount: formData.amount,
         categoryId: formData.categoryId,
         subCategoryId: formData.subCategoryId || null,
-        date: new Date().toISOString(),
-        status: "PAID",
-        currency: "PEN",
         paymentMethod: formData.paymentMethod,
         description: formData.description,
-        workspace: "BUSINESS",
-        receiptUrl: (finalReceiptUrl || undefined) as any,
-      } as any);
-      toast.success("Operación registrada con éxito");
+        receiptUrl: (finalReceiptUrl || null) as any,
+        currency: formData.currency,
+        exchangeRate: formData.currency === "USD" ? formData.exchangeRate : 1,
+        date: editingTransaction ? new Date(editingTransaction.date) : new Date(),
+      };
+
+      if (editingTransaction) {
+        await updateTransactionRequest(editingTransaction.id, txPayload);
+        toast.success("Operación actualizada con éxito");
+      } else {
+        await createTransactionRequest({
+          ...txPayload,
+          type,
+          status: "PAID",
+          workspace: "BUSINESS",
+          date: txPayload.date.toISOString(),
+        } as any);
+        toast.success("Operación registrada con éxito");
+      }
+
       setIsModalOpen(false);
+      setEditingTransaction(null);
       setFormData({
         name: "",
         amount: 0,
@@ -113,12 +148,71 @@ export default function BusinessFinancePage() {
         paymentMethod: "CASH",
         description: "",
         receiptUrl: null,
+        currency: "PEN",
+        exchangeRate: 1,
       });
       loadData();
     } catch (error) {
-      toast.error("Error al registrar operación");
+      toast.error(editingTransaction ? "Error al actualizar operación" : "Error al registrar operación");
     }
   };
+
+  const handleEditClick = (t: any) => {
+    setEditingTransaction(t);
+    setType(t.type);
+    setFormData({
+      name: t.name || "",
+      amount: t.amount || 0,
+      categoryId: t.categoryId || "",
+      subCategoryId: t.subCategoryId || "",
+      paymentMethod: t.paymentMethod || "CASH",
+      description: t.description || "",
+      receiptUrl: t.receiptUrl || null,
+      currency: t.currency || "PEN",
+      exchangeRate: t.exchangeRate || 1,
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm("¿Estás seguro de eliminar esta transacción de forma permanente?")) return;
+    try {
+      await deleteTransactionRequest(id);
+      toast.success("Operación eliminada con éxito");
+      loadData();
+    } catch (error) {
+      toast.error("Error al eliminar la operación");
+    }
+  };
+
+  const handleRevertToPending = async (id: string) => {
+    if (!window.confirm("¿Estás seguro de devolver esta transacción a cuentas pendientes?")) return;
+    try {
+      await markAsPendingRequest(id, { status: "PENDING" });
+      toast.success("Movimiento devuelto a cuentas pendientes");
+      loadData();
+    } catch (error) {
+      toast.error("Error al devolver a cuentas pendientes");
+    }
+  };
+
+  const filteredTransactions = transactions.filter((t) => {
+    const concept = (t.name || t.description || "Movimiento Financiero").toLowerCase();
+    const desc = (t.description || "").toLowerCase();
+    const search = searchTerm.toLowerCase();
+    const matchesSearch = !searchTerm || concept.includes(search) || desc.includes(search);
+
+    const matchesType = filterType === "ALL" || t.type === filterType;
+
+    const matchesCategory = !filterCategory || t.categoryId === filterCategory;
+
+    const day = (t.date || "").slice(0, 10);
+    const matchesDateFrom = !dateFrom || day >= dateFrom;
+    const matchesDateTo = !dateTo || day <= dateTo;
+
+    return matchesSearch && matchesType && matchesCategory && matchesDateFrom && matchesDateTo;
+  });
+
 
   const filteredCategories = categories.filter(
     (c) => c.type === type && !c.parentId,
@@ -221,12 +315,82 @@ export default function BusinessFinancePage() {
 
             {/* HISTORY */}
             <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
-              <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-                <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-indigo-500" /> Historial de
-                  Tesorería
-                </h3>
+              {/* FILTER PANEL */}
+              <div className="p-6 border-b border-gray-100 bg-gray-50/50 space-y-4">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                  <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                    <FileText className="w-5 h-5 text-indigo-500" /> Historial de
+                    Tesorería
+                  </h3>
+                  <div className="text-xs font-semibold text-gray-500 bg-white border border-gray-100 px-3 py-1.5 rounded-xl shadow-sm">
+                    Mostrando {filteredTransactions.length} de {transactions.length} registros
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                  {/* Search */}
+                  <div className="md:col-span-4 flex items-center bg-white border border-gray-200 rounded-xl px-3 py-2 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 transition-all">
+                    <Search className="w-4 h-4 text-gray-400 mr-2 shrink-0" />
+                    <input
+                      type="text"
+                      placeholder="Buscar por concepto o descripción..."
+                      className="w-full text-xs outline-none bg-transparent"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                  </div>
+
+                  {/* Type Filter Buttons */}
+                  <div className="md:col-span-4 flex bg-white border border-gray-200 rounded-xl p-1 shadow-sm gap-1">
+                    {(["ALL", "INCOME", "EXPENSE"] as const).map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setFilterType(t)}
+                        className={`flex-1 py-1.5 px-2 rounded-lg text-[10px] font-bold transition-all ${
+                          filterType === t
+                            ? "bg-indigo-600 text-white shadow-sm"
+                            : "text-gray-500 hover:bg-gray-50"
+                        }`}
+                      >
+                        {t === "ALL" ? "Todos" : t === "INCOME" ? "Ingresos" : "Egresos"}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Category Filter */}
+                  <div className="md:col-span-4">
+                    <select
+                      value={filterCategory}
+                      onChange={(e) => setFilterCategory(e.target.value)}
+                      className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2.5 shadow-sm text-xs font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-indigo-500 transition-all cursor-pointer"
+                    >
+                      <option value="">Todas las categorías</option>
+                      {categories
+                        .filter((c) => !c.parentId)
+                        .map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name} ({c.type === "INCOME" ? "Ingreso" : "Egreso"})
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-gray-200/50">
+                  <DateRangePicker
+                    dateFrom={dateFrom}
+                    dateTo={dateTo}
+                    onDateFromChange={setDateFrom}
+                    onDateToChange={setDateTo}
+                    onClear={() => {
+                      setDateFrom("");
+                      setDateTo("");
+                    }}
+                  />
+                </div>
               </div>
+
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
                   <thead className="bg-gray-50/50 text-gray-500 uppercase text-xs font-semibold">
@@ -236,25 +400,30 @@ export default function BusinessFinancePage() {
                       <th className="px-6 py-4">Categoría</th>
                       <th className="px-6 py-4">Método</th>
                       <th className="px-6 py-4 text-center">Comprobante</th>
-                      <th className="px-6 py-4 text-right">Monto</th>
+                      <th className="px-6 py-4 text-center">Moneda</th>
+                      <th className="px-6 py-4 text-center">T.C.</th>
+                      <th className="px-6 py-4 text-right">Monto Original</th>
+                      <th className="px-6 py-4 text-right">Total (Soles)</th>
+                      <th className="px-6 py-4 text-center">Acciones</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {transactions.length === 0 ? (
+                    {filteredTransactions.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={6}
-                          className="px-6 py-10 text-center text-gray-400"
+                          colSpan={10}
+                          className="px-6 py-10 text-center text-gray-400 font-medium"
                         >
-                          No hay movimientos registrados en la tesorería del
-                          negocio.
+                          {transactions.length === 0
+                            ? "No hay movimientos registrados en la tesorería del negocio."
+                            : "No hay movimientos que coincidan con los filtros aplicados."}
                         </td>
                       </tr>
                     ) : (
-                      transactions.map((t) => (
+                      filteredTransactions.map((t) => (
                         <tr
                           key={t.id}
-                          className="hover:bg-gray-50/50 transition-colors"
+                          className="hover:bg-gray-50/50 transition-colors group"
                         >
                           <td className="px-6 py-4 text-gray-500 font-medium">
                             {format(new Date(t.date), "dd MMM, yyyy")}
@@ -300,11 +469,47 @@ export default function BusinessFinancePage() {
                               </span>
                             )}
                           </td>
+                          <td className="px-6 py-4 text-center">
+                            <span className="text-[10px] font-black bg-gray-100 text-gray-500 px-2 py-1 rounded-md">
+                              {t.currency || "PEN"}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-center text-xs text-gray-400 font-bold">
+                            {t.currency === "USD" ? (t.exchangeRate || 1).toFixed(2) : "—"}
+                          </td>
+                          <td className="px-6 py-4 text-right font-semibold text-gray-600 text-xs">
+                            {t.currency === "USD" ? "$" : "S/"} {t.amount.toFixed(2)}
+                          </td>
                           <td
                             className={`px-6 py-4 text-right font-black ${t.type === "INCOME" ? "text-emerald-600" : "text-rose-600"}`}
                           >
                             {t.type === "INCOME" ? "+" : "-"} S/{" "}
-                            {t.amount.toFixed(2)}
+                            {(t.currency === "USD" ? t.amount * (t.exchangeRate || 1) : t.amount).toFixed(2)}
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            <div className="flex justify-center items-center gap-1.5">
+                              <button
+                                onClick={() => handleEditClick(t)}
+                                className="p-1.5 text-gray-400 hover:bg-indigo-50 hover:text-indigo-600 rounded-xl transition-all"
+                                title="Editar movimiento"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleRevertToPending(t.id)}
+                                className="p-1.5 text-gray-400 hover:bg-amber-50 hover:text-amber-600 rounded-xl transition-all"
+                                title="Devolver a pendientes (por cobrar/pagar)"
+                              >
+                                <RotateCcw className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDelete(t.id)}
+                                className="p-1.5 text-gray-400 hover:bg-rose-50 hover:text-rose-600 rounded-xl transition-all"
+                                title="Eliminar permanentemente"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))
@@ -331,11 +536,25 @@ export default function BusinessFinancePage() {
 
       <Modal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => {
+          setIsModalOpen(false);
+          setEditingTransaction(null);
+          setFormData({
+            name: "",
+            amount: 0,
+            categoryId: "",
+            subCategoryId: "",
+            paymentMethod: "CASH",
+            description: "",
+            receiptUrl: null,
+            currency: "PEN",
+            exchangeRate: 1,
+          });
+        }}
         title={
-          type === "INCOME"
-            ? "Registrar Inyección de Capital"
-            : "Registrar Gasto Operativo"
+          editingTransaction
+            ? (type === "INCOME" ? "Editar Ingreso de Tesorería" : "Editar Gasto Operativo")
+            : (type === "INCOME" ? "Registrar Inyección de Capital" : "Registrar Gasto Operativo")
         }
       >
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -357,23 +576,66 @@ export default function BusinessFinancePage() {
               }
             />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+
+          <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Monto (S/)
+                Moneda
+              </label>
+              <select
+                value={formData.currency}
+                onChange={(e) => {
+                  const curr = e.target.value as "PEN" | "USD";
+                  setFormData({
+                    ...formData,
+                    currency: curr,
+                    exchangeRate: curr === "PEN" ? 1 : 3.75,
+                  });
+                }}
+                className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm font-semibold text-gray-700 cursor-pointer"
+              >
+                <option value="PEN">PEN</option>
+                <option value="USD">USD</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                T.C.
+              </label>
+              <input
+                type="number"
+                step="0.001"
+                disabled={formData.currency === "PEN"}
+                value={formData.exchangeRate}
+                onChange={(e) =>
+                  setFormData({ ...formData, exchangeRate: Number(e.target.value) })
+                }
+                className={`w-full px-3 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm font-semibold ${
+                  formData.currency === "USD"
+                    ? "bg-blue-50 border-blue-200 text-blue-700 font-bold"
+                    : "bg-gray-50 border-gray-100 text-gray-400"
+                }`}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                Importe
               </label>
               <input
                 type="number"
                 required
                 min="0.1"
                 step="0.01"
-                value={formData.amount}
+                value={formData.amount || ""}
                 onChange={(e) =>
                   setFormData({ ...formData, amount: Number(e.target.value) })
                 }
-                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
               />
             </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">
                 Método
@@ -383,7 +645,7 @@ export default function BusinessFinancePage() {
                 onChange={(e) =>
                   setFormData({ ...formData, paymentMethod: e.target.value })
                 }
-                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
               >
                 <option value="CASH">Efectivo</option>
                 <option value="TRANSFER">Transferencia</option>
@@ -392,6 +654,7 @@ export default function BusinessFinancePage() {
               </select>
             </div>
           </div>
+
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1">
               Categoría
@@ -464,7 +727,21 @@ export default function BusinessFinancePage() {
           <div className="pt-4 flex justify-end gap-3">
             <button
               type="button"
-              onClick={() => setIsModalOpen(false)}
+              onClick={() => {
+                setIsModalOpen(false);
+                setEditingTransaction(null);
+                setFormData({
+                  name: "",
+                  amount: 0,
+                  categoryId: "",
+                  subCategoryId: "",
+                  paymentMethod: "CASH",
+                  description: "",
+                  receiptUrl: null,
+                  currency: "PEN",
+                  exchangeRate: 1,
+                });
+              }}
               className="px-5 py-2.5 bg-gray-100 text-gray-700 font-medium rounded-xl hover:bg-gray-200 transition-colors"
             >
               Cancelar
@@ -474,7 +751,7 @@ export default function BusinessFinancePage() {
               disabled={filteredCategories.length === 0}
               className={`px-5 py-2.5 text-white font-medium rounded-xl transition-all ${type === "INCOME" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-rose-600 hover:bg-rose-700"}`}
             >
-              Guardar Movimiento
+              {editingTransaction ? "Guardar Cambios" : "Guardar Movimiento"}
             </button>
           </div>
         </form>
@@ -482,3 +759,4 @@ export default function BusinessFinancePage() {
     </Appshell>
   );
 }
+

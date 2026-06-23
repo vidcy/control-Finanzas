@@ -4,10 +4,11 @@ import {
   listPendingTransactionsRequest,
   createPendingTransactionRequest,
   markAsPaidRequest,
-  deletePendingTransactionRequest
+  deletePendingTransactionRequest,
+  updatePendingTransactionRequest
 } from "../services/pending.api";
 import { listCategoriesRequest } from "../services/category.api";
-import { Clock, CheckCircle2, TrendingUp, TrendingDown, Trash2, AlertCircle } from "lucide-react";
+import { Clock, CheckCircle2, TrendingUp, TrendingDown, Trash2, AlertCircle, Edit } from "lucide-react";
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
 import { format, isPast, isToday } from "date-fns";
@@ -19,6 +20,7 @@ export default function BusinessPendingPage() {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [type, setType] = useState<"INCOME" | "EXPENSE">("INCOME");
+  const [editingPending, setEditingPending] = useState<any>(null);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -26,8 +28,11 @@ export default function BusinessPendingPage() {
     categoryId: "",
     description: "",
     dueDate: "",
-    paymentMethod: "CASH"
+    paymentMethod: "CASH",
+    currency: "PEN" as "PEN" | "USD",
+    exchangeRate: 1,
   });
+
 
   const loadData = async () => {
     try {
@@ -49,8 +54,12 @@ export default function BusinessPendingPage() {
     loadData();
   }, []);
 
-  const toCollect = pending.filter(t => t.type === "INCOME" && t.status === "PENDING").reduce((acc, t) => acc + t.amount, 0);
-  const toPay = pending.filter(t => t.type === "EXPENSE" && t.status === "PENDING").reduce((acc, t) => acc + t.amount, 0);
+  const toCollect = pending
+    .filter((t) => t.type === "INCOME" && t.status === "PENDING")
+    .reduce((acc, t) => acc + (t.currency === "USD" ? t.amount * (t.exchangeRate || 1) : t.amount), 0);
+  const toPay = pending
+    .filter((t) => t.type === "EXPENSE" && t.status === "PENDING")
+    .reduce((acc, t) => acc + (t.currency === "USD" ? t.amount * (t.exchangeRate || 1) : t.amount), 0);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,26 +69,63 @@ export default function BusinessPendingPage() {
     }
     
     try {
-      await createPendingTransactionRequest({
+      const payload = {
         name: formData.name,
-        type,
         amount: formData.amount,
         categoryId: formData.categoryId,
-        subCategoryId: null,
-        date: new Date().toISOString(),
-        dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : undefined,
-        status: "PENDING",
-        currency: "PEN",
         description: formData.description,
-        workspace: "BUSINESS"
-      });
-      toast.success("Cuenta pendiente registrada");
+        dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : undefined,
+        currency: formData.currency,
+        exchangeRate: formData.currency === "USD" ? formData.exchangeRate : 1,
+      };
+
+      if (editingPending) {
+        await updatePendingTransactionRequest(editingPending.id, payload as any);
+        toast.success("Cuenta pendiente actualizada");
+      } else {
+        await createPendingTransactionRequest({
+          ...payload,
+          type,
+          subCategoryId: null,
+          date: new Date().toISOString(),
+          status: "PENDING",
+          workspace: "BUSINESS"
+        });
+        toast.success("Cuenta pendiente registrada");
+      }
+
       setIsModalOpen(false);
-      setFormData({ name: "", amount: 0, categoryId: "", description: "", dueDate: "", paymentMethod: "CASH" });
+      setEditingPending(null);
+      setFormData({
+        name: "",
+        amount: 0,
+        categoryId: "",
+        description: "",
+        dueDate: "",
+        paymentMethod: "CASH",
+        currency: "PEN",
+        exchangeRate: 1,
+      });
       loadData();
     } catch (error) {
-      toast.error("Error al registrar cuenta pendiente");
+      toast.error(editingPending ? "Error al actualizar cuenta pendiente" : "Error al registrar cuenta pendiente");
     }
+  };
+
+  const handleEditClick = (p: any) => {
+    setEditingPending(p);
+    setType(p.type);
+    setFormData({
+      name: p.name || "",
+      amount: p.amount || 0,
+      categoryId: p.categoryId || "",
+      description: p.description || "",
+      dueDate: p.dueDate ? p.dueDate.slice(0, 10) : "",
+      paymentMethod: p.paymentMethod || "CASH",
+      currency: p.currency || "PEN",
+      exchangeRate: p.exchangeRate || 1,
+    });
+    setIsModalOpen(true);
   };
 
   const handleMarkAsPaid = async (id: string) => {
@@ -172,14 +218,17 @@ export default function BusinessPendingPage() {
                     <th className="px-6 py-4">Deudor / Acreedor</th>
                     <th className="px-6 py-4">Concepto</th>
                     <th className="px-6 py-4 text-center">Vencimiento</th>
-                    <th className="px-6 py-4 text-right">Monto</th>
+                    <th className="px-6 py-4 text-center">Moneda</th>
+                    <th className="px-6 py-4 text-center">T.C.</th>
+                    <th className="px-6 py-4 text-right">Monto Original</th>
+                    <th className="px-6 py-4 text-right">Total (Soles)</th>
                     <th className="px-6 py-4 text-center">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {activePending.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-6 py-10 text-center text-gray-400 font-medium">No hay cuentas pendientes registradas. ¡Todo al día!</td>
+                      <td colSpan={8} className="px-6 py-10 text-center text-gray-400 font-medium">No hay cuentas pendientes registradas. ¡Todo al día!</td>
                     </tr>
                   ) : (
                     activePending.map(p => {
@@ -208,16 +257,31 @@ export default function BusinessPendingPage() {
                               <span className="text-gray-400">-</span>
                             )}
                           </td>
+                          <td className="px-6 py-4 text-center">
+                            <span className="text-[10px] font-black bg-gray-100 text-gray-500 px-2 py-1 rounded-md">
+                              {p.currency || "PEN"}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-center text-xs text-gray-400 font-bold">
+                            {p.currency === "USD" ? (p.exchangeRate || 1).toFixed(3) : "—"}
+                          </td>
+                          <td className="px-6 py-4 text-right font-semibold text-gray-600 text-xs">
+                            {p.currency === "USD" ? "$" : "S/"} {p.amount.toFixed(2)}
+                          </td>
                           <td className={`px-6 py-4 text-right font-black text-lg ${isIngreso ? "text-cyan-600" : "text-rose-600"}`}>
-                            {isIngreso ? "+" : "-"} S/ {p.amount.toFixed(2)}
+                            {isIngreso ? "+" : "-"} S/{" "}
+                            {(p.currency === "USD" ? p.amount * (p.exchangeRate || 1) : p.amount).toFixed(2)}
                           </td>
                           <td className="px-6 py-4">
-                            <div className="flex justify-center items-center gap-2">
-                              <button onClick={() => handleMarkAsPaid(p.id)} className="p-2 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-600 hover:text-white transition-all shadow-sm" title="Marcar como Pagado / Cobrado">
-                                <CheckCircle2 className="w-5 h-5" />
+                            <div className="flex justify-center items-center gap-1.5">
+                              <button onClick={() => handleMarkAsPaid(p.id)} className="p-1.5 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-600 hover:text-white transition-all shadow-sm" title="Marcar como Pagado / Cobrado">
+                                <CheckCircle2 className="w-4.5 h-4.5" />
                               </button>
-                              <button onClick={() => handleDelete(p.id)} className="p-2 text-red-400 hover:bg-red-50 hover:text-red-600 rounded-xl transition-all">
-                                <Trash2 className="w-4 h-4" />
+                              <button onClick={() => handleEditClick(p)} className="p-1.5 text-gray-400 hover:bg-indigo-50 hover:text-indigo-600 rounded-xl transition-all" title="Editar cuenta pendiente">
+                                <Edit className="w-4.5 h-4.5" />
+                              </button>
+                              <button onClick={() => handleDelete(p.id)} className="p-1.5 text-gray-400 hover:bg-rose-50 hover:text-rose-600 rounded-xl transition-all" title="Eliminar cuenta pendiente">
+                                <Trash2 className="w-4.5 h-4.5" />
                               </button>
                             </div>
                           </td>
@@ -232,39 +296,114 @@ export default function BusinessPendingPage() {
         )}
       </div>
 
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={type === "INCOME" ? "Registrar Cuenta por Cobrar" : "Registrar Cuenta por Pagar"}>
+      <Modal isOpen={isModalOpen} onClose={() => {
+        setIsModalOpen(false);
+        setEditingPending(null);
+        setFormData({
+          name: "",
+          amount: 0,
+          categoryId: "",
+          description: "",
+          dueDate: "",
+          paymentMethod: "CASH",
+          currency: "PEN",
+          exchangeRate: 1,
+        });
+      }} title={
+        editingPending
+          ? (type === "INCOME" ? "Editar Cuenta por Cobrar" : "Editar Cuenta por Pagar")
+          : (type === "INCOME" ? "Registrar Cuenta por Cobrar" : "Registrar Cuenta por Pagar")
+      }>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1">Nombre del {type === "INCOME" ? "Cliente" : "Proveedor"}</label>
             <input type="text" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="Ej. Juan Pérez, Coca Cola..." />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          
+          <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Monto (S/)</label>
-              <input type="number" required min="0.1" step="0.01" value={formData.amount || ''} onChange={e => setFormData({...formData, amount: Number(e.target.value)})} className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Moneda</label>
+              <select
+                value={formData.currency}
+                onChange={(e) => {
+                  const curr = e.target.value as "PEN" | "USD";
+                  setFormData({
+                    ...formData,
+                    currency: curr,
+                    exchangeRate: curr === "PEN" ? 1 : 3.75,
+                  });
+                }}
+                className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm font-semibold text-gray-700 cursor-pointer"
+              >
+                <option value="PEN">PEN</option>
+                <option value="USD">USD</option>
+              </select>
             </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">T.C.</label>
+              <input
+                type="number"
+                step="0.001"
+                disabled={formData.currency === "PEN"}
+                value={formData.exchangeRate}
+                onChange={(e) => setFormData({ ...formData, exchangeRate: Number(e.target.value) })}
+                className={`w-full px-4 py-3 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm font-semibold ${
+                  formData.currency === "USD"
+                    ? "bg-blue-50 border-blue-200 text-blue-700 font-bold"
+                    : "bg-gray-50 border-gray-100 text-gray-400"
+                }`}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Importe</label>
+              <input
+                type="number"
+                required
+                min="0.1"
+                step="0.01"
+                value={formData.amount || ""}
+                onChange={(e) => setFormData({ ...formData, amount: Number(e.target.value) })}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-bold"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">Fecha Límite</label>
               <input type="date" required value={formData.dueDate} onChange={e => setFormData({...formData, dueDate: e.target.value})} className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
             </div>
-          </div>
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1">Categoría</label>
-            <select required value={formData.categoryId} onChange={e => setFormData({...formData, categoryId: e.target.value})} className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all bg-white">
-              <option value="">Seleccionar...</option>
-              {filteredCategories.map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Categoría</label>
+              <select required value={formData.categoryId} onChange={e => setFormData({...formData, categoryId: e.target.value})} className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all bg-white">
+                <option value="">Seleccionar...</option>
+                {filteredCategories.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
           </div>
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1">Descripción / Notas</label>
             <textarea value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all resize-none" rows={2}></textarea>
           </div>
           <div className="pt-4 flex justify-end gap-3">
-            <button type="button" onClick={() => setIsModalOpen(false)} className="px-5 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200 transition-colors">Cancelar</button>
+            <button type="button" onClick={() => {
+              setIsModalOpen(false);
+              setEditingPending(null);
+              setFormData({
+                name: "",
+                amount: 0,
+                categoryId: "",
+                description: "",
+                dueDate: "",
+                paymentMethod: "CASH",
+                currency: "PEN",
+                exchangeRate: 1,
+              });
+            }} className="px-5 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200 transition-colors">Cancelar</button>
             <button type="submit" disabled={filteredCategories.length === 0} className={`px-5 py-3 text-white font-bold rounded-xl transition-all shadow-sm ${type === "INCOME" ? "bg-cyan-600 hover:bg-cyan-700 shadow-cyan-500/30" : "bg-rose-600 hover:bg-rose-700 shadow-rose-500/30"}`}>
-              Guardar Registro
+              {editingPending ? "Guardar Cambios" : "Guardar Registro"}
             </button>
           </div>
         </form>

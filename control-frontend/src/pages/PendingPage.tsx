@@ -720,7 +720,7 @@ export default function PendingPage() {
                             </span>
                             {item.currency === "USD" && (
                               <div className="text-[9px] text-blue-400 font-bold mt-1.5">
-                                T.C: {item.exchangeRate}
+                                T.C: {(item.exchangeRate || 1).toFixed(3)}
                               </div>
                             )}
                           </td>
@@ -908,7 +908,7 @@ export default function PendingPage() {
                         <div className="flex items-center gap-2">
                           {item.currency === "USD" && (
                             <span className="text-[9px] font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
-                              T.C: {item.exchangeRate}
+                              T.C: {(item.exchangeRate || 1).toFixed(3)}
                             </span>
                           )}
                         </div>
@@ -1034,7 +1034,7 @@ export default function PendingPage() {
                             </span>
                             {item.currency === "USD" && (
                               <div className="text-[9px] text-blue-400 font-bold mt-1.5">
-                                T.C: {item.exchangeRate}
+                                T.C: {(item.exchangeRate || 1).toFixed(3)}
                               </div>
                             )}
                           </td>
@@ -1220,7 +1220,7 @@ export default function PendingPage() {
                         <div className="flex items-center gap-2">
                           {item.currency === "USD" && (
                             <span className="text-[9px] font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
-                              T.C: {item.exchangeRate}
+                              T.C: {(item.exchangeRate || 1).toFixed(3)}
                             </span>
                           )}
                         </div>

@@ -7,10 +7,14 @@ import {
 } from './create-transaction.dto';
 import { MarkAsPendingDto } from './mark-transaction.dto';
 import { UpdateTransactionDto } from './update-transaction.dto';
+import { FilesService } from '../../files/files.service';
 
 @Injectable()
 export class TransactionService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private filesService: FilesService,
+  ) {}
 
   // =========================================================
   // CREATE
@@ -110,6 +114,10 @@ export class TransactionService {
       amountSoles = isUSD ? amount * (exchangeRate || 1) : amount;
     }
 
+    if (dto.receiptUrl !== undefined && dto.receiptUrl !== existing.receiptUrl && existing.receiptUrl) {
+      await this.filesService.deleteFile(existing.receiptUrl);
+    }
+
     return this.prisma.transaction.update({
       where: { id },
       data: {
@@ -141,9 +149,14 @@ export class TransactionService {
   // DELETE
   // =========================================================
   async deleteTransaction(id: string) {
-    return this.prisma.transaction.delete({
+    const existing = await this.findById(id);
+    const result = await this.prisma.transaction.delete({
       where: { id },
     });
+    if (existing.receiptUrl) {
+      await this.filesService.deleteFile(existing.receiptUrl);
+    }
+    return result;
   }
 
   // =========================================================

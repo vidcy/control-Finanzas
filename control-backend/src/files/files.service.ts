@@ -84,4 +84,41 @@ export class FilesService {
       uploadStream.end(file.buffer);
     });
   }
+
+  async deleteFile(url: string): Promise<boolean> {
+    if (!url || !url.includes('cloudinary.com')) {
+      return false;
+    }
+    try {
+      const parts = url.split('/');
+      const uploadIdx = parts.indexOf('upload');
+      if (uploadIdx === -1) return false;
+
+      let publicIdParts = parts.slice(uploadIdx + 1);
+      // Omitir el tag de versión (ej. v171922521)
+      if (publicIdParts[0] && /^v\d+$/.test(publicIdParts[0])) {
+        publicIdParts = publicIdParts.slice(1);
+      }
+
+      // Remover extensión del archivo
+      const lastPart = publicIdParts[publicIdParts.length - 1];
+      const dotIdx = lastPart.lastIndexOf('.');
+      if (dotIdx !== -1) {
+        publicIdParts[publicIdParts.length - 1] = lastPart.substring(0, dotIdx);
+      }
+
+      const publicId = publicIdParts.join('/');
+
+      // Intentar eliminar como imagen primero
+      let result = await cloudinary.uploader.destroy(publicId, { resource_type: 'image' });
+      if (result.result === 'ok') return true;
+
+      // Intentar eliminar como raw (para PDFs cargados como crudos)
+      result = await cloudinary.uploader.destroy(publicId, { resource_type: 'raw' });
+      return result.result === 'ok';
+    } catch (error) {
+      console.error('Error al eliminar archivo de Cloudinary:', error);
+      return false;
+    }
+  }
 }

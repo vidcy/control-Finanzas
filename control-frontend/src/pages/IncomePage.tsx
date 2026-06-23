@@ -71,7 +71,8 @@ export default function IncomePage() {
 
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
   const [idToDelete, setIdToDelete] = useState<string | null>(null);
   const [idtoReturn, setIdToReturn] = useState<string | null>(null);
   const [idStatus, setStatus] = useState<string | null>(null);
@@ -410,7 +411,7 @@ export default function IncomePage() {
   const handleStatus = async (inc: Income) => {
     setIdToReturn(inc.id);
     setStatus(inc.status);
-    setIsConfirmOpen(true);
+    setIsReturnModalOpen(true);
   };
 
   const confirmReturn = async () => {
@@ -432,7 +433,7 @@ export default function IncomePage() {
 
   const handleDelete = (id: string) => {
     setIdToDelete(id);
-    setIsConfirmOpen(true);
+    setIsDeleteModalOpen(true);
   };
 
   const confirmDelete = async () => {
@@ -440,7 +441,7 @@ export default function IncomePage() {
     try {
       await deleteTransactionRequest(idToDelete);
       toast.success("Eliminado correctamente");
-      setIsConfirmOpen(false);
+      setIsDeleteModalOpen(false);
       loadData();
     } catch (error: unknown) {
       const message =
@@ -1127,10 +1128,10 @@ export default function IncomePage() {
                   </div>
 
                   <div className="pt-2">
-                    <ImageUploader 
+                    <ImageUploader
                       currentImageUrl={formData.receiptUrl}
-                      onUploadSuccess={(url) => setFormData({...formData, receiptUrl: url})}
-                      onClear={() => setFormData({...formData, receiptUrl: null})}
+                      onUploadSuccess={(url) => setFormData({ ...formData, receiptUrl: url })}
+                      onClear={() => setFormData({ ...formData, receiptUrl: null })}
                       label="Comprobante / Voucher"
                     />
                   </div>
@@ -1234,15 +1235,15 @@ export default function IncomePage() {
         </Modal>
 
         <ConfirmModal
-          isOpen={isConfirmOpen}
-          onClose={() => setIsConfirmOpen(false)}
+          isOpen={isDeleteModalOpen}
+          onClose={() => setIsDeleteModalOpen(false)}
           onConfirm={confirmDelete}
           title="Eliminar Ingreso"
           message="¿Estás seguro de que deseas eliminar este registro de ingreso permanentemente?"
         />
         <ConfirmModal
-          isOpen={isConfirmOpen}
-          onClose={() => setIsConfirmOpen(false)}
+          isOpen={isReturnModalOpen}
+          onClose={() => setIsReturnModalOpen(false)}
           onConfirm={confirmReturn}
           title="Devolver Ingreso"
           message={`¿Estás seguro de que deseas devolver este registro a cuentas por cobrar?`}
