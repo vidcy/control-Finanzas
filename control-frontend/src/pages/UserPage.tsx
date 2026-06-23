@@ -35,6 +35,7 @@ type User = {
   status: "TRUE" | "FALSE";
   profiles: string[];
   blockedProfiles: string[];
+  parentId?: string | null;
 };
 
 export default function UserPage() {
@@ -62,6 +63,21 @@ export default function UserPage() {
     profiles: [] as string[],
   });
 
+  const [isWorker, setIsWorker] = useState(false);
+  const [parentId, setParentId] = useState("");
+
+  const SUB_MODULES = [
+    { key: "BUSINESS_DASHBOARD", name: "Dashboard de Negocio" },
+    { key: "BUSINESS_POS", name: "Punto de Venta (POS)" },
+    { key: "BUSINESS_INVENTORY", name: "Inventario" },
+    { key: "BUSINESS_FINANCE", name: "Caja / Tesorería" },
+    { key: "BUSINESS_CASH_REGISTER", name: "Cierre de Caja" },
+    { key: "BUSINESS_PENDING", name: "Cuentas Pendientes" },
+    { key: "BUSINESS_REPORTS", name: "Reportes" },
+    { key: "BUSINESS_HISTORY", name: "Historial de Ventas" },
+    { key: "BUSINESS_CATEGORIES", name: "Categorías" },
+  ];
+
   const handleOpenCreate = () => {
     setFormData({
       name: "",
@@ -71,6 +87,8 @@ export default function UserPage() {
       password: "",
       profiles: ["PERSONAL"], // default
     });
+    setIsWorker(false);
+    setParentId("");
     setIsCreateOpen(true);
   };
 
@@ -84,11 +102,17 @@ export default function UserPage() {
       password: "",
       profiles: user.profiles || [],
     });
+    setIsWorker(!!user.parentId);
+    setParentId(user.parentId || "");
     setIsEditOpen(true);
   };
 
   const handleSaveCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isWorker && !parentId) {
+      toast.error("Debe seleccionar un cliente/dueño vinculado.");
+      return;
+    }
     setIsSaving(true);
     try {
       await registerRequest(
@@ -98,7 +122,8 @@ export default function UserPage() {
         formData.password,
         formData.role,
         true,
-        formData.profiles
+        formData.profiles,
+        isWorker ? parentId : null
       );
       toast.success("Usuario creado exitosamente");
       await fetchUsers();
@@ -114,6 +139,10 @@ export default function UserPage() {
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedUser) return;
+    if (isWorker && !parentId) {
+      toast.error("Debe seleccionar un cliente/dueño vinculado.");
+      return;
+    }
     setIsSaving(true);
     try {
       const payload: any = {
@@ -121,6 +150,7 @@ export default function UserPage() {
         lastName: formData.lastName,
         role: formData.role,
         profiles: formData.profiles,
+        parentId: isWorker ? parentId : null,
       };
       if (formData.password && formData.password.trim() !== "") {
         payload.password = formData.password;
@@ -170,6 +200,7 @@ export default function UserPage() {
         status: u.isActive ? "TRUE" : "FALSE",
         profiles: Array.isArray(u.profiles) ? u.profiles : [],
         blockedProfiles: Array.isArray(u.blockedProfiles) ? u.blockedProfiles : [],
+        parentId: u.parentId || null,
       }));
       setUsers(formattedUsers);
     } catch (error: unknown) {
@@ -271,6 +302,14 @@ export default function UserPage() {
                             <p className="text-[11px] text-gray-400 font-bold flex items-center gap-1">
                               <Mail className="w-3 h-3" /> {user.email}
                             </p>
+                            {user.parentId && (
+                              <p className="text-[10px] text-purple-600 font-extrabold mt-0.5">
+                                Trabajador de: {(() => {
+                                  const parent = users.find(u => u.id === user.parentId);
+                                  return parent ? `${parent.name} ${parent.lastName}` : "Cargando patrón...";
+                                })()}
+                              </p>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -283,106 +322,133 @@ export default function UserPage() {
                         </span>
                       </td>
                       <td className="p-6">
-                        <div className="flex flex-col gap-2">
-                          <label className="flex items-center gap-2 text-xs font-bold text-gray-700">
-                            <input
-                              type="checkbox"
-                              checked={user.profiles.includes("PERSONAL")}
-                              onChange={async (e) => {
-                                const newProfiles = e.target.checked
-                                  ? [...user.profiles, "PERSONAL"]
-                                  : user.profiles.filter((p) => p !== "PERSONAL");
-                                if (newProfiles.length === 0) {
-                                  toast.error("El usuario debe tener al menos un módulo");
-                                  return;
-                                }
-                                try {
-                                  await updateUserRequest(user.id, { profiles: newProfiles });
-                                  toast.success("Módulo actualizado");
-                                  await fetchUsers();
-                                } catch (err: any) {
-                                  toast.error(err.message || "Error al actualizar");
-                                }
-                              }}
-                              className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500 cursor-pointer"
-                            /> Activo
-                          </label>
-                          <label className="flex items-center gap-2 text-xs font-bold text-rose-600">
-                            <input
-                              type="checkbox"
-                              checked={user.blockedProfiles.includes("PERSONAL")}
-                              onChange={async (e) => {
-                                const newBlocked = e.target.checked
-                                  ? [...user.blockedProfiles, "PERSONAL"]
-                                  : user.blockedProfiles.filter((p) => p !== "PERSONAL");
-                                try {
-                                  // Si se bloquea, también lo quitamos de profiles activos
-                                  let newProfiles = [...user.profiles];
-                                  if (e.target.checked) {
-                                    newProfiles = newProfiles.filter(p => p !== "PERSONAL");
+                        {user.parentId ? (
+                          <span className="text-gray-400 text-xs italic">N/A (Trabajador)</span>
+                        ) : (
+                          <div className="flex flex-col gap-2">
+                            <label className="flex items-center gap-2 text-xs font-bold text-gray-700">
+                              <input
+                                type="checkbox"
+                                checked={user.profiles.includes("PERSONAL")}
+                                onChange={async (e) => {
+                                  const newProfiles = e.target.checked
+                                    ? [...user.profiles, "PERSONAL"]
+                                    : user.profiles.filter((p) => p !== "PERSONAL");
+                                  if (newProfiles.length === 0) {
+                                    toast.error("El usuario debe tener al menos un módulo");
+                                    return;
                                   }
-                                  await updateUserRequest(user.id, { blockedProfiles: newBlocked, profiles: newProfiles });
-                                  toast.success("Bloqueo actualizado");
-                                  await fetchUsers();
-                                } catch (err: any) {
-                                  toast.error(err.message || "Error al actualizar bloqueo");
-                                }
-                              }}
-                              className="w-4 h-4 text-rose-600 border-gray-300 rounded focus:ring-rose-500 cursor-pointer"
-                            /> Bloqueado
-                          </label>
-                        </div>
+                                  try {
+                                    await updateUserRequest(user.id, { profiles: newProfiles });
+                                    toast.success("Módulo actualizado");
+                                    await fetchUsers();
+                                  } catch (err: any) {
+                                    toast.error(err.message || "Error al actualizar");
+                                  }
+                                }}
+                                className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500 cursor-pointer"
+                              /> Activo
+                            </label>
+                            <label className="flex items-center gap-2 text-xs font-bold text-rose-600">
+                              <input
+                                type="checkbox"
+                                checked={user.blockedProfiles.includes("PERSONAL")}
+                                onChange={async (e) => {
+                                  const newBlocked = e.target.checked
+                                    ? [...user.blockedProfiles, "PERSONAL"]
+                                    : user.blockedProfiles.filter((p) => p !== "PERSONAL");
+                                  try {
+                                    // Si se bloquea, también lo quitamos de profiles activos
+                                    let newProfiles = [...user.profiles];
+                                    if (e.target.checked) {
+                                      newProfiles = newProfiles.filter(p => p !== "PERSONAL");
+                                    }
+                                    await updateUserRequest(user.id, { blockedProfiles: newBlocked, profiles: newProfiles });
+                                    toast.success("Bloqueo actualizado");
+                                    await fetchUsers();
+                                  } catch (err: any) {
+                                    toast.error(err.message || "Error al actualizar bloqueo");
+                                  }
+                                }}
+                                className="w-4 h-4 text-rose-600 border-gray-300 rounded focus:ring-rose-500 cursor-pointer"
+                              /> Bloqueado
+                            </label>
+                          </div>
+                        )}
                       </td>
                       <td className="p-6">
-                        <div className="flex flex-col gap-2">
-                          <label className="flex items-center gap-2 text-xs font-bold text-gray-700">
-                            <input
-                              type="checkbox"
-                              checked={user.profiles.includes("BUSINESS")}
-                              onChange={async (e) => {
-                                const newProfiles = e.target.checked
-                                  ? [...user.profiles, "BUSINESS"]
-                                  : user.profiles.filter((p) => p !== "BUSINESS");
-                                if (newProfiles.length === 0) {
-                                  toast.error("El usuario debe tener al menos un módulo");
-                                  return;
-                                }
-                                try {
-                                  await updateUserRequest(user.id, { profiles: newProfiles });
-                                  toast.success("Módulo actualizado");
-                                  await fetchUsers();
-                                } catch (err: any) {
-                                  toast.error(err.message || "Error al actualizar");
-                                }
-                              }}
-                              className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500 cursor-pointer"
-                            /> Activo
-                          </label>
-                          <label className="flex items-center gap-2 text-xs font-bold text-rose-600">
-                            <input
-                              type="checkbox"
-                              checked={user.blockedProfiles.includes("BUSINESS")}
-                              onChange={async (e) => {
-                                const newBlocked = e.target.checked
-                                  ? [...user.blockedProfiles, "BUSINESS"]
-                                  : user.blockedProfiles.filter((p) => p !== "BUSINESS");
-                                try {
-                                  // Si se bloquea, también lo quitamos de profiles activos
-                                  let newProfiles = [...user.profiles];
-                                  if (e.target.checked) {
-                                    newProfiles = newProfiles.filter(p => p !== "BUSINESS");
+                        {user.parentId ? (
+                          <div className="flex flex-wrap gap-1 max-w-[150px]">
+                            {user.profiles.map(p => {
+                              const labelMap: Record<string, string> = {
+                                BUSINESS_DASHBOARD: "Dash",
+                                BUSINESS_POS: "POS",
+                                BUSINESS_INVENTORY: "Inv",
+                                BUSINESS_FINANCE: "Caja",
+                                BUSINESS_CASH_REGISTER: "Cierre",
+                                BUSINESS_PENDING: "Pend",
+                                BUSINESS_REPORTS: "Rep",
+                                BUSINESS_HISTORY: "Hist",
+                                BUSINESS_CATEGORIES: "Cat",
+                              };
+                              return (
+                                <span key={p} className="px-2 py-0.5 bg-purple-50 border border-purple-100 rounded-md text-[9px] font-black text-purple-600">
+                                  {labelMap[p] || p}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-2">
+                            <label className="flex items-center gap-2 text-xs font-bold text-gray-700">
+                              <input
+                                type="checkbox"
+                                checked={user.profiles.includes("BUSINESS")}
+                                onChange={async (e) => {
+                                  const newProfiles = e.target.checked
+                                    ? [...user.profiles, "BUSINESS"]
+                                    : user.profiles.filter((p) => p !== "BUSINESS");
+                                  if (newProfiles.length === 0) {
+                                    toast.error("El usuario debe tener al menos un módulo");
+                                    return;
                                   }
-                                  await updateUserRequest(user.id, { blockedProfiles: newBlocked, profiles: newProfiles });
-                                  toast.success("Bloqueo actualizado");
-                                  await fetchUsers();
-                                } catch (err: any) {
-                                  toast.error(err.message || "Error al actualizar bloqueo");
-                                }
-                              }}
-                              className="w-4 h-4 text-rose-600 border-gray-300 rounded focus:ring-rose-500 cursor-pointer"
-                            /> Bloqueado
-                          </label>
-                        </div>
+                                  try {
+                                    await updateUserRequest(user.id, { profiles: newProfiles });
+                                    toast.success("Módulo actualizado");
+                                    await fetchUsers();
+                                  } catch (err: any) {
+                                    toast.error(err.message || "Error al actualizar");
+                                  }
+                                }}
+                                className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500 cursor-pointer"
+                              /> Activo
+                            </label>
+                            <label className="flex items-center gap-2 text-xs font-bold text-rose-600">
+                              <input
+                                type="checkbox"
+                                checked={user.blockedProfiles.includes("BUSINESS")}
+                                onChange={async (e) => {
+                                  const newBlocked = e.target.checked
+                                    ? [...user.blockedProfiles, "BUSINESS"]
+                                    : user.blockedProfiles.filter((p) => p !== "BUSINESS");
+                                  try {
+                                    // Si se bloquea, también lo quitamos de profiles activos
+                                    let newProfiles = [...user.profiles];
+                                    if (e.target.checked) {
+                                      newProfiles = newProfiles.filter(p => p !== "BUSINESS");
+                                    }
+                                    await updateUserRequest(user.id, { blockedProfiles: newBlocked, profiles: newProfiles });
+                                    toast.success("Bloqueo actualizado");
+                                    await fetchUsers();
+                                  } catch (err: any) {
+                                    toast.error(err.message || "Error al actualizar bloqueo");
+                                  }
+                                }}
+                                className="w-4 h-4 text-rose-600 border-gray-300 rounded focus:ring-rose-500 cursor-pointer"
+                              /> Bloqueado
+                            </label>
+                          </div>
+                        )}
                       </td>
                       <td className="p-6">
                         <button
@@ -456,108 +522,139 @@ export default function UserPage() {
                   </div>
 
                   {/* CHECKBOXES MÓVILES PARA MÓDULOS */}
-                  <div className="flex flex-col gap-3 pt-3 border-t border-gray-50/80">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-gray-800">Personal</span>
-                      <div className="flex items-center gap-4">
-                        <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-gray-500">
-                          <input
-                            type="checkbox"
-                            checked={user.profiles.includes("PERSONAL")}
-                            onChange={async (e) => {
-                              const newProfiles = e.target.checked
-                                ? [...user.profiles, "PERSONAL"]
-                                : user.profiles.filter((p) => p !== "PERSONAL");
-                              if (newProfiles.length === 0) {
-                                toast.error("Debe tener al menos un módulo");
-                                return;
-                              }
-                              try {
-                                await updateUserRequest(user.id, { profiles: newProfiles });
-                                toast.success("Actualizado");
-                                await fetchUsers();
-                              } catch (err: any) {
-                                toast.error(err.message || "Error");
-                              }
-                            }}
-                            className="w-3.5 h-3.5 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                          /> Activo
-                        </label>
-                        <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-rose-500">
-                          <input
-                            type="checkbox"
-                            checked={user.blockedProfiles.includes("PERSONAL")}
-                            onChange={async (e) => {
-                              const newBlocked = e.target.checked
-                                ? [...user.blockedProfiles, "PERSONAL"]
-                                : user.blockedProfiles.filter((p) => p !== "PERSONAL");
-                              try {
-                                let newProfiles = [...user.profiles];
-                                if (e.target.checked) newProfiles = newProfiles.filter(p => p !== "PERSONAL");
-                                await updateUserRequest(user.id, { blockedProfiles: newBlocked, profiles: newProfiles });
-                                toast.success("Bloqueo actualizado");
-                                await fetchUsers();
-                              } catch (err: any) {
-                                toast.error(err.message || "Error");
-                              }
-                            }}
-                            className="w-3.5 h-3.5 text-rose-600 border-gray-300 rounded focus:ring-rose-500"
-                          /> Bloqueado
-                        </label>
+                  {user.parentId ? (
+                    <div className="flex flex-col gap-1.5 pt-3 border-t border-gray-50/80">
+                      <span className="text-[10px] font-bold text-gray-400">TRABAJADOR VINCULADO</span>
+                      <span className="text-xs font-bold text-purple-600">
+                        Patrón: {(() => {
+                          const parent = users.find(u => u.id === user.parentId);
+                          return parent ? `${parent.name} ${parent.lastName}` : "Cargando patrón...";
+                        })()}
+                      </span>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {user.profiles.map(p => {
+                          const labelMap: Record<string, string> = {
+                            BUSINESS_DASHBOARD: "Dashboard",
+                            BUSINESS_POS: "POS",
+                            BUSINESS_INVENTORY: "Inventario",
+                            BUSINESS_FINANCE: "Caja",
+                            BUSINESS_CASH_REGISTER: "Cierre",
+                            BUSINESS_PENDING: "Pendientes",
+                            BUSINESS_REPORTS: "Reportes",
+                            BUSINESS_HISTORY: "Historial",
+                            BUSINESS_CATEGORIES: "Categorías",
+                          };
+                          return (
+                            <span key={p} className="px-2 py-0.5 bg-purple-50 border border-purple-100 rounded-md text-[9px] font-black text-purple-600">
+                              {labelMap[p] || p}
+                            </span>
+                          );
+                        })}
                       </div>
                     </div>
+                  ) : (
+                    <div className="flex flex-col gap-3 pt-3 border-t border-gray-50/80">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-gray-800">Personal</span>
+                        <div className="flex items-center gap-4">
+                          <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-gray-500">
+                            <input
+                              type="checkbox"
+                              checked={user.profiles.includes("PERSONAL")}
+                              onChange={async (e) => {
+                                const newProfiles = e.target.checked
+                                  ? [...user.profiles, "PERSONAL"]
+                                  : user.profiles.filter((p) => p !== "PERSONAL");
+                                if (newProfiles.length === 0) {
+                                  toast.error("Debe tener al menos un módulo");
+                                  return;
+                                }
+                                try {
+                                  await updateUserRequest(user.id, { profiles: newProfiles });
+                                  toast.success("Actualizado");
+                                  await fetchUsers();
+                                } catch (err: any) {
+                                  toast.error(err.message || "Error");
+                                }
+                              }}
+                              className="w-3.5 h-3.5 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                            /> Activo
+                          </label>
+                          <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-rose-500">
+                            <input
+                              type="checkbox"
+                              checked={user.blockedProfiles.includes("PERSONAL")}
+                              onChange={async (e) => {
+                                const newBlocked = e.target.checked
+                                  ? [...user.blockedProfiles, "PERSONAL"]
+                                  : user.blockedProfiles.filter((p) => p !== "PERSONAL");
+                                try {
+                                  let newProfiles = [...user.profiles];
+                                  if (e.target.checked) newProfiles = newProfiles.filter(p => p !== "PERSONAL");
+                                  await updateUserRequest(user.id, { blockedProfiles: newBlocked, profiles: newProfiles });
+                                  toast.success("Bloqueo actualizado");
+                                  await fetchUsers();
+                                } catch (err: any) {
+                                  toast.error(err.message || "Error");
+                                }
+                              }}
+                              className="w-3.5 h-3.5 text-rose-600 border-gray-300 rounded focus:ring-rose-500"
+                            /> Bloqueado
+                          </label>
+                        </div>
+                      </div>
 
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-gray-800">Negocios</span>
-                      <div className="flex items-center gap-4">
-                        <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-gray-500">
-                          <input
-                            type="checkbox"
-                            checked={user.profiles.includes("BUSINESS")}
-                            onChange={async (e) => {
-                              const newProfiles = e.target.checked
-                                ? [...user.profiles, "BUSINESS"]
-                                : user.profiles.filter((p) => p !== "BUSINESS");
-                              if (newProfiles.length === 0) {
-                                toast.error("Debe tener al menos un módulo");
-                                return;
-                              }
-                              try {
-                                await updateUserRequest(user.id, { profiles: newProfiles });
-                                toast.success("Actualizado");
-                                await fetchUsers();
-                              } catch (err: any) {
-                                toast.error(err.message || "Error");
-                              }
-                            }}
-                            className="w-3.5 h-3.5 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                          /> Activo
-                        </label>
-                        <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-rose-500">
-                          <input
-                            type="checkbox"
-                            checked={user.blockedProfiles.includes("BUSINESS")}
-                            onChange={async (e) => {
-                              const newBlocked = e.target.checked
-                                ? [...user.blockedProfiles, "BUSINESS"]
-                                : user.blockedProfiles.filter((p) => p !== "BUSINESS");
-                              try {
-                                let newProfiles = [...user.profiles];
-                                if (e.target.checked) newProfiles = newProfiles.filter(p => p !== "BUSINESS");
-                                await updateUserRequest(user.id, { blockedProfiles: newBlocked, profiles: newProfiles });
-                                toast.success("Bloqueo actualizado");
-                                await fetchUsers();
-                              } catch (err: any) {
-                                toast.error(err.message || "Error");
-                              }
-                            }}
-                            className="w-3.5 h-3.5 text-rose-600 border-gray-300 rounded focus:ring-rose-500"
-                          /> Bloqueado
-                        </label>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-gray-800">Negocios</span>
+                        <div className="flex items-center gap-4">
+                          <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-gray-500">
+                            <input
+                              type="checkbox"
+                              checked={user.profiles.includes("BUSINESS")}
+                              onChange={async (e) => {
+                                const newProfiles = e.target.checked
+                                  ? [...user.profiles, "BUSINESS"]
+                                  : user.profiles.filter((p) => p !== "BUSINESS");
+                                if (newProfiles.length === 0) {
+                                  toast.error("Debe tener al menos un módulo");
+                                  return;
+                                }
+                                try {
+                                  await updateUserRequest(user.id, { profiles: newProfiles });
+                                  toast.success("Actualizado");
+                                  await fetchUsers();
+                                } catch (err: any) {
+                                  toast.error(err.message || "Error");
+                                }
+                              }}
+                              className="w-3.5 h-3.5 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                            /> Activo
+                          </label>
+                          <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-rose-500">
+                            <input
+                              type="checkbox"
+                              checked={user.blockedProfiles.includes("BUSINESS")}
+                              onChange={async (e) => {
+                                const newBlocked = e.target.checked
+                                  ? [...user.blockedProfiles, "BUSINESS"]
+                                  : user.blockedProfiles.filter((p) => p !== "BUSINESS");
+                                try {
+                                  let newProfiles = [...user.profiles];
+                                  if (e.target.checked) newProfiles = newProfiles.filter(p => p !== "BUSINESS");
+                                  await updateUserRequest(user.id, { blockedProfiles: newBlocked, profiles: newProfiles });
+                                  toast.success("Bloqueo actualizado");
+                                  await fetchUsers();
+                                } catch (err: any) {
+                                  toast.error(err.message || "Error");
+                                }
+                              }}
+                              className="w-3.5 h-3.5 text-rose-600 border-gray-300 rounded focus:ring-rose-500"
+                            /> Bloqueado
+                          </label>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </div>
+                  )}              </div>
               ))
             )}
           </div>
@@ -663,42 +760,111 @@ export default function UserPage() {
                 </div>
               </div>
 
-              {/* MÓDULOS DE ACCESO */}
+              {/* TIPO DE ACCESO (TRABAJADOR VS REGULAR) */}
               <div className="space-y-3 pt-4 border-t border-purple-100/50">
-                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">
-                  Módulos de Acceso Habilitados
+                <label className="flex items-center gap-2 cursor-pointer font-bold text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={isWorker}
+                    onChange={(e) => {
+                      setIsWorker(e.target.checked);
+                      if (e.target.checked) {
+                        setFormData({ ...formData, profiles: [] });
+                      } else {
+                        setFormData({ ...formData, profiles: ["PERSONAL"] });
+                      }
+                    }}
+                    className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                  />
+                  ¿Es un trabajador / vendedor de un cliente?
                 </label>
-                <div className="flex gap-8 pl-1">
-                  <label className="flex items-center gap-2 cursor-pointer font-bold text-sm text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={formData.profiles.includes("PERSONAL")}
-                      onChange={(e) => {
-                        const updated = e.target.checked
-                          ? [...formData.profiles, "PERSONAL"]
-                          : formData.profiles.filter(p => p !== "PERSONAL");
-                        setFormData({ ...formData, profiles: updated });
-                      }}
-                      className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                    />
-                    Personal
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer font-bold text-sm text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={formData.profiles.includes("BUSINESS")}
-                      onChange={(e) => {
-                        const updated = e.target.checked
-                          ? [...formData.profiles, "BUSINESS"]
-                          : formData.profiles.filter(p => p !== "BUSINESS");
-                        setFormData({ ...formData, profiles: updated });
-                      }}
-                      className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                    />
-                    Negocios
-                  </label>
-                </div>
               </div>
+
+              {isWorker ? (
+                <div className="space-y-6 pt-4 border-t border-purple-100/50">
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">
+                      Cliente / Dueño de Negocio Vinculado
+                    </label>
+                    <select
+                      required
+                      className="w-full px-6 py-4 bg-white border border-gray-100 rounded-[1.5rem] outline-none focus:ring-4 focus:ring-purple-500/10 focus:border-purple-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
+                      value={parentId}
+                      onChange={(e) => setParentId(e.target.value)}
+                    >
+                      <option value="">-- Seleccionar Patrón --</option>
+                      {users
+                        .filter((u) => u.role === "USER" && !u.parentId)
+                        .map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name} {p.lastName} ({p.email})
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">
+                      Submódulos de Negocio Habilitados
+                    </label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-1">
+                      {SUB_MODULES.map((mod) => (
+                        <label key={mod.key} className="flex items-center gap-2 cursor-pointer font-bold text-sm text-gray-700">
+                          <input
+                            type="checkbox"
+                            checked={formData.profiles.includes(mod.key)}
+                            onChange={(e) => {
+                              const updated = e.target.checked
+                                ? [...formData.profiles, mod.key]
+                                : formData.profiles.filter(p => p !== mod.key);
+                              setFormData({ ...formData, profiles: updated });
+                            }}
+                            className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                          />
+                          {mod.name}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* MÓDULOS DE ACCESO TRADICIONAL */
+                <div className="space-y-3 pt-4 border-t border-purple-100/50">
+                  <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">
+                    Módulos de Acceso Habilitados
+                  </label>
+                  <div className="flex gap-8 pl-1">
+                    <label className="flex items-center gap-2 cursor-pointer font-bold text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={formData.profiles.includes("PERSONAL")}
+                        onChange={(e) => {
+                          const updated = e.target.checked
+                            ? [...formData.profiles, "PERSONAL"]
+                            : formData.profiles.filter(p => p !== "PERSONAL");
+                          setFormData({ ...formData, profiles: updated });
+                        }}
+                        className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                      />
+                      Personal
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer font-bold text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={formData.profiles.includes("BUSINESS")}
+                        onChange={(e) => {
+                          const updated = e.target.checked
+                            ? [...formData.profiles, "BUSINESS"]
+                            : formData.profiles.filter(p => p !== "BUSINESS");
+                          setFormData({ ...formData, profiles: updated });
+                        }}
+                        className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                      />
+                      Negocios
+                    </label>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex justify-end gap-4 pt-2">
@@ -812,42 +978,111 @@ export default function UserPage() {
                 </div>
               </div>
 
-              {/* MÓDULOS DE ACCESO */}
+              {/* TIPO DE ACCESO (TRABAJADOR VS REGULAR) */}
               <div className="space-y-3 pt-4 border-t border-gray-100">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
-                  Módulos de Acceso Habilitados
+                <label className="flex items-center gap-2 cursor-pointer font-bold text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={isWorker}
+                    onChange={(e) => {
+                      setIsWorker(e.target.checked);
+                      if (e.target.checked) {
+                        setFormData({ ...formData, profiles: [] });
+                      } else {
+                        setFormData({ ...formData, profiles: ["PERSONAL"] });
+                      }
+                    }}
+                    className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                  />
+                  ¿Es un trabajador / vendedor de un cliente?
                 </label>
-                <div className="flex gap-8 pl-1">
-                  <label className="flex items-center gap-2 cursor-pointer font-bold text-sm text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={formData.profiles.includes("PERSONAL")}
-                      onChange={(e) => {
-                        const updated = e.target.checked
-                          ? [...formData.profiles, "PERSONAL"]
-                          : formData.profiles.filter(p => p !== "PERSONAL");
-                        setFormData({ ...formData, profiles: updated });
-                      }}
-                      className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                    />
-                    Personal
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer font-bold text-sm text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={formData.profiles.includes("BUSINESS")}
-                      onChange={(e) => {
-                        const updated = e.target.checked
-                          ? [...formData.profiles, "BUSINESS"]
-                          : formData.profiles.filter(p => p !== "BUSINESS");
-                        setFormData({ ...formData, profiles: updated });
-                      }}
-                      className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                    />
-                    Negocios
-                  </label>
-                </div>
               </div>
+
+              {isWorker ? (
+                <div className="space-y-6 pt-4 border-t border-gray-100">
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                      Cliente / Dueño de Negocio Vinculado
+                    </label>
+                    <select
+                      required
+                      className="w-full px-6 py-4 bg-white border border-gray-100 rounded-[1.5rem] outline-none focus:ring-4 focus:ring-purple-500/10 focus:border-purple-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
+                      value={parentId}
+                      onChange={(e) => setParentId(e.target.value)}
+                    >
+                      <option value="">-- Seleccionar Patrón --</option>
+                      {users
+                        .filter((u) => u.role === "USER" && u.id !== selectedUser?.id && !u.parentId)
+                        .map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name} {p.lastName} ({p.email})
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                      Submódulos de Negocio Habilitados
+                    </label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-1">
+                      {SUB_MODULES.map((mod) => (
+                        <label key={mod.key} className="flex items-center gap-2 cursor-pointer font-bold text-sm text-gray-700">
+                          <input
+                            type="checkbox"
+                            checked={formData.profiles.includes(mod.key)}
+                            onChange={(e) => {
+                              const updated = e.target.checked
+                                ? [...formData.profiles, mod.key]
+                                : formData.profiles.filter(p => p !== mod.key);
+                              setFormData({ ...formData, profiles: updated });
+                            }}
+                            className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                          />
+                          {mod.name}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* MÓDULOS DE ACCESO TRADICIONAL */
+                <div className="space-y-3 pt-4 border-t border-gray-100">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                    Módulos de Acceso Habilitados
+                  </label>
+                  <div className="flex gap-8 pl-1">
+                    <label className="flex items-center gap-2 cursor-pointer font-bold text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={formData.profiles.includes("PERSONAL")}
+                        onChange={(e) => {
+                          const updated = e.target.checked
+                            ? [...formData.profiles, "PERSONAL"]
+                            : formData.profiles.filter(p => p !== "PERSONAL");
+                          setFormData({ ...formData, profiles: updated });
+                        }}
+                        className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                      />
+                      Personal
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer font-bold text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={formData.profiles.includes("BUSINESS")}
+                        onChange={(e) => {
+                          const updated = e.target.checked
+                            ? [...formData.profiles, "BUSINESS"]
+                            : formData.profiles.filter(p => p !== "BUSINESS");
+                          setFormData({ ...formData, profiles: updated });
+                        }}
+                        className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                      />
+                      Negocios
+                    </label>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex justify-end gap-4 pt-2">

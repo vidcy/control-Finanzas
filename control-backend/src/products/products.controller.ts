@@ -8,6 +8,7 @@ import {
   Delete,
   UseGuards,
   Req,
+  Query,
 } from '@nestjs/common';
 import { ProductsService } from './products.service';
 import { JwtAuthGuard } from '../auth/jwt.guard';
@@ -30,6 +31,15 @@ export class ProductsController {
   @Post()
   create(@Req() req, @Body() data: any) {
     return this.productsService.create(req.user.id, data);
+  }
+
+  @Get('low-stock-analysis')
+  getLowStockAnalysis(
+    @Req() req,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    return this.productsService.getLowStockAnalysis(req.user.id, startDate, endDate);
   }
 
   @Get()

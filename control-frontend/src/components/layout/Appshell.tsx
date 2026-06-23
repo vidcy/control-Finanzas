@@ -1,6 +1,6 @@
 import { type ReactNode, useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { useAuth } from "../../auth/AuthContext";
+import { useAuth, type WorkspaceType } from "../../auth/AuthContext";
 import {
   LayoutDashboard,
   TrendingUp,
@@ -208,8 +208,15 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
   // Cerrar menú móvil y sincronizar workspace al cambiar de ruta + control de accesos
   useEffect(() => {
     setIsMobileMenuOpen(false);
-    const path = location.pathname;
 
+    if (user?.parentId) {
+      if (activeWorkspace !== "BUSINESS") {
+        setActiveWorkspace("BUSINESS");
+      }
+      return;
+    }
+
+    const path = location.pathname;
     const profiles = user?.profiles || [];
     let targetWorkspace: "PERSONAL" | "BUSINESS" | null = null;
     if (path.startsWith("/business-")) {
@@ -220,9 +227,9 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
 
     if (targetWorkspace) {
       if (user?.blockedProfiles?.includes(targetWorkspace)) {
-        toast.error("El módulo fue desabilitado, comuníquese con soporte-think@ccoplex.com o al 912509111", { duration: 5000 });
+        toast.error("El módulo fue deshabilitado, comuníquese con soporte-think@ccoplex.com o al 912509111", { duration: 5000 });
         if (profiles.length === 1) {
-          const single = profiles[0];
+          const single = profiles[0] as WorkspaceType;
           setActiveWorkspace(single);
           navigate(single === "BUSINESS" ? "/business-dashboard" : "/dashboard");
         } else if (profiles.length > 1) {
@@ -237,7 +244,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
         // Acceso denegado: Redirigir
         toast.error("No tienes acceso a este módulo");
         if (profiles.length === 1) {
-          const single = profiles[0];
+          const single = profiles[0] as WorkspaceType;
           setActiveWorkspace(single);
           navigate(single === "BUSINESS" ? "/business-dashboard" : "/dashboard");
         } else if (profiles.length > 1) {
@@ -391,7 +398,25 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
     },
   ];
 
-  const activeMenu = activeWorkspace === "BUSINESS" ? businessMenu : menu;
+  const activeMenu = activeWorkspace === "BUSINESS"
+    ? (user?.parentId
+      ? businessMenu.filter(item => {
+        const mapping: Record<string, string> = {
+          "/business-dashboard": "BUSINESS_DASHBOARD",
+          "/business-pos": "BUSINESS_POS",
+          "/business-inventory": "BUSINESS_INVENTORY",
+          "/business-finance": "BUSINESS_FINANCE",
+          "/business-cash-register": "BUSINESS_CASH_REGISTER",
+          "/business-pending": "BUSINESS_PENDING",
+          "/business-reports": "BUSINESS_REPORTS",
+          "/business-history": "BUSINESS_HISTORY",
+          "/categories": "BUSINESS_CATEGORIES",
+        };
+        const key = mapping[item.path];
+        return key ? user?.profiles?.includes(key) : false;
+      })
+      : businessMenu)
+    : menu;
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -956,65 +981,67 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
         {activeTab === "security" && (
           <div className="space-y-8">
             {/* MODULE SWITCHERS */}
-            <div className="bg-gray-50/50 p-6 rounded-2xl border border-gray-100">
-              <h3 className="text-sm font-bold text-gray-800 mb-2">
-                Módulos Habilitados
-              </h3>
-              <p className="text-xs text-gray-500 mb-4">
-                Activa o desactiva los módulos a los que tienes acceso.
-              </p>
+            {!user?.parentId && (
+              <div className="bg-gray-50/50 p-6 rounded-2xl border border-gray-100">
+                <h3 className="text-sm font-bold text-gray-800 mb-2">
+                  Módulos Habilitados
+                </h3>
+                <p className="text-xs text-gray-500 mb-4">
+                  Activa o desactiva los módulos a los que tienes acceso.
+                </p>
 
-              {profileError && (
-                <div className="mb-4 bg-rose-50 border border-rose-200 text-rose-700 p-3 rounded-xl flex items-start gap-2 text-xs">
-                  <X className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                  <span>{profileError}</span>
+                {profileError && (
+                  <div className="mb-4 bg-rose-50 border border-rose-200 text-rose-700 p-3 rounded-xl flex items-start gap-2 text-xs">
+                    <X className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    <span>{profileError}</span>
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-3">
+                  <label className="flex items-center justify-between p-3 rounded-xl border border-gray-100 bg-white hover:bg-gray-50 cursor-pointer">
+                    <div className="flex items-center gap-2.5">
+                      <Target className="w-4 h-4 text-blue-500" />
+                      <div>
+                        <h4 className="text-xs font-bold text-gray-800">
+                          Módulo Personal
+                        </h4>
+                        <p className="text-[10px] text-gray-400">
+                          Control de tus finanzas personales
+                        </p>
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={activeProfiles.includes("PERSONAL")}
+                      onChange={() => handleToggleProfile("PERSONAL")}
+                      disabled={isSavingProfiles}
+                      className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                    />
+                  </label>
+
+                  <label className="flex items-center justify-between p-3 rounded-xl border border-gray-100 bg-white hover:bg-gray-50 cursor-pointer">
+                    <div className="flex items-center gap-2.5">
+                      <Briefcase className="w-4 h-4 text-purple-500" />
+                      <div>
+                        <h4 className="text-xs font-bold text-gray-800">
+                          Módulo Negocio PRO
+                        </h4>
+                        <p className="text-[10px] text-gray-400">
+                          Gestión comercial ERP y POS
+                        </p>
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={activeProfiles.includes("BUSINESS")}
+                      onChange={() => handleToggleProfile("BUSINESS")}
+                      disabled={isSavingProfiles}
+                      className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                    />
+                  </label>
                 </div>
-              )}
-
-              <div className="flex flex-col gap-3">
-                <label className="flex items-center justify-between p-3 rounded-xl border border-gray-100 bg-white hover:bg-gray-50 cursor-pointer">
-                  <div className="flex items-center gap-2.5">
-                    <Target className="w-4 h-4 text-blue-500" />
-                    <div>
-                      <h4 className="text-xs font-bold text-gray-800">
-                        Módulo Personal
-                      </h4>
-                      <p className="text-[10px] text-gray-400">
-                        Control de tus finanzas personales
-                      </p>
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={activeProfiles.includes("PERSONAL")}
-                    onChange={() => handleToggleProfile("PERSONAL")}
-                    disabled={isSavingProfiles}
-                    className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-                  />
-                </label>
-
-                <label className="flex items-center justify-between p-3 rounded-xl border border-gray-100 bg-white hover:bg-gray-50 cursor-pointer">
-                  <div className="flex items-center gap-2.5">
-                    <Briefcase className="w-4 h-4 text-purple-500" />
-                    <div>
-                      <h4 className="text-xs font-bold text-gray-800">
-                        Módulo Negocio PRO
-                      </h4>
-                      <p className="text-[10px] text-gray-400">
-                        Gestión comercial ERP y POS
-                      </p>
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={activeProfiles.includes("BUSINESS")}
-                    onChange={() => handleToggleProfile("BUSINESS")}
-                    disabled={isSavingProfiles}
-                    className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                  />
-                </label>
               </div>
-            </div>
+            )}
 
             {/* PASSWORD FORM */}
             <div>

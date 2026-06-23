@@ -29,7 +29,7 @@ export class AuthController {
     @Body() body: { currentPassword: string; newPassword: string },
   ) {
     return this.authService.changePassword(
-      req.user['id'],
+      req.user['workerId'] || req.user['id'],
       body.currentPassword,
       body.newPassword,
     );

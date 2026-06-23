@@ -106,3 +106,18 @@ export const deleteInventoryMovementRequest = async (id: string) => {
   const res = await API.delete(`/inventory-movements/${id}`);
   return res.data;
 };
+
+export interface LowStockAnalysisItem extends Product {
+  soldQty: number;
+  deficit: number;
+}
+
+export const getLowStockAnalysisRequest = async (
+  startDate?: string,
+  endDate?: string,
+): Promise<LowStockAnalysisItem[]> => {
+  const res = await API.get("/products/low-stock-analysis", {
+    params: { startDate, endDate },
+  });
+  return res.data;
+};

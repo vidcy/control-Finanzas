@@ -62,6 +62,10 @@ model User {
   isActive  Boolean  @default(true)
   profiles  Json?
   blockedProfiles Json?
+  parentId  String?
+  parent    User?    @relation("UserWorkers", fields: [parentId], references: [id])
+  workers   User[]   @relation("UserWorkers")
+
 
   personalAvatar   String?
   businessName     String?

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import Appshell from "../components/layout/Appshell";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Package,
   Plus,
@@ -7,7 +8,15 @@ import {
   Edit2,
   Trash2,
   TrendingUp,
-  Image,
+  Image as ImageIcon,
+  Copy,
+  Barcode as BarcodeIcon,
+  Calendar,
+  Camera,
+  Printer,
+  Clipboard,
+  Sparkles,
+  Loader2,
 } from "lucide-react";
 import {
   getProductsRequest,
@@ -15,16 +24,47 @@ import {
   updateProductRequest,
   deleteProductRequest,
   restockProductRequest,
+  getLowStockAnalysisRequest,
 } from "../services/product.api";
-import type { Product, Presentation } from "../services/product.api";
+import type { Product, Presentation, LowStockAnalysisItem } from "../services/product.api";
 import { listCategoriesRequest } from "../services/category.api";
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
 import ConfirmModal from "../components/ui/ConfirmModal";
+import { useAuth } from "../auth/AuthContext";
 import {
   getReceiptAbsoluteUrl,
   ProductImageUploader,
 } from "../components/ui/ImageUploader";
+
+// Helper dynamically loading CDN scripts to bypass React 19 dependency conflict issues
+const loadHtml5Qrcode = (): Promise<any> => {
+  return new Promise((resolve, reject) => {
+    if ((window as any).Html5Qrcode) {
+      resolve((window as any).Html5Qrcode);
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js";
+    script.onload = () => resolve((window as any).Html5Qrcode);
+    script.onerror = (err) => reject(err);
+    document.body.appendChild(script);
+  });
+};
+
+const loadJsBarcode = (): Promise<any> => {
+  return new Promise((resolve, reject) => {
+    if ((window as any).JsBarcode) {
+      resolve((window as any).JsBarcode);
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js";
+    script.onload = () => resolve((window as any).JsBarcode);
+    script.onerror = (err) => reject(err);
+    document.body.appendChild(script);
+  });
+};
 
 // Helper to format stock quantities into mixed presentations dynamically
 export function formatStock(
@@ -36,7 +76,6 @@ export function formatStock(
     return `${parseFloat(stock.toFixed(2))} ${unit}`;
   }
 
-  // Sort presentations by equivalence descending, excluding equivalence = 1 to prevent loops
   const sorted = [...presentations]
     .filter((p) => p.equivalence > 1)
     .sort((a, b) => b.equivalence - a.equivalence);
@@ -61,22 +100,27 @@ export function formatStock(
 }
 
 export default function BusinessInventoryPage() {
+  const { user } = useAuth();
+  
+  // Navigation Tabs
+  const [activeTab, setActiveTab] = useState<"products" | "planner" | "labels">("products");
+
+  // Core Data
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
 
+  // Modals States
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-
   const [isRestockModalOpen, setIsRestockModalOpen] = useState(false);
   const [restockProduct, setRestockProduct] = useState<Product | null>(null);
-
-  // Modal confirm delete states
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [productIdToDelete, setProductIdToDelete] = useState<string | null>(null);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
 
-  // Form State
+  // Form State - Defaulting Unit to "Unidad"
   const [formData, setFormData] = useState({
     name: "",
     description: "",
@@ -85,7 +129,7 @@ export default function BusinessInventoryPage() {
     salePrice: 0,
     stock: 0,
     minStock: 5,
-    unit: "Kg",
+    unit: "Unidad",
     imageUrl: "" as string | File,
     presentations: [] as Presentation[],
   });
@@ -97,6 +141,21 @@ export default function BusinessInventoryPage() {
     categoryId: "",
     paymentMethod: "CASH",
   });
+
+  // Replenishment Planner States
+  const [plannerItems, setPlannerItems] = useState<LowStockAnalysisItem[]>([]);
+  const [plannerLoading, setPlannerLoading] = useState(false);
+  const [plannerMonth, setPlannerMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [customQuantities, setCustomQuantities] = useState<Record<string, number>>({});
+  const [customCosts, setCustomCosts] = useState<Record<string, number>>({});
+
+  // Barcode Printing States
+  const [ticketProductId, setTicketProductId] = useState("");
+  const [ticketQuantity, setTicketQuantity] = useState(12);
+  const [ticketBusinessName, setTicketBusinessName] = useState(user?.businessName || "Think");
 
   const loadData = async () => {
     try {
@@ -114,9 +173,122 @@ export default function BusinessInventoryPage() {
     }
   };
 
+  const loadPlannerData = async () => {
+    if (activeTab !== "planner") return;
+    try {
+      setPlannerLoading(true);
+      const [year, month] = plannerMonth.split("-").map(Number);
+      const start = new Date(year, month - 1, 1).toISOString();
+      const end = new Date(year, month, 0, 23, 59, 59, 999).toISOString();
+      const data = await getLowStockAnalysisRequest(start, end);
+      setPlannerItems(data);
+
+      // Initialize custom fields if not set
+      const qtys: Record<string, number> = {};
+      const costs: Record<string, number> = {};
+      data.forEach((item) => {
+        qtys[item.id] = customQuantities[item.id] !== undefined ? customQuantities[item.id] : item.deficit;
+        costs[item.id] = customCosts[item.id] !== undefined ? customCosts[item.id] : item.costPrice;
+      });
+      setCustomQuantities((prev) => ({ ...qtys, ...prev }));
+      setCustomCosts((prev) => ({ ...costs, ...prev }));
+    } catch {
+      toast.error("Error al cargar planificador de compras");
+    } finally {
+      setPlannerLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    loadPlannerData();
+  }, [activeTab, plannerMonth]);
+
+  // Render Barcodes in the ticket print preview sheet
+  useEffect(() => {
+    if (activeTab === "labels" && ticketProductId) {
+      loadJsBarcode().then((JsBarcode) => {
+        const prod = products.find((p) => p.id === ticketProductId);
+        if (prod && prod.sku) {
+          const svgs = document.querySelectorAll(".barcode-preview-svg");
+          svgs.forEach((svg) => {
+            try {
+              JsBarcode(svg, prod.sku, {
+                format: "CODE128",
+                width: 1.5,
+                height: 35,
+                displayValue: true,
+                fontSize: 10,
+                margin: 4,
+              });
+            } catch (err) {
+              console.error("JsBarcode error rendering", err);
+            }
+          });
+        }
+      });
+    }
+  }, [activeTab, ticketProductId, ticketQuantity, products]);
+
+  // Webcam Scanner Effect
+  useEffect(() => {
+    let html5QrcodeScanner: any = null;
+    if (isScannerOpen) {
+      loadHtml5Qrcode().then((Html5Qrcode) => {
+        html5QrcodeScanner = new Html5Qrcode("scanner-reader");
+        html5QrcodeScanner.start(
+          { facingMode: "environment" },
+          { fps: 15, qrbox: { width: 250, height: 130 } },
+          (decodedText: string) => {
+            handleBarcodeScanned(decodedText);
+            html5QrcodeScanner.stop().then(() => {
+              setIsScannerOpen(false);
+            });
+          },
+          () => {
+            // Keep scan silent
+          }
+        ).catch(() => {
+          toast.error("No se pudo iniciar la cámara");
+          setIsScannerOpen(false);
+        });
+      });
+    }
+    return () => {
+      if (html5QrcodeScanner && html5QrcodeScanner.isScanning) {
+        html5QrcodeScanner.stop().catch((e: any) => console.error(e));
+      }
+    };
+  }, [isScannerOpen]);
+
+  const handleBarcodeScanned = (code: string) => {
+    toast.success(`Código escaneado: ${code}`);
+    const match = products.find((p) => p.sku?.toLowerCase() === code.trim().toLowerCase());
+    if (match) {
+      handleOpenModal(match);
+      toast.success(`Producto encontrado: ${match.name}`);
+    } else {
+      // Create new product with this SKU prefilled
+      setEditingProduct(null);
+      setFormData({
+        name: "",
+        description: "",
+        sku: code.trim(),
+        costPrice: 0,
+        salePrice: 0,
+        stock: 0,
+        minStock: 5,
+        unit: "Unidad",
+        imageUrl: "",
+        presentations: [],
+      });
+      setIsModalOpen(true);
+      toast("Código de barras nuevo. Rellene los datos para registrarlo.", { icon: "ℹ️" });
+    }
+  };
 
   const handleOpenModal = (product?: Product) => {
     if (product) {
@@ -129,7 +301,7 @@ export default function BusinessInventoryPage() {
         salePrice: product.salePrice,
         stock: product.stock,
         minStock: product.minStock,
-        unit: product.unit || "Kg",
+        unit: product.unit || "Unidad",
         imageUrl: product.imageUrl || "",
         presentations: product.presentations || [],
       });
@@ -143,12 +315,30 @@ export default function BusinessInventoryPage() {
         salePrice: 0,
         stock: 0,
         minStock: 5,
-        unit: "Kg",
+        unit: "Unidad",
         imageUrl: "",
         presentations: [],
       });
     }
     setIsModalOpen(true);
+  };
+
+  const handleClone = (product: Product) => {
+    setEditingProduct(null); // Clear editing to create a new product entry
+    setFormData({
+      name: product.name,
+      description: product.description || "",
+      sku: "", // Clear SKU/Barcode so they can type or scan the new one
+      costPrice: product.costPrice,
+      salePrice: product.salePrice,
+      stock: 0, // Reset stock for new item
+      minStock: product.minStock,
+      unit: product.unit || "Unidad",
+      imageUrl: product.imageUrl || "",
+      presentations: product.presentations || [],
+    });
+    setIsModalOpen(true);
+    toast.success("Modelo clonado. Ingrese o escanee el nuevo código.");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -182,6 +372,7 @@ export default function BusinessInventoryPage() {
       }
       setIsModalOpen(false);
       loadData();
+      if (activeTab === "planner") loadPlannerData();
     } catch (error: any) {
       toast.error(
         error?.response?.data?.message || "Error al guardar producto",
@@ -216,6 +407,7 @@ export default function BusinessInventoryPage() {
         paymentMethod: "CASH",
       });
       loadData();
+      if (activeTab === "planner") loadPlannerData();
     } catch (error: any) {
       toast.error(error?.response?.data?.message || "Error al reponer stock");
     }
@@ -226,13 +418,41 @@ export default function BusinessInventoryPage() {
       await deleteProductRequest(id);
       toast.success("Producto eliminado");
       loadData();
+      if (activeTab === "planner") loadPlannerData();
     } catch (error: any) {
       toast.error(error?.response?.data?.message || "Error al eliminar");
     }
   };
 
+  const handleCopyShoppingList = () => {
+    if (plannerItems.length === 0) {
+      toast.error("No hay elementos en la lista de compras");
+      return;
+    }
+    const lines = [
+      `PLAN DE COMPRAS - PERIODO: ${plannerMonth}`,
+      "------------------------------------------",
+    ];
+    let grandTotal = 0;
+    plannerItems.forEach((item) => {
+      const qty = customQuantities[item.id] || 0;
+      const cost = customCosts[item.id] || 0;
+      const total = qty * cost;
+      grandTotal += total;
+      lines.push(
+        `- ${item.name} (${item.sku || "Sin SKU"}): Comprar ${qty} ${item.unit} | Costo unitario: S/ ${cost.toFixed(2)} | Subtotal: S/ ${total.toFixed(2)}`
+      );
+    });
+    lines.push("------------------------------------------");
+    lines.push(`COSTO TOTAL ESTIMADO: S/ ${grandTotal.toFixed(2)}`);
+
+    navigator.clipboard.writeText(lines.join("\n"));
+    toast.success("Lista de compras copiada al portapapeles");
+  };
+
   const filteredProducts = products.filter((p) =>
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()),
+    p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (p.sku && p.sku.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   const selectedPres = restockProduct?.presentations?.find(
@@ -244,194 +464,569 @@ export default function BusinessInventoryPage() {
   return (
     <Appshell>
       <div className="space-y-6">
+        {/* PRINT STYLESHEET */}
+        {activeTab === "labels" && (
+          <style dangerouslySetInnerHTML={{
+            __html: `
+              @media print {
+                body * {
+                  visibility: hidden !important;
+                }
+                #print-area, #print-area * {
+                  visibility: visible !important;
+                }
+                #print-area {
+                  position: absolute !important;
+                  left: 0 !important;
+                  top: 0 !important;
+                  width: 100% !important;
+                  background: white !important;
+                  padding: 0 !important;
+                  margin: 0 !important;
+                }
+                .no-print {
+                  display: none !important;
+                }
+              }
+            `
+          }} />
+        )}
+
         {/* HEADER */}
-        <div className="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100 rounded-[2rem] p-8 text-gray-900 shadow-sm relative overflow-hidden">
-          <div className="absolute right-0 top-0 w-64 h-64 bg-purple-200 opacity-30 rounded-full blur-3xl transform translate-x-1/2 -translate-y-1/2"></div>
+        <div className="bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-800 border border-indigo-500 rounded-[2rem] p-8 text-white shadow-xl relative overflow-hidden">
+          <div className="absolute right-0 top-0 w-80 h-80 bg-purple-500 opacity-20 rounded-full blur-3xl transform translate-x-1/3 -translate-y-1/3 pointer-events-none"></div>
           <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
             <div>
-              <div className="inline-flex items-center justify-center p-3 bg-white rounded-2xl mb-4 border border-indigo-100 shadow-sm">
-                <Package className="w-8 h-8 text-indigo-600" />
+              <div className="inline-flex items-center justify-center p-3 bg-white/10 backdrop-blur-md rounded-2xl mb-4 border border-white/20 shadow-sm">
+                <Package className="w-8 h-8 text-white" />
               </div>
-              <h1 className="text-4xl font-black tracking-tight">Inventario</h1>
-              <p className="text-gray-500 font-medium mt-2 max-w-lg">
-                Mantén el control exacto de tus productos, presentaciones y
-                stock de forma intuitiva.
+              <h1 className="text-4xl font-black tracking-tight">Inventario de Negocio</h1>
+              <p className="text-indigo-100/80 font-medium mt-2 max-w-lg">
+                Gestiona mercancías, controla stock bajo, genera etiquetas con códigos de barras y planifica compras de reabastecimiento.
               </p>
             </div>
-            <button
-              onClick={() => handleOpenModal()}
-              className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-medium flex items-center gap-2 hover:bg-indigo-700 transition-colors shadow-sm hover:shadow-indigo-500/30"
-            >
-              <Plus className="w-5 h-5" />
-              Nuevo Producto
-            </button>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setIsScannerOpen(true)}
+                className="bg-white/10 backdrop-blur-md hover:bg-white/20 text-white border border-white/25 px-5 py-3 rounded-2xl font-bold flex items-center gap-2 transition-all active:scale-95 shadow-lg"
+              >
+                <Camera className="w-5 h-5 text-indigo-200" />
+                Escanear Cámara
+              </button>
+              <button
+                onClick={() => handleOpenModal()}
+                className="bg-white hover:bg-indigo-50 text-indigo-900 px-6 py-3 rounded-2xl font-black flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-indigo-950/20"
+              >
+                <Plus className="w-5 h-5 text-indigo-700" />
+                Nuevo Producto
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* CONTROLS */}
-        <div className="flex items-center bg-white p-2 rounded-2xl shadow-sm border border-gray-100">
-          <div className="flex-1 flex items-center px-4">
-            <Search className="w-5 h-5 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Buscar por nombre..."
-              className="w-full bg-transparent border-none focus:ring-0 text-sm py-3 px-3 outline-none"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
+        {/* TABS SELECTOR */}
+        <div className="flex border-b border-gray-100 gap-6">
+          {[
+            { id: "products", label: "Productos en Stock", icon: Package },
+            { id: "planner", label: "Planificador de Compras", icon: TrendingUp },
+            { id: "labels", label: "Diseñar Tickets / Etiquetas", icon: BarcodeIcon }
+          ].map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`flex items-center gap-2 pb-4 pt-1 px-1 relative text-sm font-black uppercase tracking-wider transition-colors ${
+                  isActive ? "text-indigo-600 font-extrabold" : "text-gray-400 hover:text-gray-600"
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                {tab.label}
+                {isActive && (
+                  <motion.div
+                    layoutId="activeTabUnderline"
+                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 rounded-full"
+                    transition={{ type: "spring", stiffness: 350, damping: 25 }}
+                  />
+                )}
+              </button>
+            );
+          })}
         </div>
 
-        {/* CARDS GRID */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {loading ? (
-            Array.from({ length: 8 }).map((_, i) => (
-              <div
-                key={i}
-                className="bg-white rounded-2xl p-4 animate-pulse border border-gray-100"
-              >
-                <div className="w-full h-32 bg-gray-100 rounded-xl mb-3"></div>
-                <div className="h-4 bg-gray-100 rounded w-3/4 mb-2"></div>
-                <div className="h-3 bg-gray-100 rounded w-1/2"></div>
-              </div>
-            ))
-          ) : filteredProducts.length === 0 ? (
-            <div className="col-span-full text-center py-16 text-gray-400">
-              <Package className="w-16 h-16 mx-auto mb-4 opacity-30" />
-              <p className="font-bold text-lg">
-                No hay productos. ¡Agrega uno nuevo!
-              </p>
-            </div>
-          ) : (
-            filteredProducts.map((p) => (
-              <div
-                key={p.id}
-                className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all group overflow-hidden flex flex-col"
-              >
-                {/* Product Image */}
-                <div className="relative w-full h-36 bg-gradient-to-br from-gray-50 to-indigo-50 overflow-hidden">
-                  {p.imageUrl ? (
-                    <img
-                      src={getReceiptAbsoluteUrl(p.imageUrl) || p.imageUrl}
-                      alt={p.name}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = "none";
-                      }}
+        {/* CONTENT SWITCHER WITH ANIMATIONS */}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={activeTab}
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            transition={{ duration: 0.2 }}
+          >
+            {activeTab === "products" && (
+              <div className="space-y-6">
+                {/* SEARCH CONTROLS */}
+                <div className="flex items-center bg-white p-2 rounded-2xl shadow-sm border border-gray-100">
+                  <div className="flex-1 flex items-center px-4">
+                    <Search className="w-5 h-5 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Buscar producto por nombre o código de barras (SKU)..."
+                      className="w-full bg-transparent border-none focus:ring-0 text-sm py-3 px-3 outline-none font-medium text-gray-700"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
                     />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <Package className="w-12 h-12 text-indigo-200" />
-                    </div>
-                  )}
-                  {/* Stock badge */}
-                  <div
-                    className={`absolute top-2 right-2 px-2 py-1 rounded-lg text-[10px] font-black shadow-sm ${p.stock <= p.minStock ? "bg-red-500 text-white" : "bg-emerald-500 text-white"}`}
-                  >
-                    {p.stock <= p.minStock ? "⚠ Stock bajo" : "✓ En stock"}
                   </div>
                 </div>
 
-                {/* Content */}
-                <div className="p-4 flex-1 flex flex-col">
-                  <div className="flex-1">
-                    <h3 className="font-black text-gray-900 text-sm leading-tight mb-1">
-                      {p.name}
-                    </h3>
-                    {p.sku && (
-                      <p className="text-[10px] text-gray-400 font-mono mb-1">
-                        SKU: {p.sku}
+                {/* PRODUCT GRID */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                  {loading ? (
+                    Array.from({ length: 8 }).map((_, i) => (
+                      <div
+                        key={i}
+                        className="bg-white rounded-3xl p-4 animate-pulse border border-gray-100 shadow-sm"
+                      >
+                        <div className="w-full h-36 bg-gray-100 rounded-2xl mb-4"></div>
+                        <div className="h-4 bg-gray-100 rounded-xl w-3/4 mb-2"></div>
+                        <div className="h-3 bg-gray-100 rounded-xl w-1/2"></div>
+                      </div>
+                    ))
+                  ) : filteredProducts.length === 0 ? (
+                    <div className="col-span-full text-center py-16 text-gray-400">
+                      <Package className="w-16 h-16 mx-auto mb-4 opacity-30 text-indigo-500" />
+                      <p className="font-extrabold text-lg text-gray-500">
+                        No se encontraron productos. ¡Registra uno nuevo!
                       </p>
-                    )}
+                    </div>
+                  ) : (
+                    filteredProducts.map((p) => (
+                      <div
+                        key={p.id}
+                        className="bg-white rounded-3xl border border-gray-100 shadow-sm hover:shadow-xl hover:border-indigo-100 transition-all duration-300 group overflow-hidden flex flex-col relative"
+                      >
+                        {/* Product Image */}
+                        <div className="relative w-full h-36 bg-gradient-to-br from-gray-50 to-indigo-50 overflow-hidden">
+                          {p.imageUrl ? (
+                            <img
+                              src={getReceiptAbsoluteUrl(p.imageUrl) || p.imageUrl}
+                              alt={p.name}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = "none";
+                              }}
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <Package className="w-12 h-12 text-indigo-100" />
+                            </div>
+                          )}
+                          {/* Stock status badge */}
+                          <div
+                            className={`absolute top-3 right-3 px-2.5 py-1 rounded-xl text-[9px] font-black uppercase tracking-wider shadow-sm ${
+                              p.stock <= p.minStock
+                                ? "bg-rose-500 text-white"
+                                : "bg-emerald-500 text-white"
+                            }`}
+                          >
+                            {p.stock <= p.minStock ? "Stock bajo" : "En Stock"}
+                          </div>
+                        </div>
 
-                    <div className="flex flex-wrap gap-1 mb-2">
-                      {p.presentations && p.presentations.length > 0
-                        ? p.presentations.slice(0, 2).map((pres) => (
-                            <span
-                              key={pres.id}
-                              className="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded-md text-[9px] font-bold"
-                              title={`Equivale a ${pres.equivalence} ${p.unit}`}
+                        {/* Card Info */}
+                        <div className="p-5 flex-1 flex flex-col">
+                          <div className="flex-1">
+                            <h3 className="font-black text-gray-900 text-sm leading-tight mb-1 truncate" title={p.name}>
+                              {p.name}
+                            </h3>
+                            {p.sku ? (
+                              <p className="text-[10px] text-gray-400 font-bold font-mono tracking-tight mb-2">
+                                SKU / BAR: {p.sku}
+                              </p>
+                            ) : (
+                              <p className="text-[10px] text-gray-300 italic mb-2">Sin código</p>
+                            )}
+
+                            <div className="flex flex-wrap gap-1 mb-3">
+                              {p.presentations && p.presentations.length > 0 ? (
+                                p.presentations.slice(0, 3).map((pres) => (
+                                  <span
+                                    key={pres.id}
+                                    className="bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-lg text-[9px] font-black"
+                                    title={`Equivale a ${pres.equivalence} ${p.unit}`}
+                                  >
+                                    {pres.name}
+                                  </span>
+                                ))
+                              ) : null}
+                            </div>
+
+                            <div className="bg-slate-50/80 rounded-2xl p-3 mb-4 border border-slate-100">
+                              <div className="text-[9px] text-gray-400 font-extrabold uppercase tracking-widest mb-0.5">
+                                Stock disponible
+                              </div>
+                              <div className="font-black text-gray-900 text-xs flex items-baseline gap-1">
+                                <span className="text-sm font-extrabold">{formatStock(p.stock, p.unit, p.presentations)}</span>
+                              </div>
+                              <div className="text-[9px] text-gray-400 mt-0.5">
+                                ({p.stock} {p.unit} base • min: {p.minStock})
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4 border-t border-slate-100 pt-3">
+                              <div>
+                                <div className="text-[9px] text-gray-400 font-extrabold uppercase tracking-widest">
+                                  Costo
+                                </div>
+                                <div className="text-sm font-bold text-gray-700">
+                                  S/ {p.costPrice.toFixed(2)}
+                                </div>
+                              </div>
+                              <div>
+                                <div className="text-[9px] text-gray-400 font-extrabold uppercase tracking-widest">
+                                  Venta
+                                </div>
+                                <div className="text-sm font-black text-indigo-600">
+                                  S/ {p.salePrice.toFixed(2)}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Card Actions */}
+                          <div className="flex gap-1.5 mt-4 pt-3 border-t border-gray-100">
+                            <button
+                              onClick={() => {
+                                setRestockProduct(p);
+                                setRestockData({
+                                  quantity: 1,
+                                  presentationId: p.presentations?.[0]?.id || "",
+                                  totalCost: p.costPrice * (p.presentations?.[0]?.equivalence || 1),
+                                  categoryId: "",
+                                  paymentMethod: "CASH",
+                                });
+                                setIsRestockModalOpen(true);
+                              }}
+                              className="flex-grow py-2 bg-emerald-50 text-emerald-700 rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-emerald-100 transition-colors flex items-center justify-center gap-1"
+                              title="Reponer Stock"
                             >
-                              {pres.name}
-                            </span>
-                          ))
-                        : null}
-                    </div>
-
-                    <div className="bg-gray-50 rounded-xl p-2 mb-3">
-                      <div className="text-[10px] text-gray-500 font-semibold mb-0.5">
-                        Stock actual
-                      </div>
-                      <div className="font-black text-gray-900 text-xs">
-                        {formatStock(p.stock, p.unit, p.presentations)}
-                      </div>
-                      <div className="text-[9px] text-gray-400">
-                        {p.stock} {p.unit} base
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <div className="text-[9px] text-gray-400 font-medium">
-                          Costo
-                        </div>
-                        <div className="text-sm font-bold text-gray-700">
-                          S/ {p.costPrice.toFixed(2)}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-[9px] text-gray-400 font-medium">
-                          Venta
-                        </div>
-                        <div className="text-sm font-black text-indigo-600">
-                          S/ {p.salePrice.toFixed(2)}
+                              <TrendingUp className="w-3.5 h-3.5" /> Comprar
+                            </button>
+                            <button
+                              onClick={() => handleOpenModal(p)}
+                              className="px-3 py-2 bg-indigo-50 text-indigo-700 rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-indigo-100 transition-colors flex items-center justify-center"
+                              title="Editar"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleClone(p)}
+                              className="px-3 py-2 bg-slate-50 text-slate-700 rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-slate-100 transition-colors flex items-center justify-center"
+                              title="Clonar Modelo (Mismo Modelo / Nuevo Código)"
+                            >
+                              <Copy className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                setProductIdToDelete(p.id);
+                                setIsDeleteConfirmOpen(true);
+                              }}
+                              className="px-2.5 py-2 bg-rose-50 text-rose-600 rounded-xl hover:bg-rose-100 transition-colors flex items-center justify-center"
+                              title="Eliminar"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex gap-1.5 mt-3 pt-3 border-t border-gray-100">
-                    <button
-                      onClick={() => {
-                        setRestockProduct(p);
-                        setRestockData({
-                          quantity: 1,
-                          presentationId: p.presentations?.[0]?.id || "",
-                          totalCost:
-                            p.costPrice *
-                            (p.presentations?.[0]?.equivalence || 1),
-                          categoryId: "",
-                          paymentMethod: "CASH",
-                        });
-                        setIsRestockModalOpen(true);
-                      }}
-                      className="flex-1 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-bold hover:bg-emerald-100 transition-colors flex items-center justify-center gap-1"
-                      title="Reponer Stock"
-                    >
-                      <TrendingUp className="w-3 h-3" /> Comprar
-                    </button>
-                    <button
-                      onClick={() => handleOpenModal(p)}
-                      className="flex-1 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-bold hover:bg-blue-100 transition-colors flex items-center justify-center gap-1"
-                    >
-                      <Edit2 className="w-3 h-3" /> Editar
-                    </button>
-                    <button
-                      onClick={() => {
-                        setProductIdToDelete(p.id);
-                        setIsDeleteConfirmOpen(true);
-                      }}
-                      className="px-2 py-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </div>
+                    ))
+                  )}
                 </div>
               </div>
-            ))
-          )}
-        </div>
+            )}
+
+            {activeTab === "planner" && (
+              <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 space-y-6">
+                {/* PLANNER CONTROLS */}
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-gray-100 pb-5">
+                  <div className="space-y-1">
+                    <h2 className="text-xl font-black text-gray-900">Planificador e Historial de Reabastecimiento</h2>
+                    <p className="text-sm text-gray-500 font-medium">
+                      Monitorea productos por debajo del stock mínimo y evalúa el ritmo de ventas mensual para calcular la compra.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2 bg-slate-50 border border-gray-200 px-4 py-2.5 rounded-2xl text-xs font-bold text-gray-700">
+                      <Calendar className="w-4 h-4 text-indigo-500" />
+                      <span>Analizar ventas del mes:</span>
+                      <input
+                        type="month"
+                        value={plannerMonth}
+                        onChange={(e) => setPlannerMonth(e.target.value)}
+                        className="bg-transparent border-none outline-none font-bold text-indigo-600 ml-1 cursor-pointer focus:ring-0 p-0 text-xs"
+                      />
+                    </div>
+                    <button
+                      onClick={handleCopyShoppingList}
+                      className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-4 py-2.5 rounded-2xl text-xs font-bold flex items-center gap-2 transition-all active:scale-95"
+                    >
+                      <Clipboard className="w-4 h-4" />
+                      Copiar Lista
+                    </button>
+                  </div>
+                </div>
+
+                {/* PLANNER TABLE */}
+                {plannerLoading ? (
+                  <div className="py-20 text-center flex flex-col items-center justify-center gap-3 text-gray-400">
+                    <Loader2 className="w-10 h-10 animate-spin text-indigo-600" />
+                    <p className="font-bold text-sm">Calculando análisis de abastecimiento...</p>
+                  </div>
+                ) : plannerItems.length === 0 ? (
+                  <div className="py-16 text-center text-gray-400 flex flex-col items-center">
+                    <Sparkles className="w-12 h-12 text-emerald-500 mb-3 opacity-60" />
+                    <p className="font-extrabold text-gray-800 text-lg">¡Stock Óptimo!</p>
+                    <p className="text-xs text-gray-500 font-medium mt-1">Ninguno de tus productos se encuentra por debajo del stock mínimo en este momento.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto rounded-2xl border border-gray-100">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-gray-100 text-[10px] font-black uppercase tracking-wider text-gray-500">
+                          <th className="py-4 px-5">Producto</th>
+                          <th className="py-4 px-4 text-center">Stock Actual</th>
+                          <th className="py-4 px-4 text-center">Stock Mínimo</th>
+                          <th className="py-4 px-4 text-center text-indigo-600">Vendidos en Mes</th>
+                          <th className="py-4 px-4 text-center">Déficit</th>
+                          <th className="py-4 px-4 text-right">Costo Unitario (S/)</th>
+                          <th className="py-4 px-4 text-center" style={{ width: "130px" }}>Comprar Cant.</th>
+                          <th className="py-4 px-4 text-right text-indigo-700">Subtotal Proyectado</th>
+                          <th className="py-4 px-4 text-center">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50 text-sm">
+                        {plannerItems.map((item) => {
+                          const buyQty = customQuantities[item.id] ?? item.deficit;
+                          const cost = customCosts[item.id] ?? item.costPrice;
+                          const subtotal = buyQty * cost;
+                          return (
+                            <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
+                              <td className="py-3.5 px-5">
+                                <div className="flex items-center gap-3">
+                                  {item.imageUrl ? (
+                                    <img
+                                      src={getReceiptAbsoluteUrl(item.imageUrl) || item.imageUrl}
+                                      alt={item.name}
+                                      className="w-10 h-10 object-cover rounded-xl border border-gray-100"
+                                      onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                                    />
+                                  ) : (
+                                    <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400">
+                                      <Package className="w-5 h-5" />
+                                    </div>
+                                  )}
+                                  <div>
+                                    <div className="font-extrabold text-gray-900">{item.name}</div>
+                                    <div className="text-[10px] text-gray-400 font-mono font-semibold">{item.sku || "Sin SKU"}</div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="py-3.5 px-4 text-center font-bold text-rose-600">
+                                {item.stock} {item.unit}
+                              </td>
+                              <td className="py-3.5 px-4 text-center text-gray-500 font-bold">
+                                {item.minStock} {item.unit}
+                              </td>
+                              <td className="py-3.5 px-4 text-center font-extrabold text-indigo-600 bg-indigo-50/20">
+                                {item.soldQty} {item.unit}
+                              </td>
+                              <td className="py-3.5 px-4 text-center font-bold text-amber-600">
+                                {item.deficit} {item.unit}
+                              </td>
+                              <td className="py-3.5 px-4 text-right font-medium">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={cost}
+                                  onChange={(e) => {
+                                    const val = Number(e.target.value);
+                                    setCustomCosts({ ...customCosts, [item.id]: val });
+                                  }}
+                                  className="w-20 px-2 py-1 border border-gray-200 rounded-lg outline-none text-right focus:ring-1 focus:ring-indigo-500 bg-white text-xs font-bold text-gray-700"
+                                />
+                              </td>
+                              <td className="py-3.5 px-4 text-center">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="any"
+                                  value={buyQty}
+                                  onChange={(e) => {
+                                    const val = Number(e.target.value);
+                                    setCustomQuantities({ ...customQuantities, [item.id]: val });
+                                  }}
+                                  className="w-20 px-2 py-1 border border-gray-200 rounded-lg outline-none text-center focus:ring-1 focus:ring-indigo-500 bg-white text-xs font-bold text-gray-700"
+                                />
+                              </td>
+                              <td className="py-3.5 px-4 text-right font-black text-indigo-700">
+                                S/ {subtotal.toFixed(2)}
+                              </td>
+                              <td className="py-3.5 px-4 text-center">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <button
+                                    onClick={() => {
+                                      setRestockProduct(item);
+                                      setRestockData({
+                                        quantity: buyQty,
+                                        presentationId: "",
+                                        totalCost: subtotal,
+                                        categoryId: "",
+                                        paymentMethod: "CASH",
+                                      });
+                                      setIsRestockModalOpen(true);
+                                    }}
+                                    className="px-2.5 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-bold flex items-center gap-1 transition-colors"
+                                    title="Ejecutar reposición física de stock y registrar egreso"
+                                  >
+                                    Comprar
+                                  </button>
+                                  <button
+                                    onClick={() => handleOpenModal(item)}
+                                    className="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700"
+                                    title="Editar datos de ficha técnica"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {/* TOTALS ROW */}
+                        <tr className="bg-slate-50/80 font-black border-t-2 border-slate-200">
+                          <td className="py-4 px-5 text-gray-700">Total Planificado</td>
+                          <td colSpan={5}></td>
+                          <td className="py-4 px-4 text-center text-gray-700">
+                            {Object.values(customQuantities).reduce((a, b) => a + b, 0)} items
+                          </td>
+                          <td className="py-4 px-4 text-right text-indigo-900 text-base">
+                            S/ {plannerItems.reduce((acc, item) => {
+                              const qty = customQuantities[item.id] ?? item.deficit;
+                              const cost = customCosts[item.id] ?? item.costPrice;
+                              return acc + (qty * cost);
+                            }, 0).toFixed(2)}
+                          </td>
+                          <td></td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === "labels" && (
+              <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 space-y-6">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-gray-100 pb-5 no-print">
+                  <div className="space-y-1">
+                    <h2 className="text-xl font-black text-gray-900">Impresión de Tickets y Código de Barras</h2>
+                    <p className="text-sm text-gray-500 font-medium">
+                      Genera boletines de tickets adhesivos para pegar en tus zapatillas, electrodomésticos u otros artículos.
+                    </p>
+                  </div>
+                  <button
+                    disabled={!ticketProductId}
+                    onClick={() => window.print()}
+                    className="bg-indigo-600 disabled:opacity-50 hover:bg-indigo-700 text-white px-5 py-3 rounded-2xl font-black text-sm flex items-center gap-2 transition-all active:scale-95 shadow-md shadow-indigo-500/20"
+                  >
+                    <Printer className="w-4 h-4" />
+                    Imprimir Boletín
+                  </button>
+                </div>
+
+                {/* FORM CONTROLS */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-slate-50 p-5 rounded-2xl border border-gray-100 no-print">
+                  <div>
+                    <label className="block text-xs font-black uppercase text-gray-500 mb-2">Producto a Etiquetar</label>
+                    <select
+                      value={ticketProductId}
+                      onChange={(e) => setTicketProductId(e.target.value)}
+                      className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-bold text-gray-700 shadow-sm"
+                    >
+                      <option value="">-- Selecciona un Producto --</option>
+                      {products.filter(p => p.sku).map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} ({p.sku})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-black uppercase text-gray-500 mb-2">Cantidad de Tickets (Copia)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={ticketQuantity}
+                      onChange={(e) => setTicketQuantity(Math.max(1, Number(e.target.value)))}
+                      className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-bold text-gray-700 shadow-sm"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-black uppercase text-gray-500 mb-2">Nombre Comercial del Ticket</label>
+                    <input
+                      type="text"
+                      value={ticketBusinessName}
+                      onChange={(e) => setTicketBusinessName(e.target.value)}
+                      placeholder="Nombre de tienda"
+                      className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-bold text-gray-700 shadow-sm"
+                    />
+                  </div>
+                </div>
+
+                {/* TICKET SHEET PREVIEW */}
+                {!ticketProductId ? (
+                  <div className="py-20 text-center text-gray-400 no-print">
+                    <BarcodeIcon className="w-16 h-16 mx-auto mb-3 opacity-20 text-indigo-600" />
+                    <p className="font-extrabold">Seleccione un producto para generar la vista previa de etiquetas.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-bold text-gray-500 uppercase tracking-widest no-print">Vista previa de impresión</h3>
+                    <div id="print-area" className="bg-white border border-gray-200 rounded-3xl p-6">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                        {Array.from({ length: ticketQuantity }).map((_, index) => {
+                          const prod = products.find(p => p.id === ticketProductId);
+                          return (
+                            <div
+                              key={index}
+                              className="border-2 border-dashed border-gray-300 bg-white p-3 rounded-2xl flex flex-col justify-between items-center text-center w-full aspect-[4/3] min-h-[140px] shadow-sm select-none"
+                            >
+                              <div className="text-[8px] font-black uppercase text-indigo-600 tracking-wider w-full truncate">
+                                {ticketBusinessName}
+                              </div>
+                              <div className="text-[10px] font-extrabold text-gray-900 leading-tight w-full truncate px-1">
+                                {prod?.name}
+                              </div>
+                              <div className="text-xs font-black text-slate-800 my-0.5">
+                                S/ {prod?.salePrice.toFixed(2)}
+                              </div>
+                              <svg className="barcode-preview-svg w-full max-h-[45px]"></svg>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </motion.div>
+        </AnimatePresence>
       </div>
 
       {/* MODAL: Crear/Editar */}
@@ -444,7 +1039,7 @@ export default function BusinessInventoryPage() {
           {/* IMAGEN DEL PRODUCTO */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
-              <Image className="w-4 h-4 text-indigo-500" />
+              <ImageIcon className="w-4 h-4 text-indigo-500" />
               Foto del Producto (opcional)
             </label>
             <ProductImageUploader
@@ -469,7 +1064,7 @@ export default function BusinessInventoryPage() {
                   setFormData({ ...formData, name: e.target.value })
                 }
                 className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                placeholder="Ej. Arroz Extra"
+                placeholder="Ej. Zapatillas Nike Air Max, Licuadora Oster, Smart TV 55&quot;"
               />
             </div>
             <div className="md:col-span-2">
@@ -483,12 +1078,12 @@ export default function BusinessInventoryPage() {
                   setFormData({ ...formData, description: e.target.value })
                 }
                 className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                placeholder="Opcional"
+                placeholder="Ej. Talla 41, Color Negro, Motor 800W, etc."
               />
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">
-                SKU / Código
+                SKU / Código de Barras
               </label>
               <input
                 type="text"
@@ -496,8 +1091,8 @@ export default function BusinessInventoryPage() {
                 onChange={(e) =>
                   setFormData({ ...formData, sku: e.target.value })
                 }
-                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                placeholder="Ej. ARR-001"
+                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
+                placeholder="Ej. 1912509111, NIK-41-NEG"
               />
             </div>
             <div>
@@ -511,10 +1106,10 @@ export default function BusinessInventoryPage() {
                 }
                 className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
               >
+                <option value="Unidad">Unidad</option>
                 <option value="Kg">Kg</option>
                 <option value="Litro">Litro</option>
                 <option value="Metro">Metro</option>
-                <option value="Unidad">Unidad</option>
                 <option value="Par">Par</option>
                 <option value="Caja">Caja</option>
                 <option value="Rollo">Rollo</option>
@@ -631,7 +1226,7 @@ export default function BusinessInventoryPage() {
                       <input
                         type="text"
                         required
-                        placeholder="Ej. Saco, Medio Saco"
+                        placeholder="Ej. Caja, Par, etc."
                         value={pres.name}
                         onChange={(e) => {
                           const newPres = [...formData.presentations];
@@ -727,7 +1322,7 @@ export default function BusinessInventoryPage() {
         </form>
       </Modal>
 
-      {/* MODAL: Reponer Stock */}
+      {/* MODAL: Reponer Stock / Comprar */}
       <Modal
         isOpen={isRestockModalOpen}
         onClose={() => setIsRestockModalOpen(false)}
@@ -917,6 +1512,34 @@ export default function BusinessInventoryPage() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* MODAL: Cámara Escáner */}
+      <Modal
+        isOpen={isScannerOpen}
+        onClose={() => setIsScannerOpen(false)}
+        title="Escanear Código de Barras / QR"
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-gray-500 font-medium text-center">
+            Apunta la cámara de tu dispositivo hacia el código de barras o código QR.
+          </p>
+          <div
+            id="scanner-reader"
+            className="w-full max-w-sm mx-auto overflow-hidden rounded-2xl border border-gray-200 bg-black aspect-video flex items-center justify-center text-white text-xs font-bold"
+          >
+            Iniciando cámara...
+          </div>
+          <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={() => setIsScannerOpen(false)}
+              className="px-5 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 font-bold text-xs"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
       </Modal>
 
       <ConfirmModal

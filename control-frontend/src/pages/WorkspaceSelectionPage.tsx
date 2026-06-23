@@ -11,7 +11,7 @@ export default function WorkspaceSelectionPage() {
   useEffect(() => {
     const profiles = user?.profiles || [];
     if (profiles.length === 1) {
-      const single = profiles[0];
+      const single = profiles[0] as WorkspaceType;
       setActiveWorkspace(single);
       if (single === "PERSONAL") {
         navigate("/dashboard");

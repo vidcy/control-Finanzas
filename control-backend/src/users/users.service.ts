@@ -36,10 +36,13 @@ export class UsersService {
         role: (data.role || 'USER') as 'ADMIN' | 'USER',
         profiles: data.profiles && data.profiles.length > 0 ? data.profiles : ['PERSONAL'],
         isActive: data.isActive !== undefined ? data.isActive : true,
+        parentId: data.parentId || null,
       },
     });
-    //seed categories
-    await this.categoryService.seedDefaultCategories(user.id);
+    //seed categories only if it's not a worker user
+    if (!user.parentId) {
+      await this.categoryService.seedDefaultCategories(user.id);
+    }
     return user;
   }
   async findByEmail(email: string) {
@@ -58,6 +61,7 @@ export class UsersService {
         isActive: true,
         profiles: true,
         blockedProfiles: true,
+        parentId: true,
       }
     });
   }
@@ -116,6 +120,7 @@ export class UsersService {
         businessRubro: true,
         businessLogo: true,
         businessBanner: true,
+        parentId: true,
       },
     });
   }

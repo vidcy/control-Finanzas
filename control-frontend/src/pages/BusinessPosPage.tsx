@@ -35,8 +35,23 @@ import {
   Edit2,
   Trash2,
   Loader2,
+  Camera,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
+
+const loadHtml5Qrcode = (): Promise<any> => {
+  return new Promise((resolve, reject) => {
+    if ((window as any).Html5Qrcode) {
+      resolve((window as any).Html5Qrcode);
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js";
+    script.onload = () => resolve((window as any).Html5Qrcode);
+    script.onerror = (err) => reject(err);
+    document.body.appendChild(script);
+  });
+};
 import Modal from "../components/ui/Modal";
 import ConfirmModal from "../components/ui/ConfirmModal";
 import { format } from "date-fns";
@@ -106,6 +121,7 @@ export default function BusinessPosPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeShift, setActiveShift] = useState<any>(null);
   const [receiptUrl, setReceiptUrl] = useState<string | File | null>(null);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
 
   // Checkout payment states
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
@@ -296,6 +312,109 @@ export default function BusinessPosPage() {
       ]);
     }
   };
+
+  const playBeep = () => {
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const oscillator = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      
+      oscillator.type = "sine";
+      oscillator.frequency.value = 850;
+      gainNode.gain.setValueAtTime(0.08, audioCtx.currentTime);
+      
+      oscillator.start();
+      oscillator.stop(audioCtx.currentTime + 0.08);
+    } catch (err) {
+      console.warn("Audio beep error", err);
+    }
+  };
+
+  const handleBarcodeScanned = (code: string) => {
+    const cleanCode = code.trim();
+    const match = products.find(
+      (p) => p.sku && p.sku.toLowerCase() === cleanCode.toLowerCase()
+    );
+    if (match) {
+      addToCart(match);
+      playBeep();
+      toast.success(`Agregado: ${match.name}`);
+    } else {
+      toast.error(`Producto no encontrado: "${cleanCode}"`);
+    }
+  };
+
+  // Keyboard/USB Scanner listener
+  useEffect(() => {
+    let buffer = "";
+    let lastKeyTime = Date.now();
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement
+      ) {
+        return;
+      }
+
+      const currentTime = Date.now();
+      if (currentTime - lastKeyTime > 50) {
+        buffer = "";
+      }
+
+      if (e.key === "Enter") {
+        if (buffer.length >= 3) {
+          e.preventDefault();
+          handleBarcodeScanned(buffer);
+          buffer = "";
+        }
+      } else if (e.key.length === 1) {
+        buffer += e.key;
+      }
+
+      lastKeyTime = currentTime;
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [products, cart, activeShift]);
+
+  // Webcam Scanner Effect
+  useEffect(() => {
+    let html5QrcodeScanner: any = null;
+    if (isScannerOpen) {
+      loadHtml5Qrcode().then((Html5Qrcode) => {
+        html5QrcodeScanner = new Html5Qrcode("scanner-reader");
+        html5QrcodeScanner.start(
+          { facingMode: "environment" },
+          { fps: 15, qrbox: { width: 250, height: 130 } },
+          (decodedText: string) => {
+            handleBarcodeScanned(decodedText);
+            html5QrcodeScanner.stop().then(() => {
+              setIsScannerOpen(false);
+            });
+          },
+          () => {
+            // Keep scan silent
+          }
+        ).catch(() => {
+          toast.error("No se pudo iniciar la cámara");
+          setIsScannerOpen(false);
+        });
+      });
+    }
+    return () => {
+      if (html5QrcodeScanner && html5QrcodeScanner.isScanning) {
+        html5QrcodeScanner.stop().catch((e: any) => console.error(e));
+      }
+    };
+  }, [isScannerOpen, products]);
 
   const addCustomSale = (e: React.FormEvent) => {
     e.preventDefault();
@@ -838,15 +957,24 @@ export default function BusinessPosPage() {
           )}
 
           <div className="p-4 bg-gradient-to-br from-blue-50 to-indigo-50 border-b border-blue-100 flex flex-col sm:flex-row gap-3 justify-between items-center">
-            <div className="relative w-full">
-              <Search className="w-5 h-5 text-gray-400 absolute left-4 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Buscar producto..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-11 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-bold text-gray-700 shadow-sm"
-              />
+            <div className="relative w-full flex gap-2">
+              <div className="relative flex-1">
+                <Search className="w-5 h-5 text-gray-400 absolute left-4 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Buscar producto por nombre o código..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-11 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-bold text-gray-700 shadow-sm"
+                />
+              </div>
+              <button
+                onClick={() => setIsScannerOpen(true)}
+                className="px-4 py-3 bg-white border border-gray-200 text-gray-700 rounded-xl font-bold flex items-center justify-center hover:bg-slate-50 transition-all shadow-sm"
+                title="Escanear Código con Cámara"
+              >
+                <Camera className="w-5 h-5 text-indigo-500" />
+              </button>
             </div>
             <button
               onClick={() => setIsCustomSaleOpen(true)}
@@ -1752,6 +1880,34 @@ export default function BusinessPosPage() {
         cancelText="Cancelar"
         variant="danger"
       />
+
+      {/* MODAL: Cámara Escáner */}
+      <Modal
+        isOpen={isScannerOpen}
+        onClose={() => setIsScannerOpen(false)}
+        title="Escanear Código de Barras / QR"
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-gray-500 font-medium text-center">
+            Apunta la cámara de tu dispositivo hacia el código de barras o código QR.
+          </p>
+          <div
+            id="scanner-reader"
+            className="w-full max-w-sm mx-auto overflow-hidden rounded-2xl border border-gray-200 bg-black aspect-video flex items-center justify-center text-white text-xs font-bold"
+          >
+            Iniciando cámara...
+          </div>
+          <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={() => setIsScannerOpen(false)}
+              className="px-5 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 font-bold text-xs"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      </Modal>
     </Appshell>
   );
 }

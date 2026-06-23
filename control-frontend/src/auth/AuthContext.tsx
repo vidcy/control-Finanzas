@@ -11,8 +11,8 @@ export interface User {
   lastName?: string;
   email: string;
   role?: string;
-  profiles: WorkspaceType[];
-  blockedProfiles?: WorkspaceType[];
+  profiles: string[];
+  blockedProfiles?: string[];
   [key: string]: any;
 }
 
@@ -25,19 +25,19 @@ interface AuthContextType {
   logout: () => void;
   activeWorkspace: WorkspaceType | null;
   setActiveWorkspace: (workspace: WorkspaceType | null) => void;
-  userProfiles: WorkspaceType[];
+  userProfiles: string[];
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
 /** Safely parse profiles — handles string JSON, array, or null */
-const parseProfiles = (raw: any): WorkspaceType[] => {
+const parseProfiles = (raw: any): string[] => {
   if (!raw) return ["PERSONAL"];
-  if (Array.isArray(raw)) return raw as WorkspaceType[];
+  if (Array.isArray(raw)) return raw as string[];
   if (typeof raw === "string") {
     try {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed as WorkspaceType[];
+      if (Array.isArray(parsed)) return parsed as string[];
     } catch { /* ignore */ }
   }
   return ["PERSONAL"];
@@ -75,7 +75,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setActiveWorkspaceState(null);
   };
 
-  const userProfiles: WorkspaceType[] = parseProfiles(user?.profiles);
+  const userProfiles: string[] = parseProfiles(user?.profiles);
 
   // Sync user profile with backend on mount/token change
   useEffect(() => {
@@ -101,8 +101,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setUser(loggedUser);
 
         const userProfs = loggedUser.profiles;
-        if (userProfs.length === 1) {
-          setActiveWorkspace(userProfs[0]);
+        if (loggedUser.parentId) {
+          setActiveWorkspace("BUSINESS");
+        } else if (userProfs.length === 1) {
+          setActiveWorkspace(userProfs[0] as WorkspaceType);
         } else if (activeWorkspace && !userProfs.includes(activeWorkspace)) {
           setActiveWorkspaceState(null);
           localStorage.removeItem("activeWorkspace");
@@ -136,8 +138,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       localStorage.setItem("user", JSON.stringify(loggedUser));
 
       const userProfs = loggedUser.profiles;
-      if (userProfs.length === 1) {
-        setActiveWorkspace(userProfs[0]);
+      if (loggedUser.parentId) {
+        setActiveWorkspace("BUSINESS");
+      } else if (userProfs.length === 1) {
+        setActiveWorkspace(userProfs[0] as WorkspaceType);
       } else {
         setActiveWorkspace(null);
       }
@@ -180,8 +184,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       localStorage.setItem("user", JSON.stringify(loggedUser));
 
       const userProfs = loggedUser.profiles;
-      if (userProfs.length === 1) {
-        setActiveWorkspace(userProfs[0]);
+      if (loggedUser.parentId) {
+        setActiveWorkspace("BUSINESS");
+      } else if (userProfs.length === 1) {
+        setActiveWorkspace(userProfs[0] as WorkspaceType);
       } else {
         setActiveWorkspace(null);
       }

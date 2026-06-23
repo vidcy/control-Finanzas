@@ -123,22 +123,36 @@ export class UsersController {
   }
   @UseGuards(JwtAuthGuard)
   @Get('me')
-  getMe(@Req() req) {
-    // console.log('🔥 ENTRO A /users/me');
-    //console.log('USER:', req.user.id);
-    return this.usersService.me(req.user.id);
+  async getMe(@Req() req) {
+    const userId = req.user.workerId || req.user.id;
+    const user = await this.usersService.me(userId);
+    if (req.user.workerId && user) {
+      const parent = await this.usersService.me(req.user.id);
+      return {
+        ...user,
+        businessName: parent?.businessName,
+        businessRuc: parent?.businessRuc,
+        businessReason: parent?.businessReason,
+        businessRubro: parent?.businessRubro,
+        businessLogo: parent?.businessLogo,
+        businessBanner: parent?.businessBanner,
+      };
+    }
+    return user;
   }
 
   @UseGuards(JwtAuthGuard)
   @Patch('me/profiles')
   updateProfiles(@Req() req, @Body('profiles') profiles: string[]) {
-    return this.usersService.updateProfiles(req.user.id, profiles);
+    const userId = req.user.workerId || req.user.id;
+    return this.usersService.updateProfiles(userId, profiles);
   }
 
   @UseGuards(JwtAuthGuard)
   @Patch('me/profile')
   updateMyProfile(@Req() req, @Body() body: any) {
-    return this.usersService.updateMyProfile(req.user.id, body);
+    const userId = req.user.workerId || req.user.id;
+    return this.usersService.updateMyProfile(userId, body);
   }
 
   @UseGuards(JwtAuthGuard)

@@ -63,6 +63,25 @@ export default function LoginPage() {
                 return;
             }
 
+            const profileToPathMap: Record<string, string> = {
+                BUSINESS_DASHBOARD: "/business-dashboard",
+                BUSINESS_POS: "/business-pos",
+                BUSINESS_INVENTORY: "/business-inventory",
+                BUSINESS_FINANCE: "/business-finance",
+                BUSINESS_CASH_REGISTER: "/business-cash-register",
+                BUSINESS_PENDING: "/business-pending",
+                BUSINESS_REPORTS: "/business-reports",
+                BUSINESS_HISTORY: "/business-history",
+                BUSINESS_CATEGORIES: "/categories",
+            };
+
+            if (storedUser.parentId) {
+                const firstProfile = profiles.find(p => profileToPathMap[p]);
+                const targetPath = firstProfile ? profileToPathMap[firstProfile] : "/business-pos";
+                navigate(targetPath);
+                return;
+            }
+
             if (profiles.length > 1) {
                 navigate("/workspace-selection");
             } else if (profiles[0] === "BUSINESS") {

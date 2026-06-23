@@ -460,4 +460,50 @@ export class ProductsService {
       };
     });
   }
+
+  async getLowStockAnalysis(userId: string, startDate?: string, endDate?: string) {
+    const allProducts = await this.prisma.product.findMany({
+      where: { userId },
+      include: { presentations: true },
+      orderBy: { name: 'asc' },
+    });
+
+    const lowStockProducts = allProducts.filter(
+      (p) => p.stock <= p.minStock,
+    );
+
+    const productIds = lowStockProducts.map((p) => p.id);
+    if (productIds.length === 0) return [];
+
+    const start = startDate ? new Date(startDate) : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    const end = endDate ? new Date(endDate) : new Date();
+
+    const movements = await this.prisma.inventoryMovement.findMany({
+      where: {
+        productId: { in: productIds },
+        type: 'OUT',
+        createdAt: {
+          gte: start,
+          lte: end,
+        },
+      },
+    });
+
+    const salesVelocityMap = new Map<string, number>();
+    for (const mov of movements) {
+      const current = salesVelocityMap.get(mov.productId) || 0;
+      salesVelocityMap.set(mov.productId, current + mov.quantity);
+    }
+
+    return lowStockProducts.map((p) => {
+      const soldQty = salesVelocityMap.get(p.id) || 0;
+      const deficit = Math.max(0, p.minStock - p.stock);
+      return {
+        ...p,
+        soldQty,
+        deficit,
+      };
+    });
+  }
 }
+
