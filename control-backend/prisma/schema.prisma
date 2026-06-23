@@ -63,6 +63,14 @@ model User {
   profiles  Json?
   blockedProfiles Json?
 
+  personalAvatar   String?
+  businessName     String?
+  businessRuc      String?
+  businessReason   String?
+  businessRubro    String?
+  businessLogo     String?
+  businessBanner   String?
+
   resetToken       String?
   resetTokenExpiry DateTime?
 

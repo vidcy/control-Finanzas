@@ -20,6 +20,7 @@ import type { Product, Presentation } from "../services/product.api";
 import { listCategoriesRequest } from "../services/category.api";
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
+import ConfirmModal from "../components/ui/ConfirmModal";
 import {
   getReceiptAbsoluteUrl,
   ProductImageUploader,
@@ -70,6 +71,10 @@ export default function BusinessInventoryPage() {
 
   const [isRestockModalOpen, setIsRestockModalOpen] = useState(false);
   const [restockProduct, setRestockProduct] = useState<Product | null>(null);
+
+  // Modal confirm delete states
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [productIdToDelete, setProductIdToDelete] = useState<string | null>(null);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -217,14 +222,12 @@ export default function BusinessInventoryPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (window.confirm("¿Eliminar este producto permanentemente?")) {
-      try {
-        await deleteProductRequest(id);
-        toast.success("Producto eliminado");
-        loadData();
-      } catch (error: any) {
-        toast.error(error?.response?.data?.message || "Error al eliminar");
-      }
+    try {
+      await deleteProductRequest(id);
+      toast.success("Producto eliminado");
+      loadData();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || "Error al eliminar");
     }
   };
 
@@ -415,7 +418,10 @@ export default function BusinessInventoryPage() {
                       <Edit2 className="w-3 h-3" /> Editar
                     </button>
                     <button
-                      onClick={() => handleDelete(p.id)}
+                      onClick={() => {
+                        setProductIdToDelete(p.id);
+                        setIsDeleteConfirmOpen(true);
+                      }}
                       className="px-2 py-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"
                     >
                       <Trash2 className="w-3 h-3" />
@@ -912,6 +918,24 @@ export default function BusinessInventoryPage() {
           </div>
         </form>
       </Modal>
+
+      <ConfirmModal
+        isOpen={isDeleteConfirmOpen}
+        onClose={() => {
+          setIsDeleteConfirmOpen(false);
+          setProductIdToDelete(null);
+        }}
+        onConfirm={() => {
+          if (productIdToDelete) {
+            handleDelete(productIdToDelete);
+          }
+        }}
+        title="¿Eliminar producto?"
+        message="¿Estás seguro de que deseas eliminar este producto permanentemente? Esta acción no se puede deshacer."
+        confirmText="Eliminar Producto"
+        cancelText="Cancelar"
+        variant="danger"
+      />
     </Appshell>
   );
 }

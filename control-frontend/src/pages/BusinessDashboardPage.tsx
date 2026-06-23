@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import Appshell from "../components/layout/Appshell";
+import { useAuth } from "../auth/AuthContext";
+import { getReceiptAbsoluteUrl } from "../components/ui/ImageUploader";
 import { getTransactionsRequest } from "../services/transaction.api";
 import { getProductsRequest } from "../services/product.api";
 import {
@@ -23,6 +25,7 @@ import { es } from "date-fns/locale";
 import BusinessAiAdvisor from "../components/dashboard/BusinessAiAdvisor";
 
 export default function BusinessDashboardPage() {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [metrics, setMetrics] = useState({
     revenue: 0,
@@ -98,26 +101,63 @@ export default function BusinessDashboardPage() {
     <Appshell>
       <div className="space-y-6 max-w-7xl mx-auto pb-10">
         {/* HEADER */}
-        <div className="bg-gradient-to-br from-indigo-50 to-blue-50 border border-indigo-100 rounded-3xl p-8 text-gray-900 shadow-sm relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div className="absolute right-0 top-0 w-64 h-64 bg-indigo-200 opacity-20 rounded-full blur-3xl transform translate-x-1/2 -translate-y-1/2"></div>
-          <div className="relative z-10">
-            <h1 className="text-3xl font-black mb-2 tracking-tight">
-              Dashboard Ejecutivo
-            </h1>
-            <p className="text-gray-500 font-medium">
-              Estado de salud financiera y rentabilidad en tiempo real.
-            </p>
-          </div>
-          <div className="flex gap-3 relative z-10">
-            <Link
-              to="/business-pos"
-              className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all active:scale-95"
+        {(() => {
+          const hasCustomBanner = !!(user?.businessBanner);
+          const bannerStyle = hasCustomBanner
+            ? {
+                backgroundImage: `url(${getReceiptAbsoluteUrl(user.businessBanner)})`,
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+              }
+            : {};
+          return (
+            <div
+              style={bannerStyle}
+              className={`border border-indigo-100 rounded-3xl p-8 shadow-sm relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-4 ${
+                hasCustomBanner ? "text-white" : "bg-gradient-to-br from-indigo-50 to-blue-50 text-gray-900"
+              }`}
             >
-              <DollarSign className="w-5 h-5" />
-              Nueva Venta
-            </Link>
-          </div>
-        </div>
+              {hasCustomBanner ? (
+                <div className="absolute inset-0 bg-gradient-to-r from-gray-950/80 via-gray-900/60 to-transparent backdrop-blur-[2px] z-0"></div>
+              ) : (
+                <div className="absolute right-0 top-0 w-64 h-64 bg-indigo-200 opacity-20 rounded-full blur-3xl transform translate-x-1/2 -translate-y-1/2"></div>
+              )}
+              
+              <div className="relative z-10 flex items-center gap-4">
+                {user?.businessLogo && (
+                  <img
+                    src={getReceiptAbsoluteUrl(user.businessLogo) || ""}
+                    crossOrigin="anonymous"
+                    alt="Logo"
+                    className="w-16 h-16 rounded-full object-cover border-2 border-white/50 shadow-md bg-white flex-shrink-0"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = "none";
+                    }}
+                  />
+                )}
+                <div>
+                  <h1 className="text-3xl font-black mb-1 tracking-tight">
+                    {user?.businessName ? user.businessName.toUpperCase() : "Dashboard Ejecutivo"}
+                  </h1>
+                  <p className={hasCustomBanner ? "text-gray-200 font-semibold text-sm" : "text-gray-500 font-medium"}>
+                    {user?.businessName
+                      ? `${user.businessRubro || "Empresa"} • Panel Ejecutivo`
+                      : "Estado de salud financiera y rentabilidad en tiempo real."}
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-3 relative z-10">
+                <Link
+                  to="/business-pos"
+                  className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all active:scale-95 shadow-lg shadow-indigo-600/30"
+                >
+                  <DollarSign className="w-5 h-5" />
+                  Nueva Venta
+                </Link>
+              </div>
+            </div>
+          );
+        })()}
 
         {loading ? (
           <div className="h-64 flex items-center justify-center">

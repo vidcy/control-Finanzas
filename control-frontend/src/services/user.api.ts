@@ -110,3 +110,14 @@ export const getMeRequest = async () => {
 
   return res.data;
 };
+
+export const updateMyProfileRequest = async (data: any) => {
+  try {
+    const res = await API.patch("/users/me/profile", data);
+    return res.data;
+  } catch (error: any) {
+    throw new Error(
+      error?.response?.data?.message || "Error al actualizar perfil",
+    );
+  }
+};

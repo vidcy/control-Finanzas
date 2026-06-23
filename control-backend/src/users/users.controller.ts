@@ -136,6 +136,12 @@ export class UsersController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Patch('me/profile')
+  updateMyProfile(@Req() req, @Body() body: any) {
+    return this.usersService.updateMyProfile(req.user.id, body);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get(':id')
   findUser(@Param('id') id: string) {
     return this.usersService.findUser(id);

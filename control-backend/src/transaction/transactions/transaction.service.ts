@@ -150,6 +150,44 @@ export class TransactionService {
   // =========================================================
   async deleteTransaction(id: string) {
     const existing = await this.findById(id);
+
+    // 1. Buscar movimientos de inventario asociados (margen de 5 segundos)
+    const movements = await this.prisma.inventoryMovement.findMany({
+      where: {
+        userId: existing.userId,
+        createdAt: {
+          gte: new Date(existing.createdAt.getTime() - 5000),
+          lte: new Date(existing.createdAt.getTime() + 5000),
+        },
+      },
+    });
+
+    // 2. Restaurar stock para cada producto y borrar movimientos
+    for (const movement of movements) {
+      const productExists = await this.prisma.product.findUnique({
+        where: { id: movement.productId },
+      });
+      if (productExists) {
+        if (movement.type === 'OUT') {
+          // Revertir salida: sumar al stock
+          await this.prisma.product.update({
+            where: { id: movement.productId },
+            data: { stock: { increment: movement.quantity } },
+          });
+        } else if (movement.type === 'IN') {
+          // Revertir entrada: restar al stock
+          await this.prisma.product.update({
+            where: { id: movement.productId },
+            data: { stock: { decrement: movement.quantity } },
+          });
+        }
+      }
+
+      await this.prisma.inventoryMovement.delete({
+        where: { id: movement.id },
+      });
+    }
+
     const result = await this.prisma.transaction.delete({
       where: { id },
     });

@@ -1,13 +1,15 @@
-import { ConflictException, Injectable, ForbiddenException } from '@nestjs/common';
+import { ConflictException, Injectable, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { CategoriesService } from 'src/category/category.service';
+import { FilesService } from '../files/files.service';
 
 @Injectable()
 export class UsersService {
   constructor(
     private prisma: PrismaService,
     private categoryService: CategoriesService,
+    private filesService: FilesService,
   ) {}
   async createUsers(data: any) {
     const existingUser = await this.findByEmail(data.email);
@@ -107,6 +109,108 @@ export class UsersService {
         isActive: true,
         profiles: true,
         blockedProfiles: true,
+        personalAvatar: true,
+        businessName: true,
+        businessRuc: true,
+        businessReason: true,
+        businessRubro: true,
+        businessLogo: true,
+        businessBanner: true,
+      },
+    });
+  }
+
+  async updateMyProfile(id: string, data: any) {
+    const allowedFields = [
+      'name',
+      'lastName',
+      'personalAvatar',
+      'businessName',
+      'businessRuc',
+      'businessReason',
+      'businessRubro',
+      'businessLogo',
+      'businessBanner',
+    ];
+    const updateData: any = {};
+    for (const key of allowedFields) {
+      if (data[key] !== undefined) {
+        updateData[key] = data[key];
+      }
+    }
+
+    // Validar RUC si se envía (11 dígitos numéricos en Perú)
+    if (updateData.businessRuc !== undefined && updateData.businessRuc !== null) {
+      const rucStr = String(updateData.businessRuc).trim();
+      if (rucStr !== '') {
+        if (!/^\d{11}$/.test(rucStr)) {
+          throw new BadRequestException('El RUC debe tener exactamente 11 dígitos numéricos.');
+        }
+      }
+    }
+
+    // Obtener los datos actuales del usuario antes de actualizar para limpiar de Cloudinary si cambia/elimina imágenes
+    const currentUser = await this.prisma.user.findUnique({
+      where: { id },
+      select: {
+        personalAvatar: true,
+        businessLogo: true,
+        businessBanner: true,
+      },
+    });
+
+    if (currentUser) {
+      // 1. Foto de perfil personal (personalAvatar)
+      if (
+        updateData.personalAvatar !== undefined &&
+        currentUser.personalAvatar &&
+        updateData.personalAvatar !== currentUser.personalAvatar
+      ) {
+        this.filesService.deleteFile(currentUser.personalAvatar).catch((err) =>
+          console.error('Error deleting old personalAvatar:', err),
+        );
+      }
+      // 2. Logo del negocio (businessLogo)
+      if (
+        updateData.businessLogo !== undefined &&
+        currentUser.businessLogo &&
+        updateData.businessLogo !== currentUser.businessLogo
+      ) {
+        this.filesService.deleteFile(currentUser.businessLogo).catch((err) =>
+          console.error('Error deleting old businessLogo:', err),
+        );
+      }
+      // 3. Banner del negocio (businessBanner)
+      if (
+        updateData.businessBanner !== undefined &&
+        currentUser.businessBanner &&
+        updateData.businessBanner !== currentUser.businessBanner
+      ) {
+        this.filesService.deleteFile(currentUser.businessBanner).catch((err) =>
+          console.error('Error deleting old businessBanner:', err),
+        );
+      }
+    }
+
+    return this.prisma.user.update({
+      where: { id },
+      data: updateData,
+      select: {
+        id: true,
+        name: true,
+        lastName: true,
+        email: true,
+        role: true,
+        isActive: true,
+        profiles: true,
+        blockedProfiles: true,
+        personalAvatar: true,
+        businessName: true,
+        businessRuc: true,
+        businessReason: true,
+        businessRubro: true,
+        businessLogo: true,
+        businessBanner: true,
       },
     });
   }

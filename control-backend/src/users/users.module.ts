@@ -7,11 +7,19 @@ import { CategoriesController } from 'src/category/category.controller';
 import { CategoriesService } from 'src/category/category.service';
 import { AuthModule } from '../auth/auth.module';
 import { MailModule } from 'src/mail/mail.module';
+import { FilesModule } from '../files/files.module';
 
 @Module({
-  imports: [PrismaModule, CategoriesModule, MailModule, forwardRef(() => AuthModule)], // 👈 LA MAGIA
+  imports: [
+    PrismaModule,
+    CategoriesModule,
+    MailModule,
+    FilesModule,
+    forwardRef(() => AuthModule),
+  ],
   controllers: [UsersController, CategoriesController],
   providers: [UsersService, CategoriesService],
   exports: [UsersService],
 })
 export class UsersModule {}
+

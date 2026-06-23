@@ -5,6 +5,7 @@ import { toast } from "react-hot-toast";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import Modal from "../components/ui/Modal";
+import ConfirmModal from "../components/ui/ConfirmModal";
 import {
   openCashShiftRequest,
   closeCashShiftRequest,
@@ -20,6 +21,9 @@ export default function BusinessCashRegisterPage() {
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [initialBalance, setInitialBalance] = useState<number | "">("");
+
+  // Modal confirm close shift states
+  const [isCloseConfirmOpen, setIsCloseConfirmOpen] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -60,7 +64,6 @@ export default function BusinessCashRegisterPage() {
   };
 
   const handleCloseShift = async () => {
-    if (!window.confirm("¿Estás seguro de cerrar la caja actual?")) return;
     try {
       await closeCashShiftRequest();
       toast.success("Caja cerrada exitosamente");
@@ -98,7 +101,7 @@ export default function BusinessCashRegisterPage() {
 
             <div>
               {activeShift ? (
-                <button onClick={handleCloseShift} className="px-6 py-3.5 bg-rose-50 text-rose-600 border border-rose-200 rounded-xl font-bold flex items-center gap-2 hover:bg-rose-100 transition-all shadow-sm">
+                <button onClick={() => setIsCloseConfirmOpen(true)} className="px-6 py-3.5 bg-rose-50 text-rose-600 border border-rose-200 rounded-xl font-bold flex items-center gap-2 hover:bg-rose-100 transition-all shadow-sm">
                   <Lock className="w-5 h-5" /> Cerrar Caja Actual
                 </button>
               ) : (
@@ -222,6 +225,16 @@ export default function BusinessCashRegisterPage() {
         </form>
       </Modal>
 
+      <ConfirmModal
+        isOpen={isCloseConfirmOpen}
+        onClose={() => setIsCloseConfirmOpen(false)}
+        onConfirm={handleCloseShift}
+        title="¿Cerrar caja actual?"
+        message="¿Estás seguro de que deseas cerrar el turno de caja actual? No podrás registrar nuevas ventas en el POS hasta abrir un nuevo turno."
+        confirmText="Cerrar Caja"
+        cancelText="Cancelar"
+        variant="warning"
+      />
     </Appshell>
   );
 }

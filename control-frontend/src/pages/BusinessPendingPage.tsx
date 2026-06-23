@@ -11,6 +11,7 @@ import { listCategoriesRequest } from "../services/category.api";
 import { Clock, CheckCircle2, TrendingUp, TrendingDown, Trash2, AlertCircle, Edit } from "lucide-react";
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
+import ConfirmModal from "../components/ui/ConfirmModal";
 import { format, isPast, isToday } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -21,6 +22,10 @@ export default function BusinessPendingPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [type, setType] = useState<"INCOME" | "EXPENSE">("INCOME");
   const [editingPending, setEditingPending] = useState<any>(null);
+
+  // Modal confirm delete states
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [pendingIdToDelete, setPendingIdToDelete] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -139,14 +144,12 @@ export default function BusinessPendingPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (window.confirm("¿Estás seguro de eliminar este registro?")) {
-      try {
-        await deletePendingTransactionRequest(id);
-        toast.success("Registro eliminado");
-        loadData();
-      } catch (error) {
-        toast.error("Error al eliminar");
-      }
+    try {
+      await deletePendingTransactionRequest(id);
+      toast.success("Registro eliminado");
+      loadData();
+    } catch (error) {
+      toast.error("Error al eliminar");
     }
   };
 
@@ -280,7 +283,7 @@ export default function BusinessPendingPage() {
                               <button onClick={() => handleEditClick(p)} className="p-1.5 text-gray-400 hover:bg-indigo-50 hover:text-indigo-600 rounded-xl transition-all" title="Editar cuenta pendiente">
                                 <Edit className="w-4.5 h-4.5" />
                               </button>
-                              <button onClick={() => handleDelete(p.id)} className="p-1.5 text-gray-400 hover:bg-rose-50 hover:text-rose-600 rounded-xl transition-all" title="Eliminar cuenta pendiente">
+                              <button onClick={() => { setPendingIdToDelete(p.id); setIsDeleteConfirmOpen(true); }} className="p-1.5 text-gray-400 hover:bg-rose-50 hover:text-rose-600 rounded-xl transition-all" title="Eliminar cuenta pendiente">
                                 <Trash2 className="w-4.5 h-4.5" />
                               </button>
                             </div>
@@ -408,6 +411,24 @@ export default function BusinessPendingPage() {
           </div>
         </form>
       </Modal>
+
+      <ConfirmModal
+        isOpen={isDeleteConfirmOpen}
+        onClose={() => {
+          setIsDeleteConfirmOpen(false);
+          setPendingIdToDelete(null);
+        }}
+        onConfirm={() => {
+          if (pendingIdToDelete) {
+            handleDelete(pendingIdToDelete);
+          }
+        }}
+        title="¿Eliminar cuenta pendiente?"
+        message="¿Estás seguro de que deseas eliminar este registro de cuenta pendiente? Esta acción no se puede deshacer."
+        confirmText="Eliminar Cuenta"
+        cancelText="Cancelar"
+        variant="danger"
+      />
     </Appshell>
   );
 }

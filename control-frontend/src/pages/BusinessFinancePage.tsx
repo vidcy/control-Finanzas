@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
+import ConfirmModal from "../components/ui/ConfirmModal";
 import { format } from "date-fns";
 import BusinessAiAdvisor from "../components/dashboard/BusinessAiAdvisor";
 import ImageUploader, { getReceiptAbsoluteUrl } from "../components/ui/ImageUploader";
@@ -38,6 +39,11 @@ export default function BusinessFinancePage() {
   
   // Edit & Revert States
   const [editingTransaction, setEditingTransaction] = useState<any>(null);
+
+  // Modal confirm delete & revert states
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [isRevertConfirmOpen, setIsRevertConfirmOpen] = useState(false);
+  const [txIdToConfirm, setTxIdToConfirm] = useState<string | null>(null);
 
   // Filter States
   const [searchTerm, setSearchTerm] = useState("");
@@ -175,7 +181,6 @@ export default function BusinessFinancePage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm("¿Estás seguro de eliminar esta transacción de forma permanente?")) return;
     try {
       await deleteTransactionRequest(id);
       toast.success("Operación eliminada con éxito");
@@ -186,7 +191,6 @@ export default function BusinessFinancePage() {
   };
 
   const handleRevertToPending = async (id: string) => {
-    if (!window.confirm("¿Estás seguro de devolver esta transacción a cuentas pendientes?")) return;
     try {
       await markAsPendingRequest(id, { status: "PENDING" });
       toast.success("Movimiento devuelto a cuentas pendientes");
@@ -496,14 +500,20 @@ export default function BusinessFinancePage() {
                                 <Edit className="w-4 h-4" />
                               </button>
                               <button
-                                onClick={() => handleRevertToPending(t.id)}
+                                onClick={() => {
+                                  setTxIdToConfirm(t.id);
+                                  setIsRevertConfirmOpen(true);
+                                }}
                                 className="p-1.5 text-gray-400 hover:bg-amber-50 hover:text-amber-600 rounded-xl transition-all"
                                 title="Devolver a pendientes (por cobrar/pagar)"
                               >
                                 <RotateCcw className="w-4 h-4" />
                               </button>
                               <button
-                                onClick={() => handleDelete(t.id)}
+                                onClick={() => {
+                                  setTxIdToConfirm(t.id);
+                                  setIsDeleteConfirmOpen(true);
+                                }}
                                 className="p-1.5 text-gray-400 hover:bg-rose-50 hover:text-rose-600 rounded-xl transition-all"
                                 title="Eliminar permanentemente"
                               >
@@ -756,6 +766,42 @@ export default function BusinessFinancePage() {
           </div>
         </form>
       </Modal>
+
+      <ConfirmModal
+        isOpen={isDeleteConfirmOpen}
+        onClose={() => {
+          setIsDeleteConfirmOpen(false);
+          setTxIdToConfirm(null);
+        }}
+        onConfirm={() => {
+          if (txIdToConfirm) {
+            handleDelete(txIdToConfirm);
+          }
+        }}
+        title="¿Eliminar transacción?"
+        message="¿Estás seguro de que deseas eliminar esta transacción permanentemente? Si es una venta o compra, el stock afectado se actualizará de forma correspondiente en el inventario."
+        confirmText="Eliminar Transacción"
+        cancelText="Cancelar"
+        variant="danger"
+      />
+
+      <ConfirmModal
+        isOpen={isRevertConfirmOpen}
+        onClose={() => {
+          setIsRevertConfirmOpen(false);
+          setTxIdToConfirm(null);
+        }}
+        onConfirm={() => {
+          if (txIdToConfirm) {
+            handleRevertToPending(txIdToConfirm);
+          }
+        }}
+        title="¿Devolver a pendientes?"
+        message="¿Estás seguro de devolver este movimiento a cuentas pendientes? El estado del registro cambiará a pendiente."
+        confirmText="Devolver a Pendientes"
+        cancelText="Cancelar"
+        variant="warning"
+      />
     </Appshell>
   );
 }

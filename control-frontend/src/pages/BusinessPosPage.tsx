@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import Appshell from "../components/layout/Appshell";
+import { useAuth } from "../auth/AuthContext";
 import {
   getProductsRequest,
   checkoutCartRequest,
@@ -37,6 +38,7 @@ import {
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
+import ConfirmModal from "../components/ui/ConfirmModal";
 import { format } from "date-fns";
 
 const parseDescription = (desc: string) => {
@@ -93,6 +95,7 @@ interface CartItem extends Product {
 }
 
 export default function BusinessPosPage() {
+  const { user } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -134,6 +137,10 @@ export default function BusinessPosPage() {
   const [editReceiptUrl, setEditReceiptUrl] = useState<string | File | null>(
     null,
   );
+
+  // Modal confirm delete states
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [saleIdToDelete, setSaleIdToDelete] = useState<string | null>(null);
 
   const loadSales = async () => {
     setLoadingSales(true);
@@ -193,22 +200,18 @@ export default function BusinessPosPage() {
       toast.success("Venta actualizada correctamente");
       setEditSale(null);
       loadSales();
+      loadData();
     } catch (err: any) {
       toast.error(err.message || "Error al actualizar la venta");
     }
   };
 
   const handleDeleteSale = async (id: string) => {
-    if (
-      !window.confirm(
-        "¿Eliminar este registro de venta? El stock NO se revertirá automáticamente.",
-      )
-    )
-      return;
     try {
       await deleteTransactionRequest(id);
       toast.success("Venta eliminada correctamente");
       loadSales();
+      loadData();
     } catch {
       toast.error("Error al eliminar la venta");
     }
@@ -604,6 +607,25 @@ export default function BusinessPosPage() {
             }}
           >
             <div style={{ textAlign: "center", marginBottom: "12px" }}>
+              {user?.businessLogo && (
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: "8px" }}>
+                  <img
+                    src={getReceiptAbsoluteUrl(user.businessLogo) || ""}
+                    crossOrigin="anonymous"
+                    alt="Logo"
+                    style={{
+                      width: "60px",
+                      height: "60px",
+                      objectFit: "cover",
+                      borderRadius: "50%",
+                      border: "1px solid #eee",
+                    }}
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = "none";
+                    }}
+                  />
+                </div>
+              )}
               <div
                 style={{
                   fontWeight: 900,
@@ -611,9 +633,24 @@ export default function BusinessPosPage() {
                   letterSpacing: "1px",
                 }}
               >
-                THINK
+                {user?.businessName ? user.businessName.toUpperCase() : "THINK"}
               </div>
-              <div style={{ fontSize: "10px", color: "#666" }}>
+              {user?.businessReason && (
+                <div style={{ fontSize: "10px", color: "#333", marginTop: "2px" }}>
+                  Razón Social: {user.businessReason}
+                </div>
+              )}
+              {user?.businessRuc && (
+                <div style={{ fontSize: "10px", color: "#333", marginTop: "2px" }}>
+                  RUC: {user.businessRuc}
+                </div>
+              )}
+              {user?.businessRubro && (
+                <div style={{ fontSize: "10px", color: "#555", marginTop: "2px", fontStyle: "italic" }}>
+                  Giro: {user.businessRubro}
+                </div>
+              )}
+              <div style={{ fontSize: "10px", color: "#666", marginTop: "4px" }}>
                 Ticket de Venta
               </div>
               <div
@@ -1162,8 +1199,38 @@ export default function BusinessPosPage() {
             {/* Preview ticket (decorative, not used for export) */}
             <div className="bg-white border border-gray-200 p-5 rounded-xl w-full max-w-xs mx-auto shadow-sm font-mono text-xs text-gray-800 mb-4">
               <div className="text-center mb-4">
-                <div className="font-black text-base">THINK</div>
-                <div className="text-[10px] text-gray-500">
+                {user?.businessLogo && (
+                  <div className="flex justify-center mb-2">
+                    <img
+                      src={getReceiptAbsoluteUrl(user.businessLogo) || ""}
+                      crossOrigin="anonymous"
+                      alt="Logo"
+                      className="w-12 h-12 rounded-full object-cover border border-gray-100"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = "none";
+                      }}
+                    />
+                  </div>
+                )}
+                <div className="font-black text-base">
+                  {user?.businessName ? user.businessName.toUpperCase() : "THINK"}
+                </div>
+                {user?.businessReason && (
+                  <div className="text-[10px] text-gray-700 mt-0.5">
+                    {user.businessReason}
+                  </div>
+                )}
+                {user?.businessRuc && (
+                  <div className="text-[10px] text-gray-700 mt-0.5">
+                    RUC: {user.businessRuc}
+                  </div>
+                )}
+                {user?.businessRubro && (
+                  <div className="text-[10px] text-gray-500 mt-0.5 italic">
+                    Giro: {user.businessRubro}
+                  </div>
+                )}
+                <div className="text-[10px] text-gray-500 mt-1">
                   Ticket de Venta
                 </div>
                 <div className="border-b border-dashed border-gray-300 my-3"></div>
@@ -1558,7 +1625,10 @@ export default function BusinessPosPage() {
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
                             <button
-                              onClick={() => handleDeleteSale(sale.id)}
+                              onClick={() => {
+                                setSaleIdToDelete(sale.id);
+                                setIsDeleteConfirmOpen(true);
+                              }}
                               className="p-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors"
                               title="Eliminar registro"
                             >
@@ -1664,6 +1734,24 @@ export default function BusinessPosPage() {
           </div>
         )}
       </Modal>
+
+      <ConfirmModal
+        isOpen={isDeleteConfirmOpen}
+        onClose={() => {
+          setIsDeleteConfirmOpen(false);
+          setSaleIdToDelete(null);
+        }}
+        onConfirm={() => {
+          if (saleIdToDelete) {
+            handleDeleteSale(saleIdToDelete);
+          }
+        }}
+        title="¿Eliminar registro de venta?"
+        message="¿Estás seguro de que deseas eliminar este registro de venta? El stock de los productos afectados se restaurará automáticamente en el inventario."
+        confirmText="Eliminar Venta"
+        cancelText="Cancelar"
+        variant="danger"
+      />
     </Appshell>
   );
 }

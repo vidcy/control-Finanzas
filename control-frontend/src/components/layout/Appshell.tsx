@@ -24,10 +24,13 @@ import {
   DollarSign,
   Target,
   History,
+  Loader2,
+  Camera,
 } from "lucide-react";
 
 import { toast } from "react-hot-toast";
-import { updateUserProfilesRequest } from "../../services/user.api";
+import { updateUserProfilesRequest, updateMyProfileRequest } from "../../services/user.api";
+import { ProductImageUploader, uploadProductImageFile, getReceiptAbsoluteUrl } from "../ui/ImageUploader";
 
 import NotificationDropdown from "./NotificationDropdown";
 import { formatPeruTime } from "../../utils/date.utils";
@@ -51,6 +54,9 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
   }, []);
 
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [isAvatarSubModalOpen, setIsAvatarSubModalOpen] = useState(false);
+  const [isLogoSubModalOpen, setIsLogoSubModalOpen] = useState(false);
+  const [isBannerSubModalOpen, setIsBannerSubModalOpen] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
@@ -65,6 +71,75 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
   const [isSavingProfiles, setIsSavingProfiles] = useState(false);
 
   const [profileError, setProfileError] = useState<string | null>(null);
+
+  // Profile forms state variables
+  const [activeTab, setActiveTab] = useState<"personal" | "business" | "security">("personal");
+  const [profileName, setProfileName] = useState(user?.name || "");
+  const [profileLastName, setProfileLastName] = useState(user?.lastName || "");
+  const [profileAvatar, setProfileAvatar] = useState<string | File>(user?.personalAvatar || "");
+  const [businessName, setBusinessName] = useState(user?.businessName || "");
+  const [businessRuc, setBusinessRuc] = useState(user?.businessRuc || "");
+  const [businessReason, setBusinessReason] = useState(user?.businessReason || "");
+  const [businessRubro, setBusinessRubro] = useState(user?.businessRubro || "");
+  const [businessLogo, setBusinessLogo] = useState<string | File>(user?.businessLogo || "");
+  const [businessBanner, setBusinessBanner] = useState<string | File>(user?.businessBanner || "");
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+
+  useEffect(() => {
+    if (isProfileModalOpen && user) {
+      setProfileName(user.name || "");
+      setProfileLastName(user.lastName || "");
+      setProfileAvatar(user.personalAvatar || "");
+      setBusinessName(user.businessName || "");
+      setBusinessRuc(user.businessRuc || "");
+      setBusinessReason(user.businessReason || "");
+      setBusinessRubro(user.businessRubro || "");
+      setBusinessLogo(user.businessLogo || "");
+      setBusinessBanner(user.businessBanner || "");
+    }
+  }, [isProfileModalOpen, user]);
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingProfile(true);
+    try {
+      let finalAvatarUrl = profileAvatar;
+      if (profileAvatar instanceof File) {
+        finalAvatarUrl = await uploadProductImageFile(profileAvatar);
+      }
+
+      let finalLogoUrl = businessLogo;
+      if (businessLogo instanceof File) {
+        finalLogoUrl = await uploadProductImageFile(businessLogo);
+      }
+
+      let finalBannerUrl = businessBanner;
+      if (businessBanner instanceof File) {
+        finalBannerUrl = await uploadProductImageFile(businessBanner);
+      }
+
+      const res = await updateMyProfileRequest({
+        name: profileName,
+        lastName: profileLastName,
+        personalAvatar: finalAvatarUrl || null,
+        businessName: businessName || null,
+        businessRuc: businessRuc || null,
+        businessReason: businessReason || null,
+        businessRubro: businessRubro || null,
+        businessLogo: finalLogoUrl || null,
+        businessBanner: finalBannerUrl || null,
+      });
+
+      const updatedUser = { ...user, ...res };
+      setUser(updatedUser);
+      localStorage.setItem("user", JSON.stringify(updatedUser));
+      toast.success("Perfil actualizado con éxito");
+    } catch (error: any) {
+      toast.error(error.message || "Error al guardar el perfil");
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
 
   const handleToggleProfile = async (profile: string) => {
     setProfileError(null);
@@ -331,16 +406,31 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       >
         {/* BRAND */}
         <div className="h-20 flex items-center justify-between px-8 border-b border-gray-100/50">
-          <div className="flex items-center">
-            <div className="w-10 h-10 rounded-xl overflow-hidden shadow-md">
-              <img src="/logo.png" alt="THINK Logo" className="w-full h-full object-cover" />
+          <div className="flex items-center min-w-0">
+            <div className="w-10 h-10 rounded-xl overflow-hidden shadow-md flex-shrink-0 bg-white flex items-center justify-center">
+              <img
+                src={
+                  activeWorkspace === "BUSINESS" && user?.businessLogo
+                    ? getReceiptAbsoluteUrl(user.businessLogo) || ""
+                    : "/logo.png"
+                }
+                alt="Logo"
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = "/logo.png";
+                }}
+              />
             </div>
-            <div className="ml-3">
-              <h1 className="text-xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600 tracking-wider">
-                THINK
+            <div className="ml-3 min-w-0">
+              <h1 className="text-sm font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600 tracking-wider truncate">
+                {activeWorkspace === "BUSINESS" && user?.businessName
+                  ? user.businessName.toUpperCase()
+                  : "THINK"}
               </h1>
-              <p className="text-[9px] uppercase tracking-widest text-indigo-500 font-bold">
-                App Financiera
+              <p className="text-[9px] uppercase tracking-widest text-indigo-500 font-bold truncate">
+                {activeWorkspace === "BUSINESS" && user?.businessRubro
+                  ? user.businessRubro
+                  : "App Financiera"}
               </p>
             </div>
           </div>
@@ -351,6 +441,44 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
             <X className="w-6 h-6" />
           </button>
         </div>
+
+        {/* WORKSPACE SWITCHER (Only visible if user has both modules active) */}
+        {user?.profiles?.includes("PERSONAL") && user?.profiles?.includes("BUSINESS") && (
+          <div className="px-6 py-3 border-b border-gray-100/50 bg-gray-50/30">
+            <div className="bg-gray-100/80 p-1 rounded-2xl flex gap-1 border border-gray-200/50 relative">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveWorkspace("PERSONAL");
+                  navigate("/dashboard");
+                }}
+                className={`flex-grow flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold transition-all relative z-10 ${
+                  activeWorkspace === "PERSONAL"
+                    ? "bg-white text-blue-600 shadow-sm"
+                    : "text-gray-500 hover:text-gray-900"
+                }`}
+              >
+                <Target className="w-3.5 h-3.5" />
+                <span>Personal</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveWorkspace("BUSINESS");
+                  navigate("/business-dashboard");
+                }}
+                className={`flex-grow flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold transition-all relative z-10 ${
+                  activeWorkspace === "BUSINESS"
+                    ? "bg-white text-purple-600 shadow-sm"
+                    : "text-gray-500 hover:text-gray-900"
+                }`}
+              >
+                <Briefcase className="w-3.5 h-3.5" />
+                <span>Negocio</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* NAV */}
         <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto custom-scrollbar">
@@ -400,12 +528,23 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
           className="p-4 border-t border-gray-100/50 m-4 bg-white/50 rounded-3xl shadow-sm border border-white cursor-pointer hover:bg-white/80 transition-all hover:shadow-md group"
         >
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 p-[2px] group-hover:scale-105 transition-transform">
-              <div className="w-full h-full bg-white rounded-full flex items-center justify-center">
-                <span className="text-sm font-bold text-indigo-600">
-                  {user?.name?.charAt(0) || "U"}
-                  {user?.lastName?.charAt(0) || "S"}
-                </span>
+            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 p-[2px] group-hover:scale-105 transition-transform overflow-hidden flex-shrink-0">
+              <div className="w-full h-full bg-white rounded-full flex items-center justify-center overflow-hidden">
+                {user?.personalAvatar ? (
+                  <img
+                    src={getReceiptAbsoluteUrl(user.personalAvatar) || ""}
+                    alt="Avatar"
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = "none";
+                    }}
+                  />
+                ) : (
+                  <span className="text-sm font-bold text-indigo-600">
+                    {user?.name?.charAt(0) || "U"}
+                    {user?.lastName?.charAt(0) || "S"}
+                  </span>
+                )}
               </div>
             </div>
             <div className="flex-1 text-sm overflow-hidden">
@@ -488,258 +627,631 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
         title="Mi Perfil"
         maxWidth="max-w-2xl"
       >
-        <div className="flex flex-col md:flex-row gap-8">
-          {/* INFO SIDE */}
-          <div className="md:w-1/3 flex flex-col items-center p-6 bg-gray-50/50 rounded-2xl border border-gray-100">
-            <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 p-1 mb-4 shadow-lg shadow-indigo-500/20">
-              <div className="w-full h-full bg-white rounded-full flex items-center justify-center">
-                <span className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600">
-                  {user?.name?.charAt(0) || "U"}
-                  {user?.lastName?.charAt(0) || "S"}
-                </span>
+        {/* TABS HEADER */}
+        <div className="flex border-b border-gray-100 mb-6 gap-2">
+          <button
+            onClick={() => setActiveTab("personal")}
+            className={`pb-3 px-4 font-bold text-sm border-b-2 transition-all ${
+              activeTab === "personal"
+                ? "border-indigo-600 text-indigo-600"
+                : "border-transparent text-gray-400 hover:text-gray-600"
+            }`}
+          >
+            Personal
+          </button>
+          {activeProfiles.includes("BUSINESS") && (
+            <button
+              onClick={() => setActiveTab("business")}
+              className={`pb-3 px-4 font-bold text-sm border-b-2 transition-all ${
+                activeTab === "business"
+                  ? "border-purple-600 text-purple-600"
+                  : "border-transparent text-gray-400 hover:text-gray-600"
+              }`}
+            >
+              Negocio
+            </button>
+          )}
+          <button
+            onClick={() => setActiveTab("security")}
+            className={`pb-3 px-4 font-bold text-sm border-b-2 transition-all ${
+              activeTab === "security"
+                ? "border-gray-800 text-gray-800"
+                : "border-transparent text-gray-400 hover:text-gray-600"
+            }`}
+          >
+            Módulos y Seguridad
+          </button>
+        </div>
+
+        {/* TAB 1: PERSONAL */}
+        {activeTab === "personal" && (
+          <form onSubmit={handleSaveProfile} className="space-y-6">
+            <div className="flex flex-col md:flex-row gap-6">
+              <div className="md:w-1/3 flex flex-col items-center p-6 bg-gray-50/30 rounded-2xl border border-gray-100/50 shadow-sm">
+                <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-4 text-center">
+                  Foto de Perfil
+                </label>
+                
+                {/* Interactive Avatar Container with Hover camera icon */}
+                <div 
+                  onClick={() => setIsAvatarSubModalOpen(true)}
+                  className="w-28 h-28 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 p-1 mb-4 shadow-xl shadow-indigo-500/10 relative overflow-hidden flex items-center justify-center group cursor-pointer active:scale-95 transition-transform"
+                  title="Gestionar foto de perfil"
+                >
+                  <div className="w-full h-full bg-white rounded-full flex items-center justify-center overflow-hidden relative">
+                    {profileAvatar ? (
+                      <img
+                        src={
+                          profileAvatar instanceof File
+                            ? URL.createObjectURL(profileAvatar)
+                            : getReceiptAbsoluteUrl(profileAvatar) || ""
+                        }
+                        alt="Avatar"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                    ) : (
+                      <span className="text-3xl font-black bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600">
+                        {(profileName.charAt(0) || "U").toUpperCase()}
+                        {(profileLastName.charAt(0) || "S").toUpperCase()}
+                      </span>
+                    )}
+                    
+                    {/* Hover Overlay */}
+                    <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                      <Camera className="w-6 h-6 mb-1 text-white" />
+                      <span className="text-[10px] font-black uppercase tracking-wider">Editar</span>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsAvatarSubModalOpen(true)}
+                  className="px-4 py-2 border border-gray-200 hover:border-indigo-500 text-gray-600 hover:text-indigo-600 bg-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  Gestionar Foto
+                </button>
+              </div>
+
+              <div className="md:w-2/3 space-y-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    Nombres
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold text-gray-700 bg-white"
+                    value={profileName}
+                    onChange={(e) => setProfileName(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    Apellidos
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold text-gray-700 bg-white"
+                    value={profileLastName}
+                    onChange={(e) => setProfileLastName(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-400 mb-1">
+                    Correo Electrónico (No editable)
+                  </label>
+                  <input
+                    type="email"
+                    disabled
+                    className="w-full px-4 py-2.5 border border-gray-100 rounded-xl text-sm font-bold text-gray-400 bg-gray-50 cursor-not-allowed outline-none"
+                    value={user?.email || ""}
+                  />
+                </div>
               </div>
             </div>
-            <h3 className="text-xl font-bold text-gray-900 text-center">
-              {user?.name} {user?.lastName}
-            </h3>
-            <p className="text-sm text-gray-500 text-center mb-4">
-              {user?.email}
-            </p>
-            <span
-              className={`text-xs font-semibold px-3 py-1.5 rounded-lg ${user?.role === "ADMIN" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"}`}
-            >
-              {user?.role === "ADMIN" ? "Administrador" : "Usuario Estándar"}
-            </span>
-          </div>
 
-          <div className="md:w-2/3 flex flex-col gap-6">
-            {/* PROFILE MODULE TOGGLES */}
-            <div className="bg-white border border-gray-100 p-6 rounded-3xl shadow-sm">
-              <h3 className="text-base font-bold text-gray-800 mb-2">Módulos de tu Cuenta</h3>
-              <p className="text-sm text-gray-500 mb-5">Activa o desactiva los módulos a los que tienes acceso.</p>
+            <div className="flex justify-end gap-3 pt-4 border-t border-gray-50">
+              <button
+                type="button"
+                onClick={() => setIsProfileModalOpen(false)}
+                className="px-5 py-2.5 text-gray-500 font-medium hover:bg-gray-100 rounded-xl text-sm"
+              >
+                Cerrar
+              </button>
+              <button
+                type="submit"
+                disabled={isSavingProfile}
+                className="px-6 py-2.5 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-all text-sm flex items-center gap-2"
+              >
+                {isSavingProfile && <Loader2 className="w-4 h-4 animate-spin" />}
+                Guardar Cambios
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* TAB 2: BUSINESS */}
+        {activeTab === "business" && activeProfiles.includes("BUSINESS") && (
+          <form onSubmit={handleSaveProfile} className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">
+                  Nombre Comercial del Negocio
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej. Mi Tiendita"
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none text-sm font-bold text-gray-700 bg-white"
+                  value={businessName}
+                  onChange={(e) => setBusinessName(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">
+                  RUC (11 dígitos)
+                </label>
+                <input
+                  type="text"
+                  maxLength={11}
+                  placeholder="Ej. 10203040506"
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none text-sm font-bold text-gray-700 bg-white"
+                  value={businessRuc}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/\D/g, "");
+                    setBusinessRuc(val);
+                  }}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">
+                  Razón Social
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej. Inversiones SAC"
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none text-sm font-bold text-gray-700 bg-white"
+                  value={businessReason}
+                  onChange={(e) => setBusinessReason(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">
+                  Rubro / Giro comercial
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej. Minimarket, Ferretería"
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none text-sm font-bold text-gray-700 bg-white"
+                  value={businessRubro}
+                  onChange={(e) => setBusinessRubro(e.target.value)}
+                />
+              </div>
+
+              <div className="border-t border-gray-100 pt-6 md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* LOGO GESTION */}
+                <div className="flex flex-col items-center p-4 bg-gray-50/30 rounded-2xl border border-gray-100/50 shadow-sm">
+                  <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-3">
+                    Logo del Negocio
+                  </label>
+                  <div 
+                    onClick={() => setIsLogoSubModalOpen(true)}
+                    className="w-20 h-20 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-500 p-0.5 mb-3 shadow-md relative overflow-hidden flex items-center justify-center group cursor-pointer active:scale-95 transition-transform"
+                    title="Gestionar Logo del Negocio"
+                  >
+                    <div className="w-full h-full bg-white rounded-full flex items-center justify-center overflow-hidden relative">
+                      {businessLogo ? (
+                        <img
+                          src={
+                            businessLogo instanceof File
+                              ? URL.createObjectURL(businessLogo)
+                              : getReceiptAbsoluteUrl(businessLogo) || ""
+                          }
+                          alt="Logo"
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
+                      ) : (
+                        <span className="text-xl font-black bg-clip-text text-transparent bg-gradient-to-r from-purple-600 to-indigo-600">
+                          {businessName.charAt(0).toUpperCase() || "N"}
+                        </span>
+                      )}
+                      
+                      {/* Hover Overlay */}
+                      <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                        <Camera className="w-5 h-5 mb-0.5 text-white" />
+                        <span className="text-[9px] font-black uppercase tracking-wider">Editar</span>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsLogoSubModalOpen(true)}
+                    className="px-3 py-1.5 border border-gray-200 hover:border-purple-500 text-gray-600 hover:text-purple-600 bg-white rounded-lg text-xs font-bold transition-all flex items-center gap-1 active:scale-95 shadow-sm"
+                  >
+                    <Settings className="w-3 h-3" />
+                    Gestionar Logo
+                  </button>
+                </div>
+
+                {/* BANNER GESTION */}
+                <div className="flex flex-col items-center p-4 bg-gray-50/30 rounded-2xl border border-gray-100/50 shadow-sm">
+                  <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-3">
+                    Banner del Negocio
+                  </label>
+                  <div 
+                    onClick={() => setIsBannerSubModalOpen(true)}
+                    className="w-full h-20 rounded-xl bg-gray-100 border border-gray-200 shadow-sm mb-3 relative overflow-hidden flex items-center justify-center group cursor-pointer active:scale-[0.98] transition-transform"
+                    title="Gestionar Banner del Negocio"
+                  >
+                    {businessBanner ? (
+                      <img
+                        src={
+                          businessBanner instanceof File
+                            ? URL.createObjectURL(businessBanner)
+                            : getReceiptAbsoluteUrl(businessBanner) || ""
+                        }
+                        alt="Banner"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center text-gray-400">
+                        <span className="text-xs font-bold">Sin banner configurado</span>
+                      </div>
+                    )}
+                    
+                    {/* Hover Overlay */}
+                    <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                      <Camera className="w-6 h-6 mb-1 text-white" />
+                      <span className="text-[10px] font-black uppercase tracking-wider">Editar Banner</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsBannerSubModalOpen(true)}
+                    className="px-3 py-1.5 border border-gray-200 hover:border-purple-500 text-gray-600 hover:text-purple-600 bg-white rounded-lg text-xs font-bold transition-all flex items-center gap-1 active:scale-95 shadow-sm"
+                  >
+                    <Settings className="w-3 h-3" />
+                    Gestionar Banner
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-gray-50">
+              <button
+                type="button"
+                onClick={() => setIsProfileModalOpen(false)}
+                className="px-5 py-2.5 text-gray-500 font-medium hover:bg-gray-100 rounded-xl text-sm"
+              >
+                Cerrar
+              </button>
+              <button
+                type="submit"
+                disabled={isSavingProfile}
+                className="px-6 py-2.5 bg-purple-600 text-white font-bold rounded-xl hover:bg-purple-700 transition-all text-sm flex items-center gap-2"
+              >
+                {isSavingProfile && <Loader2 className="w-4 h-4 animate-spin" />}
+                Guardar Configuración
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* TAB 3: ACCESS & SECURITY */}
+        {activeTab === "security" && (
+          <div className="space-y-8">
+            {/* MODULE SWITCHERS */}
+            <div className="bg-gray-50/50 p-6 rounded-2xl border border-gray-100">
+              <h3 className="text-sm font-bold text-gray-800 mb-2">
+                Módulos Habilitados
+              </h3>
+              <p className="text-xs text-gray-500 mb-4">
+                Activa o desactiva los módulos a los que tienes acceso.
+              </p>
 
               {profileError && (
-                <div className="mb-4 bg-rose-50 border border-rose-200 text-rose-700 p-4 rounded-xl flex items-start gap-3 shadow-sm">
-                  <X className="w-5 h-5 flex-shrink-0 mt-0.5 text-rose-500" />
-                  <div>
-                    <h4 className="font-bold text-sm">Acción denegada</h4>
-                    <p className="text-xs mt-1">{profileError}</p>
-                  </div>
+                <div className="mb-4 bg-rose-50 border border-rose-200 text-rose-700 p-3 rounded-xl flex items-start gap-2 text-xs">
+                  <X className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <span>{profileError}</span>
                 </div>
               )}
 
-              <div className="flex flex-col gap-4">
-                <label className="flex items-center justify-between p-4 rounded-xl border border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors">
-                  <div className="flex items-center gap-3">
-                    <Target className="w-5 h-5 text-blue-500" />
+              <div className="flex flex-col gap-3">
+                <label className="flex items-center justify-between p-3 rounded-xl border border-gray-100 bg-white hover:bg-gray-50 cursor-pointer">
+                  <div className="flex items-center gap-2.5">
+                    <Target className="w-4 h-4 text-blue-500" />
                     <div>
-                      <h4 className="text-sm font-bold text-gray-800">Módulo Personal</h4>
-                      <p className="text-xs text-gray-500">Gestión de finanzas personales</p>
+                      <h4 className="text-xs font-bold text-gray-800">
+                        Módulo Personal
+                      </h4>
+                      <p className="text-[10px] text-gray-400">
+                        Control de tus finanzas personales
+                      </p>
                     </div>
                   </div>
-                  <div className="relative">
-                    <input
-                      type="checkbox"
-                      className="sr-only peer"
-                      checked={activeProfiles.includes("PERSONAL")}
-                      onChange={() => handleToggleProfile("PERSONAL")}
-                      disabled={isSavingProfiles}
-                    />
-                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
-                  </div>
+                  <input
+                    type="checkbox"
+                    checked={activeProfiles.includes("PERSONAL")}
+                    onChange={() => handleToggleProfile("PERSONAL")}
+                    disabled={isSavingProfiles}
+                    className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                  />
                 </label>
 
-                <label className="flex items-center justify-between p-4 rounded-xl border border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors">
-                  <div className="flex items-center gap-3">
-                    <Briefcase className="w-5 h-5 text-purple-500" />
+                <label className="flex items-center justify-between p-3 rounded-xl border border-gray-100 bg-white hover:bg-gray-50 cursor-pointer">
+                  <div className="flex items-center gap-2.5">
+                    <Briefcase className="w-4 h-4 text-purple-500" />
                     <div>
-                      <h4 className="text-sm font-bold text-gray-800">Módulo Negocio PRO</h4>
-                      <p className="text-xs text-gray-500">Control ERP, POS y reportes</p>
+                      <h4 className="text-xs font-bold text-gray-800">
+                        Módulo Negocio PRO
+                      </h4>
+                      <p className="text-[10px] text-gray-400">
+                        Gestión comercial ERP y POS
+                      </p>
                     </div>
                   </div>
-                  <div className="relative">
-                    <input
-                      type="checkbox"
-                      className="sr-only peer"
-                      checked={activeProfiles.includes("BUSINESS")}
-                      onChange={() => handleToggleProfile("BUSINESS")}
-                      disabled={isSavingProfiles}
-                    />
-                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-500"></div>
-                  </div>
+                  <input
+                    type="checkbox"
+                    checked={activeProfiles.includes("BUSINESS")}
+                    onChange={() => handleToggleProfile("BUSINESS")}
+                    disabled={isSavingProfiles}
+                    className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                  />
                 </label>
               </div>
             </div>
 
-            {/* WORKSPACE SWITCHER (PERFILES) */}
-            <div className="bg-white border border-gray-100 p-6 rounded-3xl shadow-sm">
-              <h3 className="text-base font-bold text-gray-800 mb-2">Espacio de Trabajo Activo</h3>
-              <p className="text-sm text-gray-500 mb-5">Selecciona el perfil que deseas usar en este momento. La plataforma se adaptará al entorno seleccionado.</p>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Personal Card */}
-                {activeProfiles.includes("PERSONAL") && (
-                  <div
-                    onClick={() => {
-                      setActiveWorkspace("PERSONAL");
-                      navigate("/dashboard");
-                      setIsProfileModalOpen(false);
-                    }}
-                    className={`relative p-5 rounded-2xl cursor-pointer transition-all duration-300 border-2 overflow-hidden group ${activeWorkspace === "PERSONAL"
-                      ? "border-blue-500 bg-blue-50 shadow-md shadow-blue-500/10"
-                      : "border-gray-100 hover:border-blue-300 hover:bg-gray-50 opacity-60 hover:opacity-100"
-                      }`}
-                  >
-                    {activeWorkspace === "PERSONAL" && (
-                      <div className="absolute top-4 right-4 text-blue-500">
-                        <CheckCircle2 className="w-6 h-6" />
-                      </div>
-                    )}
-                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 shadow-sm ${activeWorkspace === "PERSONAL" ? "bg-blue-500 text-white" : "bg-blue-100 text-blue-500 group-hover:bg-blue-500 group-hover:text-white transition-colors"}`}>
-                      <Target className="w-6 h-6" />
-                    </div>
-                    <h4 className="text-lg font-bold text-gray-900 mb-1">Personal</h4>
-                    <p className="text-xs text-gray-600 font-medium">Finanzas del día a día</p>
-                  </div>
-                )}
-
-                {/* Business Card */}
-                {activeProfiles.includes("BUSINESS") && (
-                  <div
-                    onClick={() => {
-                      setActiveWorkspace("BUSINESS");
-                      navigate("/business-dashboard");
-                      setIsProfileModalOpen(false);
-                    }}
-                    className={`relative p-5 rounded-2xl cursor-pointer transition-all duration-300 border-2 overflow-hidden group ${activeWorkspace === "BUSINESS"
-                      ? "border-purple-500 bg-purple-50 shadow-md shadow-purple-500/10"
-                      : "border-gray-100 hover:border-purple-300 hover:bg-gray-50 opacity-60 hover:opacity-100"
-                      }`}
-                  >
-                    {activeWorkspace === "BUSINESS" && (
-                      <div className="absolute top-4 right-4 text-purple-500">
-                        <CheckCircle2 className="w-6 h-6" />
-                      </div>
-                    )}
-                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 shadow-sm ${activeWorkspace === "BUSINESS" ? "bg-purple-600 text-white" : "bg-purple-100 text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition-colors"}`}>
-                      <Briefcase className="w-6 h-6" />
-                    </div>
-                    <h4 className="text-lg font-bold text-gray-900 mb-1">Negocio PRO</h4>
-                    <p className="text-xs text-gray-600 font-medium">Control ERP y Ventas</p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* CHANGE PASSWORD SIDE */}
-            <div className="flex flex-col">
-              <div className="flex items-center gap-2 mb-6">
-                <Settings className="w-5 h-5 text-indigo-500" />
-                <h3 className="text-lg font-bold text-gray-800">
-                  Cambiar Contraseña
+            {/* PASSWORD FORM */}
+            <div>
+              <div className="flex items-center gap-2 mb-4 border-t border-gray-100 pt-6">
+                <Settings className="w-4 h-4 text-indigo-500" />
+                <h3 className="text-sm font-bold text-gray-800">
+                  Actualizar Contraseña
                 </h3>
               </div>
 
               {passwordChanged && (
-                <div className="mb-6 bg-emerald-50 text-emerald-700 p-4 rounded-xl flex items-start gap-3 border border-emerald-100 animate-fade-in-up">
-                  <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-semibold text-sm">
-                      ¡Contraseña actualizada!
-                    </p>
-                    <p className="text-xs text-emerald-600/80">
-                      Tu contraseña se ha cambiado correctamente.
-                    </p>
-                  </div>
+                <div className="mb-4 bg-emerald-50 text-emerald-700 p-3 rounded-xl flex items-start gap-2 border border-emerald-100 text-xs">
+                  <CheckCircle2 className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <span>¡Contraseña actualizada con éxito!</span>
                 </div>
               )}
 
               <form onSubmit={handlePasswordSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
                     Contraseña Actual
                   </label>
-                  <div className="relative group">
-                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                      <Key className="h-4 w-4 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
-                    </div>
+                  <input
+                    type="password"
+                    required
+                    placeholder="••••••••"
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold text-gray-700 bg-white"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                  />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                      Nueva Contraseña
+                    </label>
                     <input
                       type="password"
                       required
-                      className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder-gray-400"
+                      placeholder="Mín. 8 caracteres"
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold text-gray-700 bg-white"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                      Confirmar Nueva Contraseña
+                    </label>
+                    <input
+                      type="password"
+                      required
                       placeholder="••••••••"
-                      value={currentPassword}
-                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold text-gray-700 bg-white"
+                      value={confirmNewPassword}
+                      onChange={(e) => setConfirmNewPassword(e.target.value)}
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                      Nueva Contraseña
-                    </label>
-                    <div className="relative group">
-                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                        <ShieldCheck className="h-4 w-4 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
-                      </div>
-                      <input
-                        type="password"
-                        required
-                        className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder-gray-400"
-                        placeholder="••••••••"
-                        value={newPassword}
-                        onChange={(e) => setNewPassword(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                      Confirmar Nueva
-                    </label>
-                    <div className="relative group">
-                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                        <ShieldCheck className="h-4 w-4 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
-                      </div>
-                      <input
-                        type="password"
-                        required
-                        className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder-gray-400"
-                        placeholder="••••••••"
-                        value={confirmNewPassword}
-                        onChange={(e) => setConfirmNewPassword(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="pt-4 flex justify-end gap-3 mt-6">
+                <div className="flex justify-end gap-3 pt-4">
                   <button
                     type="button"
                     onClick={() => setIsProfileModalOpen(false)}
-                    className="px-5 py-2.5 text-gray-600 font-medium hover:bg-gray-100 rounded-xl transition-colors text-sm"
+                    className="px-5 py-2.5 text-gray-500 font-medium hover:bg-gray-100 rounded-xl text-sm"
                   >
                     Cerrar
                   </button>
                   <button
                     type="submit"
-                    disabled={
-                      isSavingPassword ||
-                      !currentPassword ||
-                      !newPassword ||
-                      !confirmNewPassword
-                    }
-                    className="px-6 py-2.5 bg-indigo-600 text-white font-medium hover:bg-indigo-700 rounded-xl transition-all shadow-sm hover:shadow-indigo-500/30 text-sm flex items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+                    disabled={isSavingPassword || !currentPassword || !newPassword || !confirmNewPassword}
+                    className="px-6 py-2.5 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-all text-sm flex items-center gap-2"
                   >
-                    {isSavingPassword ? (
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                    ) : (
-                      "Actualizar Contraseña"
-                    )}
+                    {isSavingPassword && <Loader2 className="w-4 h-4 animate-spin" />}
+                    Cambiar Contraseña
                   </button>
                 </div>
               </form>
             </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* PROFILE AVATAR SUB-MODAL */}
+      <Modal
+        isOpen={isAvatarSubModalOpen}
+        onClose={() => setIsAvatarSubModalOpen(false)}
+        title="Gestionar Foto de Perfil"
+        maxWidth="max-w-md"
+      >
+        <div className="flex flex-col items-center p-4">
+          <p className="text-xs text-gray-500 mb-6 text-center">
+            Sube una nueva foto, captúrala con tu cámara o elimina tu foto de perfil actual.
+          </p>
+
+          <div className="w-36 h-36 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 p-1 mb-6 shadow-xl relative overflow-hidden flex items-center justify-center">
+            <div className="w-full h-full bg-white rounded-full flex items-center justify-center overflow-hidden">
+              {profileAvatar ? (
+                <img
+                  src={
+                    profileAvatar instanceof File
+                      ? URL.createObjectURL(profileAvatar)
+                      : getReceiptAbsoluteUrl(profileAvatar) || ""
+                  }
+                  alt="Avatar"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <span className="text-4xl font-black bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600">
+                  {(profileName.charAt(0) || "U").toUpperCase()}
+                  {(profileLastName.charAt(0) || "S").toUpperCase()}
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="w-full border-t border-gray-100 pt-6">
+            <ProductImageUploader
+              currentImageUrl={profileAvatar}
+              onUploadSuccess={(fileOrUrl) => {
+                setProfileAvatar(fileOrUrl);
+                toast.success("Foto seleccionada. Recuerda guardar los cambios.");
+              }}
+              onClear={() => {
+                setProfileAvatar("");
+                toast.success("Foto quitada. Recuerda guardar los cambios.");
+              }}
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 w-full mt-6 pt-4 border-t border-gray-50">
+            <button
+              type="button"
+              onClick={() => setIsAvatarSubModalOpen(false)}
+              className="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-all text-sm active:scale-95 shadow-lg shadow-indigo-600/10 text-center"
+            >
+              Listo
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* BUSINESS LOGO SUB-MODAL */}
+      <Modal
+        isOpen={isLogoSubModalOpen}
+        onClose={() => setIsLogoSubModalOpen(false)}
+        title="Gestionar Logo del Negocio"
+        maxWidth="max-w-md"
+      >
+        <div className="flex flex-col items-center p-4">
+          <p className="text-xs text-gray-500 mb-6 text-center">
+            Sube el logotipo de tu negocio. Se mostrará en los tickets del POS y en la barra lateral.
+          </p>
+
+          <div className="w-32 h-32 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-500 p-1 mb-6 shadow-xl relative overflow-hidden flex items-center justify-center">
+            <div className="w-full h-full bg-white rounded-full flex items-center justify-center overflow-hidden">
+              {businessLogo ? (
+                <img
+                  src={
+                    businessLogo instanceof File
+                      ? URL.createObjectURL(businessLogo)
+                      : getReceiptAbsoluteUrl(businessLogo) || ""
+                  }
+                  alt="Logo"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <span className="text-4xl font-black bg-clip-text text-transparent bg-gradient-to-r from-purple-600 to-indigo-600">
+                  {businessName.charAt(0).toUpperCase() || "N"}
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="w-full border-t border-gray-100 pt-6">
+            <ProductImageUploader
+              currentImageUrl={businessLogo}
+              onUploadSuccess={(fileOrUrl) => {
+                setBusinessLogo(fileOrUrl);
+                toast.success("Logo seleccionado. Recuerda guardar los cambios.");
+              }}
+              onClear={() => {
+                setBusinessLogo("");
+                toast.success("Logo quitado. Recuerda guardar los cambios.");
+              }}
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 w-full mt-6 pt-4 border-t border-gray-50">
+            <button
+              type="button"
+              onClick={() => setIsLogoSubModalOpen(false)}
+              className="w-full py-3 bg-purple-600 text-white font-bold rounded-xl hover:bg-purple-700 transition-all text-sm active:scale-95 shadow-lg shadow-purple-600/10 text-center"
+            >
+              Listo
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* BUSINESS BANNER SUB-MODAL */}
+      <Modal
+        isOpen={isBannerSubModalOpen}
+        onClose={() => setIsBannerSubModalOpen(false)}
+        title="Gestionar Banner del Negocio"
+        maxWidth="max-w-lg"
+      >
+        <div className="flex flex-col items-center p-4">
+          <p className="text-xs text-gray-500 mb-6 text-center">
+            Sube una imagen de banner para tu panel de control de negocio. Se recomienda un formato panorámico.
+          </p>
+
+          <div className="w-full h-32 rounded-xl bg-gray-100 border border-gray-200 shadow-md mb-6 relative overflow-hidden flex items-center justify-center">
+            {businessBanner ? (
+              <img
+                src={
+                  businessBanner instanceof File
+                    ? URL.createObjectURL(businessBanner)
+                    : getReceiptAbsoluteUrl(businessBanner) || ""
+                }
+                alt="Banner"
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <span className="text-gray-400 text-sm font-bold">Sin banner configurado</span>
+            )}
+          </div>
+
+          <div className="w-full border-t border-gray-100 pt-6">
+            <ProductImageUploader
+              currentImageUrl={businessBanner}
+              onUploadSuccess={(fileOrUrl) => {
+                setBusinessBanner(fileOrUrl);
+                toast.success("Banner seleccionado. Recuerda guardar los cambios.");
+              }}
+              onClear={() => {
+                setBusinessBanner("");
+                toast.success("Banner quitado. Recuerda guardar los cambios.");
+              }}
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 w-full mt-6 pt-4 border-t border-gray-50">
+            <button
+              type="button"
+              onClick={() => setIsBannerSubModalOpen(false)}
+              className="w-full py-3 bg-purple-600 text-white font-bold rounded-xl hover:bg-purple-700 transition-all text-sm active:scale-95 shadow-lg shadow-purple-600/10 text-center"
+            >
+              Listo
+            </button>
           </div>
         </div>
       </Modal>
