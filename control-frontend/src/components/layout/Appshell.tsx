@@ -9,8 +9,6 @@ import {
   ArrowRightLeft,
   Users,
   LogOut,
-  Key,
-  ShieldCheck,
   CheckCircle2,
   Settings,
   Menu,
@@ -452,11 +450,10 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                   setActiveWorkspace("PERSONAL");
                   navigate("/dashboard");
                 }}
-                className={`flex-grow flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold transition-all relative z-10 ${
-                  activeWorkspace === "PERSONAL"
-                    ? "bg-white text-blue-600 shadow-sm"
-                    : "text-gray-500 hover:text-gray-900"
-                }`}
+                className={`flex-grow flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold transition-all relative z-10 ${activeWorkspace === "PERSONAL"
+                  ? "bg-white text-blue-600 shadow-sm"
+                  : "text-gray-500 hover:text-gray-900"
+                  }`}
               >
                 <Target className="w-3.5 h-3.5" />
                 <span>Personal</span>
@@ -467,11 +464,10 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                   setActiveWorkspace("BUSINESS");
                   navigate("/business-dashboard");
                 }}
-                className={`flex-grow flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold transition-all relative z-10 ${
-                  activeWorkspace === "BUSINESS"
-                    ? "bg-white text-purple-600 shadow-sm"
-                    : "text-gray-500 hover:text-gray-900"
-                }`}
+                className={`flex-grow flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold transition-all relative z-10 ${activeWorkspace === "BUSINESS"
+                  ? "bg-white text-purple-600 shadow-sm"
+                  : "text-gray-500 hover:text-gray-900"
+                  }`}
               >
                 <Briefcase className="w-3.5 h-3.5" />
                 <span>Negocio</span>
@@ -631,33 +627,30 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
         <div className="flex border-b border-gray-100 mb-6 gap-2">
           <button
             onClick={() => setActiveTab("personal")}
-            className={`pb-3 px-4 font-bold text-sm border-b-2 transition-all ${
-              activeTab === "personal"
-                ? "border-indigo-600 text-indigo-600"
-                : "border-transparent text-gray-400 hover:text-gray-600"
-            }`}
+            className={`pb-3 px-4 font-bold text-sm border-b-2 transition-all ${activeTab === "personal"
+              ? "border-indigo-600 text-indigo-600"
+              : "border-transparent text-gray-400 hover:text-gray-600"
+              }`}
           >
             Personal
           </button>
           {activeProfiles.includes("BUSINESS") && (
             <button
               onClick={() => setActiveTab("business")}
-              className={`pb-3 px-4 font-bold text-sm border-b-2 transition-all ${
-                activeTab === "business"
-                  ? "border-purple-600 text-purple-600"
-                  : "border-transparent text-gray-400 hover:text-gray-600"
-              }`}
+              className={`pb-3 px-4 font-bold text-sm border-b-2 transition-all ${activeTab === "business"
+                ? "border-purple-600 text-purple-600"
+                : "border-transparent text-gray-400 hover:text-gray-600"
+                }`}
             >
               Negocio
             </button>
           )}
           <button
             onClick={() => setActiveTab("security")}
-            className={`pb-3 px-4 font-bold text-sm border-b-2 transition-all ${
-              activeTab === "security"
-                ? "border-gray-800 text-gray-800"
-                : "border-transparent text-gray-400 hover:text-gray-600"
-            }`}
+            className={`pb-3 px-4 font-bold text-sm border-b-2 transition-all ${activeTab === "security"
+              ? "border-gray-800 text-gray-800"
+              : "border-transparent text-gray-400 hover:text-gray-600"
+              }`}
           >
             Módulos y Seguridad
           </button>
@@ -671,9 +664,9 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                 <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-4 text-center">
                   Foto de Perfil
                 </label>
-                
+
                 {/* Interactive Avatar Container with Hover camera icon */}
-                <div 
+                <div
                   onClick={() => setIsAvatarSubModalOpen(true)}
                   className="w-28 h-28 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 p-1 mb-4 shadow-xl shadow-indigo-500/10 relative overflow-hidden flex items-center justify-center group cursor-pointer active:scale-95 transition-transform"
                   title="Gestionar foto de perfil"
@@ -695,7 +688,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                         {(profileLastName.charAt(0) || "S").toUpperCase()}
                       </span>
                     )}
-                    
+
                     {/* Hover Overlay */}
                     <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                       <Camera className="w-6 h-6 mb-1 text-white" />
@@ -836,7 +829,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                   <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-3">
                     Logo del Negocio
                   </label>
-                  <div 
+                  <div
                     onClick={() => setIsLogoSubModalOpen(true)}
                     className="w-20 h-20 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-500 p-0.5 mb-3 shadow-md relative overflow-hidden flex items-center justify-center group cursor-pointer active:scale-95 transition-transform"
                     title="Gestionar Logo del Negocio"
@@ -857,7 +850,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                           {businessName.charAt(0).toUpperCase() || "N"}
                         </span>
                       )}
-                      
+
                       {/* Hover Overlay */}
                       <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                         <Camera className="w-5 h-5 mb-0.5 text-white" />
@@ -880,7 +873,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                   <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-3">
                     Banner del Negocio
                   </label>
-                  <div 
+                  <div
                     onClick={() => setIsBannerSubModalOpen(true)}
                     className="w-full h-20 rounded-xl bg-gray-100 border border-gray-200 shadow-sm mb-3 relative overflow-hidden flex items-center justify-center group cursor-pointer active:scale-[0.98] transition-transform"
                     title="Gestionar Banner del Negocio"
@@ -900,7 +893,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                         <span className="text-xs font-bold">Sin banner configurado</span>
                       </div>
                     )}
-                    
+
                     {/* Hover Overlay */}
                     <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                       <Camera className="w-6 h-6 mb-1 text-white" />
