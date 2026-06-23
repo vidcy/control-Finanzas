@@ -83,6 +83,26 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
   const [businessBanner, setBusinessBanner] = useState<string | File>(user?.businessBanner || "");
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
+  // Temporary states for sub-modal staging
+  const [tempAvatar, setTempAvatar] = useState<string | File>("");
+  const [tempLogo, setTempLogo] = useState<string | File>("");
+  const [tempBanner, setTempBanner] = useState<string | File>("");
+
+  const openAvatarSubModal = () => {
+    setTempAvatar(profileAvatar);
+    setIsAvatarSubModalOpen(true);
+  };
+
+  const openLogoSubModal = () => {
+    setTempLogo(businessLogo);
+    setIsLogoSubModalOpen(true);
+  };
+
+  const openBannerSubModal = () => {
+    setTempBanner(businessBanner);
+    setIsBannerSubModalOpen(true);
+  };
+
   useEffect(() => {
     if (isProfileModalOpen && user) {
       setProfileName(user.name || "");
@@ -667,7 +687,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
 
                 {/* Interactive Avatar Container with Hover camera icon */}
                 <div
-                  onClick={() => setIsAvatarSubModalOpen(true)}
+                  onClick={openAvatarSubModal}
                   className="w-28 h-28 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 p-1 mb-4 shadow-xl shadow-indigo-500/10 relative overflow-hidden flex items-center justify-center group cursor-pointer active:scale-95 transition-transform"
                   title="Gestionar foto de perfil"
                 >
@@ -699,7 +719,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
 
                 <button
                   type="button"
-                  onClick={() => setIsAvatarSubModalOpen(true)}
+                  onClick={openAvatarSubModal}
                   className="px-4 py-2 border border-gray-200 hover:border-indigo-500 text-gray-600 hover:text-indigo-600 bg-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
                 >
                   <Settings className="w-3.5 h-3.5" />
@@ -830,7 +850,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                     Logo del Negocio
                   </label>
                   <div
-                    onClick={() => setIsLogoSubModalOpen(true)}
+                    onClick={openLogoSubModal}
                     className="w-20 h-20 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-500 p-0.5 mb-3 shadow-md relative overflow-hidden flex items-center justify-center group cursor-pointer active:scale-95 transition-transform"
                     title="Gestionar Logo del Negocio"
                   >
@@ -860,7 +880,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                   </div>
                   <button
                     type="button"
-                    onClick={() => setIsLogoSubModalOpen(true)}
+                    onClick={openLogoSubModal}
                     className="px-3 py-1.5 border border-gray-200 hover:border-purple-500 text-gray-600 hover:text-purple-600 bg-white rounded-lg text-xs font-bold transition-all flex items-center gap-1 active:scale-95 shadow-sm"
                   >
                     <Settings className="w-3 h-3" />
@@ -874,7 +894,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                     Banner del Negocio
                   </label>
                   <div
-                    onClick={() => setIsBannerSubModalOpen(true)}
+                    onClick={openBannerSubModal}
                     className="w-full h-20 rounded-xl bg-gray-100 border border-gray-200 shadow-sm mb-3 relative overflow-hidden flex items-center justify-center group cursor-pointer active:scale-[0.98] transition-transform"
                     title="Gestionar Banner del Negocio"
                   >
@@ -902,7 +922,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                   </div>
                   <button
                     type="button"
-                    onClick={() => setIsBannerSubModalOpen(true)}
+                    onClick={openBannerSubModal}
                     className="px-3 py-1.5 border border-gray-200 hover:border-purple-500 text-gray-600 hover:text-purple-600 bg-white rounded-lg text-xs font-bold transition-all flex items-center gap-1 active:scale-95 shadow-sm"
                   >
                     <Settings className="w-3 h-3" />
@@ -1092,12 +1112,12 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
 
           <div className="w-36 h-36 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 p-1 mb-6 shadow-xl relative overflow-hidden flex items-center justify-center">
             <div className="w-full h-full bg-white rounded-full flex items-center justify-center overflow-hidden">
-              {profileAvatar ? (
+              {tempAvatar ? (
                 <img
                   src={
-                    profileAvatar instanceof File
-                      ? URL.createObjectURL(profileAvatar)
-                      : getReceiptAbsoluteUrl(profileAvatar) || ""
+                    tempAvatar instanceof File
+                      ? URL.createObjectURL(tempAvatar)
+                      : getReceiptAbsoluteUrl(tempAvatar) || ""
                   }
                   alt="Avatar"
                   className="w-full h-full object-cover"
@@ -1113,22 +1133,26 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
 
           <div className="w-full border-t border-gray-100 pt-6">
             <ProductImageUploader
-              currentImageUrl={profileAvatar}
+              currentImageUrl={tempAvatar}
               onUploadSuccess={(fileOrUrl) => {
-                setProfileAvatar(fileOrUrl);
-                toast.success("Foto seleccionada. Recuerda guardar los cambios.");
+                setTempAvatar(fileOrUrl);
               }}
               onClear={() => {
-                setProfileAvatar("");
-                toast.success("Foto quitada. Recuerda guardar los cambios.");
+                setTempAvatar("");
               }}
+              label="Sube una foto de perfil"
+              buttonLabel="Tomar foto de perfil con cámara"
             />
           </div>
 
           <div className="flex justify-end gap-3 w-full mt-6 pt-4 border-t border-gray-50">
             <button
               type="button"
-              onClick={() => setIsAvatarSubModalOpen(false)}
+              onClick={() => {
+                setProfileAvatar(tempAvatar);
+                setIsAvatarSubModalOpen(false);
+                toast.success("Foto de perfil cargada. Recuerda guardar cambios.");
+              }}
               className="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-all text-sm active:scale-95 shadow-lg shadow-indigo-600/10 text-center"
             >
               Listo
@@ -1151,12 +1175,12 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
 
           <div className="w-32 h-32 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-500 p-1 mb-6 shadow-xl relative overflow-hidden flex items-center justify-center">
             <div className="w-full h-full bg-white rounded-full flex items-center justify-center overflow-hidden">
-              {businessLogo ? (
+              {tempLogo ? (
                 <img
                   src={
-                    businessLogo instanceof File
-                      ? URL.createObjectURL(businessLogo)
-                      : getReceiptAbsoluteUrl(businessLogo) || ""
+                    tempLogo instanceof File
+                      ? URL.createObjectURL(tempLogo)
+                      : getReceiptAbsoluteUrl(tempLogo) || ""
                   }
                   alt="Logo"
                   className="w-full h-full object-cover"
@@ -1171,22 +1195,26 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
 
           <div className="w-full border-t border-gray-100 pt-6">
             <ProductImageUploader
-              currentImageUrl={businessLogo}
+              currentImageUrl={tempLogo}
               onUploadSuccess={(fileOrUrl) => {
-                setBusinessLogo(fileOrUrl);
-                toast.success("Logo seleccionado. Recuerda guardar los cambios.");
+                setTempLogo(fileOrUrl);
               }}
               onClear={() => {
-                setBusinessLogo("");
-                toast.success("Logo quitado. Recuerda guardar los cambios.");
+                setTempLogo("");
               }}
+              label="Sube el logo de tu negocio"
+              buttonLabel="Tomar foto del logo con cámara"
             />
           </div>
 
           <div className="flex justify-end gap-3 w-full mt-6 pt-4 border-t border-gray-50">
             <button
               type="button"
-              onClick={() => setIsLogoSubModalOpen(false)}
+              onClick={() => {
+                setBusinessLogo(tempLogo);
+                setIsLogoSubModalOpen(false);
+                toast.success("Logo cargado. Recuerda guardar cambios.");
+              }}
               className="w-full py-3 bg-purple-600 text-white font-bold rounded-xl hover:bg-purple-700 transition-all text-sm active:scale-95 shadow-lg shadow-purple-600/10 text-center"
             >
               Listo
@@ -1208,12 +1236,12 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
           </p>
 
           <div className="w-full h-32 rounded-xl bg-gray-100 border border-gray-200 shadow-md mb-6 relative overflow-hidden flex items-center justify-center">
-            {businessBanner ? (
+            {tempBanner ? (
               <img
                 src={
-                  businessBanner instanceof File
-                    ? URL.createObjectURL(businessBanner)
-                    : getReceiptAbsoluteUrl(businessBanner) || ""
+                  tempBanner instanceof File
+                    ? URL.createObjectURL(tempBanner)
+                    : getReceiptAbsoluteUrl(tempBanner) || ""
                 }
                 alt="Banner"
                 className="w-full h-full object-cover"
@@ -1225,22 +1253,26 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
 
           <div className="w-full border-t border-gray-100 pt-6">
             <ProductImageUploader
-              currentImageUrl={businessBanner}
+              currentImageUrl={tempBanner}
               onUploadSuccess={(fileOrUrl) => {
-                setBusinessBanner(fileOrUrl);
-                toast.success("Banner seleccionado. Recuerda guardar los cambios.");
+                setTempBanner(fileOrUrl);
               }}
               onClear={() => {
-                setBusinessBanner("");
-                toast.success("Banner quitado. Recuerda guardar los cambios.");
+                setTempBanner("");
               }}
+              label="Sube el banner de tu negocio"
+              buttonLabel="Tomar foto del banner con cámara"
             />
           </div>
 
           <div className="flex justify-end gap-3 w-full mt-6 pt-4 border-t border-gray-50">
             <button
               type="button"
-              onClick={() => setIsBannerSubModalOpen(false)}
+              onClick={() => {
+                setBusinessBanner(tempBanner);
+                setIsBannerSubModalOpen(false);
+                toast.success("Banner cargado. Recuerda guardar cambios.");
+              }}
               className="w-full py-3 bg-purple-600 text-white font-bold rounded-xl hover:bg-purple-700 transition-all text-sm active:scale-95 shadow-lg shadow-purple-600/10 text-center"
             >
               Listo

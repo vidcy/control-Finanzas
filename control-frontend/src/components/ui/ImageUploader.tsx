@@ -71,12 +71,16 @@ interface ProductImageUploaderProps {
   currentImageUrl?: string | File | null;
   onUploadSuccess: (fileOrUrl: string | File) => void;
   onClear: () => void;
+  label?: string;
+  buttonLabel?: string;
 }
 
 export function ProductImageUploader({
   currentImageUrl,
   onUploadSuccess,
   onClear,
+  label = "Sube una foto del producto",
+  buttonLabel = "Tomar foto con cámara",
 }: ProductImageUploaderProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -122,7 +126,7 @@ export function ProductImageUploader({
       <div className="relative">
         <img
           src={absoluteUrl}
-          alt="Imagen del producto"
+          alt="Imagen seleccionada"
           className="w-full h-40 object-cover rounded-xl border border-indigo-200"
           onError={(e) => {
             (e.target as HTMLImageElement).src =
@@ -148,7 +152,7 @@ export function ProductImageUploader({
         className="w-full h-32 border-2 border-dashed border-indigo-200 rounded-xl flex flex-col items-center justify-center text-gray-400 transition-all cursor-pointer hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50/50"
       >
         <ImageIcon className="w-7 h-7 mb-1" />
-        <span className="text-sm font-bold">Sube una foto del producto</span>
+        <span className="text-sm font-bold">{label}</span>
         <span className="text-[10px] mt-0.5 opacity-60">
           JPG · PNG · WEBP (máx. 5MB)
         </span>
@@ -160,7 +164,7 @@ export function ProductImageUploader({
         className="w-full py-2 border border-dashed border-violet-200 rounded-xl text-violet-600 hover:bg-violet-50 hover:border-violet-400 transition-all font-bold text-sm flex items-center justify-center gap-2"
       >
         <Camera className="w-4 h-4" />
-        Tomar foto con cámara
+        {buttonLabel}
       </button>
 
       <input
