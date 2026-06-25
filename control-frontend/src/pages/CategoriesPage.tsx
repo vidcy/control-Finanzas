@@ -49,7 +49,7 @@ export default function CategoriesPage() {
   const [confirmConfig, setConfirmConfig] = useState({
     title: "",
     message: "",
-    onConfirm: () => { },
+    onConfirm: () => {},
   });
 
   useEffect(() => {
@@ -82,7 +82,7 @@ export default function CategoriesPage() {
     } catch (error: unknown) {
       const message =
         error instanceof Error ? error.message : "Error al cargar categorías";
-      toast.error(message)
+      toast.error(message);
     } finally {
       setIsLoading(false);
     }
@@ -119,7 +119,7 @@ export default function CategoriesPage() {
     } catch (error: unknown) {
       const message =
         error instanceof Error ? error.message : "Error al crear categoría";
-      toast.error(message)
+      toast.error(message);
     } finally {
       setIsSaving(false);
     }
@@ -137,8 +137,10 @@ export default function CategoriesPage() {
           await loadCategories();
         } catch (error: unknown) {
           const message =
-            error instanceof Error ? error.message : "Error al eliminar categoría";
-          toast.error(message)
+            error instanceof Error
+              ? error.message
+              : "Error al eliminar categoría";
+          toast.error(message);
         }
       },
     });
@@ -167,8 +169,10 @@ export default function CategoriesPage() {
       setIsSubModalOpen(false);
     } catch (error: unknown) {
       const message =
-        error instanceof Error ? error.message : "Error al crear la subcategoría";
-      toast.error(message)
+        error instanceof Error
+          ? error.message
+          : "Error al crear la subcategoría";
+      toast.error(message);
     } finally {
       setIsSaving(false);
     }
@@ -185,8 +189,10 @@ export default function CategoriesPage() {
           await loadCategories();
         } catch (error: unknown) {
           const message =
-            error instanceof Error ? error.message : "Error al eliminar la subcategoría";
-          toast.error(message)
+            error instanceof Error
+              ? error.message
+              : "Error al eliminar la subcategoría";
+          toast.error(message);
         }
       },
     });

@@ -19,6 +19,10 @@ export interface Product {
   unit: string;
   imageUrl?: string;
   presentations?: Presentation[];
+  brandId?: string;
+  brand?: { id: string; name: string };
+  familyId?: string;
+  family?: { id: string; name: string };
   createdAt?: string;
   updatedAt?: string;
 }
@@ -34,6 +38,10 @@ export interface InventoryMovement {
   presentation?: { id: string; name: string };
   presentationName?: string;
   presentationQty?: number;
+  unitCost?: number;
+  totalCost?: number;
+  stockResult?: number;
+  documentId?: string;
   userId: string;
   createdAt: string;
 }
@@ -121,3 +129,126 @@ export const getLowStockAnalysisRequest = async (
   });
   return res.data;
 };
+
+export interface PurchaseOrderItem {
+  id: string;
+  productId: string;
+  product?: Product;
+  quantity: number;
+  equivalence: number;
+  presentationId?: string;
+  presentationName?: string;
+  costPrice: number;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  totalCost: number;
+  status: "ORDERED" | "RECEIVED";
+  paymentMethod: string;
+  categoryId: string;
+  receiptUrl?: string;
+  createdAt: string;
+  items: PurchaseOrderItem[];
+}
+
+export const createPurchaseOrderRequest = async (data: {
+  items: Array<{
+    productId: string;
+    quantity: number;
+    equivalence: number;
+    presentationId?: string;
+    presentationName?: string;
+    costPrice: number;
+  }>;
+  totalCost: number;
+  categoryId: string;
+  paymentMethod: string;
+  receiptUrl?: string | null;
+  receiveImmediately?: boolean;
+}): Promise<PurchaseOrder> => {
+  const res = await API.post("/products/purchase-orders", data);
+  return res.data;
+};
+
+export const getPurchaseOrdersRequest = async (status?: string): Promise<PurchaseOrder[]> => {
+  const res = await API.get("/products/purchase-orders", { params: { status } });
+  return res.data;
+};
+
+export const receivePurchaseOrderRequest = async (id: string): Promise<PurchaseOrder> => {
+  const res = await API.post(`/products/purchase-orders/${id}/receive`);
+  return res.data;
+};
+
+export const deletePurchaseOrderRequest = async (id: string): Promise<any> => {
+  const res = await API.delete(`/products/purchase-orders/${id}`);
+  return res.data;
+};
+
+export const revertPurchaseOrderRequest = async (id: string): Promise<PurchaseOrder> => {
+  const res = await API.post(`/products/purchase-orders/${id}/revert`);
+  return res.data;
+};
+
+export const updatePurchaseOrderRequest = async (
+  id: string,
+  data: {
+    items: Array<{
+      productId: string;
+      quantity: number;
+      equivalence: number;
+      presentationId?: string | null;
+      presentationName?: string | null;
+      costPrice: number;
+    }>;
+    totalCost: number;
+    categoryId: string;
+    paymentMethod: string;
+    receiptUrl?: string | null;
+  }
+): Promise<PurchaseOrder> => {
+  const res = await API.patch(`/products/purchase-orders/${id}`, data);
+  return res.data;
+};
+
+export const getBrandsRequest = async (): Promise<any[]> => {
+  const res = await API.get("/products/brands");
+  return res.data;
+};
+
+export const createBrandRequest = async (data: { name: string }): Promise<any> => {
+  const res = await API.post("/products/brands", data);
+  return res.data;
+};
+
+export const updateBrandRequest = async (id: string, data: { name: string }): Promise<any> => {
+  const res = await API.patch(`/products/brands/${id}`, data);
+  return res.data;
+};
+
+export const deleteBrandRequest = async (id: string): Promise<any> => {
+  const res = await API.delete(`/products/brands/${id}`);
+  return res.data;
+};
+
+export const getFamiliesRequest = async (): Promise<any[]> => {
+  const res = await API.get("/products/families");
+  return res.data;
+};
+
+export const createFamilyRequest = async (data: { name: string }): Promise<any> => {
+  const res = await API.post("/products/families", data);
+  return res.data;
+};
+
+export const updateFamilyRequest = async (id: string, data: { name: string }): Promise<any> => {
+  const res = await API.patch(`/products/families/${id}`, data);
+  return res.data;
+};
+
+export const deleteFamilyRequest = async (id: string): Promise<any> => {
+  const res = await API.delete(`/products/families/${id}`);
+  return res.data;
+};
+

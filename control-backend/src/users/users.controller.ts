@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, UseGuards, Req, Patch, Param, Inject, forwardRef, BadRequestException } from '@nestjs/common';
+import { Controller, Post, Body, Get, UseGuards, Req, Patch, Param, Inject, forwardRef, BadRequestException, Delete } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from 'src/auth/jwt.guard';
 import { Roles } from 'src/auth/role.decorator';
@@ -153,6 +153,34 @@ export class UsersController {
   updateMyProfile(@Req() req, @Body() body: any) {
     const userId = req.user.workerId || req.user.id;
     return this.usersService.updateMyProfile(userId, body);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('workers')
+  listWorkers(@Req() req) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.usersService.listWorkers(ownerId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('workers')
+  createWorker(@Req() req, @Body() body: any) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.usersService.createWorker(ownerId, body);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('workers/:id')
+  updateWorker(@Req() req, @Param('id') id: string, @Body() body: any) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.usersService.updateWorker(ownerId, id, body);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('workers/:id')
+  deleteWorker(@Req() req, @Param('id') id: string) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.usersService.deleteWorker(ownerId, id);
   }
 
   @UseGuards(JwtAuthGuard)

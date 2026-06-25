@@ -62,10 +62,9 @@ model User {
   isActive  Boolean  @default(true)
   profiles  Json?
   blockedProfiles Json?
-  parentId  String?
-  parent    User?    @relation("UserWorkers", fields: [parentId], references: [id])
-  workers   User[]   @relation("UserWorkers")
 
+  // Campos necesarios para corregir tus 15 errores:
+  parentId        String?
 
   personalAvatar   String?
   businessName     String?
@@ -86,6 +85,13 @@ model User {
   notifications Notification[]
   products     Product[]
   cashShifts   CashShift[]
+  purchaseOrders PurchaseOrder[]
+
+  branchId        String?
+  branch          Branch?        @relation("BranchWorkers", fields: [branchId], references: [id], onDelete: SetNull)
+  branches        Branch[]       @relation("OwnerBranches")
+  brands          Brand[]
+  families        Family[]
 }
 
 // =========================
@@ -97,10 +103,10 @@ model Notification {
   description String
   link        String
   read        Boolean  @default(false)
-  
+
   userId      String
   user        User     @relation(fields: [userId], references: [id])
-  
+
   createdAt   DateTime @default(now())
 }
 
@@ -108,7 +114,7 @@ model Notification {
 // 📂 CATEGORÍAS
 // =========================
 model Category {
-  id     String @id @default(uuid())
+id     String @id @default(uuid())
   name   String
   type   TransactionType
   color  String?
@@ -135,10 +141,10 @@ model Transaction {
   // 🔑 ID
   id String @id @default(uuid())
 
-  // 📌 INGRESO / EGRESO
-  type TransactionType
+  type  TransactionType   // ESTE ES EL CAMPO QUE FALTA EN TU ESQUEMA
 
-  // 📊 ESTADO (CLAVE PARA TUS 4 MÓDULOS)
+  // 📌 INGRESO / EGRESO
+// 📊 ESTADO (CLAVE PARA TUS 4 MÓDULOS)
   status TransactionStatus @default(PENDING)
 
   // 👤 USUARIO
@@ -172,8 +178,7 @@ model Transaction {
 
   // 💰 MONTO
   amount Float
-
-  // 💱 MONEDA
+ // 💱 MONEDA
   currency Currency
 
   // 💵 TIPO DE CAMBIO
@@ -190,6 +195,9 @@ model Transaction {
 
   // 🏢 ESPACIO DE TRABAJO (PERSONAL o BUSINESS)
   workspace String @default("PERSONAL")
+
+  branchId        String?
+  branch          Branch?        @relation(fields: [branchId], references: [id], onDelete: SetNull)
 
   // ⏱ CONTROL
   createdAt DateTime @default(now())
@@ -208,14 +216,21 @@ model Product {
   salePrice   Float    // Precio de venta
   stock       Float    @default(0)
   minStock    Float    @default(5)
-  unit        String   @default("UNIDAD") // Unidad de medida principal
+ unit        String   @default("UNIDAD") // Unidad de medida principal
   imageUrl    String?  // Foto/imagen opcional del producto
-  
+
   userId      String
   user        User     @relation(fields: [userId], references: [id])
-  
+
   presentations Presentation[]
   movements     InventoryMovement[]
+  purchaseOrderItems PurchaseOrderItem[]
+
+  brandId     String?
+  brand       Brand?   @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  familyId    String?
+  family      Family?  @relation(fields: [familyId], references: [id], onDelete: SetNull)
+  branchStocks BranchStock[]
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -240,6 +255,9 @@ model CashShift {
 
   userId          String
   user            User        @relation(fields: [userId], references: [id])
+
+  branchId        String?
+  branch          Branch?     @relation(fields: [branchId], references: [id], onDelete: SetNull)
 }
 
 // =========================
@@ -270,13 +288,12 @@ model Presentation {
   name        String   // "Saco", "Medio saco", "Kg"
   equivalence Float    // Cuántas unidades principales equivale (ej. 60, 30, 1)
   price       Float    // Precio de venta para esta presentación
-  
+
   productId   String
   product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  
-  movements   InventoryMovement[]
 
-  createdAt   DateTime @default(now())
+  movements   InventoryMovement[]
+ createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
 
@@ -287,13 +304,108 @@ model InventoryMovement {
   quantity        Float         // Cantidad en la unidad principal del producto
   type            MovementType
   reason          String?       // "SALE", "PURCHASE", "ADJUSTMENT"
-  
+
   presentationId  String?
   presentation    Presentation? @relation(fields: [presentationId], references: [id], onDelete: Restrict)
   presentationName String?      // Snapshot de la presentación usada (ej: "Saco")
   presentationQty  Float?       // Snapshot de la cantidad de presentaciones (ej: 2)
-  
+
+  // Kardex fields
+  unitCost        Float         @default(0)
+  totalCost       Float         @default(0)
+  stockResult     Float         @default(0)
+  documentId      String?       // ID of associated Sale (Transaction) or PurchaseOrder
+
   userId          String
+  branchId        String?
+  branch          Branch?       @relation(fields: [branchId], references: [id], onDelete: SetNull)
   createdAt       DateTime      @default(now())
 }
-
+
+// =========================
+// 🛒 PEDIDOS / COMPRAS (NUEVO)
+// =========================
+enum PurchaseOrderStatus {
+  ORDERED
+  RECEIVED
+}
+
+model PurchaseOrder {
+  id            String             @id @default(uuid())
+  totalCost     Float
+  status        PurchaseOrderStatus @default(ORDERED)
+  paymentMethod PaymentMethod
+  categoryId    String
+  receiptUrl    String?
+  userId        String
+  user          User               @relation(fields: [userId], references: [id])
+  items         PurchaseOrderItem[]
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+}
+
+model PurchaseOrderItem {
+  id              String         @id @default(uuid())
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder  @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  productId       String
+  product         Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity        Float
+  equivalence     Float          @default(1.0)
+  presentationId  String?
+  presentationName String?
+  costPrice       Float
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+}
+
+model Branch {
+  id        String   @id @default(uuid())
+  name      String
+  address   String?
+  userId    String
+  user      User     @relation("OwnerBranches", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stocks       BranchStock[]
+  cashShifts   CashShift[]
+  workers      User[]        @relation("BranchWorkers")
+  transactions Transaction[]
+  movements    InventoryMovement[]
+}
+
+model BranchStock {
+  id        String   @id @default(uuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  branchId  String
+  branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  stock     Float    @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([productId, branchId])
+}
+
+model Brand {
+  id        String   @id @default(uuid())
+  name      String
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  products  Product[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Family {
+  id        String   @id @default(uuid())
+  name      String
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  products  Product[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+

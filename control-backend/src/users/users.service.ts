@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { ConflictException, Injectable, ForbiddenException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { CategoriesService } from 'src/category/category.service';
@@ -238,6 +238,91 @@ export class UsersService {
         id: true,
         profiles: true,
       },
+    });
+  }
+
+  async listWorkers(ownerId: string) {
+    return this.prisma.user.findMany({
+      where: { parentId: ownerId },
+      select: {
+        id: true,
+        name: true,
+        lastName: true,
+        email: true,
+        role: true,
+        isActive: true,
+        profiles: true,
+        branchId: true,
+        branch: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async createWorker(ownerId: string, data: any) {
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email: data.email },
+    });
+    if (existingUser) {
+      throw new ConflictException('Usuario/trabajador ya existe con este correo');
+    }
+
+    const hashedPassword = await bcrypt.hash(data.password, 10);
+    return this.prisma.user.create({
+      data: {
+        name: data.name,
+        lastName: data.lastName || '',
+        email: data.email,
+        password: hashedPassword,
+        role: 'USER',
+        profiles: data.profiles || [],
+        branchId: data.branchId || null,
+        parentId: ownerId,
+        isActive: true,
+      },
+    });
+  }
+
+  async updateWorker(ownerId: string, id: string, data: any) {
+    const worker = await this.prisma.user.findFirst({
+      where: { id, parentId: ownerId },
+    });
+    if (!worker) {
+      throw new NotFoundException('Trabajador no encontrado');
+    }
+
+    const updateData: any = {
+      name: data.name,
+      lastName: data.lastName,
+      profiles: data.profiles,
+      branchId: data.branchId || null,
+      isActive: data.isActive !== undefined ? data.isActive : worker.isActive,
+    };
+
+    if (data.password && data.password.trim() !== '') {
+      updateData.password = await bcrypt.hash(data.password, 10);
+    }
+
+    return this.prisma.user.update({
+      where: { id },
+      data: updateData,
+    });
+  }
+
+  async deleteWorker(ownerId: string, id: string) {
+    const worker = await this.prisma.user.findFirst({
+      where: { id, parentId: ownerId },
+    });
+    if (!worker) {
+      throw new NotFoundException('Trabajador no encontrado');
+    }
+    return this.prisma.user.delete({
+      where: { id },
     });
   }
 }

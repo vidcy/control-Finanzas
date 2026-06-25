@@ -38,9 +38,14 @@ export class ProductsService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      const brandId = productData.brandId ? productData.brandId : null;
+      const familyId = productData.familyId ? productData.familyId : null;
+
       const product = await tx.product.create({
         data: {
           ...productData,
+          brandId,
+          familyId,
           stock,
           minStock,
           costPrice,
@@ -62,6 +67,9 @@ export class ProductsService {
             presentationName: unit || 'UNIDAD',
             presentationQty: stock,
             userId,
+            unitCost: costPrice,
+            totalCost: stock * costPrice,
+            stockResult: stock,
           },
         });
       }
@@ -91,7 +99,16 @@ export class ProductsService {
 
       return tx.product.findUnique({
         where: { id: product.id },
-        include: { presentations: true },
+        include: {
+          presentations: true,
+          brand: true,
+          family: true,
+          branchStocks: {
+            include: {
+              branch: true,
+            },
+          },
+        },
       });
     });
   }
@@ -99,7 +116,16 @@ export class ProductsService {
   async findAll(userId: string) {
     return this.prisma.product.findMany({
       where: { userId },
-      include: { presentations: true },
+      include: {
+        presentations: true,
+        brand: true,
+        family: true,
+        branchStocks: {
+          include: {
+            branch: true,
+          },
+        },
+      },
       orderBy: { name: 'asc' },
     });
   }
@@ -107,7 +133,16 @@ export class ProductsService {
   async findOne(userId: string, id: string) {
     const product = await this.prisma.product.findFirst({
       where: { id, userId },
-      include: { presentations: true },
+      include: {
+        presentations: true,
+        brand: true,
+        family: true,
+        branchStocks: {
+          include: {
+            branch: true,
+          },
+        },
+      },
     });
     if (!product) throw new NotFoundException('Producto no encontrado');
     return product;
@@ -129,6 +164,13 @@ export class ProductsService {
     if (updateData.salePrice !== undefined)
       updateData.salePrice = parseFloat(updateData.salePrice);
     if (unit !== undefined) updateData.unit = unit;
+
+    if (updateData.brandId !== undefined) {
+      updateData.brandId = updateData.brandId ? updateData.brandId : null;
+    }
+    if (updateData.familyId !== undefined) {
+      updateData.familyId = updateData.familyId ? updateData.familyId : null;
+    }
 
     return this.prisma.$transaction(async (tx) => {
       // If presentations are provided, manage upserts/deletions
@@ -215,6 +257,9 @@ export class ProductsService {
             presentationName: product.unit,
             presentationQty: quantity,
             userId,
+            unitCost: product.costPrice,
+            totalCost: quantity * product.costPrice,
+            stockResult: parseFloat(updateData.stock),
           },
         });
       }
@@ -230,7 +275,16 @@ export class ProductsService {
 
       return tx.product.findUnique({
         where: { id },
-        include: { presentations: true },
+        include: {
+          presentations: true,
+          brand: true,
+          family: true,
+          branchStocks: {
+            include: {
+              branch: true,
+            },
+          },
+        },
       });
     });
   }
@@ -294,29 +348,7 @@ export class ProductsService {
     const mainUnitsQty = quantity * equivalence;
 
     return this.prisma.$transaction(async (tx) => {
-      // 1. Update Product Stock
-      const updatedProduct = await tx.product.update({
-        where: { id: productId },
-        data: {
-          stock: product.stock + mainUnitsQty,
-        },
-      });
-
-      // 2. Create Inventory Movement
-      await tx.inventoryMovement.create({
-        data: {
-          productId,
-          quantity: mainUnitsQty,
-          type: 'IN',
-          reason: 'PURCHASE',
-          presentationId: presentationId || null,
-          presentationName,
-          presentationQty: parseFloat(quantity),
-          userId,
-        },
-      });
-
-      // 3. Create General Contable Transaction
+      // 1. Create General Contable Transaction
       const transaction = await tx.transaction.create({
         data: {
           name: `Compra de Mercadería: ${product.name} (${quantity} x ${presentationName})`,
@@ -331,6 +363,40 @@ export class ProductsService {
           description: `Reposición de stock (inventario). Total unidades: ${mainUnitsQty} ${product.unit}.`,
           workspace: 'BUSINESS',
           userId,
+        },
+      });
+
+      // 2. Calculate Weighted Average Cost (CPP)
+      const purchaseUnitPrice = parseFloat(totalCost) / mainUnitsQty;
+      let newCPP = product.costPrice;
+      if (product.stock + mainUnitsQty > 0) {
+        newCPP = (product.stock * product.costPrice + parseFloat(totalCost)) / (product.stock + mainUnitsQty);
+      }
+
+      // 3. Update Product Stock and CPP
+      const updatedProduct = await tx.product.update({
+        where: { id: productId },
+        data: {
+          stock: product.stock + mainUnitsQty,
+          costPrice: newCPP,
+        },
+      });
+
+      // 4. Create Inventory Movement (Kardex details populated)
+      await tx.inventoryMovement.create({
+        data: {
+          productId,
+          quantity: mainUnitsQty,
+          type: 'IN',
+          reason: 'PURCHASE',
+          presentationId: presentationId || null,
+          presentationName,
+          presentationQty: parseFloat(quantity),
+          userId,
+          unitCost: purchaseUnitPrice,
+          totalCost: parseFloat(totalCost),
+          stockResult: updatedProduct.stock,
+          documentId: transaction.id,
         },
       });
 
@@ -352,12 +418,19 @@ export class ProductsService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      const salesDetails: string[] = [];
       let totalAmount = 0;
+      const salesDetails: string[] = [];
+      const itemsToProcess: Array<{
+        product: any;
+        item: any;
+        mainUnitsQty: number;
+        requiredQty: number;
+        presentationName: string;
+        salePrice: number;
+      }> = [];
 
       for (const item of items) {
         if (item.isCustom) {
-          // Free/Custom item (no stock subtraction, just adds to financial total)
           const qty = parseFloat(item.quantity);
           const price = parseFloat(item.salePrice);
           totalAmount += qty * price;
@@ -367,7 +440,6 @@ export class ProductsService {
           continue;
         }
 
-        // Real product
         const product = await tx.product.findFirst({
           where: { id: item.id, userId },
           include: { presentations: true },
@@ -399,42 +471,28 @@ export class ProductsService {
         const requiredQty = parseFloat(item.quantity);
         const mainUnitsQty = requiredQty * equivalence;
 
-        // Verify stock sufficiency
         if (product.stock < mainUnitsQty) {
           throw new BadRequestException(
             `Stock insuficiente para "${product.name}". Disponible: ${product.stock} ${product.unit}, Requerido: ${mainUnitsQty} ${product.unit}.`,
           );
         }
 
-        // Subtract stock
-        await tx.product.update({
-          where: { id: item.id },
-          data: {
-            stock: product.stock - mainUnitsQty,
-          },
-        });
-
-        // Log inventory movement
-        await tx.inventoryMovement.create({
-          data: {
-            productId: item.id,
-            quantity: mainUnitsQty,
-            type: 'OUT',
-            reason: 'SALE',
-            presentationId: item.presentationId || null,
-            presentationName,
-            presentationQty: requiredQty,
-            userId,
-          },
-        });
-
         totalAmount += requiredQty * salePrice;
         salesDetails.push(
           `${requiredQty}x ${product.name} [${presentationName}] (S/ ${salePrice.toFixed(2)} c/u)`,
         );
+
+        itemsToProcess.push({
+          product,
+          item,
+          mainUnitsQty,
+          requiredQty,
+          presentationName,
+          salePrice,
+        });
       }
 
-      // Create Financial Transaction (Income)
+      // 1. Create Financial Transaction (Income)
       const transaction = await tx.transaction.create({
         data: {
           name: 'Venta en Caja',
@@ -452,6 +510,37 @@ export class ProductsService {
           userId,
         },
       });
+
+      // 2. Process stock adjustments and movements
+      for (const proc of itemsToProcess) {
+        const { product, item, mainUnitsQty, requiredQty, presentationName } = proc;
+
+        // Subtract stock
+        const updatedProduct = await tx.product.update({
+          where: { id: product.id },
+          data: {
+            stock: { decrement: mainUnitsQty },
+          },
+        });
+
+        // Log inventory movement (populated with Kardex fields)
+        await tx.inventoryMovement.create({
+          data: {
+            productId: product.id,
+            quantity: mainUnitsQty,
+            type: 'OUT',
+            reason: 'SALE',
+            presentationId: item.presentationId || null,
+            presentationName,
+            presentationQty: requiredQty,
+            userId,
+            unitCost: product.costPrice, // CPP unit cost at sale
+            totalCost: mainUnitsQty * product.costPrice,
+            stockResult: updatedProduct.stock,
+            documentId: transaction.id,
+          },
+        });
+      }
 
       return {
         transactionId: transaction.id,
@@ -503,6 +592,603 @@ export class ProductsService {
         soldQty,
         deficit,
       };
+    });
+  }
+
+  /**
+   * Create a purchase order
+   */
+  async createPurchaseOrder(userId: string, body: any) {
+    const { items, totalCost, paymentMethod, categoryId, receiptUrl, receiveImmediately } = body;
+
+    if (!items || items.length === 0) {
+      throw new BadRequestException('El pedido de compras está vacío.');
+    }
+    if (totalCost < 0) {
+      throw new BadRequestException('El costo total no puede ser negativo.');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Create PurchaseOrder and items
+      const purchaseOrder = await tx.purchaseOrder.create({
+        data: {
+          totalCost: parseFloat(totalCost),
+          status: receiveImmediately ? 'RECEIVED' : 'ORDERED',
+          paymentMethod,
+          categoryId,
+          receiptUrl: receiptUrl || null,
+          userId,
+          items: {
+            create: items.map((item: any) => ({
+              productId: item.productId,
+              quantity: parseFloat(item.quantity),
+              equivalence: parseFloat(item.equivalence || 1.0),
+              presentationId: item.presentationId || null,
+              presentationName: item.presentationName || null,
+              costPrice: parseFloat(item.costPrice),
+            })),
+          },
+        },
+        include: {
+          items: {
+            include: {
+              product: true,
+            },
+          },
+        },
+      });
+
+      // 2. Fetch product details for descriptions
+      const productIds = items.map((item: any) => item.productId);
+      const dbProducts = await tx.product.findMany({
+        where: { id: { in: productIds } },
+      });
+
+      const productNames = dbProducts.map((p) => p.name).join(', ');
+      const itemDetails = items
+        .map((item: any) => {
+          const prod = dbProducts.find((p) => p.id === item.productId);
+          const name = prod ? prod.name : 'Producto';
+          const presName = item.presentationName || (prod ? prod.unit : 'Unidad');
+          return `${item.quantity}x ${name} [${presName}]`;
+        })
+        .join(', ');
+
+      // 3. Create General Contable Transaction (Expense)
+      await tx.transaction.create({
+        data: {
+          name: `Compra de Mercadería: ${productNames.substring(0, 50)}${productNames.length > 50 ? '...' : ''}`,
+          type: 'EXPENSE',
+          amount: parseFloat(totalCost),
+          categoryId,
+          subCategoryId: null,
+          date: new Date(),
+          status: 'PAID',
+          currency: 'PEN',
+          paymentMethod,
+          description: `Pedido de Compra. ID: ${purchaseOrder.id}. Ítems: ${itemDetails}. Estado: ${receiveImmediately ? 'Recibido en Almacén' : 'En Tránsito (Pedido)'}.`,
+          workspace: 'BUSINESS',
+          receiptUrl: receiptUrl || null,
+          userId,
+        },
+      });
+
+      // 4. Update Stock & Movements if received immediately
+      if (receiveImmediately) {
+        for (const item of items) {
+          const prod = dbProducts.find((p) => p.id === item.productId);
+          if (prod) {
+            const equivalence = parseFloat(item.equivalence || 1.0);
+            const mainUnitsQty = parseFloat(item.quantity) * equivalence;
+            const presentationName = item.presentationName || prod.unit;
+            const itemCostPricePerBaseUnit = parseFloat(item.costPrice) / equivalence;
+
+            // Calculate CPP
+            let newCPP = prod.costPrice;
+            if (prod.stock + mainUnitsQty > 0) {
+              newCPP = (prod.stock * prod.costPrice + (mainUnitsQty * itemCostPricePerBaseUnit)) / (prod.stock + mainUnitsQty);
+            }
+
+            // Update stock and CPP
+            const updatedProduct = await tx.product.update({
+              where: { id: prod.id },
+              data: {
+                stock: { increment: mainUnitsQty },
+                costPrice: newCPP,
+              },
+            });
+
+            // Log inventory movement (populated with Kardex fields)
+            await tx.inventoryMovement.create({
+              data: {
+                productId: item.productId,
+                quantity: mainUnitsQty,
+                type: 'IN',
+                reason: 'PURCHASE',
+                presentationId: item.presentationId || null,
+                presentationName,
+                presentationQty: parseFloat(item.quantity),
+                userId,
+                unitCost: itemCostPricePerBaseUnit,
+                totalCost: mainUnitsQty * itemCostPricePerBaseUnit,
+                stockResult: updatedProduct.stock,
+                documentId: purchaseOrder.id,
+              },
+            });
+          }
+        }
+      }
+
+      return purchaseOrder;
+    });
+  }
+
+  /**
+   * Get all purchase orders for the user
+   */
+  async getPurchaseOrders(userId: string, status?: string) {
+    return this.prisma.purchaseOrder.findMany({
+      where: {
+        userId,
+        ...(status ? { status: status as any } : {}),
+      },
+      include: {
+        items: {
+          include: {
+            product: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+  }
+
+  /**
+   * Receive/complete a purchase order, moving items to stock
+   */
+  async receivePurchaseOrder(userId: string, id: string) {
+    const order = await this.prisma.purchaseOrder.findFirst({
+      where: { id, userId },
+      include: {
+        items: {
+          include: {
+            product: true,
+          },
+        },
+      },
+    });
+
+    if (!order) throw new NotFoundException('Pedido no encontrado');
+    if (order.status === 'RECEIVED') {
+      throw new BadRequestException('El pedido ya ha sido ingresado a stock');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Update Order Status
+      const updatedOrder = await tx.purchaseOrder.update({
+        where: { id },
+        data: { status: 'RECEIVED' },
+      });
+
+      // 2. Loop through items to increment stock & log inventory movement
+      for (const item of order.items) {
+        const equivalence = item.equivalence || 1.0;
+        const mainUnitsQty = item.quantity * equivalence;
+        const presentationName = item.presentationName || item.product.unit;
+        const itemCostPricePerBaseUnit = item.costPrice / equivalence;
+
+        // Calculate CPP
+        let newCPP = item.product.costPrice;
+        if (item.product.stock + mainUnitsQty > 0) {
+          newCPP = (item.product.stock * item.product.costPrice + (mainUnitsQty * itemCostPricePerBaseUnit)) / (item.product.stock + mainUnitsQty);
+        }
+
+        // Update stock and CPP
+        const updatedProduct = await tx.product.update({
+          where: { id: item.productId },
+          data: {
+            stock: { increment: mainUnitsQty },
+            costPrice: newCPP,
+          },
+        });
+
+        // Log inventory movement (populated with Kardex fields)
+        await tx.inventoryMovement.create({
+          data: {
+            productId: item.productId,
+            quantity: mainUnitsQty,
+            type: 'IN',
+            reason: 'PURCHASE',
+            presentationId: item.presentationId || null,
+            presentationName,
+            presentationQty: item.quantity,
+            userId,
+            unitCost: itemCostPricePerBaseUnit,
+            totalCost: mainUnitsQty * itemCostPricePerBaseUnit,
+            stockResult: updatedProduct.stock,
+            documentId: order.id,
+          },
+        });
+      }
+
+      return updatedOrder;
+    });
+  }
+
+  /**
+   * Cancel/delete a pending purchase order
+   */
+  async deletePurchaseOrder(userId: string, id: string) {
+    const order = await this.prisma.purchaseOrder.findFirst({
+      where: { id, userId },
+    });
+
+    if (!order) throw new NotFoundException('Pedido no encontrado');
+    if (order.status === 'RECEIVED') {
+      throw new BadRequestException(
+        'No se puede eliminar un pedido que ya ha sido ingresado a stock',
+      );
+    }
+
+    return this.prisma.purchaseOrder.delete({
+      where: { id },
+    });
+  }
+
+  /**
+   * Revert a received purchase order back to pending (ORDERED), subtracting items from stock
+   */
+  async revertPurchaseOrder(userId: string, id: string) {
+    const order = await this.prisma.purchaseOrder.findFirst({
+      where: { id, userId },
+      include: {
+        items: {
+          include: {
+            product: true,
+          },
+        },
+      },
+    });
+
+    if (!order) throw new NotFoundException('Pedido no encontrado');
+    if (order.status !== 'RECEIVED') {
+      throw new BadRequestException('Solo se pueden revertir pedidos que ya han sido ingresados a stock (RECEIVED)');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Update Order Status back to ORDERED
+      const updatedOrder = await tx.purchaseOrder.update({
+        where: { id },
+        data: { status: 'ORDERED' },
+      });
+
+      // 2. Loop through items to decrement stock & log inventory movement (OUT)
+      for (const item of order.items) {
+        const equivalence = item.equivalence || 1.0;
+        const mainUnitsQty = item.quantity * equivalence;
+        const presentationName = item.presentationName || item.product.unit;
+        const itemCostPricePerBaseUnit = item.costPrice / equivalence;
+
+        // Revert Weighted Average Cost (CPP) algebraically
+        const stockNew = item.product.stock;
+        const currentCPP = item.product.costPrice;
+        const stockActual = stockNew - mainUnitsQty;
+
+        let revertedCPP = currentCPP;
+        if (stockActual > 0) {
+          revertedCPP = (currentCPP * stockNew - mainUnitsQty * itemCostPricePerBaseUnit) / stockActual;
+        }
+
+        // Update stock and CPP
+        const updatedProduct = await tx.product.update({
+          where: { id: item.productId },
+          data: {
+            stock: { decrement: mainUnitsQty },
+            costPrice: revertedCPP,
+          },
+        });
+
+        // Log movement (OUT) (populated with Kardex fields)
+        await tx.inventoryMovement.create({
+          data: {
+            productId: item.productId,
+            quantity: mainUnitsQty,
+            type: 'OUT',
+            reason: 'REVERT_PURCHASE',
+            presentationId: item.presentationId || null,
+            presentationName,
+            presentationQty: item.quantity,
+            userId,
+            unitCost: itemCostPricePerBaseUnit,
+            totalCost: mainUnitsQty * itemCostPricePerBaseUnit,
+            stockResult: updatedProduct.stock,
+            documentId: order.id,
+          },
+        });
+      }
+
+      return updatedOrder;
+    });
+  }
+
+  /**
+   * Update / Edit a purchase order (reverting stock if RECEIVED, changing items, then re-applying if RECEIVED)
+   */
+  async updatePurchaseOrder(userId: string, id: string, body: any) {
+    const { items, totalCost, paymentMethod, categoryId, receiptUrl } = body;
+
+    const order = await this.prisma.purchaseOrder.findFirst({
+      where: { id, userId },
+      include: { items: true },
+    });
+    if (!order) throw new NotFoundException('Pedido no encontrado');
+
+    return this.prisma.$transaction(async (tx) => {
+      const isReceived = order.status === 'RECEIVED';
+
+      if (isReceived) {
+        // Revert stock from old items
+        for (const item of order.items) {
+          const product = await tx.product.findUnique({ where: { id: item.productId } });
+          if (product) {
+            const equivalence = item.equivalence || 1.0;
+            const mainUnitsQty = item.quantity * equivalence;
+            const itemCostPricePerBaseUnit = item.costPrice / equivalence;
+
+            const stockNew = product.stock;
+            const currentCPP = product.costPrice;
+            const stockActual = stockNew - mainUnitsQty;
+
+            let revertedCPP = currentCPP;
+            if (stockActual > 0) {
+              revertedCPP = (currentCPP * stockNew - mainUnitsQty * itemCostPricePerBaseUnit) / stockActual;
+            }
+
+            const updatedProduct = await tx.product.update({
+              where: { id: item.productId },
+              data: {
+                stock: { decrement: mainUnitsQty },
+                costPrice: revertedCPP,
+              },
+            });
+
+            await tx.inventoryMovement.create({
+              data: {
+                productId: item.productId,
+                quantity: mainUnitsQty,
+                type: 'OUT',
+                reason: 'REVERT_PURCHASE',
+                presentationId: item.presentationId || null,
+                presentationName: item.presentationName || product.unit,
+                presentationQty: item.quantity,
+                userId,
+                unitCost: itemCostPricePerBaseUnit,
+                totalCost: mainUnitsQty * itemCostPricePerBaseUnit,
+                stockResult: updatedProduct.stock,
+                documentId: order.id,
+              },
+            });
+          }
+        }
+      }
+
+      // Delete old items
+      await tx.purchaseOrderItem.deleteMany({
+        where: { purchaseOrderId: id },
+      });
+
+      // Update purchase order metadata and recreate items
+      const updatedOrder = await tx.purchaseOrder.update({
+        where: { id },
+        data: {
+          totalCost: parseFloat(totalCost),
+          paymentMethod,
+          categoryId,
+          receiptUrl: receiptUrl || null,
+          items: {
+            create: items.map((item: any) => ({
+              productId: item.productId,
+              quantity: parseFloat(item.quantity),
+              equivalence: parseFloat(item.equivalence || 1.0),
+              presentationId: item.presentationId || null,
+              presentationName: item.presentationName || null,
+              costPrice: parseFloat(item.costPrice),
+            })),
+          },
+        },
+        include: {
+          items: {
+            include: {
+              product: true,
+            },
+          },
+        },
+      });
+
+      if (isReceived) {
+        // Apply stock of new items
+        for (const item of updatedOrder.items) {
+          const product = await tx.product.findUnique({ where: { id: item.productId } });
+          if (product) {
+            const equivalence = item.equivalence || 1.0;
+            const mainUnitsQty = item.quantity * equivalence;
+            const presentationName = item.presentationName || product.unit;
+            const itemCostPricePerBaseUnit = item.costPrice / equivalence;
+
+            let newCPP = product.costPrice;
+            if (product.stock + mainUnitsQty > 0) {
+              newCPP = (product.stock * product.costPrice + (mainUnitsQty * itemCostPricePerBaseUnit)) / (product.stock + mainUnitsQty);
+            }
+
+            const updatedProduct = await tx.product.update({
+              where: { id: item.productId },
+              data: {
+                stock: { increment: mainUnitsQty },
+                costPrice: newCPP,
+              },
+            });
+
+            await tx.inventoryMovement.create({
+              data: {
+                productId: item.productId,
+                quantity: mainUnitsQty,
+                type: 'IN',
+                reason: 'PURCHASE',
+                presentationId: item.presentationId || null,
+                presentationName,
+                presentationQty: item.quantity,
+                userId,
+                unitCost: itemCostPricePerBaseUnit,
+                totalCost: mainUnitsQty * itemCostPricePerBaseUnit,
+                stockResult: updatedProduct.stock,
+                documentId: order.id,
+              },
+            });
+          }
+        }
+      }
+
+      // Update associated general ledger transaction
+      const orderNames = updatedOrder.items.map((item) => item.product?.name || 'Producto').join(', ');
+      const orderDetails = updatedOrder.items
+        .map((item) => {
+          const presName = item.presentationName || item.product?.unit || 'Unidad';
+          return `${item.quantity}x ${item.product?.name || 'Producto'} [${presName}]`;
+        })
+        .join(', ');
+
+      const existingTx = await tx.transaction.findFirst({
+        where: {
+          userId,
+          description: { contains: order.id },
+        },
+      });
+
+      if (existingTx) {
+        await tx.transaction.update({
+          where: { id: existingTx.id },
+          data: {
+            name: `Compra de Mercadería: ${orderNames.substring(0, 50)}${orderNames.length > 50 ? '...' : ''}`,
+            amount: parseFloat(totalCost),
+            categoryId,
+            paymentMethod,
+            receiptUrl: receiptUrl || null,
+            description: `Pedido de Compra. ID: ${order.id}. Ítems: ${orderDetails}. Estado: ${isReceived ? 'Recibido en Almacén' : 'En Tránsito (Pedido)'}.`,
+          },
+        });
+      } else {
+        await tx.transaction.create({
+          data: {
+            name: `Compra de Mercadería: ${orderNames.substring(0, 50)}${orderNames.length > 50 ? '...' : ''}`,
+            type: 'EXPENSE',
+            amount: parseFloat(totalCost),
+            categoryId,
+            subCategoryId: null,
+            date: new Date(),
+            status: 'PAID',
+            currency: 'PEN',
+            paymentMethod,
+            description: `Pedido de Compra. ID: ${order.id}. Ítems: ${orderDetails}. Estado: ${isReceived ? 'Recibido en Almacén' : 'En Tránsito (Pedido)'}.`,
+            workspace: 'BUSINESS',
+            receiptUrl: receiptUrl || null,
+            userId,
+          },
+        });
+      }
+
+      return updatedOrder;
+    });
+  }
+
+  // --- BRANDS CRUD ---
+  async getBrands(userId: string) {
+    return this.prisma.brand.findMany({
+      where: { userId },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  async createBrand(userId: string, data: { name: string }) {
+    if (!data.name) {
+      throw new BadRequestException('El nombre de la marca es requerido');
+    }
+    return this.prisma.brand.create({
+      data: {
+        name: data.name,
+        userId,
+      },
+    });
+  }
+
+  async updateBrand(userId: string, id: string, data: { name: string }) {
+    const brand = await this.prisma.brand.findFirst({
+      where: { id, userId },
+    });
+    if (!brand) {
+      throw new NotFoundException('Marca no encontrada');
+    }
+    return this.prisma.brand.update({
+      where: { id },
+      data,
+    });
+  }
+
+  async deleteBrand(userId: string, id: string) {
+    const brand = await this.prisma.brand.findFirst({
+      where: { id, userId },
+    });
+    if (!brand) {
+      throw new NotFoundException('Marca no encontrada');
+    }
+    return this.prisma.brand.delete({
+      where: { id },
+    });
+  }
+
+  // --- FAMILIES CRUD ---
+  async getFamilies(userId: string) {
+    return this.prisma.family.findMany({
+      where: { userId },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  async createFamily(userId: string, data: { name: string }) {
+    if (!data.name) {
+      throw new BadRequestException('El nombre de la familia es requerido');
+    }
+    return this.prisma.family.create({
+      data: {
+        name: data.name,
+        userId,
+      },
+    });
+  }
+
+  async updateFamily(userId: string, id: string, data: { name: string }) {
+    const family = await this.prisma.family.findFirst({
+      where: { id, userId },
+    });
+    if (!family) {
+      throw new NotFoundException('Familia no encontrada');
+    }
+    return this.prisma.family.update({
+      where: { id },
+      data,
+    });
+  }
+
+  async deleteFamily(userId: string, id: string) {
+    const family = await this.prisma.family.findFirst({
+      where: { id, userId },
+    });
+    if (!family) {
+      throw new NotFoundException('Familia no encontrada');
+    }
+    return this.prisma.family.delete({
+      where: { id },
     });
   }
 }

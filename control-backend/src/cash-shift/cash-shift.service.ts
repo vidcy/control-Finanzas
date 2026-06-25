@@ -63,13 +63,13 @@ export class CashShiftService {
     }
 
     // Calcular ventas totales desde que se abrió la caja
-    // Sumar todos los ingresos del workspace BUSINESS de tipo INCOME.
-    // Solo ventas de POS y transacciones BUSINESS INCOME que hayan ocurrido desde openedAt
+    // Solo ventas de POS (Venta en Caja) que hayan ocurrido desde openedAt
     const sales = await this.prisma.transaction.aggregate({
       where: {
         userId,
         workspace: 'BUSINESS',
         type: 'INCOME',
+        name: 'Venta en Caja',
         createdAt: {
           gte: activeShift.openedAt,
         },
@@ -100,12 +100,13 @@ export class CashShiftService {
 
     if (!shift) return null;
 
-    // Obtener las ventas actuales calculadas
+    // Obtener las ventas actuales calculadas (solo POS)
     const sales = await this.prisma.transaction.aggregate({
       where: {
         userId,
         workspace: 'BUSINESS',
         type: 'INCOME',
+        name: 'Venta en Caja',
         createdAt: {
           gte: shift.openedAt,
         },

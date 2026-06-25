@@ -123,3 +123,40 @@ export const updateMyProfileRequest = async (data: any) => {
     );
   }
 };
+
+export const getWorkersRequest = async () => {
+  try {
+    const res = await API.get("/users/workers");
+    return res.data;
+  } catch (error: any) {
+    throw new Error(error?.response?.data?.message || "Error al obtener trabajadores");
+  }
+};
+
+export const createWorkerRequest = async (data: any) => {
+  try {
+    const res = await API.post("/users/workers", data);
+    return res.data;
+  } catch (error: any) {
+    throw new Error(error?.response?.data?.message || "Error al crear trabajador");
+  }
+};
+
+export const updateWorkerRequest = async (id: string, data: any) => {
+  try {
+    const res = await API.patch(`/users/workers/${id}`, data);
+    return res.data;
+  } catch (error: any) {
+    throw new Error(error?.response?.data?.message || "Error al actualizar trabajador");
+  }
+};
+
+export const deleteWorkerRequest = async (id: string) => {
+  try {
+    const res = await API.delete(`/users/workers/${id}`);
+    return res.data;
+  } catch (error: any) {
+    throw new Error(error?.response?.data?.message || "Error al eliminar trabajador");
+  }
+};
+

@@ -24,7 +24,6 @@ import {
   History,
   Loader2,
   Camera,
-  MapPin,
 } from "lucide-react";
 
 import { toast } from "react-hot-toast";
@@ -163,21 +162,14 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
   const handleToggleProfile = async (profile: string) => {
     setProfileError(null);
     let updatedProfiles = [...activeProfiles];
-
-    const isWorkspaceProfile = profile === "PERSONAL" || profile === "BUSINESS";
-
     if (updatedProfiles.includes(profile)) {
-      // Only enforce min-1 for top-level workspace profiles
-      if (isWorkspaceProfile) {
-        const workspaceProfiles = updatedProfiles.filter(p => p === "PERSONAL" || p === "BUSINESS");
-        if (workspaceProfiles.length === 1) {
-          toast.error("Debes tener al menos un módulo activado");
-          return;
-        }
-        if (activeWorkspace === profile) {
-          toast.error(`No puedes desactivar el módulo en el que te encuentras (${profile === "BUSINESS" ? "Negocio" : "Personal"}).`);
-          return;
-        }
+      if (updatedProfiles.length === 1) {
+        toast.error("Debes tener al menos un módulo activado");
+        return;
+      }
+      if (activeWorkspace === profile) {
+        toast.error(`No puedes desactivar el módulo en el que te encuentras (${profile === "BUSINESS" ? "Negocio" : "Personal"}).`);
+        return;
       }
       updatedProfiles = updatedProfiles.filter(p => p !== profile);
     } else {
@@ -189,6 +181,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
 
     try {
       await updateUserProfilesRequest(updatedProfiles);
+      // Update local storage and context
       const updatedUser = { ...user, profiles: updatedProfiles };
       setUser(updatedUser as any);
       localStorage.setItem("user", JSON.stringify(updatedUser));
@@ -341,20 +334,18 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
 
   const businessMenu = [
     {
-      name: "Resumen Negocio",
+      name: "Dashboard Negocio",
       path: "/business-dashboard",
       icon: Store,
       color: "from-purple-500 to-indigo-600",
       bgActive: "bg-purple-50 text-purple-700",
-      profile: "BUSINESS_DASHBOARD",
     },
     {
-      name: "Punto de Venta",
+      name: "Punto de Venta (POS)",
       path: "/business-pos",
       icon: Briefcase,
       color: "from-blue-500 to-indigo-600",
       bgActive: "bg-blue-50 text-blue-700",
-      profile: "BUSINESS_POS",
     },
     {
       name: "Inventario",
@@ -362,7 +353,6 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       icon: PackageSearch,
       color: "from-emerald-500 to-teal-600",
       bgActive: "bg-emerald-50 text-emerald-700",
-      profile: "BUSINESS_INVENTORY",
     },
     {
       name: "Kardex Valorado",
@@ -370,23 +360,20 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       icon: ArrowRightLeft,
       color: "from-teal-500 to-emerald-600",
       bgActive: "bg-teal-50 text-teal-700",
-      profile: "BUSINESS_INVENTORY",
     },
     {
-      name: "Control de Caja",
-      path: "/business-cash-register",
-      icon: DollarSign,
-      color: "from-blue-400 to-blue-600",
-      bgActive: "bg-blue-50 text-blue-700",
-      profile: "BUSINESS_CASH_REGISTER",
-    },
-    {
-      name: "Tesorería",
+      name: "Caja / Tesorería",
       path: "/business-finance",
       icon: Vault,
       color: "from-amber-400 to-amber-600",
       bgActive: "bg-amber-50 text-amber-700",
-      profile: "BUSINESS_FINANCE",
+    },
+    {
+      name: "Cierre de Caja",
+      path: "/business-cash-register",
+      icon: DollarSign,
+      color: "from-blue-400 to-blue-600",
+      bgActive: "bg-blue-50 text-blue-700",
     },
     {
       name: "Cuentas Pendientes",
@@ -394,7 +381,6 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       icon: Clock,
       color: "from-cyan-400 to-cyan-600",
       bgActive: "bg-cyan-50 text-cyan-700",
-      profile: "BUSINESS_PENDING",
     },
     {
       name: "Reportes",
@@ -402,7 +388,6 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       icon: PieChart,
       color: "from-orange-400 to-rose-500",
       bgActive: "bg-orange-50 text-orange-700",
-      profile: "BUSINESS_REPORTS",
     },
     {
       name: "Categorías",
@@ -410,7 +395,6 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       icon: Tags,
       color: "from-amber-400 to-amber-600",
       bgActive: "bg-amber-50 text-amber-700",
-      profile: "BUSINESS_CATEGORIES",
     },
     {
       name: "Historial",
@@ -418,39 +402,27 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       icon: History,
       color: "from-violet-400 to-purple-600",
       bgActive: "bg-violet-50 text-violet-700",
-      profile: "BUSINESS_HISTORY",
     },
-    // --- Conditional modules (owner can enable/disable) ---
-    ...((!user?.parentId && user?.profiles?.includes("BUSINESS_BRANCHES")) ||
-      (user?.parentId && user?.profiles?.includes("BUSINESS_BRANCHES"))
-      ? [{
-        name: "Sedes / Locales",
-        path: "/business-branches",
-        icon: MapPin,
-        color: "from-rose-500 to-red-600",
-        bgActive: "bg-rose-50 text-rose-700",
-        profile: "BUSINESS_BRANCHES",
-      }] : []),
-    ...((!user?.parentId && user?.profiles?.includes("BUSINESS_WORKERS")) ||
-      (user?.parentId && user?.profiles?.includes("BUSINESS_WORKERS"))
-      ? [{
-        name: "Personal / Roles",
-        path: "/business-workers",
-        icon: Users,
-        color: "from-indigo-500 to-blue-600",
-        bgActive: "bg-indigo-50 text-indigo-700",
-        profile: "BUSINESS_WORKERS",
-      }] : []),
   ];
 
   const activeMenu = activeWorkspace === "BUSINESS"
     ? (user?.parentId
-      // Workers: only show items their profiles allow
       ? businessMenu.filter(item => {
-        const key = (item as any).profile;
+        const mapping: Record<string, string> = {
+          "/business-dashboard": "BUSINESS_DASHBOARD",
+          "/business-pos": "BUSINESS_POS",
+          "/business-inventory": "BUSINESS_INVENTORY",
+          "/business-kardex": "BUSINESS_INVENTORY",
+          "/business-finance": "BUSINESS_FINANCE",
+          "/business-cash-register": "BUSINESS_CASH_REGISTER",
+          "/business-pending": "BUSINESS_PENDING",
+          "/business-reports": "BUSINESS_REPORTS",
+          "/business-history": "BUSINESS_HISTORY",
+          "/categories": "BUSINESS_CATEGORIES",
+        };
+        const key = mapping[item.path];
         return key ? user?.profiles?.includes(key) : false;
       })
-      // Owners: show all items already included in businessMenu (branches/workers already conditional)
       : businessMenu)
     : menu;
 
@@ -1075,47 +1047,6 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                       className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
                     />
                   </label>
-
-                  {/* Advanced Business Sub-Modules — only visible if BUSINESS is active */}
-                  {activeProfiles.includes("BUSINESS") && !user?.parentId && (
-                    <>
-                      <div className="ml-3 pl-3 border-l-2 border-purple-100 flex flex-col gap-2">
-                        <p className="text-[10px] text-purple-600 font-black uppercase tracking-wider mb-1">Módulos Avanzados</p>
-                        <label className="flex items-center justify-between p-2.5 rounded-xl border border-purple-50 bg-purple-50/30 hover:bg-purple-50 cursor-pointer">
-                          <div className="flex items-center gap-2">
-                            <MapPin className="w-4 h-4 text-rose-500" />
-                            <div>
-                              <h4 className="text-xs font-bold text-gray-800">Sedes / Locales</h4>
-                              <p className="text-[10px] text-gray-400">Multi-sede, traslado de stock</p>
-                            </div>
-                          </div>
-                          <input
-                            type="checkbox"
-                            checked={activeProfiles.includes("BUSINESS_BRANCHES")}
-                            onChange={() => handleToggleProfile("BUSINESS_BRANCHES")}
-                            disabled={isSavingProfiles}
-                            className="w-4 h-4 text-rose-600 border-gray-300 rounded focus:ring-rose-500"
-                          />
-                        </label>
-                        <label className="flex items-center justify-between p-2.5 rounded-xl border border-purple-50 bg-purple-50/30 hover:bg-purple-50 cursor-pointer">
-                          <div className="flex items-center gap-2">
-                            <Users className="w-4 h-4 text-indigo-500" />
-                            <div>
-                              <h4 className="text-xs font-bold text-gray-800">Personal / Roles</h4>
-                              <p className="text-[10px] text-gray-400">Trabajadores con permisos por módulo</p>
-                            </div>
-                          </div>
-                          <input
-                            type="checkbox"
-                            checked={activeProfiles.includes("BUSINESS_WORKERS")}
-                            onChange={() => handleToggleProfile("BUSINESS_WORKERS")}
-                            disabled={isSavingProfiles}
-                            className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-                          />
-                        </label>
-                      </div>
-                    </>
-                  )}
                 </div>
               </div>
             )}

@@ -33,7 +33,8 @@ export class PendingTransactionService {
         userId,
         type: dto.type,
         categoryId: dto.categoryId,
-        subCategoryId: dto.subCategoryId === '' ? null : (dto.subCategoryId || null),
+        subCategoryId:
+          dto.subCategoryId === '' ? null : dto.subCategoryId || null,
 
         // 🔥 IMPORTANTE: fechas llegan en UTC → guardar tal cual
         date: new Date(dto.date),
@@ -126,7 +127,11 @@ export class PendingTransactionService {
       amountSoles = isUSD ? amount * (exchangeRate || 1) : amount;
     }
 
-    if (dto.receiptUrl !== undefined && dto.receiptUrl !== existing.receiptUrl && existing.receiptUrl) {
+    if (
+      dto.receiptUrl !== undefined &&
+      dto.receiptUrl !== existing.receiptUrl &&
+      existing.receiptUrl
+    ) {
       await this.filesService.deleteFile(existing.receiptUrl);
     }
 

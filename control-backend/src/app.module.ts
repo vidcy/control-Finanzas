@@ -20,6 +20,7 @@ import { UserContextInterceptor } from './common/interceptors/user-context.inter
 import { AnalyticsModule } from './analytics/analytics.module';
 import { InventoryMovementsModule } from './inventory-movements/inventory-movements.module';
 import { AuditModule } from './audit/audit.module';
+import { BranchesModule } from './branches/branches.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { AuditModule } from './audit/audit.module';
     AnalyticsModule,
     InventoryMovementsModule,
     AuditModule,
+    BranchesModule,
     ConfigModule.forRoot({
       isGlobal: true,
     }),

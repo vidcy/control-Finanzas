@@ -23,9 +23,87 @@ export class ProductsController {
     return this.productsService.checkout(req.user.id, body);
   }
 
+  @Post('purchase-orders')
+  createPurchaseOrder(@Req() req, @Body() body: any) {
+    return this.productsService.createPurchaseOrder(req.user.id, body);
+  }
+
+  @Get('purchase-orders')
+  getPurchaseOrders(@Req() req, @Query('status') status?: string) {
+    return this.productsService.getPurchaseOrders(req.user.id, status);
+  }
+
+  @Post('purchase-orders/:id/receive')
+  receivePurchaseOrder(@Req() req, @Param('id') id: string) {
+    return this.productsService.receivePurchaseOrder(req.user.id, id);
+  }
+
+  @Post('purchase-orders/:id/revert')
+  revertPurchaseOrder(@Req() req, @Param('id') id: string) {
+    return this.productsService.revertPurchaseOrder(req.user.id, id);
+  }
+
+  @Delete('purchase-orders/:id')
+  deletePurchaseOrder(@Req() req, @Param('id') id: string) {
+    return this.productsService.deletePurchaseOrder(req.user.id, id);
+  }
+
+  @Patch('purchase-orders/:id')
+  updatePurchaseOrder(@Req() req, @Param('id') id: string, @Body() body: any) {
+    return this.productsService.updatePurchaseOrder(req.user.id, id, body);
+  }
+
   @Post(':id/restock')
   restock(@Req() req, @Param('id') id: string, @Body() body: any) {
     return this.productsService.restock(req.user.id, id, body);
+  }
+
+  @Get('brands')
+  getBrands(@Req() req) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.productsService.getBrands(ownerId);
+  }
+
+  @Post('brands')
+  createBrand(@Req() req, @Body() body: any) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.productsService.createBrand(ownerId, body);
+  }
+
+  @Patch('brands/:id')
+  updateBrand(@Req() req, @Param('id') id: string, @Body() body: any) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.productsService.updateBrand(ownerId, id, body);
+  }
+
+  @Delete('brands/:id')
+  deleteBrand(@Req() req, @Param('id') id: string) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.productsService.deleteBrand(ownerId, id);
+  }
+
+  @Get('families')
+  getFamilies(@Req() req) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.productsService.getFamilies(ownerId);
+  }
+
+  @Post('families')
+  createFamily(@Req() req, @Body() body: any) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.productsService.createFamily(ownerId, body);
+  }
+
+  @Patch('families/:id')
+  updateFamily(@Req() req, @Param('id') id: string, @Body() body: any) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.productsService.updateFamily(ownerId, id, body);
+  }
+
+  @Delete('families/:id')
+  deleteFamily(@Req() req, @Param('id') id: string) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.productsService.deleteFamily(ownerId, id);
   }
 
   @Post()

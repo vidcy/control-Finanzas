@@ -17,6 +17,13 @@ import {
   Clipboard,
   Sparkles,
   Loader2,
+  FileSpreadsheet,
+  FileText,
+  Check,
+  Truck,
+  Eye,
+  ShoppingBag,
+  RotateCcw,
 } from "lucide-react";
 import {
   getProductsRequest,
@@ -25,8 +32,20 @@ import {
   deleteProductRequest,
   restockProductRequest,
   getLowStockAnalysisRequest,
+  createPurchaseOrderRequest,
+  getPurchaseOrdersRequest,
+  receivePurchaseOrderRequest,
+  deletePurchaseOrderRequest,
+  revertPurchaseOrderRequest,
+  updatePurchaseOrderRequest,
+  getBrandsRequest,
+  createBrandRequest,
+  deleteBrandRequest,
+  getFamiliesRequest,
+  createFamilyRequest,
+  deleteFamilyRequest,
 } from "../services/product.api";
-import type { Product, Presentation, LowStockAnalysisItem } from "../services/product.api";
+import type { Product, Presentation, LowStockAnalysisItem, PurchaseOrder } from "../services/product.api";
 import { listCategoriesRequest } from "../services/category.api";
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
@@ -105,11 +124,18 @@ export default function BusinessInventoryPage() {
   // Navigation Tabs
   const [activeTab, setActiveTab] = useState<"products" | "planner" | "labels">("products");
 
+  // Branch context — only used when BUSINESS_BRANCHES is enabled
+  const hasBranches = user?.profiles?.includes("BUSINESS_BRANCHES");
+  const [branches, setBranches] = useState<any[]>([]);
+  const [activeBranchId, setActiveBranchId] = useState<string>(""); // "" = all branches / no filter
+
   // Core Data
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  const [filterBrandId, setFilterBrandId] = useState("");
+  const [filterFamilyId, setFilterFamilyId] = useState("");
 
   // Modals States
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -119,6 +145,20 @@ export default function BusinessInventoryPage() {
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [productIdToDelete, setProductIdToDelete] = useState<string | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+
+  // Generic Confirm Modal States
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [confirmConfig, setConfirmConfig] = useState({
+    title: "",
+    message: "",
+    confirmText: "Confirmar",
+    cancelText: "Cancelar",
+    variant: "info" as "info" | "danger" | "warning",
+    onConfirm: () => {},
+  });
+
+  // Subtab for purchase orders: pending (transit) vs received (history)
+  const [ordersSubTab, setOrdersSubTab] = useState<"pending" | "received">("pending");
 
   // Form State - Defaulting Unit to "Unidad"
   const [formData, setFormData] = useState({
@@ -132,7 +172,72 @@ export default function BusinessInventoryPage() {
     unit: "Unidad",
     imageUrl: "" as string | File,
     presentations: [] as Presentation[],
+    brandId: "",
+    familyId: "",
   });
+
+  const [brands, setBrands] = useState<any[]>([]);
+  const [families, setFamilies] = useState<any[]>([]);
+  const [isManageBrandsModalOpen, setIsManageBrandsModalOpen] = useState(false);
+  const [newBrandName, setNewBrandName] = useState("");
+  const [newFamilyName, setNewFamilyName] = useState("");
+
+  const fetchBrandsAndFamilies = async () => {
+    try {
+      const [brandsData, familiesData] = await Promise.all([
+        getBrandsRequest(),
+        getFamiliesRequest(),
+      ]);
+      setBrands(brandsData);
+      setFamilies(familiesData);
+    } catch (error) {
+      console.error("Error al cargar marcas/familias", error);
+    }
+  };
+
+  const handleCreateBrand = async () => {
+    if (!newBrandName.trim()) return;
+    try {
+      await createBrandRequest({ name: newBrandName.trim() });
+      setNewBrandName("");
+      toast.success("Marca creada");
+      fetchBrandsAndFamilies();
+    } catch (err: any) {
+      toast.error(err.message || "Error al crear marca");
+    }
+  };
+
+  const handleDeleteBrand = async (id: string) => {
+    try {
+      await deleteBrandRequest(id);
+      toast.success("Marca eliminada");
+      fetchBrandsAndFamilies();
+    } catch (err: any) {
+      toast.error(err.message || "Error al eliminar marca");
+    }
+  };
+
+  const handleCreateFamily = async () => {
+    if (!newFamilyName.trim()) return;
+    try {
+      await createFamilyRequest({ name: newFamilyName.trim() });
+      setNewFamilyName("");
+      toast.success("Familia creada");
+      fetchBrandsAndFamilies();
+    } catch (err: any) {
+      toast.error(err.message || "Error al crear familia");
+    }
+  };
+
+  const handleDeleteFamily = async (id: string) => {
+    try {
+      await deleteFamilyRequest(id);
+      toast.success("Familia eliminada");
+      fetchBrandsAndFamilies();
+    } catch (err: any) {
+      toast.error(err.message || "Error al eliminar familia");
+    }
+  };
 
   const [restockData, setRestockData] = useState({
     quantity: 0,
@@ -151,6 +256,43 @@ export default function BusinessInventoryPage() {
   });
   const [customQuantities, setCustomQuantities] = useState<Record<string, number>>({});
   const [customCosts, setCustomCosts] = useState<Record<string, number>>({});
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [isBulkPurchaseModalOpen, setIsBulkPurchaseModalOpen] = useState(false);
+  const [bulkPurchaseData, setBulkPurchaseData] = useState({
+    categoryId: "",
+    paymentMethod: "CASH",
+    receiptUrl: "" as string | File,
+    receiveImmediately: false,
+  });
+
+  const [singlePurchaseItem, setSinglePurchaseItem] = useState<LowStockAnalysisItem | null>(null);
+  const [bulkPurchaseFile, setBulkPurchaseFile] = useState<File | null>(null);
+  const [isEditOrderModalOpen, setIsEditOrderModalOpen] = useState(false);
+  const [editingPurchaseOrder, setEditingPurchaseOrder] = useState<PurchaseOrder | null>(null);
+  const [editOrderData, setEditOrderData] = useState<{
+    categoryId: string;
+    paymentMethod: string;
+    receiptUrl: string;
+    items: Array<{
+      id: string;
+      productId: string;
+      name: string;
+      quantity: number;
+      costPrice: number;
+      unit: string;
+      equivalence: number;
+      presentationId?: string | null;
+      presentationName?: string | null;
+    }>;
+  }>({
+    categoryId: "",
+    paymentMethod: "CASH",
+    receiptUrl: "",
+    items: [],
+  });
+  const [editOrderFile, setEditOrderFile] = useState<File | null>(null);
 
   // Barcode Printing States
   const [ticketProductId, setTicketProductId] = useState("");
@@ -166,6 +308,17 @@ export default function BusinessInventoryPage() {
       ]);
       setProducts(data);
       setCategories(cats.filter((c: any) => c.type === "EXPENSE"));
+      await fetchBrandsAndFamilies();
+      // Load branches if multi-branch module is enabled
+      if (hasBranches) {
+        try {
+          const { getBranchesRequest } = await import("../services/branch.api");
+          const branchData = await getBranchesRequest();
+          setBranches(branchData);
+        } catch {
+          // Not critical — just means no branch data
+        }
+      }
     } catch (error) {
       toast.error("Error al cargar inventario");
     } finally {
@@ -180,13 +333,32 @@ export default function BusinessInventoryPage() {
       const [year, month] = plannerMonth.split("-").map(Number);
       const start = new Date(year, month - 1, 1).toISOString();
       const end = new Date(year, month, 0, 23, 59, 59, 999).toISOString();
-      const data = await getLowStockAnalysisRequest(start, end);
-      setPlannerItems(data);
+      
+      const [data, orders] = await Promise.all([
+        getLowStockAnalysisRequest(start, end),
+        getPurchaseOrdersRequest(),
+      ]);
+
+      // Extract product IDs of pending orders
+      const pendingProductIds = new Set<string>();
+      orders
+        .filter((order) => order.status === "ORDERED")
+        .forEach((order) => {
+          order.items.forEach((item) => {
+            pendingProductIds.add(item.productId);
+          });
+        });
+
+      // Filter out low stock analysis items that are already ordered
+      const filteredData = data.filter((item) => !pendingProductIds.has(item.id));
+
+      setPlannerItems(filteredData);
+      setSelectedItemIds(filteredData.map((item) => item.id));
 
       // Initialize custom fields if not set
       const qtys: Record<string, number> = {};
       const costs: Record<string, number> = {};
-      data.forEach((item) => {
+      filteredData.forEach((item) => {
         qtys[item.id] = customQuantities[item.id] !== undefined ? customQuantities[item.id] : item.deficit;
         costs[item.id] = customCosts[item.id] !== undefined ? customCosts[item.id] : item.costPrice;
       });
@@ -199,12 +371,25 @@ export default function BusinessInventoryPage() {
     }
   };
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  const loadOrders = async () => {
+    try {
+      setOrdersLoading(true);
+      const orders = await getPurchaseOrdersRequest();
+      setPurchaseOrders(orders);
+    } catch {
+      toast.error("Error al cargar pedidos en tránsito");
+    } finally {
+      setOrdersLoading(false);
+    }
+  };
 
   useEffect(() => {
-    loadPlannerData();
+    if (activeTab === "products" || activeTab === "labels") {
+      loadData();
+    } else if (activeTab === "planner") {
+      loadPlannerData();
+      loadOrders();
+    }
   }, [activeTab, plannerMonth]);
 
   // Render Barcodes in the ticket print preview sheet
@@ -284,6 +469,8 @@ export default function BusinessInventoryPage() {
         unit: "Unidad",
         imageUrl: "",
         presentations: [],
+        brandId: "",
+        familyId: "",
       });
       setIsModalOpen(true);
       toast("Código de barras nuevo. Rellene los datos para registrarlo.", { icon: "ℹ️" });
@@ -304,6 +491,8 @@ export default function BusinessInventoryPage() {
         unit: product.unit || "Unidad",
         imageUrl: product.imageUrl || "",
         presentations: product.presentations || [],
+        brandId: product.brandId || "",
+        familyId: product.familyId || "",
       });
     } else {
       setEditingProduct(null);
@@ -318,6 +507,8 @@ export default function BusinessInventoryPage() {
         unit: "Unidad",
         imageUrl: "",
         presentations: [],
+        brandId: "",
+        familyId: "",
       });
     }
     setIsModalOpen(true);
@@ -336,6 +527,8 @@ export default function BusinessInventoryPage() {
       unit: product.unit || "Unidad",
       imageUrl: product.imageUrl || "",
       presentations: product.presentations || [],
+      brandId: product.brandId || "",
+      familyId: product.familyId || "",
     });
     setIsModalOpen(true);
     toast.success("Modelo clonado. Ingrese o escanee el nuevo código.");
@@ -424,6 +617,344 @@ export default function BusinessInventoryPage() {
     }
   };
 
+  const handleBulkPurchaseSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!singlePurchaseItem && selectedItemIds.length === 0) {
+      toast.error("No has seleccionado ningún producto para comprar");
+      return;
+    }
+    if (!bulkPurchaseData.categoryId) {
+      toast.error("Selecciona una categoría para el egreso");
+      return;
+    }
+
+    const itemsToBuy = singlePurchaseItem
+      ? [
+          {
+            productId: singlePurchaseItem.id,
+            quantity: customQuantities[singlePurchaseItem.id] ?? singlePurchaseItem.deficit,
+            equivalence: 1.0,
+            costPrice: customCosts[singlePurchaseItem.id] ?? singlePurchaseItem.costPrice,
+          },
+        ]
+      : plannerItems
+          .filter(item => selectedItemIds.includes(item.id))
+          .map(item => {
+            const qty = customQuantities[item.id] ?? item.deficit;
+            const cost = customCosts[item.id] ?? item.costPrice;
+            return {
+              productId: item.id,
+              quantity: qty,
+              equivalence: 1.0,
+              costPrice: cost,
+            };
+          });
+
+    const totalCost = itemsToBuy.reduce((sum, item) => sum + (item.quantity * item.costPrice), 0);
+
+    const submitToast = toast.loading("Registrando compra/pedido...");
+    try {
+      let finalReceiptUrl = "";
+      if (bulkPurchaseFile) {
+        const { uploadProductImageFile } = await import("../components/ui/ImageUploader");
+        finalReceiptUrl = await uploadProductImageFile(bulkPurchaseFile);
+      }
+
+      await createPurchaseOrderRequest({
+        items: itemsToBuy,
+        totalCost,
+        categoryId: bulkPurchaseData.categoryId,
+        paymentMethod: bulkPurchaseData.paymentMethod,
+        receiptUrl: finalReceiptUrl || null,
+        receiveImmediately: bulkPurchaseData.receiveImmediately,
+      });
+
+      toast.dismiss(submitToast);
+      toast.success(
+        bulkPurchaseData.receiveImmediately
+          ? "Compra registrada e ingresada al stock"
+          : "Pedido de compra registrado en tránsito"
+      );
+      setIsBulkPurchaseModalOpen(false);
+      // Reset state
+      setSelectedItemIds([]);
+      setSinglePurchaseItem(null);
+      setBulkPurchaseFile(null);
+      setBulkPurchaseData({
+        categoryId: "",
+        paymentMethod: "CASH",
+        receiptUrl: "",
+        receiveImmediately: false,
+      });
+      loadData();
+      loadPlannerData();
+      loadOrders();
+    } catch (err: any) {
+      toast.dismiss(submitToast);
+      toast.error(err?.response?.data?.message || "Error al registrar la compra");
+    }
+  };
+
+  const handleEditOrderSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPurchaseOrder) return;
+    if (!editOrderData.categoryId) {
+      toast.error("Selecciona una categoría para el egreso");
+      return;
+    }
+
+    const totalCost = editOrderData.items.reduce((sum, item) => sum + (item.quantity * item.costPrice), 0);
+    const submitToast = toast.loading("Actualizando pedido/compra...");
+    try {
+      let finalReceiptUrl = editOrderData.receiptUrl;
+      if (editOrderFile) {
+        const { uploadProductImageFile } = await import("../components/ui/ImageUploader");
+        finalReceiptUrl = await uploadProductImageFile(editOrderFile);
+      }
+
+      await updatePurchaseOrderRequest(editingPurchaseOrder.id, {
+        items: editOrderData.items.map(item => ({
+          productId: item.productId,
+          quantity: item.quantity,
+          equivalence: item.equivalence || 1.0,
+          presentationId: item.presentationId || null,
+          presentationName: item.presentationName || null,
+          costPrice: item.costPrice,
+        })),
+        totalCost,
+        categoryId: editOrderData.categoryId,
+        paymentMethod: editOrderData.paymentMethod,
+        receiptUrl: finalReceiptUrl || null,
+      });
+
+      toast.dismiss(submitToast);
+      toast.success("Pedido/Compra actualizado correctamente");
+      setIsEditOrderModalOpen(false);
+      setEditingPurchaseOrder(null);
+      setEditOrderFile(null);
+      
+      loadData();
+      loadPlannerData();
+      loadOrders();
+    } catch (err: any) {
+      toast.dismiss(submitToast);
+      toast.error(err?.response?.data?.message || "Error al actualizar pedido");
+    }
+  };
+
+  const handleReceiveOrder = async (orderId: string) => {
+    setConfirmConfig({
+      title: "Ingresar Pedido a Stock",
+      message: "¿Está seguro de que desea ingresar estos artículos al almacén? Esto incrementará el stock de los productos correspondientes y registrará la compra.",
+      confirmText: "Pasar a Stock",
+      cancelText: "Cancelar",
+      variant: "info",
+      onConfirm: async () => {
+        const rxToast = toast.loading("Ingresando artículos al almacén...");
+        try {
+          await receivePurchaseOrderRequest(orderId);
+          toast.dismiss(rxToast);
+          toast.success("Artículos ingresados al stock correctamente");
+          loadData();
+          loadPlannerData();
+          loadOrders();
+        } catch (err: any) {
+          toast.dismiss(rxToast);
+          toast.error(err?.response?.data?.message || "Error al ingresar al stock");
+        }
+      }
+    });
+    setIsConfirmOpen(true);
+  };
+
+  const handleDeleteOrder = async (orderId: string) => {
+    setConfirmConfig({
+      title: "Cancelar / Eliminar Pedido",
+      message: "¿Estás seguro de que deseas cancelar y eliminar este pedido permanentemente? Esta acción no se puede deshacer.",
+      confirmText: "Eliminar Pedido",
+      cancelText: "Cancelar",
+      variant: "danger",
+      onConfirm: async () => {
+        try {
+          await deletePurchaseOrderRequest(orderId);
+          toast.success("Pedido eliminado correctamente");
+          loadOrders();
+        } catch (err: any) {
+          toast.error(err?.response?.data?.message || "Error al eliminar pedido");
+        }
+      }
+    });
+    setIsConfirmOpen(true);
+  };
+
+  const handleRevertOrder = async (orderId: string) => {
+    setConfirmConfig({
+      title: "Revertir Ingreso a Stock",
+      message: "¿Está seguro de revertir este pedido y devolverlo a estado Pendiente? Se DESCONTARÁ del almacén la cantidad ingresada. Úselo sólo si cometió un error de carga.",
+      confirmText: "Revertir Ingreso",
+      cancelText: "Cancelar",
+      variant: "warning",
+      onConfirm: async () => {
+        const rxToast = toast.loading("Revirtiendo artículos del almacén...");
+        try {
+          await revertPurchaseOrderRequest(orderId);
+          toast.dismiss(rxToast);
+          toast.success("Ingreso revertido y stock descontado correctamente");
+          loadData();
+          loadPlannerData();
+          loadOrders();
+        } catch (err: any) {
+          toast.dismiss(rxToast);
+          toast.error(err?.response?.data?.message || "Error al revertir ingreso");
+        }
+      }
+    });
+    setIsConfirmOpen(true);
+  };
+
+  const handleExportExcel = async () => {
+    const itemsToExport = selectedItemIds.length > 0
+      ? plannerItems.filter(item => selectedItemIds.includes(item.id))
+      : plannerItems;
+
+    if (itemsToExport.length === 0) {
+      toast.error("No hay elementos seleccionados para exportar");
+      return;
+    }
+
+    const dataToExport = itemsToExport.map(item => {
+      const buyQty = customQuantities[item.id] ?? item.deficit;
+      const cost = customCosts[item.id] ?? item.costPrice;
+      return {
+        "Producto": item.name,
+        "SKU / Código": item.sku || "Sin SKU",
+        "Stock Actual": `${item.stock} ${item.unit}`,
+        "Stock Mínimo": `${item.minStock} ${item.unit}`,
+        "Vendidos (Mes)": `${item.soldQty} ${item.unit}`,
+        "Déficit": `${item.deficit} ${item.unit}`,
+        "Costo Unitario (S/)": cost,
+        "Cantidad Comprar": buyQty,
+        "Subtotal Proyectado (S/)": buyQty * cost
+      };
+    });
+
+    const totalProyectado = itemsToExport.reduce((acc, item) => {
+      const qty = customQuantities[item.id] ?? item.deficit;
+      const cost = customCosts[item.id] ?? item.costPrice;
+      return acc + (qty * cost);
+    }, 0);
+
+    dataToExport.push({
+      "Producto": "TOTAL PLANIFICADO",
+      "SKU / Código": "",
+      "Stock Actual": "",
+      "Stock Mínimo": "",
+      "Vendidos (Mes)": "",
+      "Déficit": "",
+      "Costo Unitario (S/)": null as any,
+      "Cantidad Comprar": null as any,
+      "Subtotal Proyectado (S/)": totalProyectado
+    });
+
+    const XLSX = await import("xlsx");
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Plan de Compras");
+    XLSX.writeFile(workbook, `Plan_Compras_${plannerMonth}.xlsx`);
+    toast.success("Plan de compras exportado a Excel");
+  };
+
+  const handleExportPDF = async () => {
+    const itemsToExport = selectedItemIds.length > 0
+      ? plannerItems.filter(item => selectedItemIds.includes(item.id))
+      : plannerItems;
+
+    if (itemsToExport.length === 0) {
+      toast.error("No hay elementos seleccionados para exportar");
+      return;
+    }
+
+    const { jsPDF } = await import("jspdf");
+    const doc = new jsPDF();
+    const businessName = user?.businessName || "Control Finanzas";
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18);
+    doc.text(`PLAN DE COMPRAS - ${businessName.toUpperCase()}`, 14, 20);
+    
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(`Periodo analizado: ${plannerMonth}`, 14, 26);
+    doc.text(`Fecha de exportación: ${new Date().toLocaleDateString()}`, 14, 31);
+
+    let y = 42;
+    doc.setFillColor(79, 70, 229);
+    doc.rect(14, y, 182, 8, "F");
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(255);
+    doc.text("Producto", 16, y + 5);
+    doc.text("Stock Act / Min", 85, y + 5);
+    doc.text("Déficit", 120, y + 5);
+    doc.text("Costo U.", 140, y + 5);
+    doc.text("Cant.", 160, y + 5);
+    doc.text("Subtotal", 175, y + 5);
+
+    doc.setTextColor(0);
+    doc.setFont("helvetica", "normal");
+    
+    let grandTotal = 0;
+    itemsToExport.forEach((item) => {
+      y += 8;
+      if (y > 275) {
+        doc.addPage();
+        y = 20;
+      }
+      
+      const qty = customQuantities[item.id] ?? item.deficit;
+      const cost = customCosts[item.id] ?? item.costPrice;
+      const subtotal = qty * cost;
+      grandTotal += subtotal;
+
+      doc.setDrawColor(240);
+      doc.line(14, y + 6, 196, y + 6);
+
+      const name = item.name.length > 35 ? item.name.substring(0, 32) + "..." : item.name;
+      doc.setFont("helvetica", "bold");
+      doc.text(name, 16, y + 4);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(120);
+      doc.text(`SKU: ${item.sku || "Sin SKU"}`, 16, y + 8);
+      doc.setFontSize(9);
+      doc.setTextColor(0);
+
+      doc.text(`${item.stock} / ${item.minStock} ${item.unit}`, 85, y + 5);
+      doc.text(`${item.deficit} ${item.unit}`, 120, y + 5);
+      doc.text(`S/ ${cost.toFixed(2)}`, 140, y + 5);
+      doc.setFont("helvetica", "bold");
+      doc.text(`${qty}`, 160, y + 5);
+      doc.text(`S/ ${subtotal.toFixed(2)}`, 175, y + 5);
+      doc.setFont("helvetica", "normal");
+      y += 2;
+    });
+
+    y += 10;
+    doc.setDrawColor(150);
+    doc.line(14, y, 196, y);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text("TOTAL PLANIFICADO:", 110, y + 6);
+    doc.setFontSize(12);
+    doc.setTextColor(79, 70, 229);
+    doc.text(`S/ ${grandTotal.toFixed(2)}`, 165, y + 6);
+
+    doc.save(`Plan_Compras_${plannerMonth}.pdf`);
+    toast.success("Plan de compras exportado a PDF");
+  };
+
   const handleCopyShoppingList = () => {
     if (plannerItems.length === 0) {
       toast.error("No hay elementos en la lista de compras");
@@ -450,10 +981,16 @@ export default function BusinessInventoryPage() {
     toast.success("Lista de compras copiada al portapapeles");
   };
 
-  const filteredProducts = products.filter((p) =>
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (p.sku && p.sku.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  const filteredProducts = products.filter((p) => {
+    const matchesSearch =
+      p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (p.sku && p.sku.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (p.brand && p.brand.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (p.family && p.family.name.toLowerCase().includes(searchTerm.toLowerCase()));
+    const matchesBrand = !filterBrandId || p.brandId === filterBrandId;
+    const matchesFamily = !filterFamilyId || p.familyId === filterFamilyId;
+    return matchesSearch && matchesBrand && matchesFamily;
+  });
 
   const selectedPres = restockProduct?.presentations?.find(
     (p) => p.id === restockData.presentationId,
@@ -566,19 +1103,87 @@ export default function BusinessInventoryPage() {
           >
             {activeTab === "products" && (
               <div className="space-y-6">
-                {/* SEARCH CONTROLS */}
-                <div className="flex items-center bg-white p-2 rounded-2xl shadow-sm border border-gray-100">
-                  <div className="flex-1 flex items-center px-4">
-                    <Search className="w-5 h-5 text-gray-400" />
+                {/* SEARCH + FILTER CONTROLS */}
+                <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
+                  {/* Search input */}
+                  <div className="flex-1 flex items-center bg-white px-4 rounded-2xl shadow-sm border border-gray-100">
+                    <Search className="w-5 h-5 text-gray-400 shrink-0" />
                     <input
                       type="text"
-                      placeholder="Buscar producto por nombre o código de barras (SKU)..."
-                      className="w-full bg-transparent border-none focus:ring-0 text-sm py-3 px-3 outline-none font-medium text-gray-700"
+                      placeholder="Buscar por nombre, SKU, marca o familia..."
+                      className="w-full bg-transparent border-none focus:ring-0 text-sm py-3.5 px-3 outline-none font-medium text-gray-700"
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                     />
+                    {searchTerm && (
+                      <button
+                        onClick={() => setSearchTerm("")}
+                        className="text-gray-300 hover:text-gray-500 ml-1"
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
+
+                  {/* Brand filter */}
+                  {brands.length > 0 && (
+                    <select
+                      value={filterBrandId}
+                      onChange={(e) => setFilterBrandId(e.target.value)}
+                      className="bg-white border border-gray-100 shadow-sm rounded-2xl px-4 py-3.5 text-sm font-bold text-gray-700 outline-none focus:border-indigo-400 min-w-[140px]"
+                    >
+                      <option value="">Todas las Marcas</option>
+                      {brands.map(b => (
+                        <option key={b.id} value={b.id}>{b.name}</option>
+                      ))}
+                    </select>
+                  )}
+
+                  {/* Family filter */}
+                  {families.length > 0 && (
+                    <select
+                      value={filterFamilyId}
+                      onChange={(e) => setFilterFamilyId(e.target.value)}
+                      className="bg-white border border-gray-100 shadow-sm rounded-2xl px-4 py-3.5 text-sm font-bold text-gray-700 outline-none focus:border-indigo-400 min-w-[140px]"
+                    >
+                      <option value="">Todas las Familias</option>
+                      {families.map(f => (
+                        <option key={f.id} value={f.id}>{f.name}</option>
+                      ))}
+                    </select>
+                  )}
+
+                  {/* Clear all filters */}
+                  {(filterBrandId || filterFamilyId) && (
+                    <button
+                      onClick={() => { setFilterBrandId(""); setFilterFamilyId(""); }}
+                      className="px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-bold rounded-2xl transition-all whitespace-nowrap"
+                    >
+                      Limpiar filtros
+                    </button>
+                  )}
                 </div>
+
+                {/* Active filter chips */}
+                {(filterBrandId || filterFamilyId) && (
+                  <div className="flex flex-wrap gap-2">
+                    {filterBrandId && (
+                      <span className="px-3 py-1.5 bg-blue-50 text-blue-700 text-xs font-bold rounded-xl border border-blue-100 flex items-center gap-1.5">
+                        Marca: {brands.find(b => b.id === filterBrandId)?.name}
+                        <button onClick={() => setFilterBrandId("")} className="text-blue-400 hover:text-blue-700 font-black">✕</button>
+                      </span>
+                    )}
+                    {filterFamilyId && (
+                      <span className="px-3 py-1.5 bg-purple-50 text-purple-700 text-xs font-bold rounded-xl border border-purple-100 flex items-center gap-1.5">
+                        Familia: {families.find(f => f.id === filterFamilyId)?.name}
+                        <button onClick={() => setFilterFamilyId("")} className="text-purple-400 hover:text-purple-700 font-black">✕</button>
+                      </span>
+                    )}
+                    <span className="px-3 py-1.5 bg-gray-50 text-gray-500 text-xs font-bold rounded-xl border border-gray-100">
+                      {filteredProducts.length} resultado{filteredProducts.length !== 1 ? "s" : ""}
+                    </span>
+                  </div>
+                )}
 
                 {/* PRODUCT GRID */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -641,11 +1246,27 @@ export default function BusinessInventoryPage() {
                               {p.name}
                             </h3>
                             {p.sku ? (
-                              <p className="text-[10px] text-gray-400 font-bold font-mono tracking-tight mb-2">
+                              <p className="text-[10px] text-gray-400 font-bold font-mono tracking-tight mb-1.5">
                                 SKU / BAR: {p.sku}
                               </p>
                             ) : (
-                              <p className="text-[10px] text-gray-300 italic mb-2">Sin código</p>
+                              <p className="text-[10px] text-gray-300 italic mb-1.5">Sin código</p>
+                            )}
+
+                            {/* Brand / Family Badges */}
+                            {(p.brand || p.family) && (
+                              <div className="flex flex-wrap gap-1 mb-2">
+                                {p.brand && (
+                                  <span className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded-lg text-[9px] font-black border border-blue-100/70" title="Marca">
+                                    {p.brand.name}
+                                  </span>
+                                )}
+                                {p.family && (
+                                  <span className="px-2 py-0.5 bg-purple-50 text-purple-600 rounded-lg text-[9px] font-black border border-purple-100/70" title="Familia">
+                                    {p.family.name}
+                                  </span>
+                                )}
+                              </div>
                             )}
 
                             <div className="flex flex-wrap gap-1 mb-3">
@@ -747,183 +1368,551 @@ export default function BusinessInventoryPage() {
             )}
 
             {activeTab === "planner" && (
-              <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 space-y-6">
-                {/* PLANNER CONTROLS */}
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-gray-100 pb-5">
-                  <div className="space-y-1">
-                    <h2 className="text-xl font-black text-gray-900">Planificador e Historial de Reabastecimiento</h2>
-                    <p className="text-sm text-gray-500 font-medium">
-                      Monitorea productos por debajo del stock mínimo y evalúa el ritmo de ventas mensual para calcular la compra.
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-2 bg-slate-50 border border-gray-200 px-4 py-2.5 rounded-2xl text-xs font-bold text-gray-700">
-                      <Calendar className="w-4 h-4 text-indigo-500" />
-                      <span>Analizar ventas del mes:</span>
-                      <input
-                        type="month"
-                        value={plannerMonth}
-                        onChange={(e) => setPlannerMonth(e.target.value)}
-                        className="bg-transparent border-none outline-none font-bold text-indigo-600 ml-1 cursor-pointer focus:ring-0 p-0 text-xs"
-                      />
+              <div className="space-y-6">
+                <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 space-y-6">
+                  {/* PLANNER CONTROLS */}
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-gray-100 pb-5">
+                    <div className="space-y-1">
+                      <h2 className="text-xl font-black text-gray-900">Planificador e Historial de Reabastecimiento</h2>
+                      <p className="text-sm text-gray-500 font-medium">
+                        Monitorea productos por debajo del stock mínimo y evalúa el ritmo de ventas mensual para calcular la compra.
+                      </p>
                     </div>
-                    <button
-                      onClick={handleCopyShoppingList}
-                      className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-4 py-2.5 rounded-2xl text-xs font-bold flex items-center gap-2 transition-all active:scale-95"
-                    >
-                      <Clipboard className="w-4 h-4" />
-                      Copiar Lista
-                    </button>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex items-center gap-2 bg-slate-50 border border-gray-200 px-4 py-2.5 rounded-2xl text-xs font-bold text-gray-700">
+                        <Calendar className="w-4 h-4 text-indigo-500" />
+                        <span>Analizar ventas del mes:</span>
+                        <input
+                          type="month"
+                          value={plannerMonth}
+                          onChange={(e) => setPlannerMonth(e.target.value)}
+                          className="bg-transparent border-none outline-none font-bold text-indigo-600 ml-1 cursor-pointer focus:ring-0 p-0 text-xs"
+                        />
+                      </div>
+                      <button
+                        onClick={handleCopyShoppingList}
+                        className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-4 py-2.5 rounded-2xl text-xs font-bold flex items-center gap-2 transition-all active:scale-95"
+                      >
+                        <Clipboard className="w-4 h-4" />
+                        Copiar
+                      </button>
+                      <button
+                        onClick={handleExportExcel}
+                        className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-4 py-2.5 rounded-2xl text-xs font-bold flex items-center gap-2 transition-all active:scale-95"
+                        title="Exportar a Excel"
+                      >
+                        <FileSpreadsheet className="w-4 h-4" />
+                        Excel
+                      </button>
+                      <button
+                        onClick={handleExportPDF}
+                        className="bg-rose-50 hover:bg-rose-100 text-rose-700 px-4 py-2.5 rounded-2xl text-xs font-bold flex items-center gap-2 transition-all active:scale-95"
+                        title="Exportar a PDF"
+                      >
+                        <FileText className="w-4 h-4" />
+                        PDF
+                      </button>
+                    </div>
                   </div>
+
+                  {/* PLANNER TABLE */}
+                  {plannerLoading ? (
+                    <div className="py-20 text-center flex flex-col items-center justify-center gap-3 text-gray-400">
+                      <Loader2 className="w-10 h-10 animate-spin text-indigo-600" />
+                      <p className="font-bold text-sm">Calculando análisis de abastecimiento...</p>
+                    </div>
+                  ) : plannerItems.length === 0 ? (
+                    <div className="py-16 text-center text-gray-400 flex flex-col items-center">
+                      <Sparkles className="w-12 h-12 text-emerald-500 mb-3 opacity-60" />
+                      <p className="font-extrabold text-gray-800 text-lg">¡Stock Óptimo!</p>
+                      <p className="text-xs text-gray-500 font-medium mt-1">Ninguno de tus productos se encuentra por debajo del stock mínimo en este momento.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="overflow-x-auto rounded-2xl border border-gray-100">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-gray-100 text-[10px] font-black uppercase tracking-wider text-gray-500">
+                              <th className="py-4 px-4 text-center" style={{ width: "40px" }}>
+                                <input
+                                  type="checkbox"
+                                  checked={selectedItemIds.length === plannerItems.length && plannerItems.length > 0}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setSelectedItemIds(plannerItems.map((item) => item.id));
+                                    } else {
+                                      setSelectedItemIds([]);
+                                    }
+                                  }}
+                                  className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 cursor-pointer"
+                                />
+                              </th>
+                              <th className="py-4 px-5">Producto</th>
+                              <th className="py-4 px-4 text-center">Stock Actual</th>
+                              <th className="py-4 px-4 text-center">Stock Mínimo</th>
+                              <th className="py-4 px-4 text-center text-indigo-600">Vendidos en Mes</th>
+                              <th className="py-4 px-4 text-center">Déficit</th>
+                              <th className="py-4 px-4 text-right">Costo Unitario (S/)</th>
+                              <th className="py-4 px-4 text-center" style={{ width: "130px" }}>Comprar Cant.</th>
+                              <th className="py-4 px-4 text-right text-indigo-700">Subtotal Proyectado</th>
+                              <th className="py-4 px-4 text-center">Acciones</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-50 text-sm">
+                            {plannerItems.map((item) => {
+                              const buyQty = customQuantities[item.id] ?? item.deficit;
+                              const cost = customCosts[item.id] ?? item.costPrice;
+                              const subtotal = buyQty * cost;
+                              return (
+                                <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
+                                  <td className="py-3.5 px-4 text-center">
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedItemIds.includes(item.id)}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          setSelectedItemIds([...selectedItemIds, item.id]);
+                                        } else {
+                                          setSelectedItemIds(selectedItemIds.filter((id) => id !== item.id));
+                                        }
+                                      }}
+                                      className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 cursor-pointer"
+                                    />
+                                  </td>
+                                  <td className="py-3.5 px-5">
+                                    <div className="flex items-center gap-3">
+                                      {item.imageUrl ? (
+                                        <img
+                                          src={getReceiptAbsoluteUrl(item.imageUrl) || item.imageUrl}
+                                          alt={item.name}
+                                          className="w-10 h-10 object-cover rounded-xl border border-gray-100"
+                                          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                                        />
+                                      ) : (
+                                        <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400">
+                                          <Package className="w-5 h-5" />
+                                        </div>
+                                      )}
+                                      <div>
+                                        <div className="font-extrabold text-gray-900">{item.name}</div>
+                                        <div className="text-[10px] text-gray-400 font-mono font-semibold">{item.sku || "Sin SKU"}</div>
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td className="py-3.5 px-4 text-center font-bold text-rose-600">
+                                    {item.stock} {item.unit}
+                                  </td>
+                                  <td className="py-3.5 px-4 text-center text-gray-500 font-bold">
+                                    {item.minStock} {item.unit}
+                                  </td>
+                                  <td className="py-3.5 px-4 text-center font-extrabold text-indigo-600 bg-indigo-50/20">
+                                    {item.soldQty} {item.unit}
+                                  </td>
+                                  <td className="py-3.5 px-4 text-center font-bold text-amber-600">
+                                    {item.deficit} {item.unit}
+                                  </td>
+                                  <td className="py-3.5 px-4 text-right font-medium">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={cost}
+                                      onChange={(e) => {
+                                        const val = Number(e.target.value);
+                                        setCustomCosts({ ...customCosts, [item.id]: val });
+                                      }}
+                                      className="w-20 px-2 py-1 border border-gray-200 rounded-lg outline-none text-right focus:ring-1 focus:ring-indigo-500 bg-white text-xs font-bold text-gray-700"
+                                    />
+                                  </td>
+                                  <td className="py-3.5 px-4 text-center">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="any"
+                                      value={buyQty}
+                                      onChange={(e) => {
+                                        const val = Number(e.target.value);
+                                        setCustomQuantities({ ...customQuantities, [item.id]: val });
+                                      }}
+                                      className="w-20 px-2 py-1 border border-gray-200 rounded-lg outline-none text-center focus:ring-1 focus:ring-indigo-500 bg-white text-xs font-bold text-gray-700"
+                                    />
+                                  </td>
+                                  <td className="py-3.5 px-4 text-right font-black text-indigo-700">
+                                    S/ {subtotal.toFixed(2)}
+                                  </td>
+                                  <td className="py-3.5 px-4 text-center">
+                                    <div className="flex items-center justify-center gap-1.5">
+                                      <button
+                                        onClick={() => {
+                                          setSinglePurchaseItem(item);
+                                          setBulkPurchaseFile(null);
+                                          setBulkPurchaseData({
+                                            categoryId: "",
+                                            paymentMethod: "CASH",
+                                            receiptUrl: "",
+                                            receiveImmediately: false,
+                                          });
+                                          setIsBulkPurchaseModalOpen(true);
+                                        }}
+                                        className="px-2.5 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-bold flex items-center gap-1 transition-colors"
+                                        title="Registrar pedido de compra en tránsito para este producto"
+                                      >
+                                        Comprar
+                                      </button>
+                                      <button
+                                        onClick={() => handleOpenModal(item)}
+                                        className="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700"
+                                        title="Editar datos de ficha técnica"
+                                      >
+                                        <Edit2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                            {/* TOTALS ROW */}
+                            <tr className="bg-slate-50/80 font-black border-t-2 border-slate-200">
+                              <td className="py-4 px-4 text-center"></td>
+                              <td className="py-4 px-5 text-gray-700">Total Planificado (Todos)</td>
+                              <td colSpan={6}></td>
+                              <td className="py-4 px-4 text-right text-indigo-900 text-base">
+                                S/ {plannerItems.reduce((acc, item) => {
+                                  const qty = customQuantities[item.id] ?? item.deficit;
+                                  const cost = customCosts[item.id] ?? item.costPrice;
+                                  return acc + (qty * cost);
+                                }, 0).toFixed(2)}
+                              </td>
+                              <td></td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* BULK ACTIONS BANNER */}
+                      <div className="flex flex-col sm:flex-row justify-between items-center bg-indigo-50 border border-indigo-100 p-4 rounded-2xl gap-4">
+                        <div className="text-xs font-bold text-indigo-900">
+                          {selectedItemIds.length === 0 ? (
+                            <span>No has seleccionado productos.</span>
+                          ) : (
+                            <span>
+                              Has seleccionado <span className="text-indigo-600 font-extrabold">{selectedItemIds.length}</span> producto(s) para compra masiva. Costo total estimado: <span className="text-indigo-600 font-black text-sm">S/ {plannerItems
+                                .filter(item => selectedItemIds.includes(item.id))
+                                .reduce((acc, item) => {
+                                  const qty = customQuantities[item.id] ?? item.deficit;
+                                  const cost = customCosts[item.id] ?? item.costPrice;
+                                  return acc + (qty * cost);
+                                }, 0).toFixed(2)}</span>
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => {
+                            if (selectedItemIds.length === 0) {
+                              toast.error("Selecciona al menos un producto para comprar.");
+                              return;
+                            }
+                            setIsBulkPurchaseModalOpen(true);
+                          }}
+                          disabled={selectedItemIds.length === 0}
+                          className="w-full sm:w-auto px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95"
+                        >
+                          <ShoppingBag className="w-4 h-4" />
+                          Comprar Seleccionados ({selectedItemIds.length})
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                {/* PLANNER TABLE */}
-                {plannerLoading ? (
-                  <div className="py-20 text-center flex flex-col items-center justify-center gap-3 text-gray-400">
-                    <Loader2 className="w-10 h-10 animate-spin text-indigo-600" />
-                    <p className="font-bold text-sm">Calculando análisis de abastecimiento...</p>
+                {/* PEDIDOS EN TRÁNSITO */}
+                <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 space-y-6">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-2 border-b border-gray-100">
+                    <div className="flex items-center gap-2">
+                      <Truck className="w-5 h-5 text-indigo-600" />
+                      <h3 className="text-lg font-black text-gray-900">Control de Pedidos y Compras</h3>
+                    </div>
+                    {/* Sub-tabs */}
+                    <div className="flex bg-slate-100 p-1 rounded-2xl w-full sm:w-auto">
+                      <button
+                        type="button"
+                        onClick={() => setOrdersSubTab("pending")}
+                        className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 ${ordersSubTab === "pending" ? "bg-white text-indigo-700 shadow-sm" : "text-gray-500 hover:text-gray-900"}`}
+                      >
+                        En Tránsito
+                        {purchaseOrders.filter(o => o.status === "ORDERED").length > 0 && (
+                          <span className="bg-amber-100 text-amber-800 text-[10px] px-2 py-0.5 rounded-full font-black">
+                            {purchaseOrders.filter(o => o.status === "ORDERED").length}
+                          </span>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setOrdersSubTab("received")}
+                        className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 ${ordersSubTab === "received" ? "bg-white text-indigo-700 shadow-sm" : "text-gray-500 hover:text-gray-900"}`}
+                      >
+                        Compras Realizadas
+                        {purchaseOrders.filter(o => o.status === "RECEIVED").length > 0 && (
+                          <span className="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-black">
+                            {purchaseOrders.filter(o => o.status === "RECEIVED").length}
+                          </span>
+                        )}
+                      </button>
+                    </div>
                   </div>
-                ) : plannerItems.length === 0 ? (
-                  <div className="py-16 text-center text-gray-400 flex flex-col items-center">
-                    <Sparkles className="w-12 h-12 text-emerald-500 mb-3 opacity-60" />
-                    <p className="font-extrabold text-gray-800 text-lg">¡Stock Óptimo!</p>
-                    <p className="text-xs text-gray-500 font-medium mt-1">Ninguno de tus productos se encuentra por debajo del stock mínimo en este momento.</p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto rounded-2xl border border-gray-100">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="bg-slate-50 border-b border-gray-100 text-[10px] font-black uppercase tracking-wider text-gray-500">
-                          <th className="py-4 px-5">Producto</th>
-                          <th className="py-4 px-4 text-center">Stock Actual</th>
-                          <th className="py-4 px-4 text-center">Stock Mínimo</th>
-                          <th className="py-4 px-4 text-center text-indigo-600">Vendidos en Mes</th>
-                          <th className="py-4 px-4 text-center">Déficit</th>
-                          <th className="py-4 px-4 text-right">Costo Unitario (S/)</th>
-                          <th className="py-4 px-4 text-center" style={{ width: "130px" }}>Comprar Cant.</th>
-                          <th className="py-4 px-4 text-right text-indigo-700">Subtotal Proyectado</th>
-                          <th className="py-4 px-4 text-center">Acciones</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-50 text-sm">
-                        {plannerItems.map((item) => {
-                          const buyQty = customQuantities[item.id] ?? item.deficit;
-                          const cost = customCosts[item.id] ?? item.costPrice;
-                          const subtotal = buyQty * cost;
-                          return (
-                            <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
-                              <td className="py-3.5 px-5">
-                                <div className="flex items-center gap-3">
-                                  {item.imageUrl ? (
+                  
+                  {ordersLoading ? (
+                    <div className="py-10 text-center flex flex-col items-center justify-center gap-2 text-gray-400">
+                      <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+                      <p className="font-bold text-xs">Cargando pedidos...</p>
+                    </div>
+                  ) : ordersSubTab === "pending" ? (
+                    purchaseOrders.filter(o => o.status === "ORDERED").length === 0 ? (
+                      <div className="py-12 bg-slate-50 border border-dashed border-gray-200 rounded-3xl text-center text-gray-400 flex flex-col items-center justify-center">
+                        <Truck className="w-10 h-10 text-slate-300 mb-2" />
+                        <p className="font-bold text-sm text-gray-700">No hay pedidos en tránsito</p>
+                        <p className="text-xs text-gray-500 mt-0.5">Todas tus compras anteriores están ingresadas en stock.</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {purchaseOrders.filter(o => o.status === "ORDERED").map((order) => (
+                          <div key={order.id} className="bg-white border border-gray-100 rounded-3xl p-5 shadow-sm space-y-4 hover:shadow-md transition-shadow">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <span className="text-[10px] text-gray-400 font-mono font-bold block">ID: {order.id.slice(0, 8).toUpperCase()}</span>
+                                <span className="text-xs text-gray-500 font-medium block mt-0.5">
+                                  {new Date(order.createdAt).toLocaleString("es-PE", { dateStyle: "short", timeStyle: "short" })}
+                                </span>
+                              </div>
+                              <span className="bg-amber-100 text-amber-800 text-xs px-2.5 py-1 rounded-full font-bold">
+                                En Pedido
+                              </span>
+                            </div>
+                            
+                            {/* List items */}
+                            <div className="bg-slate-50 rounded-2xl p-3 text-xs space-y-1.5 max-h-40 overflow-y-auto font-medium text-gray-600 font-bold">
+                              {order.items.map((item) => (
+                                <div key={item.id} className="flex justify-between font-medium">
+                                  <span>• {item.quantity} x {item.product?.name || "Producto"} ({item.presentationName || item.product?.unit || "Unidad"})</span>
+                                  <span className="font-bold text-gray-800">S/ {(item.quantity * item.costPrice).toFixed(2)}</span>
+                                </div>
+                              ))}
+                            </div>
+
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-gray-500 font-semibold">Total Costo:</span>
+                              <span className="text-base font-black text-indigo-700">S/ {order.totalCost.toFixed(2)}</span>
+                            </div>
+
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-gray-500 font-semibold">Método Pago:</span>
+                              <span className="font-bold text-gray-800 bg-slate-100 px-2 py-0.5 rounded-lg">{order.paymentMethod}</span>
+                            </div>
+
+                             {order.receiptUrl && (
+                              <div className="pt-1">
+                                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block mb-1">Comprobante</span>
+                                {order.receiptUrl.toLowerCase().endsWith(".pdf") ? (
+                                  <a
+                                    href={getReceiptAbsoluteUrl(order.receiptUrl) || undefined}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-gray-150 rounded-xl hover:bg-indigo-50/30 hover:border-indigo-200 transition-colors group cursor-pointer"
+                                  >
+                                    <FileText className="w-4 h-4 text-rose-500" />
+                                    <span className="text-xs font-bold text-gray-700 group-hover:text-indigo-700 transition-colors truncate max-w-[120px]">
+                                      Comprobante.pdf
+                                    </span>
+                                    <Eye className="w-3.5 h-3.5 text-indigo-500 ml-auto" />
+                                  </a>
+                                ) : (
+                                  <a
+                                    href={getReceiptAbsoluteUrl(order.receiptUrl) || undefined}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="relative block rounded-xl overflow-hidden border border-gray-100 group cursor-pointer max-w-[120px] aspect-[4/3] bg-slate-50"
+                                  >
                                     <img
-                                      src={getReceiptAbsoluteUrl(item.imageUrl) || item.imageUrl}
-                                      alt={item.name}
-                                      className="w-10 h-10 object-cover rounded-xl border border-gray-100"
-                                      onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                                      src={getReceiptAbsoluteUrl(order.receiptUrl) || undefined}
+                                      alt="Comprobante"
+                                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
                                     />
-                                  ) : (
-                                    <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400">
-                                      <Package className="w-5 h-5" />
+                                    <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                      <Eye className="w-5 h-5 text-white" />
                                     </div>
-                                  )}
-                                  <div>
-                                    <div className="font-extrabold text-gray-900">{item.name}</div>
-                                    <div className="text-[10px] text-gray-400 font-mono font-semibold">{item.sku || "Sin SKU"}</div>
-                                  </div>
+                                  </a>
+                                )}
+                              </div>
+                            )}
+
+                            <div className="flex gap-2 pt-2">
+                              <button
+                                onClick={() => handleReceiveOrder(order.id)}
+                                className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold text-xs py-2.5 rounded-2xl flex items-center justify-center gap-1.5 shadow-sm shadow-emerald-50 active:scale-95 transition-all"
+                              >
+                                <Check className="w-4 h-4" />
+                                Pasar a Stock
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setEditingPurchaseOrder(order);
+                                  setEditOrderData({
+                                    categoryId: order.categoryId,
+                                    paymentMethod: order.paymentMethod,
+                                    receiptUrl: order.receiptUrl || "",
+                                    items: order.items.map(item => ({
+                                      id: item.id,
+                                      productId: item.productId,
+                                      name: item.product?.name || "Producto",
+                                      quantity: item.quantity,
+                                      costPrice: item.costPrice,
+                                      unit: item.product?.unit || "Unidad",
+                                      equivalence: item.equivalence,
+                                      presentationId: item.presentationId,
+                                      presentationName: item.presentationName,
+                                    })),
+                                  });
+                                  setEditOrderFile(null);
+                                  setIsEditOrderModalOpen(true);
+                                }}
+                                className="px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-2xl active:scale-95 transition-all flex items-center justify-center"
+                                title="Editar Pedido"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteOrder(order.id)}
+                                className="px-3 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-2xl active:scale-95 transition-all flex items-center justify-center"
+                                title="Cancelar Pedido"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  ) : (
+                    purchaseOrders.filter(o => o.status === "RECEIVED").length === 0 ? (
+                      <div className="py-12 bg-slate-50 border border-dashed border-gray-200 rounded-3xl text-center text-gray-400 flex flex-col items-center justify-center">
+                        <Truck className="w-10 h-10 text-slate-300 mb-2" />
+                        <p className="font-bold text-sm text-gray-700">No hay compras ingresadas</p>
+                        <p className="text-xs text-gray-500 mt-0.5">Ingresa tus pedidos en tránsito a stock para visualizarlas aquí.</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {purchaseOrders.filter(o => o.status === "RECEIVED").map((order) => (
+                          <div key={order.id} className="bg-white border border-gray-100 rounded-3xl p-5 shadow-sm space-y-4 hover:shadow-md transition-shadow">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <span className="text-[10px] text-gray-400 font-mono font-bold block">ID: {order.id.slice(0, 8).toUpperCase()}</span>
+                                <span className="text-xs text-gray-500 font-medium block mt-0.5">
+                                  {new Date(order.createdAt).toLocaleString("es-PE", { dateStyle: "short", timeStyle: "short" })}
+                                </span>
+                              </div>
+                              <span className="bg-emerald-100 text-emerald-800 text-xs px-2.5 py-1 rounded-full font-bold">
+                                Ingresado
+                              </span>
+                            </div>
+                            
+                            {/* List items */}
+                            <div className="bg-slate-50 rounded-2xl p-3 text-xs space-y-1.5 max-h-40 overflow-y-auto font-medium text-gray-600 font-bold">
+                              {order.items.map((item) => (
+                                <div key={item.id} className="flex justify-between font-medium">
+                                  <span>• {item.quantity} x {item.product?.name || "Producto"} ({item.presentationName || item.product?.unit || "Unidad"})</span>
+                                  <span className="font-bold text-gray-800">S/ {(item.quantity * item.costPrice).toFixed(2)}</span>
                                 </div>
-                              </td>
-                              <td className="py-3.5 px-4 text-center font-bold text-rose-600">
-                                {item.stock} {item.unit}
-                              </td>
-                              <td className="py-3.5 px-4 text-center text-gray-500 font-bold">
-                                {item.minStock} {item.unit}
-                              </td>
-                              <td className="py-3.5 px-4 text-center font-extrabold text-indigo-600 bg-indigo-50/20">
-                                {item.soldQty} {item.unit}
-                              </td>
-                              <td className="py-3.5 px-4 text-center font-bold text-amber-600">
-                                {item.deficit} {item.unit}
-                              </td>
-                              <td className="py-3.5 px-4 text-right font-medium">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="0.01"
-                                  value={cost}
-                                  onChange={(e) => {
-                                    const val = Number(e.target.value);
-                                    setCustomCosts({ ...customCosts, [item.id]: val });
-                                  }}
-                                  className="w-20 px-2 py-1 border border-gray-200 rounded-lg outline-none text-right focus:ring-1 focus:ring-indigo-500 bg-white text-xs font-bold text-gray-700"
-                                />
-                              </td>
-                              <td className="py-3.5 px-4 text-center">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="any"
-                                  value={buyQty}
-                                  onChange={(e) => {
-                                    const val = Number(e.target.value);
-                                    setCustomQuantities({ ...customQuantities, [item.id]: val });
-                                  }}
-                                  className="w-20 px-2 py-1 border border-gray-200 rounded-lg outline-none text-center focus:ring-1 focus:ring-indigo-500 bg-white text-xs font-bold text-gray-700"
-                                />
-                              </td>
-                              <td className="py-3.5 px-4 text-right font-black text-indigo-700">
-                                S/ {subtotal.toFixed(2)}
-                              </td>
-                              <td className="py-3.5 px-4 text-center">
-                                <div className="flex items-center justify-center gap-1.5">
-                                  <button
-                                    onClick={() => {
-                                      setRestockProduct(item);
-                                      setRestockData({
-                                        quantity: buyQty,
-                                        presentationId: "",
-                                        totalCost: subtotal,
-                                        categoryId: "",
-                                        paymentMethod: "CASH",
-                                      });
-                                      setIsRestockModalOpen(true);
-                                    }}
-                                    className="px-2.5 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-bold flex items-center gap-1 transition-colors"
-                                    title="Ejecutar reposición física de stock y registrar egreso"
+                              ))}
+                            </div>
+
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-gray-500 font-semibold">Total Costo:</span>
+                              <span className="text-base font-black text-indigo-700">S/ {order.totalCost.toFixed(2)}</span>
+                            </div>
+
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-gray-500 font-semibold">Método Pago:</span>
+                              <span className="font-bold text-gray-800 bg-slate-100 px-2 py-0.5 rounded-lg">{order.paymentMethod}</span>
+                            </div>
+
+                            {order.receiptUrl && (
+                              <div className="pt-1">
+                                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block mb-1">Comprobante</span>
+                                {order.receiptUrl.toLowerCase().endsWith(".pdf") ? (
+                                  <a
+                                    href={getReceiptAbsoluteUrl(order.receiptUrl) || undefined}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-gray-150 rounded-xl hover:bg-indigo-50/30 hover:border-indigo-200 transition-colors group cursor-pointer"
                                   >
-                                    Comprar
-                                  </button>
-                                  <button
-                                    onClick={() => handleOpenModal(item)}
-                                    className="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700"
-                                    title="Editar datos de ficha técnica"
+                                    <FileText className="w-4 h-4 text-rose-500" />
+                                    <span className="text-xs font-bold text-gray-700 group-hover:text-indigo-700 transition-colors truncate max-w-[120px]">
+                                      Comprobante.pdf
+                                    </span>
+                                    <Eye className="w-3.5 h-3.5 text-indigo-500 ml-auto" />
+                                  </a>
+                                ) : (
+                                  <a
+                                    href={getReceiptAbsoluteUrl(order.receiptUrl) || undefined}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="relative block rounded-xl overflow-hidden border border-gray-100 group cursor-pointer max-w-[120px] aspect-[4/3] bg-slate-50"
                                   >
-                                    <Edit2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                        {/* TOTALS ROW */}
-                        <tr className="bg-slate-50/80 font-black border-t-2 border-slate-200">
-                          <td className="py-4 px-5 text-gray-700">Total Planificado</td>
-                          <td colSpan={5}></td>
-                          <td className="py-4 px-4 text-center text-gray-700">
-                            {Object.values(customQuantities).reduce((a, b) => a + b, 0)} items
-                          </td>
-                          <td className="py-4 px-4 text-right text-indigo-900 text-base">
-                            S/ {plannerItems.reduce((acc, item) => {
-                              const qty = customQuantities[item.id] ?? item.deficit;
-                              const cost = customCosts[item.id] ?? item.costPrice;
-                              return acc + (qty * cost);
-                            }, 0).toFixed(2)}
-                          </td>
-                          <td></td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                                    <img
+                                      src={getReceiptAbsoluteUrl(order.receiptUrl) || undefined}
+                                      alt="Comprobante"
+                                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                                    />
+                                    <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                      <Eye className="w-5 h-5 text-white" />
+                                    </div>
+                                  </a>
+                                )}
+                              </div>
+                            )}
+
+                            <div className="flex gap-2 pt-2">
+                              <button
+                                onClick={() => handleRevertOrder(order.id)}
+                                className="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs py-2.5 rounded-2xl flex items-center justify-center gap-1.5 shadow-sm shadow-amber-50 active:scale-95 transition-all"
+                              >
+                                <RotateCcw className="w-4 h-4" />
+                                Revertir
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setEditingPurchaseOrder(order);
+                                  setEditOrderData({
+                                    categoryId: order.categoryId,
+                                    paymentMethod: order.paymentMethod,
+                                    receiptUrl: order.receiptUrl || "",
+                                    items: order.items.map(item => ({
+                                      id: item.id,
+                                      productId: item.productId,
+                                      name: item.product?.name || "Producto",
+                                      quantity: item.quantity,
+                                      costPrice: item.costPrice,
+                                      unit: item.product?.unit || "Unidad",
+                                      equivalence: item.equivalence,
+                                      presentationId: item.presentationId,
+                                      presentationName: item.presentationName,
+                                    })),
+                                  });
+                                  setEditOrderFile(null);
+                                  setIsEditOrderModalOpen(true);
+                                }}
+                                className="px-4 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-2xl active:scale-95 transition-all flex items-center justify-center"
+                                title="Editar Compra"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  )}
+                </div>
               </div>
             )}
 
@@ -1148,6 +2137,62 @@ export default function BusinessInventoryPage() {
                 }
                 className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
               />
+            </div>
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <label className="block text-sm font-semibold text-gray-700">
+                  Marca
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setIsManageBrandsModalOpen(true)}
+                  className="text-xs font-bold text-indigo-600 hover:underline"
+                >
+                  + Gestionar
+                </button>
+              </div>
+              <select
+                value={formData.brandId}
+                onChange={(e) =>
+                  setFormData({ ...formData, brandId: e.target.value })
+                }
+                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+              >
+                <option value="">-- Ninguna --</option>
+                {brands.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <label className="block text-sm font-semibold text-gray-700">
+                  Familia / Grupo
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setIsManageBrandsModalOpen(true)}
+                  className="text-xs font-bold text-indigo-600 hover:underline"
+                >
+                  + Gestionar
+                </button>
+              </div>
+              <select
+                value={formData.familyId}
+                onChange={(e) =>
+                  setFormData({ ...formData, familyId: e.target.value })
+                }
+                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+              >
+                <option value="">-- Ninguna --</option>
+                {families.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">
@@ -1514,6 +2559,536 @@ export default function BusinessInventoryPage() {
         </form>
       </Modal>
 
+      {/* BULK PURCHASE MODAL */}
+      <Modal
+        isOpen={isBulkPurchaseModalOpen}
+        onClose={() => {
+          setIsBulkPurchaseModalOpen(false);
+          setSinglePurchaseItem(null);
+          setBulkPurchaseFile(null);
+        }}
+        title={singlePurchaseItem ? "Registrar Compra / Pedido Individual" : "Registrar Compra / Pedido Grupal"}
+      >
+        <form onSubmit={handleBulkPurchaseSubmit} className="space-y-4">
+          <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 text-xs space-y-2 text-indigo-950 font-medium">
+            <span className="font-extrabold text-sm block mb-1">Resumen del Pedido</span>
+            <div className="max-h-32 overflow-y-auto space-y-1 pr-1">
+              {singlePurchaseItem ? (
+                (() => {
+                  const qty = customQuantities[singlePurchaseItem.id] ?? singlePurchaseItem.deficit;
+                  const cost = customCosts[singlePurchaseItem.id] ?? singlePurchaseItem.costPrice;
+                  return (
+                    <div className="flex justify-between">
+                      <span>• {qty} x {singlePurchaseItem.name}</span>
+                      <span className="font-black">S/ {(qty * cost).toFixed(2)}</span>
+                    </div>
+                  );
+                })()
+              ) : (
+                plannerItems
+                  .filter(item => selectedItemIds.includes(item.id))
+                  .map(item => {
+                    const qty = customQuantities[item.id] ?? item.deficit;
+                    const cost = customCosts[item.id] ?? item.costPrice;
+                    return (
+                      <div key={item.id} className="flex justify-between">
+                        <span>• {qty} x {item.name}</span>
+                        <span className="font-black">S/ {(qty * cost).toFixed(2)}</span>
+                      </div>
+                    );
+                  })
+              )}
+            </div>
+            <div className="border-t border-indigo-200/50 pt-2 flex justify-between font-black text-sm">
+              <span>Total Estimado:</span>
+              <span>
+                S/ {singlePurchaseItem ? (
+                  (() => {
+                    const qty = customQuantities[singlePurchaseItem.id] ?? singlePurchaseItem.deficit;
+                    const cost = customCosts[singlePurchaseItem.id] ?? singlePurchaseItem.costPrice;
+                    return (qty * cost).toFixed(2);
+                  })()
+                ) : (
+                  plannerItems
+                    .filter(item => selectedItemIds.includes(item.id))
+                    .reduce((sum, item) => {
+                      const qty = customQuantities[item.id] ?? item.deficit;
+                      const cost = customCosts[item.id] ?? item.costPrice;
+                      return sum + (qty * cost);
+                    }, 0)
+                    .toFixed(2)
+                )}
+              </span>
+            </div>
+          </div>
+
+          {/* COMPROBANTE DE COMPRA */}
+          <div className="space-y-2">
+            <label className="block text-sm font-semibold text-gray-700 flex items-center gap-2">
+              <FileText className="w-4 h-4 text-indigo-500" />
+              Comprobante de Pago (Imagen o PDF)
+            </label>
+            {bulkPurchaseFile ? (
+              <div className="flex items-center justify-between p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl">
+                <div className="flex items-center gap-2.5 truncate">
+                  <div className="p-2 bg-indigo-100 rounded-lg text-indigo-600">
+                    <FileText className="w-4 h-4" />
+                  </div>
+                  <div className="truncate">
+                    <p className="text-xs font-bold text-gray-700 truncate">{bulkPurchaseFile.name}</p>
+                    <p className="text-[10px] text-gray-400 font-medium font-mono">{(bulkPurchaseFile.size / 1024).toFixed(1)} KB</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setBulkPurchaseFile(null)}
+                  className="p-1 text-gray-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <label className="flex flex-col items-center justify-center p-5 border-2 border-dashed border-gray-200 hover:border-indigo-400 bg-slate-50/50 hover:bg-indigo-50/10 rounded-2xl cursor-pointer transition-all">
+                <FileText className="w-7 h-7 text-indigo-400 mb-1.5" />
+                <span className="text-xs font-bold text-gray-600">Seleccionar Comprobante</span>
+                <span className="text-[9px] text-gray-400 mt-0.5">Formatos aceptados: JPG, PNG, PDF</span>
+                <input
+                  type="file"
+                  accept="image/*,application/pdf"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) setBulkPurchaseFile(file);
+                  }}
+                  className="hidden"
+                />
+              </label>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                Categoría del Egreso *
+              </label>
+              <select
+                required
+                value={bulkPurchaseData.categoryId}
+                onChange={(e) =>
+                  setBulkPurchaseData({ ...bulkPurchaseData, categoryId: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-indigo-500 bg-white text-xs font-bold text-gray-700"
+              >
+                <option value="">Selecciona categoría</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                Método de Pago
+              </label>
+              <select
+                value={bulkPurchaseData.paymentMethod}
+                onChange={(e) =>
+                  setBulkPurchaseData({ ...bulkPurchaseData, paymentMethod: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-indigo-500 bg-white text-xs font-bold text-gray-700"
+              >
+                <option value="CASH">Efectivo</option>
+                <option value="TRANSFER">Transferencia</option>
+                <option value="YAPE">Yape</option>
+                <option value="PLIN">Plin</option>
+                <option value="CARD">Tarjeta</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 pt-2">
+            <input
+              type="checkbox"
+              id="receiveImmediately"
+              checked={bulkPurchaseData.receiveImmediately}
+              onChange={(e) =>
+                setBulkPurchaseData({ ...bulkPurchaseData, receiveImmediately: e.target.checked })
+              }
+              className="w-4.5 h-4.5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 cursor-pointer"
+            />
+            <label htmlFor="receiveImmediately" className="text-xs font-bold text-gray-700 cursor-pointer select-none">
+              Ingresar directamente al almacén (Stock físico)
+            </label>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+            <button
+              type="button"
+              onClick={() => {
+                setIsBulkPurchaseModalOpen(false);
+                setSinglePurchaseItem(null);
+                setBulkPurchaseFile(null);
+              }}
+              className="px-4 py-2 text-xs font-bold text-gray-500 hover:bg-gray-50 rounded-xl"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-sm transition-colors"
+            >
+              Confirmar Pedido / Compra
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* EDIT PURCHASE ORDER MODAL */}
+      <Modal
+        isOpen={isEditOrderModalOpen}
+        onClose={() => {
+          setIsEditOrderModalOpen(false);
+          setEditingPurchaseOrder(null);
+          setEditOrderFile(null);
+        }}
+        title="Editar Registro de Compra / Pedido"
+      >
+        {editingPurchaseOrder && (
+          <form onSubmit={handleEditOrderSubmit} className="space-y-4">
+            <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 space-y-3">
+              <span className="font-extrabold text-sm text-indigo-950 block">Lista de Artículos</span>
+              <div className="space-y-3 max-h-56 overflow-y-auto pr-1">
+                {editOrderData.items.map((item, index) => {
+                  return (
+                    <div key={item.id || index} className="bg-white p-3 rounded-xl border border-indigo-100/50 space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="font-extrabold text-xs text-gray-800 truncate block max-w-[170px]">{item.name}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-gray-400 font-bold bg-slate-100 px-1.5 py-0.5 rounded">
+                            {item.presentationName || item.unit}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (editOrderData.items.length <= 1) {
+                                toast.error("El pedido debe tener al menos 1 producto. Si deseas cancelarlo por completo, elimínalo desde el menú principal.");
+                                return;
+                              }
+                              const updatedItems = editOrderData.items.filter((_, idx) => idx !== index);
+                              setEditOrderData({ ...editOrderData, items: updatedItems });
+                            }}
+                            className="p-1 text-gray-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
+                            title="Quitar artículo del pedido"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[9px] font-black uppercase text-gray-400 mb-0.5">Cantidad</label>
+                          <input
+                            type="number"
+                            min="0.01"
+                            step="any"
+                            required
+                            value={item.quantity}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              const updatedItems = [...editOrderData.items];
+                              updatedItems[index].quantity = val;
+                              setEditOrderData({ ...editOrderData, items: updatedItems });
+                            }}
+                            className="w-full px-2 py-1 bg-slate-50 border border-gray-200 rounded-lg text-xs font-bold text-gray-700 outline-none focus:bg-white focus:ring-1 focus:ring-indigo-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] font-black uppercase text-gray-400 mb-0.5">Costo Unit (S/)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            required
+                            value={item.costPrice}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              const updatedItems = [...editOrderData.items];
+                              updatedItems[index].costPrice = val;
+                              setEditOrderData({ ...editOrderData, items: updatedItems });
+                            }}
+                            className="w-full px-2 py-1 bg-slate-50 border border-gray-200 rounded-lg text-xs font-bold text-gray-700 outline-none focus:bg-white focus:ring-1 focus:ring-indigo-500"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex justify-end text-[10px] font-black text-indigo-600 pt-0.5">
+                        Subtotal: S/ {(item.quantity * item.costPrice).toFixed(2)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="border-t border-indigo-200/50 pt-2 flex justify-between font-black text-sm text-indigo-950">
+                <span>Total Actualizado:</span>
+                <span>
+                  S/ {editOrderData.items.reduce((sum, item) => sum + (item.quantity * item.costPrice), 0).toFixed(2)}
+                </span>
+              </div>
+            </div>
+
+            {/* COMPROBANTE DE COMPRA */}
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold text-gray-700 flex items-center gap-2">
+                <FileText className="w-4 h-4 text-indigo-500" />
+                Comprobante de Pago (Imagen o PDF)
+              </label>
+              {editOrderFile ? (
+                <div className="flex items-center justify-between p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl">
+                  <div className="flex items-center gap-2.5 truncate">
+                    <div className="p-2 bg-indigo-100 rounded-lg text-indigo-600">
+                      <FileText className="w-4 h-4" />
+                    </div>
+                    <div className="truncate">
+                      <p className="text-xs font-bold text-gray-700 truncate">{editOrderFile.name}</p>
+                      <p className="text-[10px] text-gray-400 font-medium font-mono">{(editOrderFile.size / 1024).toFixed(1)} KB</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEditOrderFile(null)}
+                    className="p-1 text-gray-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : editOrderData.receiptUrl ? (
+                <div className="flex items-center justify-between p-3 bg-emerald-50/50 border border-emerald-100 rounded-xl">
+                  <div className="flex items-center gap-2.5 truncate">
+                    <div className="p-2 bg-emerald-100 rounded-lg text-emerald-600">
+                      <Eye className="w-4 h-4" />
+                    </div>
+                    <div className="truncate">
+                      <p className="text-xs font-bold text-emerald-800 truncate">Comprobante guardado</p>
+                      <a
+                        href={getReceiptAbsoluteUrl(editOrderData.receiptUrl) || undefined}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[10px] text-indigo-600 font-bold hover:underline"
+                      >
+                        Ver archivo actual
+                      </a>
+                    </div>
+                  </div>
+                  <label className="cursor-pointer text-[10px] font-black text-indigo-600 bg-white hover:bg-indigo-50 px-2.5 py-1.5 border border-indigo-200 rounded-lg shadow-sm">
+                    Reemplazar
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) setEditOrderFile(file);
+                      }}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+              ) : (
+                <label className="flex flex-col items-center justify-center p-5 border-2 border-dashed border-gray-200 hover:border-indigo-400 bg-slate-50/50 hover:bg-indigo-50/10 rounded-2xl cursor-pointer transition-all">
+                  <FileText className="w-7 h-7 text-indigo-400 mb-1.5" />
+                  <span className="text-xs font-bold text-gray-600">Subir Comprobante</span>
+                  <span className="text-[9px] text-gray-400 mt-0.5">JPG, PNG, PDF</span>
+                  <input
+                    type="file"
+                    accept="image/*,application/pdf"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) setEditOrderFile(file);
+                    }}
+                    className="hidden"
+                  />
+                </label>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">
+                  Categoría del Egreso *
+                </label>
+                <select
+                  required
+                  value={editOrderData.categoryId}
+                  onChange={(e) =>
+                    setEditOrderData({ ...editOrderData, categoryId: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-indigo-500 bg-white text-xs font-bold text-gray-700"
+                >
+                  <option value="">Selecciona categoría</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">
+                  Método de Pago
+                </label>
+                <select
+                  value={editOrderData.paymentMethod}
+                  onChange={(e) =>
+                    setEditOrderData({ ...editOrderData, paymentMethod: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-indigo-500 bg-white text-xs font-bold text-gray-700"
+                >
+                  <option value="CASH">Efectivo</option>
+                  <option value="TRANSFER">Transferencia</option>
+                  <option value="YAPE">Yape</option>
+                  <option value="PLIN">Plin</option>
+                  <option value="CARD">Tarjeta</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsEditOrderModalOpen(false);
+                  setEditingPurchaseOrder(null);
+                  setEditOrderFile(null);
+                }}
+                className="px-4 py-2 text-xs font-bold text-gray-500 hover:bg-gray-50 rounded-xl"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-sm transition-colors"
+              >
+                Guardar Cambios
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* MODAL: Gestionar Marcas y Familias */}
+      <Modal
+        isOpen={isManageBrandsModalOpen}
+        onClose={() => setIsManageBrandsModalOpen(false)}
+        title="Gestionar Clasificaciones de Productos"
+        maxWidth="max-w-2xl"
+      >
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-1">
+          {/* Brands Section */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-bold text-gray-800 border-b pb-2 flex items-center justify-between">
+              <span>Marcas</span>
+              <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-[10px] font-bold">
+                {brands.length}
+              </span>
+            </h3>
+            
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Nueva Marca (Ej. Nike)"
+                value={newBrandName}
+                onChange={(e) => setNewBrandName(e.target.value)}
+                className="flex-1 px-3 py-1.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs"
+              />
+              <button
+                type="button"
+                onClick={handleCreateBrand}
+                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs"
+              >
+                Agregar
+              </button>
+            </div>
+
+            <div className="max-h-60 overflow-y-auto space-y-1.5 border border-gray-150 rounded-xl p-2 bg-gray-50/50">
+              {brands.length === 0 ? (
+                <p className="text-[11px] text-gray-400 italic text-center py-4">No hay marcas creadas</p>
+              ) : (
+                brands.map(b => (
+                  <div key={b.id} className="flex items-center justify-between bg-white p-2 rounded-lg border border-gray-100 shadow-sm">
+                    <span className="text-xs font-semibold text-gray-700">{b.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteBrand(b.id)}
+                      className="p-1 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Eliminar marca"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Families Section */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-bold text-gray-800 border-b pb-2 flex items-center justify-between">
+              <span>Familias / Líneas</span>
+              <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-[10px] font-bold">
+                {families.length}
+              </span>
+            </h3>
+            
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Nueva Familia (Ej. Lácteos)"
+                value={newFamilyName}
+                onChange={(e) => setNewFamilyName(e.target.value)}
+                className="flex-1 px-3 py-1.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs"
+              />
+              <button
+                type="button"
+                onClick={handleCreateFamily}
+                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs"
+              >
+                Agregar
+              </button>
+            </div>
+
+            <div className="max-h-60 overflow-y-auto space-y-1.5 border border-gray-150 rounded-xl p-2 bg-gray-50/50">
+              {families.length === 0 ? (
+                <p className="text-[11px] text-gray-400 italic text-center py-4">No hay familias creadas</p>
+              ) : (
+                families.map(f => (
+                  <div key={f.id} className="flex items-center justify-between bg-white p-2 rounded-lg border border-gray-100 shadow-sm">
+                    <span className="text-xs font-semibold text-gray-700">{f.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteFamily(f.id)}
+                      className="p-1 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Eliminar familia"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end pt-6 border-t border-gray-100 mt-4">
+          <button
+            type="button"
+            onClick={() => setIsManageBrandsModalOpen(false)}
+            className="px-4 py-2 bg-gray-100 text-gray-700 font-bold rounded-xl text-xs hover:bg-gray-200"
+          >
+            Listo / Cerrar
+          </button>
+        </div>
+      </Modal>
+
       {/* MODAL: Cámara Escáner */}
       <Modal
         isOpen={isScannerOpen}
@@ -1558,6 +3133,18 @@ export default function BusinessInventoryPage() {
         confirmText="Eliminar Producto"
         cancelText="Cancelar"
         variant="danger"
+      />
+
+      <ConfirmModal
+        isOpen={isConfirmOpen}
+        onClose={() => setIsConfirmOpen(false)}
+        onConfirm={confirmConfig.onConfirm}
+        title={confirmConfig.title}
+        message={confirmConfig.message}
+        confirmText={confirmConfig.confirmText}
+        cancelText={confirmConfig.cancelText}
+        variant={confirmConfig.variant}
+        buttonIcon={confirmConfig.variant === "danger" ? <Trash2 className="w-5 h-5" /> : <Check className="w-5 h-5" />}
       />
     </Appshell>
   );

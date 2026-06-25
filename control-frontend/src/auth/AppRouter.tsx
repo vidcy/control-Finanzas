@@ -6,6 +6,7 @@ import BusinessDashboardPage from "../pages/BusinessDashboardPage";
 import BusinessPosPage from "../pages/BusinessPosPage";
 import BusinessPendingPage from "../pages/BusinessPendingPage";
 import BusinessInventoryPage from "../pages/BusinessInventoryPage";
+import BusinessKardexPage from "../pages/BusinessKardexPage";
 import BusinessReportsPage from "../pages/BusinessReportsPage";
 import BusinessFinancePage from "../pages/BusinessFinancePage";
 import BusinessCashRegisterPage from "../pages/BusinessCashRegisterPage";
@@ -18,6 +19,8 @@ import ExpensesPage from "../pages/ExpensesPage";
 import CategoriesPage from "../pages/CategoriesPage";
 import PendingPage from "../pages/PendingPage";
 import BusinessHistoryPage from "../pages/BusinessHistoryPage";
+import BusinessBranchesPage from "../pages/BusinessBranchesPage";
+import BusinessWorkersPage from "../pages/BusinessWorkersPage";
 
 import LandingPage from "../pages/LandingPage";
 
@@ -73,6 +76,14 @@ export default function AppRoutes() {
         }
       />
       <Route
+        path="/business-kardex"
+        element={
+          <ProtectedRoute>
+            <BusinessKardexPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/business-reports"
         element={
           <ProtectedRoute>
@@ -101,6 +112,22 @@ export default function AppRoutes() {
         element={
           <ProtectedRoute>
             <BusinessHistoryPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/business-branches"
+        element={
+          <ProtectedRoute>
+            <BusinessBranchesPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/business-workers"
+        element={
+          <ProtectedRoute>
+            <BusinessWorkersPage />
           </ProtectedRoute>
         }
       />
