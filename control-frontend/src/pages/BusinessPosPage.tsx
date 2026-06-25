@@ -163,7 +163,7 @@ export default function BusinessPosPage() {
     try {
       const data = await getTransactionsRequest("BUSINESS");
       const posSales = data.filter(
-        (t: any) => t.workspace === "BUSINESS" && t.type === "INCOME",
+        (t: any) => t.workspace === "BUSINESS" && t.type === "INCOME" && t.status === "PAID",
       );
       setSales(
         posSales.sort(
@@ -334,12 +334,17 @@ export default function BusinessPosPage() {
   };
 
   const handleBarcodeScanned = (code: string) => {
-    const cleanCode = code.trim();
-    const match = products.find(
-      (p) => p.sku && p.sku.toLowerCase() === cleanCode.toLowerCase()
-    );
+    const cleanCode = code.trim().toLowerCase();
+    const match = products.find((p) => {
+      const matchesSku = p.sku && p.sku.toLowerCase() === cleanCode;
+      const matchesCodeRaw = (p as any).customCode && String((p as any).customCode) === cleanCode;
+      const matchesCodePadded = (p as any).customCode && String((p as any).customCode).padStart(4, "0") === cleanCode;
+      return matchesSku || matchesCodeRaw || matchesCodePadded;
+    });
+
     if (match) {
       addToCart(match);
+      setSearchTerm(match.name); // Auto-filter POS list for this product
       playBeep();
       toast.success(`Agregado: ${match.name}`);
     } else {
@@ -650,9 +655,15 @@ export default function BusinessPosPage() {
     }
   };
 
-  const filteredProducts = products.filter((p) =>
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()),
-  );
+  const filteredProducts = products.filter((p) => {
+    const term = searchTerm.toLowerCase().trim();
+    if (!term) return true;
+    const matchesName = p.name.toLowerCase().includes(term);
+    const matchesSku = p.sku && p.sku.toLowerCase().includes(term);
+    const matchesCodeRaw = (p as any).customCode && String((p as any).customCode) === term;
+    const matchesCodePadded = (p as any).customCode && String((p as any).customCode).padStart(4, "0") === term;
+    return matchesName || matchesSku || matchesCodeRaw || matchesCodePadded;
+  });
 
   const paymentLabel: Record<string, string> = {
     CASH: "Efectivo",

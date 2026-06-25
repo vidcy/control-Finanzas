@@ -212,6 +212,7 @@ model Product {
   name        String
   description String?
   sku         String?
+  customCode  Int      @default(0)
   costPrice   Float    // Precio de compra/costo
   salePrice   Float    // Precio de venta
   stock       Float    @default(0)
@@ -326,14 +327,16 @@ model InventoryMovement {
 // 🛒 PEDIDOS / COMPRAS (NUEVO)
 // =========================
 enum PurchaseOrderStatus {
-  ORDERED
-  RECEIVED
+  PENDING    // Pedido creado, pendiente de pago → NO registra en Tesorería
+  PAID       // Pago confirmado con comprobante → registra egreso en Tesorería (en tránsito)
+  RECEIVED   // Mercadería ingresada al almacén → finalizado
+  CANCELLED  // Pedido cancelado → registro en Tesorería anulado si existía
 }
 
 model PurchaseOrder {
   id            String             @id @default(uuid())
   totalCost     Float
-  status        PurchaseOrderStatus @default(ORDERED)
+  status        PurchaseOrderStatus @default(PENDING)
   paymentMethod PaymentMethod
   categoryId    String
   receiptUrl    String?

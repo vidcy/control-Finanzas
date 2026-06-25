@@ -144,7 +144,14 @@ export interface PurchaseOrderItem {
 export interface PurchaseOrder {
   id: string;
   totalCost: number;
-  status: "ORDERED" | "RECEIVED";
+  /** 
+   * Estados del pedido de compra:
+   * - PENDING: Pedido creado, sin pago confirmado → NO registra en Tesorería
+   * - PAID: Pago confirmado con comprobante → Registra egreso en Tesorería (en tránsito)
+   * - RECEIVED: Mercadería ingresada al stock → Tesorería pasa a PAID (finalizado)
+   * - CANCELLED: Pedido cancelado → Si había registro en Tesorería, queda CANCELLED también
+   */
+  status: "PENDING" | "PAID" | "RECEIVED" | "CANCELLED";
   paymentMethod: string;
   categoryId: string;
   receiptUrl?: string;
@@ -249,6 +256,29 @@ export const updateFamilyRequest = async (id: string, data: { name: string }): P
 
 export const deleteFamilyRequest = async (id: string): Promise<any> => {
   const res = await API.delete(`/products/families/${id}`);
+  return res.data;
+};
+
+export const payPurchaseOrderRequest = async (
+  id: string,
+  data: {
+    categoryId: string;
+    paymentMethod: string;
+    receiptUrl?: string | null;
+  }
+): Promise<PurchaseOrder> => {
+  const res = await API.post(`/products/purchase-orders/${id}/pay`, data);
+  return res.data;
+};
+
+/**
+ * Cancelar un pedido de compra.
+ * - Si NO tiene registro en Tesorería (status=PENDING): cancela y queda disponible para eliminación
+ * - Si tiene registro en Tesorería (status=PAID): cancela el pedido Y anula el registro en Tesorería
+ * - Si status=RECEIVED: error → debe revertir el ingreso de stock primero
+ */
+export const cancelPurchaseOrderRequest = async (id: string): Promise<PurchaseOrder> => {
+  const res = await API.patch(`/products/purchase-orders/${id}/cancel`);
   return res.data;
 };
 

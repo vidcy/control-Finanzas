@@ -11,7 +11,7 @@ export class ProductsService {
   constructor(
     private prisma: PrismaService,
     private filesService: FilesService,
-  ) {}
+  ) { }
 
   async create(userId: string, data: any) {
     const { presentations, unit, ...productData } = data;
@@ -41,9 +41,17 @@ export class ProductsService {
       const brandId = productData.brandId ? productData.brandId : null;
       const familyId = productData.familyId ? productData.familyId : null;
 
+      // Find the maximum customCode for this user
+      const maxProduct = await tx.product.findFirst({
+        where: { userId },
+        orderBy: { customCode: 'desc' },
+      });
+      const nextCode = maxProduct && maxProduct.customCode ? maxProduct.customCode + 1 : 1;
+
       const product = await tx.product.create({
         data: {
           ...productData,
+          customCode: nextCode,
           brandId,
           familyId,
           stock,
@@ -347,6 +355,12 @@ export class ProductsService {
 
     const mainUnitsQty = quantity * equivalence;
 
+    // Validate liquidity for restock
+    const currentLiquidity = await this.getBusinessLiquidity(userId);
+    if (parseFloat(totalCost) > currentLiquidity) {
+      throw new BadRequestException(`Límite de liquidez superado. No tiene suficiente liquidez en caja para realizar esta reposición. Liquidez disponible: S/ ${currentLiquidity.toFixed(2)}.`);
+    }
+
     return this.prisma.$transaction(async (tx) => {
       // 1. Create General Contable Transaction
       const transaction = await tx.transaction.create({
@@ -598,8 +612,49 @@ export class ProductsService {
   /**
    * Create a purchase order
    */
+  async getBusinessLiquidity(userId: string, tx?: any): Promise<number> {
+    const prisma = tx || this.prisma;
+    const transactions = await prisma.transaction.findMany({
+      where: {
+        userId,
+        workspace: 'BUSINESS',
+        status: {
+          in: ['PAID', 'PENDING'],
+        },
+      },
+      select: {
+        type: true,
+        amountSoles: true,
+        status: true,
+        description: true,
+      },
+    });
+
+    let income = 0;
+    let expense = 0;
+
+    for (const t of transactions) {
+      const amt = t.amountSoles || 0;
+      if (t.status === 'PAID') {
+        if (t.type === 'INCOME') {
+          income += amt;
+        } else {
+          expense += amt;
+        }
+      } else if (
+        t.status === 'PENDING' &&
+        t.type === 'EXPENSE' &&
+        t.description?.includes('Pedido de Compra')
+      ) {
+        expense += amt;
+      }
+    }
+
+    return income - expense;
+  }
+
   async createPurchaseOrder(userId: string, body: any) {
-    const { items, totalCost, paymentMethod, categoryId, receiptUrl, receiveImmediately } = body;
+    const { items, totalCost, paymentMethod, categoryId, receiptUrl, receiveImmediately, confirmPayment } = body;
 
     if (!items || items.length === 0) {
       throw new BadRequestException('El pedido de compras está vacío.');
@@ -608,12 +663,22 @@ export class ProductsService {
       throw new BadRequestException('El costo total no puede ser negativo.');
     }
 
+    const isPaid = !!receiptUrl || !!confirmPayment || !!receiveImmediately;
+
+    // Check liquidity if paid immediately
+    if (isPaid) {
+      const currentLiquidity = await this.getBusinessLiquidity(userId);
+      if (parseFloat(totalCost) > currentLiquidity) {
+        throw new BadRequestException(`Límite de liquidez superado. No tiene suficiente liquidez en caja para realizar esta compra. Liquidez disponible: S/ ${currentLiquidity.toFixed(2)}.`);
+      }
+    }
+
     return this.prisma.$transaction(async (tx) => {
       // 1. Create PurchaseOrder and items
       const purchaseOrder = await tx.purchaseOrder.create({
         data: {
           totalCost: parseFloat(totalCost),
-          status: receiveImmediately ? 'RECEIVED' : 'ORDERED',
+          status: receiveImmediately ? 'RECEIVED' : (isPaid ? 'PAID' : 'PENDING'),
           paymentMethod,
           categoryId,
           receiptUrl: receiptUrl || null,
@@ -654,24 +719,26 @@ export class ProductsService {
         })
         .join(', ');
 
-      // 3. Create General Contable Transaction (Expense)
-      await tx.transaction.create({
-        data: {
-          name: `Compra de Mercadería: ${productNames.substring(0, 50)}${productNames.length > 50 ? '...' : ''}`,
-          type: 'EXPENSE',
-          amount: parseFloat(totalCost),
-          categoryId,
-          subCategoryId: null,
-          date: new Date(),
-          status: 'PAID',
-          currency: 'PEN',
-          paymentMethod,
-          description: `Pedido de Compra. ID: ${purchaseOrder.id}. Ítems: ${itemDetails}. Estado: ${receiveImmediately ? 'Recibido en Almacén' : 'En Tránsito (Pedido)'}.`,
-          workspace: 'BUSINESS',
-          receiptUrl: receiptUrl || null,
-          userId,
-        },
-      });
+      // 3. Create General Contable Transaction (Expense) ONLY IF PAID
+      if (isPaid) {
+        await tx.transaction.create({
+          data: {
+            name: `Compra de Mercadería: ${productNames.substring(0, 50)}${productNames.length > 50 ? '...' : ''}`,
+            type: 'EXPENSE',
+            amount: parseFloat(totalCost),
+            categoryId,
+            subCategoryId: null,
+            date: new Date(),
+            status: receiveImmediately ? 'PAID' : 'PENDING', // PENDING means "En Proceso"
+            currency: 'PEN',
+            paymentMethod,
+            description: `Pedido de Compra. ID: ${purchaseOrder.id}. Ítems: ${itemDetails}. Estado: ${receiveImmediately ? 'Recibido en Almacén' : 'En Tránsito (Pedido)'}.`,
+            workspace: 'BUSINESS',
+            receiptUrl: receiptUrl || null,
+            userId,
+          },
+        });
+      }
 
       // 4. Update Stock & Movements if received immediately
       if (receiveImmediately) {
@@ -764,6 +831,9 @@ export class ProductsService {
     if (order.status === 'RECEIVED') {
       throw new BadRequestException('El pedido ya ha sido ingresado a stock');
     }
+    if (order.status === 'PENDING') {
+      throw new BadRequestException('Debe registrar primero el pago del pedido antes de ingresarlo a stock.');
+    }
 
     return this.prisma.$transaction(async (tx) => {
       // 1. Update Order Status
@@ -771,6 +841,30 @@ export class ProductsService {
         where: { id },
         data: { status: 'RECEIVED' },
       });
+
+      // 1.1 Find associated Treasury transaction and update status to PAID (Completado/Finalizado)
+      const transaction = await tx.transaction.findFirst({
+        where: {
+          userId,
+          description: {
+            contains: `Pedido de Compra. ID: ${id}`,
+          },
+        },
+      });
+
+      if (transaction) {
+        let newDesc = transaction.description;
+        if (newDesc) {
+          newDesc = newDesc.replace('Estado: En Tránsito (Pedido)', 'Estado: Recibido en Almacén');
+        }
+        await tx.transaction.update({
+          where: { id: transaction.id },
+          data: {
+            status: 'PAID',
+            description: newDesc,
+          },
+        });
+      }
 
       // 2. Loop through items to increment stock & log inventory movement
       for (const item of order.items) {
@@ -820,20 +914,174 @@ export class ProductsService {
   /**
    * Cancel/delete a pending purchase order
    */
+  async payPurchaseOrder(userId: string, id: string, body: any) {
+    const { paymentMethod, categoryId, receiptUrl } = body;
+
+    const order = await this.prisma.purchaseOrder.findFirst({
+      where: { id, userId },
+      include: {
+        items: {
+          include: {
+            product: true,
+          },
+        },
+      },
+    });
+
+    if (!order) throw new NotFoundException('Pedido no encontrado');
+    if (order.status !== 'PENDING') {
+      throw new BadRequestException('El pedido ya ha sido pagado o recibido.');
+    }
+
+    // Check liquidity
+    const currentLiquidity = await this.getBusinessLiquidity(userId);
+    if (order.totalCost > currentLiquidity) {
+      throw new BadRequestException(`Límite de liquidez superado. No tiene suficiente liquidez en caja para realizar este pago. Liquidez disponible: S/ ${currentLiquidity.toFixed(2)}.`);
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Update status to PAID
+      const updatedOrder = await tx.purchaseOrder.update({
+        where: { id },
+        data: {
+          status: 'PAID',
+          paymentMethod,
+          categoryId,
+          receiptUrl: receiptUrl || null,
+        },
+      });
+
+      // 2. Create Treasury Transaction (status: PENDING which is En Proceso)
+      const productNames = order.items.map((item) => item.product.name).join(', ');
+      const itemDetails = order.items
+        .map((item) => `${item.quantity}x ${item.product.name}`)
+        .join(', ');
+
+      await tx.transaction.create({
+        data: {
+          name: `Compra de Mercadería: ${productNames.substring(0, 50)}${productNames.length > 50 ? '...' : ''}`,
+          type: 'EXPENSE',
+          amount: order.totalCost,
+          categoryId,
+          subCategoryId: null,
+          date: new Date(),
+          status: 'PENDING',
+          currency: 'PEN',
+          paymentMethod,
+          description: `Pedido de Compra. ID: ${order.id}. Ítems: ${itemDetails}. Estado: En Tránsito (Pedido).`,
+          workspace: 'BUSINESS',
+          receiptUrl: receiptUrl || null,
+          userId,
+        },
+      });
+
+      return updatedOrder;
+    });
+  }
+
   async deletePurchaseOrder(userId: string, id: string) {
     const order = await this.prisma.purchaseOrder.findFirst({
       where: { id, userId },
     });
 
     if (!order) throw new NotFoundException('Pedido no encontrado');
+
+    // Si el pedido ya fue ingresado a stock (RECEIVED) → no se puede eliminar
     if (order.status === 'RECEIVED') {
       throw new BadRequestException(
-        'No se puede eliminar un pedido que ya ha sido ingresado a stock',
+        'No se puede eliminar un pedido que ya fue ingresado al almacén (estado: Recibido). Si cometió un error, primero revierta el ingreso de stock y luego cancele el pedido.',
       );
     }
 
-    return this.prisma.purchaseOrder.delete({
-      where: { id },
+    return this.prisma.$transaction(async (tx) => {
+      // Verificar si hay registro activo en Tesorería asociado a este pedido
+      const treasuryRecord = await tx.transaction.findFirst({
+        where: {
+          userId,
+          description: {
+            contains: `Pedido de Compra. ID: ${id}`,
+          },
+          status: {
+            in: ['PAID', 'PENDING'],
+          },
+        },
+      });
+
+      if (treasuryRecord) {
+        // Hay registro en Tesorería → no se puede eliminar, solo cancelar
+        throw new BadRequestException(
+          `TREASURY_RECORD_EXISTS|${treasuryRecord.id}|Este pedido ya fue confirmado y está registrado en Tesorería (ID: ${treasuryRecord.id.substring(0, 8)}...). Para eliminarlo, primero debe cancelarlo. El sistema cancelará el registro en Tesorería automáticamente.`,
+        );
+      }
+
+      // Status PENDING sin registro en Tesorería → eliminar directamente
+      return tx.purchaseOrder.delete({
+        where: { id },
+      });
+    });
+  }
+
+  /**
+   * Cancelar un pedido de compra.
+   * - Si status=PENDING sin registro en Tesorería: elimina directamente (ya estaba cubierto por deletePurchaseOrder)
+   * - Si status=PAID con registro en Tesorería: cancela el pedido y anula el registro de Tesorería
+   * - Si status=RECEIVED: no se puede cancelar directamente, primero revertir el ingreso
+   */
+  async cancelPurchaseOrder(userId: string, id: string) {
+    const order = await this.prisma.purchaseOrder.findFirst({
+      where: { id, userId },
+      include: {
+        items: {
+          include: { product: true },
+        },
+      },
+    });
+
+    if (!order) throw new NotFoundException('Pedido no encontrado');
+
+    if (order.status === 'RECEIVED') {
+      throw new BadRequestException(
+        'No se puede cancelar un pedido que ya fue ingresado al almacén. Primero debe revertir el ingreso de stock usando el botón "Revertir Ingreso", y luego cancelar el pedido.',
+      );
+    }
+
+    if (order.status === 'CANCELLED') {
+      throw new BadRequestException('Este pedido ya está cancelado.');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // Cancelar el pedido
+      const updatedOrder = await tx.purchaseOrder.update({
+        where: { id },
+        data: { status: 'CANCELLED' },
+      });
+
+      // Buscar y anular el registro en Tesorería si existe
+      const treasuryRecord = await tx.transaction.findFirst({
+        where: {
+          userId,
+          description: {
+            contains: `Pedido de Compra. ID: ${id}`,
+          },
+          status: {
+            in: ['PAID', 'PENDING'],
+          },
+        },
+      });
+
+      if (treasuryRecord) {
+        await tx.transaction.update({
+          where: { id: treasuryRecord.id },
+          data: {
+            status: 'CANCELLED',
+            description: treasuryRecord.description
+              ? treasuryRecord.description + ' [CANCELADO]'
+              : '[CANCELADO]',
+          },
+        });
+      }
+
+      return updatedOrder;
     });
   }
 
@@ -858,11 +1106,35 @@ export class ProductsService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      // 1. Update Order Status back to ORDERED
+      // 1. Update Order Status back to PAID (since it was paid)
       const updatedOrder = await tx.purchaseOrder.update({
         where: { id },
-        data: { status: 'ORDERED' },
+        data: { status: 'PAID' },
       });
+
+      // 1.1 Find associated Treasury transaction and update back to PENDING (En Proceso)
+      const transaction = await tx.transaction.findFirst({
+        where: {
+          userId,
+          description: {
+            contains: `Pedido de Compra. ID: ${id}`,
+          },
+        },
+      });
+
+      if (transaction) {
+        let newDesc = transaction.description;
+        if (newDesc) {
+          newDesc = newDesc.replace('Estado: Recibido en Almacén', 'Estado: En Tránsito (Pedido)');
+        }
+        await tx.transaction.update({
+          where: { id: transaction.id },
+          data: {
+            status: 'PENDING',
+            description: newDesc,
+          },
+        });
+      }
 
       // 2. Loop through items to decrement stock & log inventory movement (OUT)
       for (const item of order.items) {

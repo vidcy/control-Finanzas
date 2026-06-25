@@ -63,17 +63,19 @@ export default function BusinessDashboardPage() {
         getProductsRequest(),
       ]);
 
+      const safeTx = txs.filter((t: any) => t.status === "PAID");
+
       // Calculate Liquidity (Total Income - Total Expense)
-      const totalIncome = txs
+      const totalIncome = safeTx
         .filter((t: any) => t.type === "INCOME")
         .reduce((acc: number, t: any) => acc + t.amount, 0);
-      const totalExpense = txs
+      const totalExpense = safeTx
         .filter((t: any) => t.type === "EXPENSE")
         .reduce((acc: number, t: any) => acc + t.amount, 0);
       const businessLiquidity = totalIncome - totalExpense;
 
       // Calculate Liquidity breakdown by Payment Method
-      const liquidityByMethod = txs.reduce((acc: Record<string, number>, t: any) => {
+      const liquidityByMethod = safeTx.reduce((acc: Record<string, number>, t: any) => {
         const sign = t.type === "INCOME" ? 1 : -1;
         const method = t.paymentMethod || "CASH";
         acc[method] = (acc[method] || 0) + (t.amount * sign);
@@ -85,11 +87,11 @@ export default function BusinessDashboardPage() {
       const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-      const dailySales = txs
+      const dailySales = safeTx
         .filter((t: any) => t.type === "INCOME" && t.name === "Venta en Caja" && new Date(t.date) >= todayStart)
         .reduce((acc: number, t: any) => acc + t.amount, 0);
 
-      const monthlySales = txs
+      const monthlySales = safeTx
         .filter((t: any) => t.type === "INCOME" && t.name === "Venta en Caja" && new Date(t.date) >= monthStart)
         .reduce((acc: number, t: any) => acc + t.amount, 0);
 
@@ -103,7 +105,7 @@ export default function BusinessDashboardPage() {
       const patrimonio = businessLiquidity + inventoryValuation;
 
       // Monthly Expenses
-      const monthlyExpenses = txs
+      const monthlyExpenses = safeTx
         .filter((t: any) => t.type === "EXPENSE" && new Date(t.date) >= monthStart)
         .reduce((acc: number, t: any) => acc + t.amount, 0);
 
@@ -116,7 +118,7 @@ export default function BusinessDashboardPage() {
         subDays(new Date(), 13 - i),
       );
       const chartDataMapped = last14Days.map((date) => {
-        const dayTxs = txs.filter(
+        const dayTxs = safeTx.filter(
           (t: any) => t.type === "INCOME" && t.name === "Venta en Caja" && isSameDay(parseISO(t.date), date)
         );
         return {
@@ -126,7 +128,7 @@ export default function BusinessDashboardPage() {
       });
 
       // Recent Sales List
-      const recentSales = txs
+      const recentSales = safeTx
         .filter((t: any) => t.type === "INCOME" && t.name === "Venta en Caja")
         .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
         .slice(0, 5);

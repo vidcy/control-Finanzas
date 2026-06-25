@@ -19,6 +19,8 @@ export enum TransactionType {
 export enum TransactionStatus {
   PAID = 'PAID',
   PENDING = 'PENDING',
+  PARTIAL = 'PARTIAL',
+  CANCELLED = 'CANCELLED',
 }
 
 export enum Currency {

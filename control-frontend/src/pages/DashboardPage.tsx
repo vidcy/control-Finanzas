@@ -181,7 +181,7 @@ export default function DashboardPage() {
   };
 
   // ── Safe array ──────────────────────────────────────────────────────────────
-  const safeTx = Array.isArray(transactions) ? transactions : [];
+  const safeTx = (Array.isArray(transactions) ? transactions : []).filter((t: any) => t.status === "PAID");
   const safePending = Array.isArray(pendingTransactions)
     ? pendingTransactions
     : [];

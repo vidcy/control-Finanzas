@@ -267,11 +267,10 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       }
     }
   }, [location.pathname, user?.profiles, user?.blockedProfiles, activeWorkspace, navigate, setActiveWorkspace, setUser, logout]);
-
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newPassword !== confirmNewPassword) {
-      alert("Las nuevas contraseñas no coinciden");
+      toast.error("Las nuevas contraseñas no coinciden");
       return;
     }
     try {
@@ -286,7 +285,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
     } catch (error: unknown) {
       const message =
         error instanceof Error ? error.message : "Error desconocido";
-      alert(message);
+      toast.error(message);
     }
   };
 
@@ -357,7 +356,15 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       profile: "BUSINESS_POS",
     },
     {
-      name: "Inventario",
+      name: "Control de Caja",
+      path: "/business-cash-register",
+      icon: DollarSign,
+      color: "from-blue-400 to-blue-600",
+      bgActive: "bg-blue-50 text-blue-700",
+      profile: "BUSINESS_CASH_REGISTER",
+    },
+    {
+      name: "Almacén y Abastecimiento",
       path: "/business-inventory",
       icon: PackageSearch,
       color: "from-emerald-500 to-teal-600",
@@ -371,14 +378,6 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       color: "from-teal-500 to-emerald-600",
       bgActive: "bg-teal-50 text-teal-700",
       profile: "BUSINESS_INVENTORY",
-    },
-    {
-      name: "Control de Caja",
-      path: "/business-cash-register",
-      icon: DollarSign,
-      color: "from-blue-400 to-blue-600",
-      bgActive: "bg-blue-50 text-blue-700",
-      profile: "BUSINESS_CASH_REGISTER",
     },
     {
       name: "Tesorería",
@@ -405,20 +404,20 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       profile: "BUSINESS_REPORTS",
     },
     {
-      name: "Categorías",
-      path: "/categories",
-      icon: Tags,
-      color: "from-amber-400 to-amber-600",
-      bgActive: "bg-amber-50 text-amber-700",
-      profile: "BUSINESS_CATEGORIES",
-    },
-    {
       name: "Historial",
       path: "/business-history",
       icon: History,
       color: "from-violet-400 to-purple-600",
       bgActive: "bg-violet-50 text-violet-700",
       profile: "BUSINESS_HISTORY",
+    },
+    {
+      name: "Categorías",
+      path: "/categories",
+      icon: Tags,
+      color: "from-amber-400 to-amber-600",
+      bgActive: "bg-amber-50 text-amber-700",
+      profile: "BUSINESS_CATEGORIES",
     },
     // --- Conditional modules (owner can enable/disable) ---
     ...((!user?.parentId && user?.profiles?.includes("BUSINESS_BRANCHES")) ||
@@ -501,11 +500,15 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
               />
             </div>
             <div className="ml-3 min-w-0">
-              <h1 className="text-sm font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600 tracking-wider truncate">
-                {activeWorkspace === "BUSINESS" && user?.businessName
-                  ? user.businessName.toUpperCase()
-                  : "THINK"}
-              </h1>
+              {activeWorkspace === "BUSINESS" && user?.businessName ? (
+                <h1 className="text-sm font-black tracking-wider truncate business-name-animated">
+                  {user.businessName.toUpperCase()}
+                </h1>
+              ) : (
+                <h1 className="text-sm font-black tracking-wider truncate think-name-animated">
+                  THINK
+                </h1>
+              )}
               <p className="text-[9px] uppercase tracking-widest text-indigo-500 font-bold truncate">
                 {activeWorkspace === "BUSINESS" && user?.businessRubro
                   ? user.businessRubro

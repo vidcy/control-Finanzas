@@ -69,10 +69,80 @@
 .animate-fade-in-up {
     animation: fadeInUp 0.5s ease-out forwards;
 }
+
 .animation-delay-2000 { animation-delay: 2s; }
 .animation-delay-4000 { animation-delay: 4s; }
-
 
 @keyframes gradient-x { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
 .animate-gradient-x { animation: gradient-x 3s ease infinite; background-size: 200% 200%; }
 
+/* =============================================
+   BUSINESS NAME ANIMATED STYLES
+   Nombre del negocio en el sidebar con efectos visuales premium
+   ============================================= */
+
+@keyframes businessNameShimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+@keyframes businessNameGlow {
+  0%, 100% { 
+    filter: brightness(1) drop-shadow(0 0 4px rgba(139, 92, 246, 0.5));
+  }
+  50% { 
+    filter: brightness(1.2) drop-shadow(0 0 8px rgba(168, 85, 247, 0.7));
+  }
+}
+
+@keyframes thinkNamePulse {
+  0%, 100% { 
+    filter: brightness(1) drop-shadow(0 0 3px rgba(59, 130, 246, 0.4));
+  }
+  50% { 
+    filter: brightness(1.2) drop-shadow(0 0 7px rgba(96, 165, 250, 0.6));
+  }
+}
+
+/* Nombre del negocio: degradado vibrante arco iris + shimmer animado */
+.business-name-animated {
+  background: linear-gradient(
+    90deg,
+    #f472b6 0%,
+    #c084fc 15%,
+    #818cf8 30%,
+    #38bdf8 45%,
+    #34d399 60%,
+    #fbbf24 75%,
+    #f472b6 90%,
+    #c084fc 100%
+  );
+  background-size: 300% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: businessNameShimmer 3.5s linear infinite, businessNameGlow 2.5s ease-in-out infinite;
+  display: inline-block;
+  max-width: 100%;
+}
+
+/* THINK: azul/indigo/cyan vibrante con brillo */
+.think-name-animated {
+  background: linear-gradient(
+    90deg,
+    #60a5fa 0%,
+    #818cf8 25%,
+    #a78bfa 50%,
+    #818cf8 75%,
+    #60a5fa 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: businessNameShimmer 4s linear infinite, thinkNamePulse 3s ease-in-out infinite;
+  display: inline-block;
+  max-width: 100%;
+}

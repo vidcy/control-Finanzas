@@ -39,6 +39,7 @@ import {
   formatPeruTime,
 } from "../utils/date.utils";
 import DateRangePicker from "../components/ui/DateRangePicker";
+import Pagination from "../components/ui/Pagination";
 import { exportToExcel, filterByDateRange } from "../utils/exportExcel";
 
 
@@ -206,7 +207,7 @@ export default function IncomePage() {
   // 🔥 Separa por tipo (INCOME/EXPENSE) si es necesario
   const income = filtered;
 
-  const ITEMS_PER_PAGE = 4;
+  const ITEMS_PER_PAGE = 20;
 
   // Calcular número de páginas de ingresos a cobrar
   const incomeTotalPages = Math.ceil(income.length / ITEMS_PER_PAGE);
@@ -733,59 +734,13 @@ export default function IncomePage() {
                 })}
               </tbody>
             </table>
-            <div className="flex justify-center items-center gap-2 py-4 border-t border-gray-100 bg-white">
-              {/* IR AL INICIO */}
-              <button
-                onClick={() => setIncomePage(1)}
-                disabled={incomePage === 1}
-                className="px-3 py-1 text-sm font-black disabled:opacity-30"
-              >
-                « Inicio
-              </button>
-
-              {/* ATRÁS */}
-              <button
-                onClick={() => setIncomePage((p) => Math.max(p - 1, 1))}
-                disabled={incomePage === 1}
-                className="px-3 py-1 text-sm font-black disabled:opacity-30"
-              >
-                ‹ Atrás
-              </button>
-
-              {/* NÚMEROS */}
-              {getPages(incomeTotalPages).map((page) => (
-                <button
-                  key={page}
-                  onClick={() => setIncomePage(page)}
-                  className={`px-3 py-1 text-sm font-black rounded-lg transition-all ${incomePage === page
-                    ? "bg-black text-white"
-                    : "text-gray-500 hover:bg-gray-100"
-                    }`}
-                >
-                  {page}
-                </button>
-              ))}
-
-              {/* SIGUIENTE */}
-              <button
-                onClick={() =>
-                  setIncomePage((p) => Math.min(p + 1, incomeTotalPages))
-                }
-                disabled={incomePage === incomeTotalPages}
-                className="px-3 py-1 text-sm font-black disabled:opacity-30"
-              >
-                Siguiente ›
-              </button>
-
-              {/* IR AL FINAL */}
-              <button
-                onClick={() => setIncomePage(incomeTotalPages)}
-                disabled={incomePage === incomeTotalPages}
-                className="px-3 py-1 text-sm font-black disabled:opacity-30"
-              >
-                Fin »
-              </button>
-            </div>
+            <Pagination
+              currentPage={incomePage}
+              totalItems={income.length}
+              pageSize={ITEMS_PER_PAGE}
+              onPageChange={(p) => setIncomePage(p)}
+              className="px-4 py-3 border-t border-gray-100"
+            />
           </div>
 
           {/* VISTA MÓVIL: CARDS */}

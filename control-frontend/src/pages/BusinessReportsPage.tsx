@@ -79,10 +79,23 @@ export default function BusinessReportsPage() {
     return true;
   });
 
-  // POS Sales only
+  // POS Sales only - only count PAID sales!
   const filteredSales = filteredTxs.filter(
-    (t: any) => t.type === "INCOME" && t.name === "Venta en Caja"
+    (t: any) => t.type === "INCOME" && t.name === "Venta en Caja" && t.status === "PAID"
   );
+
+
+  // 2. METRICS & CHART COMPUTATIONS
+  // Income vs Expenses - only count PAID transactions!
+  const totalIncome = filteredTxs
+    .filter((t: any) => t.type === "INCOME" && t.status === "PAID")
+    .reduce((sum: number, t: any) => sum + t.amount, 0);
+
+  const totalExpense = filteredTxs
+    .filter((t: any) => t.type === "EXPENSE" && t.status === "PAID")
+    .reduce((sum: number, t: any) => sum + t.amount, 0);
+
+  const netCashFlow = totalIncome - totalExpense;
 
   // Treasury (inflow, outflow, loan, investment)
   const filteredTreasury = filteredTxs.filter((t: any) => {
@@ -113,17 +126,7 @@ export default function BusinessReportsPage() {
     return true;
   });
 
-  // 2. METRICS & CHART COMPUTATIONS
-  // Income vs Expenses
-  const totalIncome = filteredTxs
-    .filter((t: any) => t.type === "INCOME")
-    .reduce((sum: number, t: any) => sum + t.amount, 0);
 
-  const totalExpense = filteredTxs
-    .filter((t: any) => t.type === "EXPENSE")
-    .reduce((sum: number, t: any) => sum + t.amount, 0);
-
-  const netCashFlow = totalIncome - totalExpense;
 
   // Inventory valuation
   const inventoryCostValuation = products.reduce(
@@ -158,7 +161,7 @@ export default function BusinessReportsPage() {
     for (let i = daysToShow - 1; i >= 0; i--) {
       const date = subDays(new Date(), i);
       const daySales = transactions.filter(
-        (t: any) => t.type === "INCOME" && t.name === "Venta en Caja" && isSameDay(parseISO(t.date), date)
+        (t: any) => t.type === "INCOME" && t.name === "Venta en Caja" && t.status === "PAID" && isSameDay(parseISO(t.date), date)
       );
       trendList.push({
         date: format(date, "dd MMM", { locale: es }),
@@ -765,6 +768,7 @@ export default function BusinessReportsPage() {
                           <th className="px-5 py-4 text-left">Motivo</th>
                           <th className="px-5 py-4 text-center">Tipo</th>
                           <th className="px-5 py-4 text-left">Caja/Cuenta</th>
+                          <th className="px-5 py-4 text-center">Estado</th>
                           <th className="px-5 py-4 text-right">Importe</th>
                         </tr>
                       </thead>
@@ -790,6 +794,21 @@ export default function BusinessReportsPage() {
                               )}
                             </td>
                             <td className="px-5 py-4 text-gray-600 font-semibold">{t.paymentMethod || "Caja General"}</td>
+                            <td className="px-5 py-4 text-center">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                                t.status === "CANCELLED"
+                                  ? "bg-rose-100 text-rose-700"
+                                  : t.status === "PENDING"
+                                  ? "bg-amber-100 text-amber-700"
+                                  : "bg-emerald-100 text-emerald-700"
+                              }`}>
+                                {t.status === "CANCELLED"
+                                  ? "Anulado"
+                                  : t.status === "PENDING"
+                                  ? "Pendiente"
+                                  : "Finalizado"}
+                              </span>
+                            </td>
                             <td className={`px-5 py-4 text-right font-black ${t.type === "INCOME" ? "text-emerald-600" : "text-rose-600"}`}>
                               {t.type === "INCOME" ? "+" : "-"}S/ {t.amount.toFixed(2)}
                             </td>

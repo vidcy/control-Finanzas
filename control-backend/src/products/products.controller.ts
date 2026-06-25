@@ -38,9 +38,19 @@ export class ProductsController {
     return this.productsService.receivePurchaseOrder(req.user.id, id);
   }
 
+  @Post('purchase-orders/:id/pay')
+  payPurchaseOrder(@Req() req, @Param('id') id: string, @Body() body: any) {
+    return this.productsService.payPurchaseOrder(req.user.id, id, body);
+  }
+
   @Post('purchase-orders/:id/revert')
   revertPurchaseOrder(@Req() req, @Param('id') id: string) {
     return this.productsService.revertPurchaseOrder(req.user.id, id);
+  }
+
+  @Patch('purchase-orders/:id/cancel')
+  cancelPurchaseOrder(@Req() req, @Param('id') id: string) {
+    return this.productsService.cancelPurchaseOrder(req.user.id, id);
   }
 
   @Delete('purchase-orders/:id')

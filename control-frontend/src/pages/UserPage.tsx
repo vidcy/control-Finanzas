@@ -69,7 +69,7 @@ export default function UserPage() {
   const SUB_MODULES = [
     { key: "BUSINESS_DASHBOARD", name: "Dashboard de Negocio" },
     { key: "BUSINESS_POS", name: "Punto de Venta (POS)" },
-    { key: "BUSINESS_INVENTORY", name: "Inventario" },
+    { key: "BUSINESS_INVENTORY", name: "Almacén y Abastecimiento" },
     { key: "BUSINESS_FINANCE", name: "Caja / Tesorería" },
     { key: "BUSINESS_CASH_REGISTER", name: "Cierre de Caja" },
     { key: "BUSINESS_PENDING", name: "Cuentas Pendientes" },
@@ -536,7 +536,7 @@ export default function UserPage() {
                           const labelMap: Record<string, string> = {
                             BUSINESS_DASHBOARD: "Dashboard",
                             BUSINESS_POS: "POS",
-                            BUSINESS_INVENTORY: "Inventario",
+                            BUSINESS_INVENTORY: "Almacén y Abastecimiento",
                             BUSINESS_FINANCE: "Caja",
                             BUSINESS_CASH_REGISTER: "Cierre",
                             BUSINESS_PENDING: "Pendientes",

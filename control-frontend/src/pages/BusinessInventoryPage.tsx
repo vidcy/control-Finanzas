@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Appshell from "../components/layout/Appshell";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -24,6 +24,12 @@ import {
   Eye,
   ShoppingBag,
   RotateCcw,
+  DollarSign,
+  AlertTriangle,
+  ListPlus,
+  PackagePlus,
+  X,
+  CreditCard,
 } from "lucide-react";
 import {
   getProductsRequest,
@@ -38,6 +44,8 @@ import {
   deletePurchaseOrderRequest,
   revertPurchaseOrderRequest,
   updatePurchaseOrderRequest,
+  payPurchaseOrderRequest,
+  cancelPurchaseOrderRequest,
   getBrandsRequest,
   createBrandRequest,
   deleteBrandRequest,
@@ -50,6 +58,7 @@ import { listCategoriesRequest } from "../services/category.api";
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
 import ConfirmModal from "../components/ui/ConfirmModal";
+import Pagination from "../components/ui/Pagination";
 import { useAuth } from "../auth/AuthContext";
 import {
   getReceiptAbsoluteUrl,
@@ -71,15 +80,15 @@ const loadHtml5Qrcode = (): Promise<any> => {
   });
 };
 
-const loadJsBarcode = (): Promise<any> => {
+const loadQrCodeGenerator = (): Promise<any> => {
   return new Promise((resolve, reject) => {
-    if ((window as any).JsBarcode) {
-      resolve((window as any).JsBarcode);
+    if ((window as any).QRCode) {
+      resolve((window as any).QRCode);
       return;
     }
     const script = document.createElement("script");
-    script.src = "https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js";
-    script.onload = () => resolve((window as any).JsBarcode);
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.1/qrcode.min.js";
+    script.onload = () => resolve((window as any).QRCode);
     script.onerror = (err) => reject(err);
     document.body.appendChild(script);
   });
@@ -157,8 +166,12 @@ export default function BusinessInventoryPage() {
     onConfirm: () => {},
   });
 
-  // Subtab for purchase orders: pending (transit) vs received (history)
-  const [ordersSubTab, setOrdersSubTab] = useState<"pending" | "received">("pending");
+  // Subtab for purchase orders: pending | transit | received
+  const [ordersSubTab, setOrdersSubTab] = useState<"pending" | "transit" | "received">("pending");
+
+  // Pagination states
+  const [productPage, setProductPage] = useState(1);
+  const [productPageSize, setProductPageSize] = useState(20);
 
   // Form State - Defaulting Unit to "Unidad"
   const [formData, setFormData] = useState({
@@ -294,10 +307,79 @@ export default function BusinessInventoryPage() {
   });
   const [editOrderFile, setEditOrderFile] = useState<File | null>(null);
 
+  // ── Add-to-planner: search existing inventory products ──
+  const [isAddProductToOrderOpen, setIsAddProductToOrderOpen] = useState(false);
+  const [addProductSearch, setAddProductSearch] = useState("");
+  // Extra manually-added planner items (from existing inventory or newly created)
+  const [extraPlannerItems, setExtraPlannerItems] = useState<Array<{
+    id: string;
+    name: string;
+    sku?: string;
+    unit: string;
+    costPrice: number;
+    salePrice: number;
+    stock: number;
+    minStock: number;
+    soldQty: number;
+    deficit: number;
+    imageUrl?: string;
+    presentations?: any[];
+    brandId?: string;
+    familyId?: string;
+    isNew?: boolean; // true = not yet in DB, will be created on purchase
+  }>>([]);
+
+  // ── New product quick-register modal ──
+  const [isNewProductForOrderOpen, setIsNewProductForOrderOpen] = useState(false);
+  const [newOrderProductData, setNewOrderProductData] = useState({
+    name: "",
+    sku: "",
+    unit: "Unidad",
+    costPrice: 0,
+    salePrice: 0,
+    quantity: 1,
+  });
+
+  // ── Pay order modal (for PENDING orders) ──
+  const [isPayOrderModalOpen, setIsPayOrderModalOpen] = useState(false);
+  const [payingOrderId, setPayingOrderId] = useState<string | null>(null);
+  const [payingOrderTotal, setPayingOrderTotal] = useState(0);
+  const [payOrderData, setPayOrderData] = useState({
+    categoryId: "",
+    paymentMethod: "CASH",
+  });
+  const [payOrderFile, setPayOrderFile] = useState<File | null>(null);
+
   // Barcode Printing States
   const [ticketProductId, setTicketProductId] = useState("");
   const [ticketQuantity, setTicketQuantity] = useState(12);
   const [ticketBusinessName, setTicketBusinessName] = useState(user?.businessName || "Think");
+  const [labelSearchTerm, setLabelSearchTerm] = useState("");
+  const [labelFilterBrandId, setLabelFilterBrandId] = useState("");
+  const [labelFilterFamilyId, setLabelFilterFamilyId] = useState("");
+
+  const labelFilteredProducts = useMemo(() => {
+    return products.filter((p) => {
+      const name = p.name.toLowerCase();
+      const sku = (p.sku || "").toLowerCase();
+      const customCode = String((p as any).customCode || "").toLowerCase();
+      const search = labelSearchTerm.toLowerCase();
+
+      const matchesSearch = !labelSearchTerm || name.includes(search) || sku.includes(search) || customCode.includes(search);
+      const matchesBrand = !labelFilterBrandId || p.brandId === labelFilterBrandId;
+      const matchesFamily = !labelFilterFamilyId || p.familyId === labelFilterFamilyId;
+
+      return matchesSearch && matchesBrand && matchesFamily;
+    });
+  }, [products, labelSearchTerm, labelFilterBrandId, labelFilterFamilyId]);
+
+  // Premium metrics computations
+  const totalProducts = products.length;
+  const criticalStockCount = products.filter(p => p.stock <= p.minStock).length;
+  const totalInventoryCost = products.reduce((acc, p) => acc + (p.stock * p.costPrice), 0);
+  const totalInventorySale = products.reduce((acc, p) => acc + (p.stock * p.salePrice), 0);
+  const potentialProfit = totalInventorySale - totalInventoryCost;
+  const expectedProfitMargin = totalInventorySale > 0 ? (potentialProfit / totalInventorySale) * 100 : 0;
 
   const loadData = async () => {
     try {
@@ -339,10 +421,10 @@ export default function BusinessInventoryPage() {
         getPurchaseOrdersRequest(),
       ]);
 
-      // Extract product IDs of pending orders
+      // Extract product IDs of PENDING or PAID (in transit) orders
       const pendingProductIds = new Set<string>();
       orders
-        .filter((order) => order.status === "ORDERED")
+        .filter((order) => order.status === "PENDING" || order.status === "PAID")
         .forEach((order) => {
           order.items.forEach((item) => {
             pendingProductIds.add(item.productId);
@@ -392,27 +474,30 @@ export default function BusinessInventoryPage() {
     }
   }, [activeTab, plannerMonth]);
 
-  // Render Barcodes in the ticket print preview sheet
+  // Render QR Codes in the ticket print preview sheet
   useEffect(() => {
     if (activeTab === "labels" && ticketProductId) {
-      loadJsBarcode().then((JsBarcode) => {
+      loadQrCodeGenerator().then((QRCodeObj) => {
         const prod = products.find((p) => p.id === ticketProductId);
-        if (prod && prod.sku) {
-          const svgs = document.querySelectorAll(".barcode-preview-svg");
-          svgs.forEach((svg) => {
-            try {
-              JsBarcode(svg, prod.sku, {
-                format: "CODE128",
-                width: 1.5,
-                height: 35,
-                displayValue: true,
-                fontSize: 10,
-                margin: 4,
-              });
-            } catch (err) {
-              console.error("JsBarcode error rendering", err);
-            }
-          });
+        if (prod) {
+          const qrText = prod.sku || String(prod.customCode || 0).padStart(4, "0");
+          setTimeout(() => {
+            const canvases = document.querySelectorAll(".qr-preview-canvas");
+            canvases.forEach((canvas) => {
+              try {
+                QRCodeObj.toCanvas(canvas, qrText, {
+                  width: 60,
+                  margin: 1,
+                  color: {
+                    dark: "#000000",
+                    light: "#ffffff"
+                  }
+                });
+              } catch (err) {
+                console.error("QRCode rendering error", err);
+              }
+            });
+          }, 50);
         }
       });
     }
@@ -451,7 +536,14 @@ export default function BusinessInventoryPage() {
 
   const handleBarcodeScanned = (code: string) => {
     toast.success(`Código escaneado: ${code}`);
-    const match = products.find((p) => p.sku?.toLowerCase() === code.trim().toLowerCase());
+    const cleanCode = code.trim().toLowerCase();
+    const match = products.find((p) => {
+      const matchesSku = p.sku && p.sku.toLowerCase() === cleanCode;
+      const matchesCodeRaw = p.customCode && String(p.customCode) === cleanCode;
+      const matchesCodePadded = p.customCode && String(p.customCode).padStart(4, "0") === cleanCode;
+      return matchesSku || matchesCodeRaw || matchesCodePadded;
+    });
+
     if (match) {
       handleOpenModal(match);
       toast.success(`Producto encontrado: ${match.name}`);
@@ -473,7 +565,7 @@ export default function BusinessInventoryPage() {
         familyId: "",
       });
       setIsModalOpen(true);
-      toast("Código de barras nuevo. Rellene los datos para registrarlo.", { icon: "ℹ️" });
+      toast("Código nuevo. Rellene los datos para registrarlo.", { icon: "ℹ️" });
     }
   };
 
@@ -619,6 +711,12 @@ export default function BusinessInventoryPage() {
 
   const handleBulkPurchaseSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Build the combined list of all planner rows (deficit items + manually added)
+    const allItems = [
+      ...plannerItems,
+      ...extraPlannerItems,
+    ];
+
     if (!singlePurchaseItem && selectedItemIds.length === 0) {
       toast.error("No has seleccionado ningún producto para comprar");
       return;
@@ -637,7 +735,7 @@ export default function BusinessInventoryPage() {
             costPrice: customCosts[singlePurchaseItem.id] ?? singlePurchaseItem.costPrice,
           },
         ]
-      : plannerItems
+      : allItems
           .filter(item => selectedItemIds.includes(item.id))
           .map(item => {
             const qty = customQuantities[item.id] ?? item.deficit;
@@ -673,13 +771,14 @@ export default function BusinessInventoryPage() {
       toast.success(
         bulkPurchaseData.receiveImmediately
           ? "Compra registrada e ingresada al stock"
-          : "Pedido de compra registrado en tránsito"
+          : "Pedido de compra registrado. Podrás confirmar el pago cuando esté listo."
       );
       setIsBulkPurchaseModalOpen(false);
       // Reset state
       setSelectedItemIds([]);
       setSinglePurchaseItem(null);
       setBulkPurchaseFile(null);
+      setExtraPlannerItems([]);
       setBulkPurchaseData({
         categoryId: "",
         paymentMethod: "CASH",
@@ -694,6 +793,7 @@ export default function BusinessInventoryPage() {
       toast.error(err?.response?.data?.message || "Error al registrar la compra");
     }
   };
+
 
   const handleEditOrderSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -767,10 +867,39 @@ export default function BusinessInventoryPage() {
     setIsConfirmOpen(true);
   };
 
+  /**
+   * Eliminar pedido: Solo si NO tiene registro en Tesorería (status=PENDING sin pago confirmado).
+   * Si tiene registro en Tesorería, debe cancelarse primero usando handleCancelOrder.
+   */
   const handleDeleteOrder = async (orderId: string) => {
+    const order = purchaseOrders.find(o => o.id === orderId);
+    if (!order) return;
+
+    // Si el pedido ya está en Tesorería (PAID o RECEIVED), no se puede eliminar directamente
+    if (order.status === "PAID" || order.status === "RECEIVED") {
+      setConfirmConfig({
+        title: "⚠️ Pedido Registrado en Tesorería",
+        message: `Este pedido ya fue confirmado (Pago registrado en Tesorería). No se puede eliminar directamente.\n\n¿Desea CANCELARLO? Esto marcará el pedido como cancelado y también anulará el registro correspondiente en Tesorería.\n\n${order.status === "RECEIVED" ? "⛔ IMPORTANTE: Este pedido ya fue ingresado al almacén. Primero debe revertir el ingreso de stock y luego cancelarlo." : ""}`,
+        confirmText: order.status === "RECEIVED" ? "Revertir Ingreso Primero" : "Sí, Cancelar Pedido",
+        cancelText: "No, Mantener",
+        variant: "warning",
+        onConfirm: async () => {
+          if (order.status === "RECEIVED") {
+            // Dirigir al usuario a revertir primero
+            toast.error("Primero debe revertir el ingreso de stock usando el botón 'Revertir Ingreso', luego podrá cancelar el pedido.", { duration: 6000 });
+            return;
+          }
+          await handleCancelOrder(orderId);
+        }
+      });
+      setIsConfirmOpen(true);
+      return;
+    }
+
+    // PENDING sin registro en Tesorería → eliminar directamente
     setConfirmConfig({
-      title: "Cancelar / Eliminar Pedido",
-      message: "¿Estás seguro de que deseas cancelar y eliminar este pedido permanentemente? Esta acción no se puede deshacer.",
+      title: "Eliminar Pedido",
+      message: "Este pedido aún no fue confirmado (no tiene registro en Tesorería). ¿Estás seguro de que deseas eliminarlo permanentemente?",
       confirmText: "Eliminar Pedido",
       cancelText: "Cancelar",
       variant: "danger",
@@ -779,12 +908,39 @@ export default function BusinessInventoryPage() {
           await deletePurchaseOrderRequest(orderId);
           toast.success("Pedido eliminado correctamente");
           loadOrders();
+          loadPlannerData();
+          loadData();
         } catch (err: any) {
-          toast.error(err?.response?.data?.message || "Error al eliminar pedido");
+          const errMsg: string = err?.response?.data?.message || "";
+          // El backend puede devolver un mensaje especial si hay registro en Tesorería
+          if (errMsg.startsWith("TREASURY_RECORD_EXISTS")) {
+            toast.error("Este pedido tiene registro en Tesorería. Use el botón Cancelar en lugar de Eliminar.", { duration: 6000 });
+          } else {
+            toast.error(errMsg || "Error al eliminar pedido");
+          }
         }
       }
     });
     setIsConfirmOpen(true);
+  };
+
+  /**
+   * Cancelar pedido: Marca el pedido como CANCELLED y también cancela el registro en Tesorería si existe.
+   * Usar cuando el pedido ya fue pagado (status=PAID) y está registrado en Tesorería.
+   */
+  const handleCancelOrder = async (orderId: string) => {
+    const t = toast.loading("Cancelando pedido...");
+    try {
+      await cancelPurchaseOrderRequest(orderId);
+      toast.dismiss(t);
+      toast.success("Pedido cancelado. El registro en Tesorería también fue anulado.");
+      loadOrders();
+      loadPlannerData();
+      loadData();
+    } catch (err: any) {
+      toast.dismiss(t);
+      toast.error(err?.response?.data?.message || "Error al cancelar pedido");
+    }
   };
 
   const handleRevertOrder = async (orderId: string) => {
@@ -812,7 +968,144 @@ export default function BusinessInventoryPage() {
     setIsConfirmOpen(true);
   };
 
+  // ── Pay Order handler (PENDING → PAID) ──
+  const handleOpenPayOrder = (order: PurchaseOrder) => {
+    setPayingOrderId(order.id);
+    setPayingOrderTotal(order.totalCost);
+    setPayOrderData({ categoryId: categories[0]?.id || "", paymentMethod: order.paymentMethod || "CASH" });
+    setPayOrderFile(null);
+    setIsPayOrderModalOpen(true);
+  };
+
+  const handlePayOrderSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!payingOrderId) return;
+    if (!payOrderData.categoryId) {
+      toast.error("Selecciona una categoría de egreso");
+      return;
+    }
+
+    const confirmPay = async (withoutReceipt: boolean) => {
+      const t = toast.loading("Registrando pago...");
+      try {
+        let finalReceiptUrl: string | null = null;
+        if (payOrderFile) {
+          const { uploadProductImageFile } = await import("../components/ui/ImageUploader");
+          finalReceiptUrl = await uploadProductImageFile(payOrderFile);
+        }
+        await payPurchaseOrderRequest(payingOrderId, {
+          categoryId: payOrderData.categoryId,
+          paymentMethod: payOrderData.paymentMethod,
+          receiptUrl: finalReceiptUrl || null,
+        });
+        toast.dismiss(t);
+        toast.success(withoutReceipt ? "Pago registrado sin comprobante" : "Pago registrado correctamente");
+        setIsPayOrderModalOpen(false);
+        setPayingOrderId(null);
+        setPayOrderFile(null);
+        loadOrders();
+        loadPlannerData();
+      } catch (err: any) {
+        toast.dismiss(t);
+        toast.error(err?.response?.data?.message || "Error al registrar el pago");
+      }
+    };
+
+    if (!payOrderFile) {
+      // Warn: no receipt attached
+      setConfirmConfig({
+        title: "Sin comprobante",
+        message: "No subiste comprobante. ¿Deseas de todos modos confirmar el pago?",
+        confirmText: "Sí, confirmar pago",
+        cancelText: "Cancelar",
+        variant: "warning",
+        onConfirm: () => confirmPay(true),
+      });
+      setIsConfirmOpen(true);
+    } else {
+      await confirmPay(false);
+    }
+  };
+
+  // ── Add existing inventory product to planner ──
+  const handleAddExistingProductToPlanner = (product: Product) => {
+    const alreadyIn = plannerItems.some(i => i.id === product.id) || extraPlannerItems.some(i => i.id === product.id);
+    if (alreadyIn) {
+      toast.error("Este producto ya está en el planificador");
+      return;
+    }
+    const newItem = {
+      ...product,
+      soldQty: 0,
+      deficit: 0,
+      presentations: product.presentations || [],
+    };
+    setExtraPlannerItems(prev => [...prev, newItem]);
+    setSelectedItemIds(prev => [...prev, product.id]);
+    setCustomQuantities(prev => ({ ...prev, [product.id]: 1 }));
+    setCustomCosts(prev => ({ ...prev, [product.id]: product.costPrice }));
+    setIsAddProductToOrderOpen(false);
+    setAddProductSearch("");
+    toast.success(`"${product.name}" agregado al planificador`);
+  };
+
+  // ── Add completely new product to planner (will be created in DB on purchase) ──
+  const handleAddNewProductToPlanner = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newOrderProductData.name.trim()) {
+      toast.error("El nombre del producto es requerido");
+      return;
+    }
+    const t = toast.loading("Creando producto en inventario...");
+    try {
+      const created = await createProductRequest({
+        name: newOrderProductData.name.trim(),
+        sku: newOrderProductData.sku || undefined,
+        unit: newOrderProductData.unit || "Unidad",
+        costPrice: newOrderProductData.costPrice,
+        salePrice: newOrderProductData.salePrice,
+        stock: 0,
+        minStock: 0,
+        description: "",
+        imageUrl: "",
+        presentations: [],
+        brandId: undefined,
+        familyId: undefined,
+      } as any);
+      toast.dismiss(t);
+      toast.success(`Producto "${created.name}" creado. Ahora lo puedes incluir en tu compra.`);
+
+      // Add to extra planner items so user can include it in the purchase order
+      const newItem = {
+        ...created,
+        soldQty: 0,
+        deficit: 0,
+        isNew: true,
+      };
+      setExtraPlannerItems(prev => [...prev, newItem]);
+      setSelectedItemIds(prev => [...prev, created.id]);
+      setCustomQuantities(prev => ({ ...prev, [created.id]: newOrderProductData.quantity || 1 }));
+      setCustomCosts(prev => ({ ...prev, [created.id]: newOrderProductData.costPrice }));
+
+      // Reset form and close
+      setNewOrderProductData({ name: "", sku: "", unit: "Unidad", costPrice: 0, salePrice: 0, quantity: 1 });
+      setIsNewProductForOrderOpen(false);
+    } catch (err: any) {
+      toast.dismiss(t);
+      toast.error(err?.response?.data?.message || "Error al crear el producto");
+    }
+  };
+
+  // ── Remove an extra planner item ──
+  const handleRemoveExtraPlannerItem = (id: string) => {
+    setExtraPlannerItems(prev => prev.filter(i => i.id !== id));
+    setSelectedItemIds(prev => prev.filter(i => i !== id));
+    setCustomQuantities(prev => { const n = { ...prev }; delete n[id]; return n; });
+    setCustomCosts(prev => { const n = { ...prev }; delete n[id]; return n; });
+  };
+
   const handleExportExcel = async () => {
+
     const itemsToExport = selectedItemIds.length > 0
       ? plannerItems.filter(item => selectedItemIds.includes(item.id))
       : plannerItems;
@@ -1037,9 +1330,9 @@ export default function BusinessInventoryPage() {
               <div className="inline-flex items-center justify-center p-3 bg-white/10 backdrop-blur-md rounded-2xl mb-4 border border-white/20 shadow-sm">
                 <Package className="w-8 h-8 text-white" />
               </div>
-              <h1 className="text-4xl font-black tracking-tight">Inventario de Negocio</h1>
+              <h1 className="text-4xl font-black tracking-tight">Almacén y Abastecimiento</h1>
               <p className="text-indigo-100/80 font-medium mt-2 max-w-lg">
-                Gestiona mercancías, controla stock bajo, genera etiquetas con códigos de barras y planifica compras de reabastecimiento.
+                Gestiona mercancías, controla stock bajo, genera etiquetas con códigos QR y planifica compras de reabastecimiento.
               </p>
             </div>
             <div className="flex gap-3">
@@ -1103,6 +1396,66 @@ export default function BusinessInventoryPage() {
           >
             {activeTab === "products" && (
               <div className="space-y-6">
+                {/* METRICS SUMMARY GRID */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 no-print animate-fade-in-up">
+                  {/* Metric 1 */}
+                  <div className="bg-white rounded-3xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition-shadow flex items-center gap-4 relative overflow-hidden group">
+                    <div className="absolute right-[-10px] top-[-10px] w-24 h-24 bg-blue-50/50 rounded-full group-hover:scale-110 transition-transform duration-300 pointer-events-none"></div>
+                    <div className="p-3 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl text-white shadow-md shadow-blue-100 shrink-0">
+                      <Package className="w-6 h-6" />
+                    </div>
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-black uppercase text-gray-400 tracking-wider block">Catálogo</span>
+                      <h4 className="text-xl font-black text-gray-900 mt-0.5 leading-none">{totalProducts}</h4>
+                      <span className="text-[11px] text-gray-500 font-semibold block mt-1">Modelos registrados</span>
+                    </div>
+                  </div>
+
+                  {/* Metric 2 */}
+                  <div className="bg-white rounded-3xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition-shadow flex items-center gap-4 relative overflow-hidden group">
+                    <div className="absolute right-[-10px] top-[-10px] w-24 h-24 bg-rose-50/50 rounded-full group-hover:scale-110 transition-transform duration-300 pointer-events-none"></div>
+                    <div className={`p-3 rounded-2xl text-white shadow-md shrink-0 ${criticalStockCount > 0 ? 'bg-gradient-to-br from-rose-500 to-red-600 shadow-rose-100 animate-pulse' : 'bg-gradient-to-br from-gray-400 to-gray-500 shadow-gray-100'}`}>
+                      <AlertTriangle className="w-6 h-6" />
+                    </div>
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-black uppercase text-gray-400 tracking-wider block">Alertas de Stock</span>
+                      <h4 className={`text-xl font-black mt-0.5 leading-none ${criticalStockCount > 0 ? 'text-rose-600' : 'text-gray-900'}`}>{criticalStockCount}</h4>
+                      <span className="text-[11px] text-gray-500 font-semibold block mt-1">Productos agotándose</span>
+                    </div>
+                  </div>
+
+                  {/* Metric 3 */}
+                  <div className="bg-white rounded-3xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition-shadow flex items-center gap-4 relative overflow-hidden group">
+                    <div className="absolute right-[-10px] top-[-10px] w-24 h-24 bg-emerald-50/50 rounded-full group-hover:scale-110 transition-transform duration-300 pointer-events-none"></div>
+                    <div className="p-3 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl text-white shadow-md shadow-emerald-100 shrink-0">
+                      <DollarSign className="w-6 h-6" />
+                    </div>
+                    <div className="min-w-0 font-sans">
+                      <span className="text-[10px] font-black uppercase text-gray-400 tracking-wider block">Valor Almacén (Costo)</span>
+                      <h4 className="text-base font-black text-gray-900 mt-0.5 leading-none font-mono">
+                        S/ {totalInventoryCost.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </h4>
+                      <span className="text-[11px] text-gray-500 font-semibold block mt-1">Capital invertido</span>
+                    </div>
+                  </div>
+
+                  {/* Metric 4 */}
+                  <div className="bg-white rounded-3xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition-shadow flex items-center gap-4 relative overflow-hidden group">
+                    <div className="absolute right-[-10px] top-[-10px] w-24 h-24 bg-purple-50/50 rounded-full group-hover:scale-110 transition-transform duration-300 pointer-events-none"></div>
+                    <div className="p-3 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-2xl text-white shadow-md shadow-purple-100 shrink-0">
+                      <TrendingUp className="w-6 h-6" />
+                    </div>
+                    <div className="min-w-0 font-sans">
+                      <span className="text-[10px] font-black uppercase text-gray-400 tracking-wider block">Venta Estimada</span>
+                      <h4 className="text-base font-black text-gray-900 mt-0.5 leading-none font-mono">
+                        S/ {totalInventorySale.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </h4>
+                      <span className="text-[11px] text-indigo-600 font-black block mt-1">
+                        Rentab: {expectedProfitMargin.toFixed(1)}% margen
+                      </span>
+                    </div>
+                  </div>
+                </div>
                 {/* SEARCH + FILTER CONTROLS */}
                 <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
                   {/* Search input */}
@@ -1186,7 +1539,11 @@ export default function BusinessInventoryPage() {
                 )}
 
                 {/* PRODUCT GRID */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {(() => {
+                  const paginatedProducts = filteredProducts.slice((productPage - 1) * productPageSize, productPage * productPageSize);
+                  return (
+                    <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                   {loading ? (
                     Array.from({ length: 8 }).map((_, i) => (
                       <div
@@ -1206,7 +1563,7 @@ export default function BusinessInventoryPage() {
                       </p>
                     </div>
                   ) : (
-                    filteredProducts.map((p) => (
+                    paginatedProducts.map((p) => (
                       <div
                         key={p.id}
                         className="bg-white rounded-3xl border border-gray-100 shadow-sm hover:shadow-xl hover:border-indigo-100 transition-all duration-300 group overflow-hidden flex flex-col relative"
@@ -1245,13 +1602,20 @@ export default function BusinessInventoryPage() {
                             <h3 className="font-black text-gray-900 text-sm leading-tight mb-1 truncate" title={p.name}>
                               {p.name}
                             </h3>
-                            {p.sku ? (
-                              <p className="text-[10px] text-gray-400 font-bold font-mono tracking-tight mb-1.5">
-                                SKU / BAR: {p.sku}
-                              </p>
-                            ) : (
-                              <p className="text-[10px] text-gray-300 italic mb-1.5">Sin código</p>
-                            )}
+                            <div className="flex items-center gap-1.5 text-[10px] font-mono tracking-tight mb-1.5">
+                              <span className="text-indigo-600 bg-indigo-50 font-black px-1.5 py-0.5 rounded">
+                                Cód: {String((p as any).customCode || 0).padStart(4, "0")}
+                              </span>
+                              {p.sku ? (
+                                <span className="text-gray-400 font-bold">
+                                  • SKU: {p.sku}
+                                </span>
+                              ) : (
+                                <span className="text-gray-300 italic font-medium">
+                                  • Sin SKU
+                                </span>
+                              )}
+                            </div>
 
                             {/* Brand / Family Badges */}
                             {(p.brand || p.family) && (
@@ -1364,6 +1728,20 @@ export default function BusinessInventoryPage() {
                     ))
                   )}
                 </div>
+                {/* Pagination for products grid */}
+                {!loading && filteredProducts.length > 0 && (
+                  <Pagination
+                    currentPage={productPage}
+                    totalItems={filteredProducts.length}
+                    pageSize={productPageSize}
+                    onPageChange={(p) => setProductPage(p)}
+                    onPageSizeChange={(s) => { setProductPageSize(s); setProductPage(1); }}
+                    className="border-t border-gray-100 pt-4 mt-2"
+                  />
+                )}
+                    </>
+                  );
+                })()}
               </div>
             )}
 
@@ -1379,6 +1757,23 @@ export default function BusinessInventoryPage() {
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-3">
+                      {/* NEW: Add product & New product buttons */}
+                      <button
+                        onClick={() => setIsAddProductToOrderOpen(true)}
+                        className="bg-blue-50 hover:bg-blue-100 text-blue-700 px-4 py-2.5 rounded-2xl text-xs font-bold flex items-center gap-2 transition-all active:scale-95 border border-blue-100"
+                        title="Agregar producto del inventario al planificador"
+                      >
+                        <ListPlus className="w-4 h-4" />
+                        Agregar Producto
+                      </button>
+                      <button
+                        onClick={() => setIsNewProductForOrderOpen(true)}
+                        className="bg-purple-50 hover:bg-purple-100 text-purple-700 px-4 py-2.5 rounded-2xl text-xs font-bold flex items-center gap-2 transition-all active:scale-95 border border-purple-100"
+                        title="Registrar un nuevo producto para esta compra"
+                      >
+                        <PackagePlus className="w-4 h-4" />
+                        Nuevo Producto
+                      </button>
                       <div className="flex items-center gap-2 bg-slate-50 border border-gray-200 px-4 py-2.5 rounded-2xl text-xs font-bold text-gray-700">
                         <Calendar className="w-4 h-4 text-indigo-500" />
                         <span>Analizar ventas del mes:</span>
@@ -1389,6 +1784,7 @@ export default function BusinessInventoryPage() {
                           className="bg-transparent border-none outline-none font-bold text-indigo-600 ml-1 cursor-pointer focus:ring-0 p-0 text-xs"
                         />
                       </div>
+
                       <button
                         onClick={handleCopyShoppingList}
                         className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-4 py-2.5 rounded-2xl text-xs font-bold flex items-center gap-2 transition-all active:scale-95"
@@ -1421,11 +1817,11 @@ export default function BusinessInventoryPage() {
                       <Loader2 className="w-10 h-10 animate-spin text-indigo-600" />
                       <p className="font-bold text-sm">Calculando análisis de abastecimiento...</p>
                     </div>
-                  ) : plannerItems.length === 0 ? (
+                  ) : plannerItems.length === 0 && extraPlannerItems.length === 0 ? (
                     <div className="py-16 text-center text-gray-400 flex flex-col items-center">
                       <Sparkles className="w-12 h-12 text-emerald-500 mb-3 opacity-60" />
                       <p className="font-extrabold text-gray-800 text-lg">¡Stock Óptimo!</p>
-                      <p className="text-xs text-gray-500 font-medium mt-1">Ninguno de tus productos se encuentra por debajo del stock mínimo en este momento.</p>
+                      <p className="text-xs text-gray-500 font-medium mt-1">Ninguno de tus productos se encuentra por debajo del stock mínimo. Usa los botones de arriba para agregar productos a tu compra.</p>
                     </div>
                   ) : (
                     <div className="space-y-4">
@@ -1436,10 +1832,10 @@ export default function BusinessInventoryPage() {
                               <th className="py-4 px-4 text-center" style={{ width: "40px" }}>
                                 <input
                                   type="checkbox"
-                                  checked={selectedItemIds.length === plannerItems.length && plannerItems.length > 0}
+                                  checked={selectedItemIds.length === (plannerItems.length + extraPlannerItems.length) && (plannerItems.length + extraPlannerItems.length) > 0}
                                   onChange={(e) => {
                                     if (e.target.checked) {
-                                      setSelectedItemIds(plannerItems.map((item) => item.id));
+                                      setSelectedItemIds([...plannerItems.map((item) => item.id), ...extraPlannerItems.map(i => i.id)]);
                                     } else {
                                       setSelectedItemIds([]);
                                     }
@@ -1459,12 +1855,13 @@ export default function BusinessInventoryPage() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-50 text-sm">
-                            {plannerItems.map((item) => {
+                            {[...plannerItems, ...extraPlannerItems].map((item) => {
+                              const isExtra = extraPlannerItems.some(e => e.id === item.id);
                               const buyQty = customQuantities[item.id] ?? item.deficit;
                               const cost = customCosts[item.id] ?? item.costPrice;
                               const subtotal = buyQty * cost;
                               return (
-                                <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
+                                <tr key={item.id} className={`hover:bg-slate-50/60 transition-colors ${isExtra ? 'bg-blue-50/20' : ''}`}>
                                   <td className="py-3.5 px-4 text-center">
                                     <input
                                       type="checkbox"
@@ -1494,8 +1891,15 @@ export default function BusinessInventoryPage() {
                                         </div>
                                       )}
                                       <div>
-                                        <div className="font-extrabold text-gray-900">{item.name}</div>
-                                        <div className="text-[10px] text-gray-400 font-mono font-semibold">{item.sku || "Sin SKU"}</div>
+                                        <div className="font-extrabold text-gray-900 flex items-center gap-1.5">
+                                          {item.name}
+                                          {isExtra && (
+                                            <span className="text-[9px] bg-blue-100 text-blue-700 font-black px-1.5 py-0.5 rounded-md">
+                                              {(item as any).isNew ? 'NUEVO' : 'AGREGADO'}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="text-[10px] text-gray-400 font-mono font-semibold">{item.sku || 'Sin SKU'}</div>
                                       </div>
                                     </div>
                                   </td>
@@ -1509,7 +1913,7 @@ export default function BusinessInventoryPage() {
                                     {item.soldQty} {item.unit}
                                   </td>
                                   <td className="py-3.5 px-4 text-center font-bold text-amber-600">
-                                    {item.deficit} {item.unit}
+                                    {item.deficit > 0 ? `${item.deficit} ${item.unit}` : <span className="text-gray-300">—</span>}
                                   </td>
                                   <td className="py-3.5 px-4 text-right font-medium">
                                     <input
@@ -1544,7 +1948,7 @@ export default function BusinessInventoryPage() {
                                     <div className="flex items-center justify-center gap-1.5">
                                       <button
                                         onClick={() => {
-                                          setSinglePurchaseItem(item);
+                                          setSinglePurchaseItem(item as any);
                                           setBulkPurchaseFile(null);
                                           setBulkPurchaseData({
                                             categoryId: "",
@@ -1555,17 +1959,28 @@ export default function BusinessInventoryPage() {
                                           setIsBulkPurchaseModalOpen(true);
                                         }}
                                         className="px-2.5 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-bold flex items-center gap-1 transition-colors"
-                                        title="Registrar pedido de compra en tránsito para este producto"
+                                        title="Comprar solo este producto"
                                       >
                                         Comprar
                                       </button>
-                                      <button
-                                        onClick={() => handleOpenModal(item)}
-                                        className="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700"
-                                        title="Editar datos de ficha técnica"
-                                      >
-                                        <Edit2 className="w-3.5 h-3.5" />
-                                      </button>
+                                      {!isExtra && (
+                                        <button
+                                          onClick={() => handleOpenModal(item as any)}
+                                          className="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700"
+                                          title="Editar datos de ficha técnica"
+                                        >
+                                          <Edit2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      )}
+                                      {isExtra && (
+                                        <button
+                                          onClick={() => handleRemoveExtraPlannerItem(item.id)}
+                                          className="p-1.5 bg-rose-50 hover:bg-rose-100 rounded-lg text-rose-600"
+                                          title="Quitar del planificador"
+                                        >
+                                          <X className="w-3.5 h-3.5" />
+                                        </button>
+                                      )}
                                     </div>
                                   </td>
                                 </tr>
@@ -1577,7 +1992,7 @@ export default function BusinessInventoryPage() {
                               <td className="py-4 px-5 text-gray-700">Total Planificado (Todos)</td>
                               <td colSpan={6}></td>
                               <td className="py-4 px-4 text-right text-indigo-900 text-base">
-                                S/ {plannerItems.reduce((acc, item) => {
+                                S/ {[...plannerItems, ...extraPlannerItems].reduce((acc, item) => {
                                   const qty = customQuantities[item.id] ?? item.deficit;
                                   const cost = customCosts[item.id] ?? item.costPrice;
                                   return acc + (qty * cost);
@@ -1593,10 +2008,10 @@ export default function BusinessInventoryPage() {
                       <div className="flex flex-col sm:flex-row justify-between items-center bg-indigo-50 border border-indigo-100 p-4 rounded-2xl gap-4">
                         <div className="text-xs font-bold text-indigo-900">
                           {selectedItemIds.length === 0 ? (
-                            <span>No has seleccionado productos.</span>
+                            <span>No has seleccionado productos. Selecciona uno o más para comprar masivamente.</span>
                           ) : (
                             <span>
-                              Has seleccionado <span className="text-indigo-600 font-extrabold">{selectedItemIds.length}</span> producto(s) para compra masiva. Costo total estimado: <span className="text-indigo-600 font-black text-sm">S/ {plannerItems
+                              Has seleccionado <span className="text-indigo-600 font-extrabold">{selectedItemIds.length}</span> producto(s). Costo estimado: <span className="text-indigo-600 font-black text-sm">S/ {[...plannerItems, ...extraPlannerItems]
                                 .filter(item => selectedItemIds.includes(item.id))
                                 .reduce((acc, item) => {
                                   const qty = customQuantities[item.id] ?? item.deficit;
@@ -1606,6 +2021,7 @@ export default function BusinessInventoryPage() {
                             </span>
                           )}
                         </div>
+
                         <button
                           onClick={() => {
                             if (selectedItemIds.length === 0) {
@@ -1633,25 +2049,37 @@ export default function BusinessInventoryPage() {
                       <h3 className="text-lg font-black text-gray-900">Control de Pedidos y Compras</h3>
                     </div>
                     {/* Sub-tabs */}
-                    <div className="flex bg-slate-100 p-1 rounded-2xl w-full sm:w-auto">
+                    <div className="flex bg-slate-100 p-1 rounded-2xl w-full sm:w-auto gap-0.5">
                       <button
                         type="button"
                         onClick={() => setOrdersSubTab("pending")}
-                        className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 ${ordersSubTab === "pending" ? "bg-white text-indigo-700 shadow-sm" : "text-gray-500 hover:text-gray-900"}`}
+                        className={`flex-1 sm:flex-initial px-3 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 ${ordersSubTab === "pending" ? "bg-white text-amber-700 shadow-sm" : "text-gray-500 hover:text-gray-900"}`}
+                      >
+                        Por Pagar
+                        {purchaseOrders.filter(o => o.status === "PENDING").length > 0 && (
+                          <span className="bg-amber-100 text-amber-800 text-[10px] px-2 py-0.5 rounded-full font-black">
+                            {purchaseOrders.filter(o => o.status === "PENDING").length}
+                          </span>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setOrdersSubTab("transit")}
+                        className={`flex-1 sm:flex-initial px-3 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 ${ordersSubTab === "transit" ? "bg-white text-indigo-700 shadow-sm" : "text-gray-500 hover:text-gray-900"}`}
                       >
                         En Tránsito
-                        {purchaseOrders.filter(o => o.status === "ORDERED").length > 0 && (
-                          <span className="bg-amber-100 text-amber-800 text-[10px] px-2 py-0.5 rounded-full font-black">
-                            {purchaseOrders.filter(o => o.status === "ORDERED").length}
+                        {purchaseOrders.filter(o => o.status === "PAID").length > 0 && (
+                          <span className="bg-indigo-100 text-indigo-800 text-[10px] px-2 py-0.5 rounded-full font-black">
+                            {purchaseOrders.filter(o => o.status === "PAID").length}
                           </span>
                         )}
                       </button>
                       <button
                         type="button"
                         onClick={() => setOrdersSubTab("received")}
-                        className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 ${ordersSubTab === "received" ? "bg-white text-indigo-700 shadow-sm" : "text-gray-500 hover:text-gray-900"}`}
+                        className={`flex-1 sm:flex-initial px-3 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 ${ordersSubTab === "received" ? "bg-white text-emerald-700 shadow-sm" : "text-gray-500 hover:text-gray-900"}`}
                       >
-                        Compras Realizadas
+                        Compras
                         {purchaseOrders.filter(o => o.status === "RECEIVED").length > 0 && (
                           <span className="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-black">
                             {purchaseOrders.filter(o => o.status === "RECEIVED").length}
@@ -1667,16 +2095,16 @@ export default function BusinessInventoryPage() {
                       <p className="font-bold text-xs">Cargando pedidos...</p>
                     </div>
                   ) : ordersSubTab === "pending" ? (
-                    purchaseOrders.filter(o => o.status === "ORDERED").length === 0 ? (
+                    purchaseOrders.filter(o => o.status === "PENDING").length === 0 ? (
                       <div className="py-12 bg-slate-50 border border-dashed border-gray-200 rounded-3xl text-center text-gray-400 flex flex-col items-center justify-center">
                         <Truck className="w-10 h-10 text-slate-300 mb-2" />
-                        <p className="font-bold text-sm text-gray-700">No hay pedidos en tránsito</p>
-                        <p className="text-xs text-gray-500 mt-0.5">Todas tus compras anteriores están ingresadas en stock.</p>
+                        <p className="font-bold text-sm text-gray-700">No hay pedidos pendientes de pago</p>
+                        <p className="text-xs text-gray-500 mt-0.5">Cuando crees un pedido sin comprobante aparecerá aquí.</p>
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {purchaseOrders.filter(o => o.status === "ORDERED").map((order) => (
-                          <div key={order.id} className="bg-white border border-gray-100 rounded-3xl p-5 shadow-sm space-y-4 hover:shadow-md transition-shadow">
+                        {purchaseOrders.filter(o => o.status === "PENDING").map((order) => (
+                          <div key={order.id} className="bg-white border border-amber-100 rounded-3xl p-5 shadow-sm space-y-4 hover:shadow-md transition-shadow">
                             <div className="flex justify-between items-start">
                               <div>
                                 <span className="text-[10px] text-gray-400 font-mono font-bold block">ID: {order.id.slice(0, 8).toUpperCase()}</span>
@@ -1684,13 +2112,92 @@ export default function BusinessInventoryPage() {
                                   {new Date(order.createdAt).toLocaleString("es-PE", { dateStyle: "short", timeStyle: "short" })}
                                 </span>
                               </div>
-                              <span className="bg-amber-100 text-amber-800 text-xs px-2.5 py-1 rounded-full font-bold">
-                                En Pedido
+                              <span className="bg-amber-100 text-amber-800 text-xs px-2.5 py-1 rounded-full font-bold flex items-center gap-1">
+                                <AlertTriangle className="w-3 h-3" />
+                                Por Pagar
                               </span>
                             </div>
                             
                             {/* List items */}
-                            <div className="bg-slate-50 rounded-2xl p-3 text-xs space-y-1.5 max-h-40 overflow-y-auto font-medium text-gray-600 font-bold">
+                            <div className="bg-slate-50 rounded-2xl p-3 text-xs space-y-1.5 max-h-40 overflow-y-auto font-medium text-gray-600">
+                              {order.items.map((item) => (
+                                <div key={item.id} className="flex justify-between font-medium">
+                                  <span>• {item.quantity} x {item.product?.name || "Producto"} ({item.presentationName || item.product?.unit || "Unidad"})</span>
+                                  <span className="font-bold text-gray-800">S/ {(item.quantity * item.costPrice).toFixed(2)}</span>
+                                </div>
+                              ))}
+                            </div>
+
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-gray-500 font-semibold">Total:</span>
+                              <span className="text-base font-black text-amber-700">S/ {order.totalCost.toFixed(2)}</span>
+                            </div>
+
+                            <div className="flex gap-2 pt-2">
+                              <button
+                                onClick={() => handleOpenPayOrder(order)}
+                                className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs py-2.5 rounded-2xl flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-all"
+                              >
+                                <CreditCard className="w-4 h-4" />
+                                Confirmar Pago
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setConfirmConfig({
+                                    title: "Eliminar Pedido Sin Pago",
+                                    message: "Este pedido aún no tiene pago confirmado y NO está registrado en Tesorería. ¿Deseas eliminarlo?",
+                                    confirmText: "Sí, Eliminar",
+                                    cancelText: "No, Mantener",
+                                    variant: "danger",
+                                    onConfirm: async () => {
+                                      try {
+                                        await deletePurchaseOrderRequest(order.id);
+                                        toast.success("Pedido eliminado");
+                                        loadOrders();
+                                        loadPlannerData();
+                                      } catch (err: any) {
+                                        toast.error(err?.response?.data?.message || "Error al eliminar");
+                                      }
+                                    }
+                                  });
+                                  setIsConfirmOpen(true);
+                                }}
+                                className="px-3 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-2xl active:scale-95 transition-all flex items-center justify-center"
+                                title="Eliminar Pedido (sin pago, sin registro en Tesorería)"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  ) : ordersSubTab === "transit" ? (
+                    purchaseOrders.filter(o => o.status === "PAID").length === 0 ? (
+                      <div className="py-12 bg-slate-50 border border-dashed border-gray-200 rounded-3xl text-center text-gray-400 flex flex-col items-center justify-center">
+                        <Truck className="w-10 h-10 text-slate-300 mb-2" />
+                        <p className="font-bold text-sm text-gray-700">No hay pedidos en tránsito</p>
+                        <p className="text-xs text-gray-500 mt-0.5">Los pedidos pagados que aún no han sido recibidos aparecerán aquí.</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {purchaseOrders.filter(o => o.status === "PAID").map((order) => (
+                          <div key={order.id} className="bg-white border border-indigo-100 rounded-3xl p-5 shadow-sm space-y-4 hover:shadow-md transition-shadow">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <span className="text-[10px] text-gray-400 font-mono font-bold block">ID: {order.id.slice(0, 8).toUpperCase()}</span>
+                                <span className="text-xs text-gray-500 font-medium block mt-0.5">
+                                  {new Date(order.createdAt).toLocaleString("es-PE", { dateStyle: "short", timeStyle: "short" })}
+                                </span>
+                              </div>
+                              <span className="bg-indigo-100 text-indigo-800 text-xs px-2.5 py-1 rounded-full font-bold flex items-center gap-1">
+                                <Truck className="w-3 h-3" />
+                                En Tránsito
+                              </span>
+                            </div>
+                            
+                            {/* List items */}
+                            <div className="bg-slate-50 rounded-2xl p-3 text-xs space-y-1.5 max-h-40 overflow-y-auto font-medium text-gray-600">
                               {order.items.map((item) => (
                                 <div key={item.id} className="flex justify-between font-medium">
                                   <span>• {item.quantity} x {item.product?.name || "Producto"} ({item.presentationName || item.product?.unit || "Unidad"})</span>
@@ -1709,39 +2216,19 @@ export default function BusinessInventoryPage() {
                               <span className="font-bold text-gray-800 bg-slate-100 px-2 py-0.5 rounded-lg">{order.paymentMethod}</span>
                             </div>
 
-                             {order.receiptUrl && (
+                            {order.receiptUrl && (
                               <div className="pt-1">
                                 <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block mb-1">Comprobante</span>
-                                {order.receiptUrl.toLowerCase().endsWith(".pdf") ? (
-                                  <a
-                                    href={getReceiptAbsoluteUrl(order.receiptUrl) || undefined}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-gray-150 rounded-xl hover:bg-indigo-50/30 hover:border-indigo-200 transition-colors group cursor-pointer"
-                                  >
-                                    <FileText className="w-4 h-4 text-rose-500" />
-                                    <span className="text-xs font-bold text-gray-700 group-hover:text-indigo-700 transition-colors truncate max-w-[120px]">
-                                      Comprobante.pdf
-                                    </span>
-                                    <Eye className="w-3.5 h-3.5 text-indigo-500 ml-auto" />
-                                  </a>
-                                ) : (
-                                  <a
-                                    href={getReceiptAbsoluteUrl(order.receiptUrl) || undefined}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="relative block rounded-xl overflow-hidden border border-gray-100 group cursor-pointer max-w-[120px] aspect-[4/3] bg-slate-50"
-                                  >
-                                    <img
-                                      src={getReceiptAbsoluteUrl(order.receiptUrl) || undefined}
-                                      alt="Comprobante"
-                                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-                                    />
-                                    <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                                      <Eye className="w-5 h-5 text-white" />
-                                    </div>
-                                  </a>
-                                )}
+                                <a
+                                  href={getReceiptAbsoluteUrl(order.receiptUrl) || undefined}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-gray-200 rounded-xl hover:bg-indigo-50/30 hover:border-indigo-200 transition-colors group cursor-pointer"
+                                >
+                                  <FileText className="w-4 h-4 text-indigo-500" />
+                                  <span className="text-xs font-bold text-gray-700 group-hover:text-indigo-700 transition-colors truncate max-w-[120px]">Ver Comprobante</span>
+                                  <Eye className="w-3.5 h-3.5 text-indigo-500 ml-auto" />
+                                </a>
                               </div>
                             )}
 
@@ -1780,12 +2267,23 @@ export default function BusinessInventoryPage() {
                               >
                                 <Edit2 className="w-4 h-4" />
                               </button>
+                              {/* Botón Cancelar: cancela el pedido Y su registro en Tesorería */}
                               <button
-                                onClick={() => handleDeleteOrder(order.id)}
+                                onClick={() => {
+                                  setConfirmConfig({
+                                    title: "⚠️ Cancelar Pedido + Tesorería",
+                                    message: `Este pedido ya fue pagado y está registrado en Tesorería (en tránsito).\n\nAl cancelarlo:\n• El pedido pasará a estado CANCELADO\n• El registro en Tesorería también quedará ANULADO\n\n¿Deseas continuar?`,
+                                    confirmText: "Sí, Cancelar Todo",
+                                    cancelText: "No, Mantener",
+                                    variant: "warning",
+                                    onConfirm: () => handleCancelOrder(order.id),
+                                  });
+                                  setIsConfirmOpen(true);
+                                }}
                                 className="px-3 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-2xl active:scale-95 transition-all flex items-center justify-center"
-                                title="Cancelar Pedido"
+                                title="Cancelar Pedido (también anula registro en Tesorería)"
                               >
-                                <Trash2 className="w-4 h-4" />
+                                <X className="w-4 h-4" />
                               </button>
                             </div>
                           </div>
@@ -1793,6 +2291,7 @@ export default function BusinessInventoryPage() {
                       </div>
                     )
                   ) : (
+
                     purchaseOrders.filter(o => o.status === "RECEIVED").length === 0 ? (
                       <div className="py-12 bg-slate-50 border border-dashed border-gray-200 rounded-3xl text-center text-gray-400 flex flex-col items-center justify-center">
                         <Truck className="w-10 h-10 text-slate-300 mb-2" />
@@ -1935,24 +2434,66 @@ export default function BusinessInventoryPage() {
                   </button>
                 </div>
 
-                {/* FORM CONTROLS */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-slate-50 p-5 rounded-2xl border border-gray-100 no-print">
+                {/* FILTERS FOR LABEL GENERATOR */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50 p-5 rounded-2xl border border-gray-100 no-print">
                   <div>
-                    <label className="block text-xs font-black uppercase text-gray-500 mb-2">Producto a Etiquetar</label>
+                    <label className="block text-[10px] font-black uppercase text-gray-550 mb-1.5">Buscar Producto</label>
+                    <input
+                      type="text"
+                      placeholder="Nombre, SKU o Cód..."
+                      value={labelSearchTerm}
+                      onChange={(e) => setLabelSearchTerm(e.target.value)}
+                      className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-xs font-bold text-gray-750 shadow-sm placeholder-gray-400"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-gray-555 mb-1.5">Filtrar por Marca</label>
                     <select
-                      value={ticketProductId}
-                      onChange={(e) => setTicketProductId(e.target.value)}
-                      className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-bold text-gray-700 shadow-sm"
+                      value={labelFilterBrandId}
+                      onChange={(e) => setLabelFilterBrandId(e.target.value)}
+                      className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-xs font-bold text-gray-750 shadow-sm"
                     >
-                      <option value="">-- Selecciona un Producto --</option>
-                      {products.filter(p => p.sku).map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name} ({p.sku})
-                        </option>
+                      <option value="">Todas las Marcas</option>
+                      {brands.map((b) => (
+                        <option key={b.id} value={b.id}>{b.name}</option>
                       ))}
                     </select>
                   </div>
 
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-gray-555 mb-1.5">Filtrar por Familia</label>
+                    <select
+                      value={labelFilterFamilyId}
+                      onChange={(e) => setLabelFilterFamilyId(e.target.value)}
+                      className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-xs font-bold text-gray-750 shadow-sm"
+                    >
+                      <option value="">Todas las Familias</option>
+                      {families.map((f) => (
+                        <option key={f.id} value={f.id}>{f.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-gray-555 mb-1.5">Producto a Etiquetar</label>
+                    <select
+                      value={ticketProductId}
+                      onChange={(e) => setTicketProductId(e.target.value)}
+                      className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-xs font-bold text-gray-755 shadow-sm"
+                    >
+                      <option value="">-- Selecciona un Producto --</option>
+                      {labelFilteredProducts.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} ({p.sku || `Cód: ${String((p as any).customCode || 0).padStart(4, "0")}`})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* FORM CONTROLS */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50/50 p-5 rounded-2xl border border-gray-100 no-print">
                   <div>
                     <label className="block text-xs font-black uppercase text-gray-500 mb-2">Cantidad de Tickets (Copia)</label>
                     <input
@@ -2004,7 +2545,7 @@ export default function BusinessInventoryPage() {
                               <div className="text-xs font-black text-slate-800 my-0.5">
                                 S/ {prod?.salePrice.toFixed(2)}
                               </div>
-                              <svg className="barcode-preview-svg w-full max-h-[45px]"></svg>
+                              <canvas className="qr-preview-canvas w-16 h-16 my-1"></canvas>
                             </div>
                           );
                         })}
@@ -2022,7 +2563,7 @@ export default function BusinessInventoryPage() {
       <Modal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        title={editingProduct ? "Editar Producto" : "Nuevo Producto"}
+        title={editingProduct ? `Editar Producto: Cód #${String((editingProduct as any).customCode || 0).padStart(4, "0")}` : "Nuevo Producto"}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* IMAGEN DEL PRODUCTO */}
@@ -3146,6 +3687,270 @@ export default function BusinessInventoryPage() {
         variant={confirmConfig.variant}
         buttonIcon={confirmConfig.variant === "danger" ? <Trash2 className="w-5 h-5" /> : <Check className="w-5 h-5" />}
       />
+
+      {/* MODAL: Confirmar Pago de Pedido (PENDING → PAID) */}
+      <Modal
+        isOpen={isPayOrderModalOpen}
+        onClose={() => { setIsPayOrderModalOpen(false); setPayingOrderId(null); setPayOrderFile(null); }}
+        title="Confirmar Pago del Pedido"
+        maxWidth="max-w-md"
+      >
+        <form onSubmit={handlePayOrderSubmit} className="space-y-5">
+          <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 flex items-center gap-3">
+            <CreditCard className="w-6 h-6 text-amber-600 flex-shrink-0" />
+            <div>
+              <div className="text-sm font-black text-amber-900">Total a pagar</div>
+              <div className="text-2xl font-black text-amber-700">S/ {payingOrderTotal.toFixed(2)}</div>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-black text-gray-700 mb-1.5">Categoría de Egreso *</label>
+            <select
+              value={payOrderData.categoryId}
+              onChange={(e) => setPayOrderData(prev => ({ ...prev, categoryId: e.target.value }))}
+              required
+              className="w-full px-4 py-3 border border-gray-200 rounded-2xl text-sm font-bold text-gray-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+            >
+              <option value="">Seleccionar categoría...</option>
+              {categories.filter(c => c.type === "EXPENSE" || !c.type).map(cat => (
+                <option key={cat.id} value={cat.id}>{cat.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-black text-gray-700 mb-1.5">Método de Pago</label>
+            <select
+              value={payOrderData.paymentMethod}
+              onChange={(e) => setPayOrderData(prev => ({ ...prev, paymentMethod: e.target.value }))}
+              className="w-full px-4 py-3 border border-gray-200 rounded-2xl text-sm font-bold text-gray-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+            >
+              <option value="CASH">Efectivo</option>
+              <option value="TRANSFER">Transferencia</option>
+              <option value="CARD">Tarjeta</option>
+              <option value="YAPE">Yape / Plin</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-black text-gray-700 mb-1.5">Comprobante (opcional)</label>
+            <input
+              type="file"
+              accept="image/*,.pdf"
+              onChange={(e) => setPayOrderFile(e.target.files?.[0] || null)}
+              className="w-full text-xs text-gray-500 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer"
+            />
+            {!payOrderFile && (
+              <p className="text-[10px] text-amber-600 font-bold mt-1 flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" />
+                Si no subes comprobante, se te pedirá confirmación
+              </p>
+            )}
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => { setIsPayOrderModalOpen(false); setPayingOrderId(null); setPayOrderFile(null); }}
+              className="flex-1 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl text-sm transition-all"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              className="flex-1 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-2xl text-sm flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all"
+            >
+              <CreditCard className="w-4 h-4" />
+              Confirmar Pago
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* MODAL: Agregar Producto existente al Planificador */}
+      <Modal
+        isOpen={isAddProductToOrderOpen}
+        onClose={() => { setIsAddProductToOrderOpen(false); setAddProductSearch(""); }}
+        title="Agregar Producto al Planificador"
+        maxWidth="max-w-lg"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-500 font-medium">
+            Busca cualquier producto de tu inventario para incluirlo en la compra, aunque no esté en déficit.
+          </p>
+          <div className="relative">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Buscar por nombre, SKU o código..."
+              value={addProductSearch}
+              onChange={(e) => setAddProductSearch(e.target.value)}
+              autoFocus
+              className="w-full pl-11 pr-4 py-3 border border-gray-200 rounded-2xl text-sm font-medium outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+            />
+          </div>
+
+          <div className="space-y-2 max-h-80 overflow-y-auto custom-scrollbar">
+            {products
+              .filter(p => {
+                const search = addProductSearch.toLowerCase();
+                if (!search) return true;
+                return p.name.toLowerCase().includes(search) || (p.sku || "").toLowerCase().includes(search) || String((p as any).customCode || "").toLowerCase().includes(search);
+              })
+              .slice(0, 20)
+              .map(p => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => handleAddExistingProductToPlanner(p)}
+                  className="w-full flex items-center gap-3 p-3 bg-white border border-gray-100 rounded-2xl hover:bg-indigo-50 hover:border-indigo-200 transition-all text-left group"
+                >
+                  {p.imageUrl ? (
+                    <img src={getReceiptAbsoluteUrl(p.imageUrl) || p.imageUrl} alt={p.name} className="w-10 h-10 rounded-xl object-cover border border-gray-100 flex-shrink-0" />
+                  ) : (
+                    <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                      <Package className="w-5 h-5 text-slate-400" />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="font-extrabold text-gray-900 text-sm truncate group-hover:text-indigo-700">{p.name}</div>
+                    <div className="text-[10px] text-gray-400 font-mono">{p.sku || "Sin SKU"} • Stock: {p.stock} {p.unit}</div>
+                  </div>
+                  <div className="text-sm font-black text-indigo-600 flex-shrink-0">S/ {p.costPrice.toFixed(2)}</div>
+                </button>
+              ))}
+            {products.filter(p => {
+              const search = addProductSearch.toLowerCase();
+              if (!search) return true;
+              return p.name.toLowerCase().includes(search) || (p.sku || "").toLowerCase().includes(search);
+            }).length === 0 && (
+              <div className="py-8 text-center text-gray-400">
+                <Package className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                <p className="text-sm font-bold">No se encontraron productos</p>
+              </div>
+            )}
+          </div>
+
+          <div className="pt-2 border-t border-gray-100">
+            <button
+              type="button"
+              onClick={() => { setIsAddProductToOrderOpen(false); setIsNewProductForOrderOpen(true); }}
+              className="w-full py-2.5 border-2 border-dashed border-purple-200 text-purple-600 rounded-2xl text-sm font-bold hover:bg-purple-50 transition-colors flex items-center justify-center gap-2"
+            >
+              <PackagePlus className="w-4 h-4" />
+              ¿No está en la lista? Registrar nuevo producto
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* MODAL: Registrar Nuevo Producto para la Compra */}
+      <Modal
+        isOpen={isNewProductForOrderOpen}
+        onClose={() => { setIsNewProductForOrderOpen(false); setNewOrderProductData({ name: "", sku: "", unit: "Unidad", costPrice: 0, salePrice: 0, quantity: 1 }); }}
+        title="Registrar Nuevo Producto para Compra"
+        maxWidth="max-w-md"
+      >
+        <form onSubmit={handleAddNewProductToPlanner} className="space-y-4">
+          <div className="bg-blue-50 border border-blue-100 rounded-2xl p-3 text-xs text-blue-700 font-semibold flex items-start gap-2">
+            <PackagePlus className="w-4 h-4 flex-shrink-0 mt-0.5 text-blue-600" />
+            <span>
+              Este producto se creará en tu inventario con stock 0. Al concretar la compra, el stock se actualizará automáticamente.
+            </span>
+          </div>
+
+          <div>
+            <label className="block text-xs font-black text-gray-700 mb-1.5">Nombre del Producto *</label>
+            <input
+              type="text"
+              placeholder="Ej: Zapatos Nike Air Max Talla 42"
+              value={newOrderProductData.name}
+              onChange={(e) => setNewOrderProductData(prev => ({ ...prev, name: e.target.value }))}
+              required
+              autoFocus
+              className="w-full px-4 py-3 border border-gray-200 rounded-2xl text-sm font-medium outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-black text-gray-700 mb-1.5">SKU (opcional)</label>
+              <input
+                type="text"
+                placeholder="Ej: NK-AM-42"
+                value={newOrderProductData.sku}
+                onChange={(e) => setNewOrderProductData(prev => ({ ...prev, sku: e.target.value }))}
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-2xl text-sm font-medium outline-none focus:border-indigo-400"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-black text-gray-700 mb-1.5">Unidad</label>
+              <input
+                type="text"
+                placeholder="Unidad, Par, Caja..."
+                value={newOrderProductData.unit}
+                onChange={(e) => setNewOrderProductData(prev => ({ ...prev, unit: e.target.value }))}
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-2xl text-sm font-medium outline-none focus:border-indigo-400"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-black text-gray-700 mb-1.5">Costo (S/)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={newOrderProductData.costPrice}
+                onChange={(e) => setNewOrderProductData(prev => ({ ...prev, costPrice: Number(e.target.value) }))}
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-2xl text-sm font-medium outline-none focus:border-indigo-400"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-black text-gray-700 mb-1.5">Precio Venta (S/)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={newOrderProductData.salePrice}
+                onChange={(e) => setNewOrderProductData(prev => ({ ...prev, salePrice: Number(e.target.value) }))}
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-2xl text-sm font-medium outline-none focus:border-indigo-400"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-black text-gray-700 mb-1.5">Cantidad</label>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={newOrderProductData.quantity}
+                onChange={(e) => setNewOrderProductData(prev => ({ ...prev, quantity: Number(e.target.value) }))}
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-2xl text-sm font-medium outline-none focus:border-indigo-400"
+              />
+            </div>
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => { setIsNewProductForOrderOpen(false); setIsAddProductToOrderOpen(true); }}
+              className="flex-1 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl text-sm transition-all"
+            >
+              Volver
+            </button>
+            <button
+              type="submit"
+              className="flex-1 px-4 py-3 bg-purple-600 hover:bg-purple-700 text-white font-extrabold rounded-2xl text-sm flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all"
+            >
+              <PackagePlus className="w-4 h-4" />
+              Crear y Agregar
+            </button>
+          </div>
+        </form>
+      </Modal>
+
     </Appshell>
   );
 }

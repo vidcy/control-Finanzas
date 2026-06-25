@@ -43,7 +43,7 @@ interface Worker {
 const AVAILABLE_MODULES = [
   { key: "BUSINESS_DASHBOARD", name: "Resumen Negocio", desc: "Ver estadísticas y salud del negocio" },
   { key: "BUSINESS_POS", name: "Punto de Venta (POS)", desc: "Vender productos y emitir recibos" },
-  { key: "BUSINESS_INVENTORY", name: "Inventario & Kardex", desc: "Control de stock, compras y kardex" },
+  { key: "BUSINESS_INVENTORY", name: "Almacén & Abastecimiento", desc: "Control de stock, compras, planificador y kardex" },
   { key: "BUSINESS_CASH_REGISTER", name: "Control de Caja", desc: "Abrir, cerrar turnos y arqueos" },
   { key: "BUSINESS_FINANCE", name: "Tesorería", desc: "Movimientos, caja chica e inversiones" },
   { key: "BUSINESS_PENDING", name: "Cuentas Pendientes", desc: "Créditos, deudas y cobranzas" },

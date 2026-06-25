@@ -27,6 +27,7 @@ import ConfirmModal from "../components/ui/ConfirmModal";
 import { format } from "date-fns";
 import BusinessAiAdvisor from "../components/dashboard/BusinessAiAdvisor";
 import ImageUploader, { getReceiptAbsoluteUrl } from "../components/ui/ImageUploader";
+import Pagination from "../components/ui/Pagination";
 import DateRangePicker from "../components/ui/DateRangePicker";
 
 
@@ -51,6 +52,8 @@ export default function BusinessFinancePage() {
   const [filterCategory, setFilterCategory] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [txPage, setTxPage] = useState(1);
+  const [txPageSize, setTxPageSize] = useState(20);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -85,13 +88,33 @@ export default function BusinessFinancePage() {
     loadData();
   }, []);
 
-  const totalCapitalInjected = transactions
-    .filter((t) => t.type === "INCOME")
+  /**
+   * totalIngresosTesorerias: Suma de ingresos registrados manualmente en Tesorería (workspace=BUSINESS, status=PAID)
+   * NOTA: NO incluye ventas del POS. Solo registros manuales de capital, préstamos, inversiones, etc.
+   */
+  const totalIngresosTesorerias = transactions
+    .filter((t) => t.type === "INCOME" && t.status === "PAID")
     .reduce((acc, t) => acc + (t.currency === "USD" ? t.amount * (t.exchangeRate || 1) : t.amount), 0);
-  const totalOpex = transactions
-    .filter((t) => t.type === "EXPENSE")
+
+  /**
+   * totalEgresosTesorerias: Suma de egresos registrados manualmente en Tesorería (workspace=BUSINESS, status=PAID)
+   * NOTA: Incluye compras de mercadería confirmadas (pedidos de compra pagados) y gastos operativos manuales.
+   */
+  const totalEgresosTesorerias = transactions
+    .filter((t) => t.type === "EXPENSE" && t.status === "PAID")
     .reduce((acc, t) => acc + (t.currency === "USD" ? t.amount * (t.exchangeRate || 1) : t.amount), 0);
-  const liquidCash = totalCapitalInjected - totalOpex;
+
+  /**
+   * liquidezNeta: Balance neto de Tesorería = Ingresos manuales - Egresos manuales (solo registros de Tesorería)
+   * DIFERENTE a la liquidez global del negocio (que incluye ventas POS + inversiones - gastos).
+   * Este valor se usa para validar si hay fondos suficientes para compras.
+   */
+  const liquidezNeta = totalIngresosTesorerias - totalEgresosTesorerias;
+
+  // Mantener nombres alias por compatibilidad
+  const totalCapitalInjected = totalIngresosTesorerias;
+  const totalOpex = totalEgresosTesorerias;
+  const liquidCash = liquidezNeta;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -282,11 +305,12 @@ export default function BusinessFinancePage() {
                 </div>
                 <div>
                   <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">
-                    Ingresos
+                    Ingresos Tesorería
                   </p>
                   <p className="text-2xl font-black text-gray-900 tracking-tight">
                     S/ {totalCapitalInjected.toFixed(2)}
                   </p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">(Capital, préstamos, inversiones manuales)</p>
                 </div>
               </div>
               <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex items-center gap-5">
@@ -295,25 +319,36 @@ export default function BusinessFinancePage() {
                 </div>
                 <div>
                   <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">
-                    Egresos Operativos
+                    Egresos Tesorería
                   </p>
                   <p className="text-2xl font-black text-gray-900 tracking-tight">
                     S/ {totalOpex.toFixed(2)}
                   </p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">(Gastos operativos + compras confirmadas)</p>
                 </div>
               </div>
-              <div className="bg-indigo-600 text-white p-6 rounded-3xl shadow-lg shadow-indigo-500/20 flex items-center gap-5">
+              <div className={`p-6 rounded-3xl shadow-lg flex items-center gap-5 ${liquidCash >= 0 ? "bg-indigo-600 shadow-indigo-500/20" : "bg-rose-600 shadow-rose-500/20"}`}>
                 <div className="w-14 h-14 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center">
                   <Landmark className="w-7 h-7 text-white" />
                 </div>
                 <div>
-                  <p className="text-sm font-bold text-indigo-200 uppercase tracking-wider mb-1">
-                    Liquidez Disponible
+                  <p className={`text-sm font-bold uppercase tracking-wider mb-1 ${liquidCash >= 0 ? "text-indigo-200" : "text-rose-200"}`}>
+                    Liquidez Neta Tesorería
                   </p>
                   <p className="text-2xl font-black text-white">
                     S/ {liquidCash.toFixed(2)}
                   </p>
+                  <p className="text-[10px] text-white/60 mt-0.5">(Ingresos − Egresos de este módulo)</p>
                 </div>
+              </div>
+            </div>
+
+            {/* NOTA EXPLICATIVA DE LIQUIDEZ */}
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3">
+              <div className="text-amber-500 mt-0.5 shrink-0">ⓘ</div>
+              <div className="text-xs text-amber-800 font-medium">
+                <span className="font-black">Nota sobre la Liquidez:</span> Los valores de este módulo (Tesorería) solo muestran movimientos registrados manualmente aquí (capital inyectado, préstamos, gastos operativos fijos y compras confirmadas). 
+                <span className="font-black"> La liquidez global del negocio</span> también incluye las ventas del Punto de Venta y los ingresos/egresos de otras fuentes. El sistema valida automáticamente contra la liquidez global al confirmar compras.
               </div>
             </div>
 
@@ -408,6 +443,7 @@ export default function BusinessFinancePage() {
                       <th className="px-6 py-4 text-center">T.C.</th>
                       <th className="px-6 py-4 text-right">Monto Original</th>
                       <th className="px-6 py-4 text-right">Total (Soles)</th>
+                      <th className="px-6 py-4 text-center">Estado</th>
                       <th className="px-6 py-4 text-center">Acciones</th>
                     </tr>
                   </thead>
@@ -415,7 +451,7 @@ export default function BusinessFinancePage() {
                     {filteredTransactions.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={10}
+                          colSpan={11}
                           className="px-6 py-10 text-center text-gray-400 font-medium"
                         >
                           {transactions.length === 0
@@ -424,7 +460,7 @@ export default function BusinessFinancePage() {
                         </td>
                       </tr>
                     ) : (
-                      filteredTransactions.map((t) => (
+                      filteredTransactions.slice((txPage - 1) * txPageSize, txPage * txPageSize).map((t) => (
                         <tr
                           key={t.id}
                           className="hover:bg-gray-50/50 transition-colors group"
@@ -484,31 +520,50 @@ export default function BusinessFinancePage() {
                           <td className="px-6 py-4 text-right font-semibold text-gray-600 text-xs">
                             {t.currency === "USD" ? "$" : "S/"} {t.amount.toFixed(2)}
                           </td>
-                          <td
+                           <td
                             className={`px-6 py-4 text-right font-black ${t.type === "INCOME" ? "text-emerald-600" : "text-rose-600"}`}
                           >
                             {t.type === "INCOME" ? "+" : "-"} S/{" "}
                             {(t.currency === "USD" ? t.amount * (t.exchangeRate || 1) : t.amount).toFixed(2)}
                           </td>
                           <td className="px-6 py-4 text-center">
+                            <span className={`px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider ${
+                              t.status === "CANCELLED"
+                                ? "bg-rose-150 text-rose-600 border border-rose-200"
+                                : t.status === "PENDING"
+                                ? "bg-amber-100 text-amber-600 border border-amber-200"
+                                : "bg-emerald-100 text-emerald-600 border border-emerald-200"
+                            }`}>
+                              {t.status === "CANCELLED"
+                                ? "Anulado"
+                                : t.status === "PENDING"
+                                ? "Pendiente"
+                                : "Finalizado"}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-center">
                             <div className="flex justify-center items-center gap-1.5">
-                              <button
-                                onClick={() => handleEditClick(t)}
-                                className="p-1.5 text-gray-400 hover:bg-indigo-50 hover:text-indigo-600 rounded-xl transition-all"
-                                title="Editar movimiento"
-                              >
-                                <Edit className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setTxIdToConfirm(t.id);
-                                  setIsRevertConfirmOpen(true);
-                                }}
-                                className="p-1.5 text-gray-400 hover:bg-amber-50 hover:text-amber-600 rounded-xl transition-all"
-                                title="Devolver a pendientes (por cobrar/pagar)"
-                              >
-                                <RotateCcw className="w-4 h-4" />
-                              </button>
+                              {t.status !== "CANCELLED" && (
+                                <>
+                                  <button
+                                    onClick={() => handleEditClick(t)}
+                                    className="p-1.5 text-gray-400 hover:bg-indigo-50 hover:text-indigo-600 rounded-xl transition-all"
+                                    title="Editar movimiento"
+                                  >
+                                    <Edit className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setTxIdToConfirm(t.id);
+                                      setIsRevertConfirmOpen(true);
+                                    }}
+                                    className="p-1.5 text-gray-400 hover:bg-amber-50 hover:text-amber-600 rounded-xl transition-all"
+                                    title="Devolver a pendientes (por cobrar/pagar)"
+                                  >
+                                    <RotateCcw className="w-4 h-4" />
+                                  </button>
+                                </>
+                              )}
                               <button
                                 onClick={() => {
                                   setTxIdToConfirm(t.id);
@@ -527,6 +582,16 @@ export default function BusinessFinancePage() {
                   </tbody>
                 </table>
               </div>
+              {filteredTransactions.length > 0 && (
+                <Pagination
+                  currentPage={txPage}
+                  totalItems={filteredTransactions.length}
+                  pageSize={txPageSize}
+                  onPageChange={(p) => setTxPage(p)}
+                  onPageSizeChange={(s) => { setTxPageSize(s); setTxPage(1); }}
+                  className="px-4 pt-3"
+                />
+              )}
             </div>
           </>
         )}

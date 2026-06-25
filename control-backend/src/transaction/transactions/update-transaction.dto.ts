@@ -36,6 +36,14 @@ export enum PaymentMethod {
 
 export class UpdateTransactionDto {
   @IsOptional()
+  @IsEnum(TransactionType)
+  type?: TransactionType;
+
+  @IsOptional()
+  @IsEnum(TransactionStatus)
+  status?: TransactionStatus;
+
+  @IsOptional()
   @IsUUID()
   categoryId?: string;
 

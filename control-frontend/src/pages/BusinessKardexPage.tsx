@@ -13,15 +13,26 @@ import {
   PlusCircle,
   TrendingUp as ProfitIcon,
   HelpCircle,
-  FileText
+  FileText,
+  Check,
+  Sliders,
+  ShoppingCart,
+  RotateCcw,
+  Sparkles
 } from "lucide-react";
 import {
   getProductsRequest,
   getInventoryMovementsRequest,
   updateProductRequest,
+  getBrandsRequest,
+  getFamiliesRequest,
+  checkoutCartRequest,
+  restockProductRequest,
   type Product,
   type InventoryMovement
 } from "../services/product.api";
+import { listCategoriesRequest } from "../services/category.api";
+import API from "../services/axios";
 import { format } from "date-fns";
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
@@ -50,12 +61,16 @@ export default function BusinessKardexPage() {
   // Data States
   const [products, setProducts] = useState<Product[]>([]);
   const [movements, setMovements] = useState<InventoryMovement[]>([]);
+  const [brands, setBrands] = useState<any[]>([]);
+  const [families, setFamilies] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Filters State
   const [selectedProductId, setSelectedProductId] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<string>("ALL"); // ALL, IN, OUT, ADJUSTMENT, REVERT
+  const [filterBrandId, setFilterBrandId] = useState("");
+  const [filterFamilyId, setFilterFamilyId] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
@@ -63,6 +78,8 @@ export default function BusinessKardexPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  const [selectedMovementForDetail, setSelectedMovementForDetail] = useState<EnrichedMovement | null>(null);
+  const [isSeedingDemo, setIsSeedingDemo] = useState(false);
 
   // Stock Adjustment Form States
   const [adjustProductId, setAdjustProductId] = useState("");
@@ -75,12 +92,16 @@ export default function BusinessKardexPage() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [prodsData, movsData] = await Promise.all([
+      const [prodsData, movsData, brandsData, familiesData] = await Promise.all([
         getProductsRequest(),
-        getInventoryMovementsRequest()
+        getInventoryMovementsRequest(),
+        getBrandsRequest(),
+        getFamiliesRequest()
       ]);
       setProducts(prodsData);
       setMovements(movsData);
+      setBrands(brandsData);
+      setFamilies(familiesData);
     } catch (err: any) {
       toast.error("Error al cargar la información del Kardex");
     } finally {
@@ -147,12 +168,12 @@ export default function BusinessKardexPage() {
           ...m,
           computedUnitCost: unitCost,
           computedTotalCost: totalCost,
+          computedRunningCPP: runningCPP,
+          computedRunningValue: runningQty * runningCPP,
           computedStockResult:
             m.stockResult !== null && m.stockResult !== undefined
               ? m.stockResult
-              : runningQty,
-          computedRunningCPP: runningCPP,
-          computedRunningValue: runningQty * runningCPP
+              : runningQty
         };
       });
 
@@ -162,6 +183,83 @@ export default function BusinessKardexPage() {
 
     return map;
   }, [movements, products]);
+
+  // Reconciliation Check
+  const isReconciled = useMemo(() => {
+    let reconciled = true;
+    products.forEach((p) => {
+      const prodMovs = computedMovementsMap[p.id] || [];
+      if (prodMovs.length > 0) {
+        const lastMov = prodMovs[0];
+        if (p.stock !== lastMov.computedStockResult) {
+          reconciled = false;
+        }
+      } else if (p.stock !== 0) {
+        reconciled = false;
+      }
+    });
+    return reconciled;
+  }, [products, computedMovementsMap]);
+
+  // Seeding Demo Data
+  const handleSeedDemoData = async () => {
+    if (products.length === 0) {
+      toast.error("Por favor, cree al menos un producto en el Almacén antes de generar movimientos demo.");
+      return;
+    }
+    setIsSeedingDemo(true);
+    const loadingToast = toast.loading("Generando movimientos demo de prueba...");
+    try {
+      let cats = await listCategoriesRequest();
+      let expenseCat = cats.find((c: any) => c.type === "EXPENSE");
+      let incomeCat = cats.find((c: any) => c.type === "INCOME");
+
+      if (!expenseCat || !incomeCat) {
+        await API.post("/categories/seed-default");
+        cats = await listCategoriesRequest();
+        expenseCat = cats.find((c: any) => c.type === "EXPENSE");
+        incomeCat = cats.find((c: any) => c.type === "INCOME");
+      }
+
+      const expCatId = expenseCat?.id || cats[0]?.id;
+      const incCatId = incomeCat?.id || cats[0]?.id;
+
+      const targetProducts = products.slice(0, 2);
+      for (const p of targetProducts) {
+        // Restock
+        await restockProductRequest(p.id, {
+          quantity: 20,
+          totalCost: 20 * p.costPrice,
+          categoryId: expCatId,
+          paymentMethod: "CASH"
+        });
+
+        // Checkout POS sale
+        await checkoutCartRequest({
+          items: [{ id: p.id, quantity: 4, salePrice: p.salePrice, name: p.name }],
+          paymentMethod: "CASH",
+          categoryId: incCatId
+        });
+
+        // Stock update adjustment
+        const currentStock = p.stock + 20 - 4;
+        await updateProductRequest(p.id, {
+          stock: currentStock + 2
+        });
+      }
+
+      toast.dismiss(loadingToast);
+      toast.success("Movimientos demo de prueba generados con éxito!");
+      await loadData();
+    } catch (err: any) {
+      toast.dismiss(loadingToast);
+      toast.error(err.message || "Error al generar movimientos demo");
+    } finally {
+      setIsSeedingDemo(false);
+    }
+  };
+
+
 
   // Flatten enriched movements or filter by selected product
   const enrichedMovementsList = useMemo(() => {
@@ -179,7 +277,7 @@ export default function BusinessKardexPage() {
     );
   }, [computedMovementsMap, selectedProductId]);
 
-  // Apply filters: search, type, date range
+  // Apply filters: search, type, date range, brand, family
   const filteredMovements = useMemo(() => {
     return enrichedMovementsList.filter((m) => {
       // 1. Search Query (SKU or Name)
@@ -204,9 +302,14 @@ export default function BusinessKardexPage() {
       if (dateFrom && itemDateStr < dateFrom) return false;
       if (dateTo && itemDateStr > dateTo) return false;
 
+      // 4. Brand and Family filters
+      const dbProd = products.find((p) => p.id === m.productId);
+      if (filterBrandId && dbProd?.brandId !== filterBrandId) return false;
+      if (filterFamilyId && dbProd?.familyId !== filterFamilyId) return false;
+
       return true;
     });
-  }, [enrichedMovementsList, searchQuery, filterType, dateFrom, dateTo]);
+  }, [enrichedMovementsList, searchQuery, filterType, dateFrom, dateTo, filterBrandId, filterFamilyId, products]);
 
   // Metrics calculations
   const metrics = useMemo(() => {
@@ -575,7 +678,7 @@ export default function BusinessKardexPage() {
       <div className="space-y-6">
         
         {/* HEADER SECTION */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-white/60 backdrop-blur-md p-6 rounded-3xl border border-white/80 shadow-sm">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-white/60 backdrop-blur-md p-6 rounded-3xl border border-white/80 shadow-sm animate-fade-in">
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className="h-2.5 w-2.5 rounded-full bg-teal-500 animate-ping"></span>
@@ -589,20 +692,43 @@ export default function BusinessKardexPage() {
             <p className="text-gray-500 text-xs mt-0.5">
               Auditoría financiera de existencias con Costo Promedio Ponderado (CPP) en tiempo real.
             </p>
+            {isReconciled ? (
+              <div className="mt-2.5 inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider border border-emerald-100/50 shadow-sm">
+                <Check className="w-3 h-3" />
+                <span>Inventario Conciliado (Libros vs Stock)</span>
+              </div>
+            ) : (
+              <div className="mt-2.5 inline-flex items-center gap-1.5 bg-rose-50 text-rose-700 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider border border-rose-100/50 shadow-sm">
+                <AlertCircle className="w-3 h-3 animate-pulse" />
+                <span>Desajuste Contable Detectado (Revisar stock)</span>
+              </div>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={loadData}
               disabled={loading}
-              className="p-3 text-gray-500 hover:text-teal-600 bg-white hover:bg-gray-50 border border-gray-100 rounded-2xl transition-all shadow-sm flex items-center justify-center disabled:opacity-50"
+              className="p-3 text-gray-500 hover:text-teal-600 bg-white hover:bg-gray-50 border border-gray-100 rounded-2xl transition-all shadow-sm flex items-center justify-center disabled:opacity-50 active:scale-95"
               title="Sincronizar"
             >
               <RefreshCw className={`w-5 h-5 ${loading ? "animate-spin text-teal-600" : ""}`} />
             </button>
+
+            {/* Seed Demo Button */}
+            <button
+              onClick={handleSeedDemoData}
+              disabled={loading || isSeedingDemo || products.length === 0}
+              className="px-4 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-bold text-xs rounded-2xl shadow-md hover:shadow-indigo-100 transition-all flex items-center gap-2 disabled:opacity-50 active:scale-95"
+              title="Generar Movimientos Demo para pruebas"
+            >
+              <Sparkles className={`w-4 h-4 ${isSeedingDemo ? "animate-spin" : ""}`} />
+              <span>{isSeedingDemo ? "Generando..." : "Generar Movimientos Demo"}</span>
+            </button>
+
             <button
               onClick={() => setIsAdjustModalOpen(true)}
-              className="px-4 py-3 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs rounded-2xl shadow-md hover:shadow-teal-100 transition-all flex items-center gap-2"
+              className="px-4 py-3 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs rounded-2xl shadow-md hover:shadow-teal-100 transition-all flex items-center gap-2 active:scale-95"
             >
               <PlusCircle className="w-4 h-4" />
               <span>Ajustar Stock</span>
@@ -870,16 +996,16 @@ export default function BusinessKardexPage() {
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3">
             
             {/* Search query */}
             <div className="space-y-1">
-              <label className="block text-[10px] font-bold text-gray-400 uppercase">Buscar SKU o Detalle</label>
+              <label className="block text-[10px] font-bold text-gray-400 uppercase">Buscar Detalle</label>
               <div className="relative">
                 <Search className="absolute left-3.5 top-3.5 w-4 h-4 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="SKU, presentación..."
+                  placeholder="SKU, descripción..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-2xl text-xs font-semibold text-gray-700 outline-none focus:bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition-all"
@@ -893,7 +1019,7 @@ export default function BusinessKardexPage() {
               <select
                 value={selectedProductId}
                 onChange={(e) => setSelectedProductId(e.target.value)}
-                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-2xl text-xs font-semibold text-gray-700 outline-none focus:bg-white focus:ring-2 focus:ring-teal-500 transition-all"
+                className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-2xl text-xs font-semibold text-gray-700 outline-none focus:bg-white focus:ring-2 focus:ring-teal-500 transition-all truncate"
               >
                 <option value="ALL">🔍 Todos los Productos</option>
                 {products.map((p) => (
@@ -904,15 +1030,45 @@ export default function BusinessKardexPage() {
               </select>
             </div>
 
+            {/* Brand Filter */}
+            <div className="space-y-1">
+              <label className="block text-[10px] font-bold text-gray-400 uppercase">Marca</label>
+              <select
+                value={filterBrandId}
+                onChange={(e) => setFilterBrandId(e.target.value)}
+                className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-2xl text-xs font-semibold text-gray-700 outline-none focus:bg-white focus:ring-2 focus:ring-teal-500 transition-all truncate"
+              >
+                <option value="">Todas las Marcas</option>
+                {brands.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Family Filter */}
+            <div className="space-y-1">
+              <label className="block text-[10px] font-bold text-gray-400 uppercase">Familia</label>
+              <select
+                value={filterFamilyId}
+                onChange={(e) => setFilterFamilyId(e.target.value)}
+                className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-2xl text-xs font-semibold text-gray-700 outline-none focus:bg-white focus:ring-2 focus:ring-teal-500 transition-all truncate"
+              >
+                <option value="">Todas las Familias</option>
+                {families.map((f) => (
+                  <option key={f.id} value={f.id}>{f.name}</option>
+                ))}
+              </select>
+            </div>
+
             {/* Movement Type Selector */}
             <div className="space-y-1">
               <label className="block text-[10px] font-bold text-gray-400 uppercase">Operación</label>
               <select
                 value={filterType}
                 onChange={(e) => setFilterType(e.target.value)}
-                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-2xl text-xs font-semibold text-gray-700 outline-none focus:bg-white focus:ring-2 focus:ring-teal-500 transition-all"
+                className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-2xl text-xs font-semibold text-gray-700 outline-none focus:bg-white focus:ring-2 focus:ring-teal-500 transition-all truncate"
               >
-                <option value="ALL">✨ Todas las Operaciones</option>
+                <option value="ALL">✨ Todas las Op.</option>
                 <option value="IN">📥 Todas las Entradas (IN)</option>
                 <option value="OUT">📤 Todas las Salidas (OUT)</option>
                 <option value="PURCHASE">🛒 Compras de Stock</option>
@@ -929,7 +1085,7 @@ export default function BusinessKardexPage() {
                 type="date"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
-                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-2xl text-xs font-semibold text-gray-700 outline-none focus:bg-white focus:ring-2 focus:ring-teal-500 transition-all"
+                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-2xl text-xs font-semibold text-gray-705 outline-none focus:bg-white focus:ring-2 focus:ring-teal-500 transition-all"
               />
             </div>
 
@@ -940,7 +1096,7 @@ export default function BusinessKardexPage() {
                 type="date"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
-                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-2xl text-xs font-semibold text-gray-700 outline-none focus:bg-white focus:ring-2 focus:ring-teal-500 transition-all"
+                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-2xl text-xs font-semibold text-gray-705 outline-none focus:bg-white focus:ring-2 focus:ring-teal-500 transition-all"
               />
             </div>
 
@@ -1001,13 +1157,42 @@ export default function BusinessKardexPage() {
                   // Empty State
                   <tr>
                     <td colSpan={12} className="py-16 text-center">
-                      <div className="flex flex-col items-center justify-center max-w-sm mx-auto">
-                        <ArrowRightLeft className="w-10 h-10 text-gray-300 mb-3 animate-bounce" />
-                        <h4 className="font-bold text-gray-700">Sin Movimientos de Inventario</h4>
-                        <p className="text-gray-400 text-xs mt-1">
-                          No se encontraron transacciones en el Kardex para los filtros aplicados.
-                        </p>
-                      </div>
+                      {movements.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center max-w-md mx-auto p-6 bg-slate-50/50 rounded-3xl border border-dashed border-gray-200 shadow-sm animate-fade-in">
+                          <div className="p-3.5 bg-indigo-50 text-indigo-600 rounded-full mb-4 animate-bounce">
+                            <Sparkles className="w-6 h-6" />
+                          </div>
+                          <h4 className="font-black text-gray-800 text-sm uppercase tracking-wider">Kardex Valorado Vacío</h4>
+                          <p className="text-gray-500 text-xs mt-2 leading-relaxed">
+                            Aún no se han registrado movimientos de stock. Los movimientos se crean automáticamente cuando realizas compras programadas, ventas en el POS, o cuando usas el botón "Ajustar Stock" arriba.
+                          </p>
+                          <p className="text-gray-400 text-[10px] mt-1 mb-5">
+                            ¿Quieres probar el Kardex de inmediato con datos de prueba automatizados?
+                          </p>
+                          <button
+                            type="button"
+                            onClick={handleSeedDemoData}
+                            disabled={isSeedingDemo || products.length === 0}
+                            className="px-5 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-bold text-xs rounded-xl shadow-md transition-all active:scale-95 flex items-center gap-2 disabled:opacity-50"
+                          >
+                            <Sparkles className={`w-4 h-4 ${isSeedingDemo ? "animate-spin" : ""}`} />
+                            <span>{isSeedingDemo ? "Generando..." : "Iniciar Carga Demo de Movimientos"}</span>
+                          </button>
+                          {products.length === 0 && (
+                            <p className="text-rose-500 text-[9px] mt-2.5 font-bold">
+                              * Primero crea productos en la sección "Almacén y Abastecimiento" para habilitar la carga demo.
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center max-w-sm mx-auto">
+                          <Filter className="w-8 h-8 text-gray-300 mb-3 animate-pulse" />
+                          <h4 className="font-bold text-gray-700">Sin Resultados de Filtro</h4>
+                          <p className="text-gray-400 text-xs mt-1">
+                            No se encontraron transacciones en el Kardex para los filtros aplicados. Intente restablecer o cambiar la selección.
+                          </p>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ) : (
@@ -1020,7 +1205,9 @@ export default function BusinessKardexPage() {
                     return (
                       <tr
                         key={m.id}
-                        className="hover:bg-gray-50/65 transition-colors group text-center"
+                        onClick={() => setSelectedMovementForDetail(m)}
+                        className="hover:bg-teal-50/30 active:bg-teal-50/60 transition-all cursor-pointer group text-center"
+                        title="Haga clic para ver auditoría detallada"
                       >
                         {/* Timestamp */}
                         <td className="px-4 py-3 text-left border-r border-gray-100 text-gray-500 font-mono text-[10px]">
@@ -1029,13 +1216,13 @@ export default function BusinessKardexPage() {
 
                         {/* Product Detail */}
                         <td className="px-4 py-3 text-left border-r border-gray-100">
-                          <p className="font-bold text-gray-800 leading-snug">{m.product?.name || "—"}</p>
+                          <p className="font-bold text-gray-805 leading-snug group-hover:text-teal-700 transition-colors">{m.product?.name || "—"}</p>
                           {m.presentationName && m.presentationQty && m.presentationQty > 1 ? (
-                            <span className="text-[10px] font-bold text-teal-600 bg-teal-50 px-1.5 py-0.5 rounded-md mt-0.5 inline-block">
+                            <span className="text-[10px] font-bold text-teal-650 bg-teal-50 px-1.5 py-0.5 rounded-md mt-0.5 inline-block">
                               {m.presentationQty}x {m.presentationName}
                             </span>
                           ) : (
-                            <span className="text-[10px] text-gray-400 font-mono mt-0.5 inline-block">
+                            <span className="text-[10px] text-gray-450 font-mono mt-0.5 inline-block">
                               Unidades base ({m.product?.unit})
                             </span>
                           )}
@@ -1043,7 +1230,7 @@ export default function BusinessKardexPage() {
 
                         {/* Motivo / Badge */}
                         <td className="px-4 py-3 text-left border-r border-gray-100">
-                          <span className={`px-2 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider ${
+                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider shadow-sm ${
                             isPurchase
                               ? "bg-teal-50 text-teal-700 border border-teal-100"
                               : isSale
@@ -1052,13 +1239,19 @@ export default function BusinessKardexPage() {
                               ? "bg-rose-50 text-rose-700 border border-rose-100"
                               : "bg-amber-50 text-amber-700 border border-amber-100"
                           }`}>
-                            {isPurchase
-                              ? "Compra"
-                              : isSale
-                              ? "Venta"
-                              : isRevert
-                              ? "Reversión"
-                              : m.reason || "Ajuste"}
+                            {isPurchase && <ShoppingCart className="w-3 h-3 text-teal-600" />}
+                            {isSale && <ProfitIcon className="w-3 h-3 text-blue-600" />}
+                            {isRevert && <RotateCcw className="w-3 h-3 text-rose-600" />}
+                            {!isPurchase && !isSale && !isRevert && <Sliders className="w-3 h-3 text-amber-600" />}
+                            <span>
+                              {isPurchase
+                                ? "Compra"
+                                : isSale
+                                ? "Venta"
+                                : isRevert
+                                ? "Reversión"
+                                : m.reason || "Ajuste"}
+                            </span>
                           </span>
                         </td>
 
@@ -1273,6 +1466,221 @@ export default function BusinessKardexPage() {
               </button>
             </div>
           </div>
+        </Modal>
+
+        {/* MODAL: MOVEMENT DETAIL AUDIT */}
+        <Modal
+          isOpen={!!selectedMovementForDetail}
+          onClose={() => setSelectedMovementForDetail(null)}
+          title="🔍 Auditoría de Movimiento Kardex"
+          maxWidth="max-w-2xl"
+        >
+          {selectedMovementForDetail && (
+            <div className="space-y-6">
+              
+              {/* Type Header Badge */}
+              <div className={`p-4 rounded-2xl border flex items-center justify-between ${
+                selectedMovementForDetail.type === "IN"
+                  ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white border-emerald-400/30"
+                  : "bg-gradient-to-r from-rose-500 to-red-600 text-white border-rose-400/30"
+              }`}>
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-white/10 rounded-xl">
+                    {selectedMovementForDetail.reason === "PURCHASE" ? (
+                      <ShoppingCart className="w-5 h-5" />
+                    ) : selectedMovementForDetail.reason === "SALE" ? (
+                      <ProfitIcon className="w-5 h-5" />
+                    ) : selectedMovementForDetail.reason === "REVERT_PURCHASE" ? (
+                      <RotateCcw className="w-5 h-5" />
+                    ) : (
+                      <Sliders className="w-5 h-5" />
+                    )}
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-widest opacity-75">
+                      {selectedMovementForDetail.type === "IN" ? "Entrada a Almacén" : "Salida de Almacén"}
+                    </span>
+                    <h3 className="text-base font-bold">
+                      {selectedMovementForDetail.reason === "PURCHASE"
+                        ? "Abastecimiento de Stock (Compra)"
+                        : selectedMovementForDetail.reason === "SALE"
+                        ? "Venta en Punto de Venta (POS)"
+                        : selectedMovementForDetail.reason === "REVERT_PURCHASE"
+                        ? "Reversión de Compra / Devolución"
+                        : selectedMovementForDetail.reason || "Ajuste de Inventario"}
+                    </h3>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-[9px] font-mono opacity-80 block">ID Movimiento</span>
+                  <span className="text-xs font-mono font-bold bg-white/10 px-2 py-0.5 rounded-lg select-all">
+                    {selectedMovementForDetail.id.substring(0, 8)}...
+                  </span>
+                </div>
+              </div>
+
+              {/* Grid 2 Column details */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                
+                {/* Item Details */}
+                <div className="p-4 bg-gray-50/50 rounded-2xl border border-gray-100 space-y-2.5">
+                  <h4 className="font-bold text-gray-500 uppercase text-[10px] tracking-wider">Detalles del Item</h4>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-white rounded-lg border border-gray-200 overflow-hidden flex items-center justify-center shadow-xs flex-shrink-0">
+                      {selectedMovementForDetail.product?.imageUrl ? (
+                        <img src={selectedMovementForDetail.product.imageUrl} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <Package className="w-5 h-5 text-gray-300" />
+                      )}
+                    </div>
+                    <div>
+                      <p className="font-bold text-gray-808 leading-snug">{selectedMovementForDetail.product?.name || "—"}</p>
+                      <p className="text-[9px] text-gray-400 font-mono mt-0.5">
+                        SKU: {products.find(p => p.id === selectedMovementForDetail.productId)?.sku || "Sin SKU"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="pt-2 border-t border-gray-100/50 grid grid-cols-2 gap-2 text-[11px]">
+                    <div>
+                      <span className="text-gray-400 block text-[9px] font-bold uppercase tracking-tight">Unidad de Medida</span>
+                      <span className="font-bold text-gray-700">{selectedMovementForDetail.product?.unit || "UNIDAD"}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-400 block text-[9px] font-bold uppercase tracking-tight">Código Secuencial</span>
+                      <span className="font-bold text-gray-700">
+                        #{String(products.find(p => p.id === selectedMovementForDetail.productId)?.customCode || 0).padStart(4, "0")}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Audit & Context */}
+                <div className="p-4 bg-gray-50/50 rounded-2xl border border-gray-100 space-y-2.5">
+                  <h4 className="font-bold text-gray-500 uppercase text-[10px] tracking-wider">Auditoría y Referencias</h4>
+                  <div className="space-y-1.5 text-[11px]">
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Fecha Registro:</span>
+                      <span className="font-bold text-gray-700">{format(new Date(selectedMovementForDetail.createdAt), "dd/MM/yyyy HH:mm:ss")}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Operador / Usuario:</span>
+                      <span className="font-bold text-gray-700 font-mono text-[10px] bg-gray-100 px-1.5 py-0.5 rounded">
+                        {selectedMovementForDetail.userId.substring(0, 8)}...
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-400">Documento Ref:</span>
+                      {selectedMovementForDetail.documentId ? (
+                        <div className="flex items-center gap-1">
+                          <span className="font-bold text-teal-700 font-mono text-[10px] bg-teal-50 px-1.5 py-0.5 rounded">
+                            {selectedMovementForDetail.documentId.substring(0, 8)}...
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(selectedMovementForDetail.documentId || "");
+                              toast.success("ID de documento copiado");
+                            }}
+                            className="text-gray-400 hover:text-teal-600 font-bold active:scale-95 transition-all"
+                            title="Copiar ID de documento"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-gray-400 italic">Ninguno (Ajuste Manual)</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Financial Calculation Breakdown */}
+              <div className="p-4 bg-teal-50/20 rounded-2xl border border-teal-100/50 space-y-3">
+                <h4 className="font-black text-teal-800 uppercase text-[10px] tracking-widest flex items-center gap-1.5">
+                  <BarChart3 className="w-4 h-4 text-teal-600" />
+                  Cálculo de Valoración (CPP)
+                </h4>
+                
+                <div className="grid grid-cols-3 gap-3 text-center">
+                  
+                  {/* Transaction info */}
+                  <div className="bg-white p-2.5 rounded-xl border border-teal-100/30">
+                    <span className="text-gray-400 block text-[9px] font-bold uppercase">Impacto Cantidad</span>
+                    <span className={`text-base font-black ${
+                      selectedMovementForDetail.type === "IN" ? "text-emerald-600" : "text-rose-600"
+                    }`}>
+                      {selectedMovementForDetail.type === "IN" ? "+" : "-"}{selectedMovementForDetail.quantity}
+                    </span>
+                  </div>
+
+                  <div className="bg-white p-2.5 rounded-xl border border-teal-100/30">
+                    <span className="text-gray-400 block text-[9px] font-bold uppercase">Costo Unitario</span>
+                    <span className="text-base font-black text-gray-800">
+                      S/ {selectedMovementForDetail.computedUnitCost.toFixed(2)}
+                    </span>
+                  </div>
+
+                  <div className="bg-white p-2.5 rounded-xl border border-teal-100/30">
+                    <span className="text-gray-400 block text-[9px] font-bold uppercase">Costo Total</span>
+                    <span className="text-base font-black text-gray-800">
+                      S/ {selectedMovementForDetail.computedTotalCost.toFixed(2)}
+                    </span>
+                  </div>
+
+                  {/* Resulting balance */}
+                  <div className="bg-white p-2.5 rounded-xl border border-teal-100/30">
+                    <span className="text-gray-400 block text-[9px] font-bold uppercase">Stock Resultante</span>
+                    <span className="text-base font-black text-teal-700">
+                      {selectedMovementForDetail.computedStockResult}
+                    </span>
+                  </div>
+
+                  <div className="bg-white p-2.5 rounded-xl border border-teal-100/30">
+                    <span className="text-gray-400 block text-[9px] font-bold uppercase">CPP Resultante</span>
+                    <span className="text-base font-black text-teal-800">
+                      S/ {selectedMovementForDetail.computedRunningCPP.toFixed(2)}
+                    </span>
+                  </div>
+
+                  <div className="bg-white p-2.5 rounded-xl border border-teal-100/30">
+                    <span className="text-gray-400 block text-[9px] font-bold uppercase">Valor total en libros</span>
+                    <span className="text-base font-black text-indigo-900">
+                      S/ {selectedMovementForDetail.computedRunningValue.toFixed(2)}
+                    </span>
+                  </div>
+
+                </div>
+
+                {/* Explanatory text */}
+                <div className="p-3 bg-white rounded-xl border border-teal-100/30 text-[11px] text-gray-600 leading-relaxed font-semibold">
+                  {selectedMovementForDetail.type === "IN" ? (
+                    <span>
+                      💡 <span className="font-bold text-teal-800">Nota de cálculo:</span> Al ingresar nuevas unidades con un costo total de <span className="text-teal-700 font-bold">S/ {selectedMovementForDetail.computedTotalCost.toFixed(2)}</span>, el Costo Promedio Ponderado (CPP) se recalcula dinámicamente promediando el costo de las existencias anteriores con las nuevas.
+                    </span>
+                  ) : (
+                    <span>
+                      💡 <span className="font-bold text-teal-800">Nota de cálculo:</span> Las salidas de inventario (ventas/retiros) no alteran el Costo Promedio Ponderado (CPP). Se retiran existencias al costo actual de <span className="text-teal-700 font-bold">S/ {selectedMovementForDetail.computedRunningCPP.toFixed(2)}</span>, reduciendo el stock y la valoración total de forma proporcional.
+                    </span>
+                  )}
+                </div>
+
+              </div>
+
+              {/* Action Close */}
+              <div className="flex justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedMovementForDetail(null)}
+                  className="px-5 py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs rounded-xl shadow-md transition-all active:scale-95"
+                >
+                  Cerrar Detalles
+                </button>
+              </div>
+
+            </div>
+          )}
         </Modal>
 
       </div>
