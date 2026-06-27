@@ -49,7 +49,6 @@ export default function BusinessBranchesPage() {
   const [toBranchId, setToBranchId] = useState("");
   const [transferQty, setTransferQty] = useState<number | "">("");
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
-  const [isTransferring, setIsTransferring] = useState(false);
 
   // States for Branch Stocks
   const [branchStocks, setBranchStocks] = useState<any[]>([]);
@@ -193,7 +192,6 @@ export default function BusinessBranchesPage() {
 
   const handleExecuteTransfer = async () => {
     if (!selectedProductId || !fromBranchId || !toBranchId || !transferQty) return;
-    setIsTransferring(true);
     try {
       await transferStockRequest({
         productId: selectedProductId,
@@ -211,7 +209,6 @@ export default function BusinessBranchesPage() {
     } catch (error: any) {
       toast.error(error.message || "Error al trasladar inventario");
     } finally {
-      setIsTransferring(false);
       setIsTransferModalOpen(false);
     }
   };

@@ -40,7 +40,15 @@ export const defaultCategories = {
     { name: 'Ingreso Adicional 2', color: 'bg-cyan-500', subcategories: [] },
 
     // Negocio (verde - negocio)
-    { name: 'Negocio-Ingreso', color: 'bg-green-500', subcategories: [] },
+    {
+      name: 'Negocio-Ingreso',
+      color: 'bg-green-500',
+      subcategories: [
+        {
+          name: 'Caja',
+        },
+      ],
+    },
   ],
 
   /* =====================================================
@@ -339,7 +347,14 @@ export const defaultCategories = {
     {
       name: 'Negocio-Egreso',
       color: 'bg-rose-500',
-      subcategories: [],
+      subcategories: [
+        {
+          name: 'Caja',
+        },
+        { name: 'Mercaderia' },
+        { name: 'Sueldos' },
+        { name: 'Servicios varios' },
+      ],
     },
   ],
 };

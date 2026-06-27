@@ -118,10 +118,15 @@ export default function BusinessPosPage() {
   const [loading, setLoading] = useState(true);
   const [paymentMethod, setPaymentMethod] = useState("CASH");
   const [selectedCategory, setSelectedCategory] = useState("");
+  const [selectedSubCategory, setSelectedSubCategory] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeShift, setActiveShift] = useState<any>(null);
   const [receiptUrl, setReceiptUrl] = useState<string | File | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+
+  // Price adjustment modal state
+  const [adjustingCartIndex, setAdjustingCartIndex] = useState<number | null>(null);
+  const [customAdjustedPrice, setCustomAdjustedPrice] = useState<number>(0);
 
   // Checkout payment states
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
@@ -145,6 +150,16 @@ export default function BusinessPosPage() {
   const [sales, setSales] = useState<any[]>([]);
   const [loadingSales, setLoadingSales] = useState(false);
 
+  // Date filters for sales history
+  const [salesStartDate, setSalesStartDate] = useState(() => {
+    const today = new Date().toISOString().split("T")[0];
+    return today;
+  });
+  const [salesEndDate, setSalesEndDate] = useState(() => {
+    const today = new Date().toISOString().split("T")[0];
+    return today;
+  });
+
   // Editar Venta POS
   const [editSale, setEditSale] = useState<any>(null);
   const [editAmount, setEditAmount] = useState(0);
@@ -161,12 +176,15 @@ export default function BusinessPosPage() {
   const loadSales = async () => {
     setLoadingSales(true);
     try {
-      const data = await getTransactionsRequest("BUSINESS");
-      const posSales = data.filter(
-        (t: any) => t.workspace === "BUSINESS" && t.type === "INCOME" && t.status === "PAID",
-      );
+      const data = await getTransactionsRequest({
+        workspace: "BUSINESS",
+        isPosSale: true,
+        startDate: salesStartDate ? `${salesStartDate}T00:00:00.000Z` : undefined,
+        endDate: salesEndDate ? `${salesEndDate}T23:59:59.999Z` : undefined,
+        userId: user?.role === "USER" ? user.id : undefined,
+      });
       setSales(
-        posSales.sort(
+        data.sort(
           (a: any, b: any) =>
             new Date(b.date).getTime() - new Date(a.date).getTime(),
         ),
@@ -182,7 +200,101 @@ export default function BusinessPosPage() {
     if (isSalesListOpen) {
       loadSales();
     }
-  }, [isSalesListOpen]);
+  }, [isSalesListOpen, salesStartDate, salesEndDate]);
+
+  const exportPosSalesExcel = async () => {
+    if (sales.length === 0) {
+      toast.error("No hay ventas para exportar");
+      return;
+    }
+    const XLSX = await import("xlsx");
+    const dataToExport = sales.map(sale => ({
+      "Fecha/Hora": format(new Date(sale.date), "yyyy-MM-dd HH:mm"),
+      "Vendedor": sale.user ? `${sale.user.name} ${sale.user.lastName || ""}`.trim() : "N/A",
+      "Detalle": sale.description || "",
+      "Método de Pago": sale.paymentMethod || "CASH",
+      "Total (S/)": sale.amountSoles || sale.amount || 0
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Ventas");
+    XLSX.writeFile(workbook, "Ventas_POS.xlsx");
+    toast.success("Ventas exportadas a Excel");
+  };
+
+  const exportPosSalesPdf = async () => {
+    if (sales.length === 0) {
+      toast.error("No hay ventas para exportar");
+      return;
+    }
+    const { jsPDF } = await import("jspdf");
+    const doc = new jsPDF("p", "mm", "a4");
+    const businessName = user?.businessName || "Control Finanzas";
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.text(`REGISTRO DE VENTAS POS - ${businessName.toUpperCase()}`, 14, 20);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(100);
+    doc.text(`Fecha de exportación: ${new Date().toLocaleDateString()}`, 14, 26);
+
+    let y = 35;
+    doc.setFillColor(79, 70, 229);
+    doc.rect(14, y, 182, 8, "F");
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(255);
+    doc.text("Fecha/Hora", 16, y + 5);
+    doc.text("Vendedor", 50, y + 5);
+    doc.text("Detalle de Venta", 90, y + 5);
+    doc.text("Método", 155, y + 5);
+    doc.text("Total", 175, y + 5);
+
+    doc.setTextColor(0);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+
+    sales.forEach((sale) => {
+      y += 8;
+      if (y > 275) {
+        doc.addPage();
+        y = 20;
+        doc.setFillColor(79, 70, 229);
+        doc.rect(14, y, 182, 8, "F");
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9);
+        doc.setTextColor(255);
+        doc.text("Fecha/Hora", 16, y + 5);
+        doc.text("Vendedor", 50, y + 5);
+        doc.text("Detalle de Venta", 90, y + 5);
+        doc.text("Método", 155, y + 5);
+        doc.text("Total", 175, y + 5);
+
+        doc.setTextColor(0);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        y += 8;
+      }
+
+      const fecha = format(new Date(sale.date), "dd/MM HH:mm");
+      const vendedor = sale.user ? `${sale.user.name} ${sale.user.lastName || ""}`.substring(0, 18).trim() : "N/A";
+      const desc = (sale.description || "").replace("Venta en POS: ", "").substring(0, 30);
+      const total = sale.amountSoles || sale.amount || 0;
+
+      doc.text(fecha, 16, y + 5);
+      doc.text(vendedor, 50, y + 5);
+      doc.text(desc, 90, y + 5);
+      doc.text(sale.paymentMethod || "CASH", 155, y + 5);
+      doc.text(`S/ ${total.toFixed(2)}`, 175, y + 5);
+    });
+
+    doc.save("Ventas_POS.pdf");
+    toast.success("Ventas exportadas a PDF");
+  };
 
   const handleSaveEdit = async () => {
     if (!editSale) return;
@@ -264,10 +376,19 @@ export default function BusinessPosPage() {
       if (allIncomeCats.length > 0) {
         const priority = allIncomeCats.find(
           (c: any) =>
+            c.name.toLowerCase().includes("negocio") &&
+            c.name.toLowerCase().includes("ingreso")
+        ) || allIncomeCats.find(
+          (c: any) =>
             c.name.toLowerCase().includes("negocio") ||
-            c.name.toLowerCase().includes("venta"),
+            c.name.toLowerCase().includes("venta")
+        ) || allIncomeCats[0];
+        
+        setSelectedCategory(priority.id);
+        const subCaja = priority.children?.find((s: any) =>
+          s.name.toLowerCase().includes("caja")
         );
-        setSelectedCategory(priority ? priority.id : allIncomeCats[0].id);
+        setSelectedSubCategory(subCaja ? subCaja.id : (priority.children?.[0]?.id || ""));
       }
 
       setActiveShift(shiftRes);
@@ -554,6 +675,7 @@ export default function BusinessPosPage() {
         })),
         paymentMethod,
         categoryId: selectedCategory,
+        subCategoryId: selectedSubCategory || null,
         receiptUrl: finalReceiptUrl, // TypeScript ya no se quejará aquí
       });
 
@@ -1141,12 +1263,26 @@ export default function BusinessPosPage() {
                   </div>
 
                   <div className="flex flex-col items-end justify-between flex-shrink-0">
-                    <button
-                      onClick={() => removeFromCart(index)}
-                      className="text-gray-400 hover:text-rose-500 transition-colors"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {!item.isCustom && (
+                        <button
+                          onClick={() => {
+                            setAdjustingCartIndex(index);
+                            setCustomAdjustedPrice(item.salePrice);
+                          }}
+                          className="text-[10px] px-1.5 py-0.5 rounded border border-indigo-200 text-indigo-600 hover:bg-indigo-50 font-bold transition-all"
+                          title="Ajustar precio de este ítem"
+                        >
+                          💸 Ajustar
+                        </button>
+                      )}
+                      <button
+                        onClick={() => removeFromCart(index)}
+                        className="text-gray-400 hover:text-rose-500 transition-colors"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
                     <div className="flex items-center gap-1 bg-white rounded-lg border border-gray-200 p-1 mt-2">
                       <button
                         onClick={() => updateQuantity(index, -1)}
@@ -1205,7 +1341,13 @@ export default function BusinessPosPage() {
               </p>
               <select
                 value={selectedCategory}
-                onChange={(e) => setSelectedCategory(e.target.value)}
+                onChange={(e) => {
+                  const catId = e.target.value;
+                  setSelectedCategory(catId);
+                  const catObj = categories.find(c => c.id === catId);
+                  const firstSub = catObj?.children?.[0]?.id || "";
+                  setSelectedSubCategory(firstSub);
+                }}
                 className="w-full p-2.5 rounded-xl border border-gray-200 focus:border-indigo-500 outline-none text-sm font-medium bg-white"
               >
                 <option value="">Seleccionar Categoría...</option>
@@ -1216,6 +1358,32 @@ export default function BusinessPosPage() {
                 ))}
               </select>
             </div>
+
+            {/* Subcategory */}
+            {(() => {
+              const selectedCategoryObj = categories.find(c => c.id === selectedCategory);
+              const subcategories = selectedCategoryObj?.children || [];
+              if (subcategories.length === 0) return null;
+              return (
+                <div>
+                  <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wider">
+                    Subcategoría Contable
+                  </p>
+                  <select
+                    value={selectedSubCategory}
+                    onChange={(e) => setSelectedSubCategory(e.target.value)}
+                    className="w-full p-2.5 rounded-xl border border-gray-200 focus:border-indigo-500 outline-none text-sm font-medium bg-white"
+                  >
+                    <option value="">Seleccionar Subcategoría...</option>
+                    {subcategories.map((sub: any) => (
+                      <option key={sub.id} value={sub.id}>
+                        {sub.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })()}
 
             {/* Total */}
             <div className="flex justify-between items-end pt-3 border-t border-gray-200 border-dashed">
@@ -1663,13 +1831,47 @@ export default function BusinessPosPage() {
         maxWidth="max-w-4xl"
       >
         <div className="space-y-4">
-          <div className="flex gap-2">
-            <button
-              onClick={loadSales}
-              className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs font-bold text-gray-700 transition-colors"
-            >
-              🔄 Actualizar lista
-            </button>
+          <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-gray-50 rounded-2xl border border-gray-100">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-gray-500">Desde:</span>
+                <input
+                  type="date"
+                  value={salesStartDate}
+                  onChange={(e) => setSalesStartDate(e.target.value)}
+                  className="px-3 py-1.5 border border-gray-200 rounded-xl text-xs font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-gray-500">Hasta:</span>
+                <input
+                  type="date"
+                  value={salesEndDate}
+                  onChange={(e) => setSalesEndDate(e.target.value)}
+                  className="px-3 py-1.5 border border-gray-200 rounded-xl text-xs font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={loadSales}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-all shadow-sm active:scale-95 flex items-center gap-1.5"
+              >
+                🔄 Actualizar
+              </button>
+              <button
+                onClick={exportPosSalesExcel}
+                className="px-4 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-xl text-xs font-black transition-all shadow-sm active:scale-95 flex items-center gap-1.5"
+              >
+                Exportar Excel
+              </button>
+              <button
+                onClick={exportPosSalesPdf}
+                className="px-4 py-2 bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 rounded-xl text-xs font-black transition-all shadow-sm active:scale-95 flex items-center gap-1.5"
+              >
+                Exportar PDF
+              </button>
+            </div>
           </div>
           <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
             {loadingSales ? (
@@ -1683,7 +1885,7 @@ export default function BusinessPosPage() {
               <div className="p-12 text-center text-gray-400">
                 <FileText className="w-12 h-12 mx-auto mb-3 opacity-30" />
                 <p className="font-bold">
-                  No hay ventas registradas en este turno.
+                  No hay ventas registradas en este período.
                 </p>
               </div>
             ) : (
@@ -1692,6 +1894,7 @@ export default function BusinessPosPage() {
                   <thead className="bg-gray-50 text-gray-500 uppercase text-[10px] font-bold tracking-wider">
                     <tr>
                       <th className="px-4 py-3 text-left">Fecha/Hora</th>
+                      {user?.role === "ADMIN" && <th className="px-4 py-3 text-left">Vendedor</th>}
                       <th className="px-4 py-3 text-left">
                         Detalle de Productos
                       </th>
@@ -1709,6 +1912,11 @@ export default function BusinessPosPage() {
                         <td className="px-4 py-3 text-gray-500 whitespace-nowrap text-xs font-medium">
                           {format(new Date(sale.date), "dd/MM/yyyy HH:mm")}
                         </td>
+                        {user?.role === "ADMIN" && (
+                          <td className="px-4 py-3 text-gray-600 whitespace-nowrap text-xs font-bold">
+                            {sale.user ? `${sale.user.name} ${sale.user.lastName || ""}`.trim() : "N/A"}
+                          </td>
+                        )}
                         <td className="px-4 py-3">
                           <p
                             className="font-semibold text-gray-800 text-xs truncate max-w-xs"
@@ -1918,6 +2126,156 @@ export default function BusinessPosPage() {
             </button>
           </div>
         </div>
+      </Modal>
+      {/* MODAL: Ajustar Precio Ítem */}
+      <Modal
+        isOpen={adjustingCartIndex !== null}
+        onClose={() => setAdjustingCartIndex(null)}
+        title="💸 Ajustar Precio de Venta"
+      >
+        {adjustingCartIndex !== null && (
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm font-bold text-gray-800">
+                {cart[adjustingCartIndex].name}
+              </p>
+              <p className="text-xs text-gray-500 font-medium">
+                {cart[adjustingCartIndex].presentationId
+                  ? `Presentación seleccionada: ${
+                      cart[adjustingCartIndex].presentations?.find(
+                        (p: any) => p.id === cart[adjustingCartIndex].presentationId
+                      )?.name || "N/A"
+                    }`
+                  : `Presentación por defecto: ${cart[adjustingCartIndex].unit}`}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100 text-xs">
+              <div>
+                <span className="text-gray-500 block font-medium">Precio Base:</span>
+                <span className="font-bold text-gray-800">
+                  S/ {(cart[adjustingCartIndex].presentationId
+                    ? (cart[adjustingCartIndex].presentations?.find(
+                        (p: any) => p.id === cart[adjustingCartIndex].presentationId
+                      )?.price || cart[adjustingCartIndex].originalSalePrice)
+                    : cart[adjustingCartIndex].originalSalePrice
+                  ).toFixed(2)}
+                </span>
+              </div>
+              <div>
+                <span className="text-gray-500 block font-medium">Precio Ajustado Registrado:</span>
+                <span className="font-bold text-gray-800">
+                  {cart[adjustingCartIndex].adjustedPrice && cart[adjustingCartIndex].adjustedPrice > 0
+                    ? `S/ ${Number(cart[adjustingCartIndex].adjustedPrice).toFixed(2)}`
+                    : "No registrado"}
+                </span>
+              </div>
+              <div className="col-span-2 border-t border-gray-200 pt-2 mt-1">
+                <span className="text-gray-500 block font-medium">Precio de Costo Base:</span>
+                <span className="font-bold text-rose-600">
+                  S/ {Number(cart[adjustingCartIndex].costPrice || 0).toFixed(2)}
+                </span>
+              </div>
+            </div>
+
+            {/* Recommendations */}
+            <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-xl text-xs space-y-2">
+              <p className="font-bold text-indigo-900 flex items-center gap-1.5">
+                💡 Recomendaciones de Rentabilidad
+              </p>
+              <div className="space-y-1 text-[11px] text-indigo-700">
+                <p>
+                  • Para **no perder dinero**, el precio debe ser al menos el costo:{" "}
+                  <strong className="text-indigo-900">
+                    S/ {Number(cart[adjustingCartIndex].costPrice || 0).toFixed(2)}
+                  </strong>
+                </p>
+                <p>
+                  • Para mantener un **10% de margen de ganancia**:{" "}
+                  <strong className="text-indigo-900">
+                    S/ {((cart[adjustingCartIndex].costPrice || 0) / 0.9).toFixed(2)}
+                  </strong>
+                </p>
+              </div>
+            </div>
+
+            {/* Quick shortcuts */}
+            <div className="flex flex-wrap gap-2">
+              {cart[adjustingCartIndex].adjustedPrice && cart[adjustingCartIndex].adjustedPrice > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setCustomAdjustedPrice(Number(cart[adjustingCartIndex].adjustedPrice))}
+                  className="px-3 py-1.5 bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 rounded-lg text-[10px] font-bold transition-all"
+                >
+                  Usar Ajustado (S/ {Number(cart[adjustingCartIndex].adjustedPrice).toFixed(2)})
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setCustomAdjustedPrice(parseFloat(((cart[adjustingCartIndex].costPrice || 0) / 0.9).toFixed(2)))}
+                className="px-3 py-1.5 bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 rounded-lg text-[10px] font-bold transition-all"
+              >
+                Usar Margen 10% (S/ {((cart[adjustingCartIndex].costPrice || 0) / 0.9).toFixed(2)})
+              </button>
+            </div>
+
+            {/* Input field */}
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
+                Precio de Venta Deseado (S/)
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  step="0.01"
+                  value={customAdjustedPrice || ""}
+                  onChange={(e) => setCustomAdjustedPrice(parseFloat(e.target.value) || 0)}
+                  className="w-full p-2.5 rounded-xl border border-gray-200 focus:border-indigo-500 outline-none text-sm font-bold bg-white"
+                />
+                {customAdjustedPrice > 0 && customAdjustedPrice <= (cart[adjustingCartIndex].costPrice || 0) && (
+                  <p className="text-[10px] text-rose-500 font-bold mt-1">
+                    ⚠️ Alerta: El precio es menor o igual al costo de adquisición (S/ {Number(cart[adjustingCartIndex].costPrice || 0).toFixed(2)}). ¡Pérdida inminente!
+                  </p>
+                )}
+                {customAdjustedPrice > (cart[adjustingCartIndex].costPrice || 0) &&
+                  customAdjustedPrice < ((cart[adjustingCartIndex].costPrice || 0) / 0.9) && (
+                    <p className="text-[10px] text-amber-600 font-bold mt-1">
+                      ⚠️ Alerta: Margen de rentabilidad bajo (menor al 10%).
+                    </p>
+                  )}
+              </div>
+            </div>
+
+            <div className="flex gap-2 justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setAdjustingCartIndex(null)}
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 font-bold text-xs"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (customAdjustedPrice <= 0) {
+                    toast.error("El precio debe ser mayor a 0");
+                    return;
+                  }
+                  setCart(
+                    cart.map((c, i) =>
+                      i === adjustingCartIndex ? { ...c, salePrice: customAdjustedPrice } : c
+                    )
+                  );
+                  setAdjustingCartIndex(null);
+                  toast.success("Precio del ítem ajustado");
+                }}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-xs shadow-sm transition-all"
+              >
+                Guardar Ajuste
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </Appshell>
   );

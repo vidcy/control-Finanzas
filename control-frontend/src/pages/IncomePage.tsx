@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Appshell from "../components/layout/Appshell";
 import Modal from "../components/ui/Modal";
 import {
@@ -208,15 +208,6 @@ export default function IncomePage() {
   const income = filtered;
 
   const ITEMS_PER_PAGE = 20;
-
-  // Calcular número de páginas de ingresos a cobrar
-  const incomeTotalPages = Math.ceil(income.length / ITEMS_PER_PAGE);
-
-  // Genera un array [1, 2, 3, ..., total] para renderizar los botones de paginación.
-  const getPages = useCallback(
-    (total: number) => Array.from({ length: total }, (_, i) => i + 1),
-    []
-  );
 
   // Paginación (solo para desktop)
   const incomeDesktop = income.slice(

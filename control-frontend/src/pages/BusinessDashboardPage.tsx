@@ -59,7 +59,7 @@ export default function BusinessDashboardPage() {
     try {
       setLoading(true);
       const [txs, prods] = await Promise.all([
-        getTransactionsRequest("BUSINESS"),
+        getTransactionsRequest({ workspace: "BUSINESS" }),
         getProductsRequest(),
       ]);
 

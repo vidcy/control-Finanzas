@@ -55,7 +55,7 @@ export default function BusinessReportsPage() {
     try {
       setLoading(true);
       const [txs, prods, movs] = await Promise.all([
-        getTransactionsRequest("BUSINESS"),
+        getTransactionsRequest({ workspace: "BUSINESS" }),
         getProductsRequest(),
         getInventoryMovementsRequest(),
       ]);

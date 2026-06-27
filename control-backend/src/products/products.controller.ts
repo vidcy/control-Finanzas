@@ -20,7 +20,9 @@ export class ProductsController {
 
   @Post('checkout')
   checkout(@Req() req, @Body() body: any) {
-    return this.productsService.checkout(req.user.id, body);
+    const ownerId = req.user.id;
+    const workerId = req.user.workerId || req.user.id;
+    return this.productsService.checkout(ownerId, workerId, body);
   }
 
   @Post('purchase-orders')

@@ -20,6 +20,7 @@ import {
   Trash2,
   RotateCcw,
   Search,
+  XCircle,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
@@ -29,6 +30,7 @@ import BusinessAiAdvisor from "../components/dashboard/BusinessAiAdvisor";
 import ImageUploader, { getReceiptAbsoluteUrl } from "../components/ui/ImageUploader";
 import Pagination from "../components/ui/Pagination";
 import DateRangePicker from "../components/ui/DateRangePicker";
+import { cancelPurchaseOrderRequest } from "../services/product.api";
 
 
 export default function BusinessFinancePage() {
@@ -45,6 +47,10 @@ export default function BusinessFinancePage() {
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isRevertConfirmOpen, setIsRevertConfirmOpen] = useState(false);
   const [txIdToConfirm, setTxIdToConfirm] = useState<string | null>(null);
+
+  // Cancel purchase order states
+  const [isCancelOrderConfirmOpen, setIsCancelOrderConfirmOpen] = useState(false);
+  const [orderToCancel, setOrderToCancel] = useState<{ id: string; txId: string } | null>(null);
 
   // Filter States
   const [searchTerm, setSearchTerm] = useState("");
@@ -72,7 +78,7 @@ export default function BusinessFinancePage() {
     try {
       setLoading(true);
       const [txs, cats] = await Promise.all([
-        getTransactionsRequest("BUSINESS"),
+        getTransactionsRequest({ workspace: "BUSINESS" }),
         listCategoriesRequest(),
       ]);
       setTransactions(txs);
@@ -221,6 +227,118 @@ export default function BusinessFinancePage() {
     } catch (error) {
       toast.error("Error al devolver a cuentas pendientes");
     }
+  };
+
+  const exportFinanceExcel = async () => {
+    if (filteredTransactions.length === 0) {
+      toast.error("No hay transacciones para exportar");
+      return;
+    }
+    const XLSX = await import("xlsx");
+    const dataToExport = filteredTransactions.map(t => ({
+      "Fecha": format(new Date(t.date), "yyyy-MM-dd"),
+      "Concepto": t.name || t.description || "Movimiento",
+      "Descripción": t.description || "",
+      "Categoría": t.category?.name || "Sin Categoría",
+      "Subcategoría": t.subCategory?.name || "",
+      "Tipo": t.type === "INCOME" ? "Ingreso" : "Egreso",
+      "Método de Pago": t.paymentMethod,
+      "Moneda": t.currency || "PEN",
+      "Tipo de Cambio": t.currency === "USD" ? (t.exchangeRate || 1) : "",
+      "Monto Original": t.amount,
+      "Total en Soles (S/)": t.currency === "USD" ? t.amount * (t.exchangeRate || 1) : t.amount,
+      "Estado": t.status === "CANCELLED" ? "Anulado" : t.status === "PENDING" ? "Pendiente" : "Finalizado"
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Movimientos");
+    XLSX.writeFile(workbook, "Movimientos_Tesoreria.xlsx");
+    toast.success("Movimientos exportados a Excel");
+  };
+
+  const exportFinancePdf = async () => {
+    if (filteredTransactions.length === 0) {
+      toast.error("No hay transacciones para exportar");
+      return;
+    }
+    const { jsPDF } = await import("jspdf");
+    const doc = new jsPDF("l", "mm", "a4"); // Landscape orientation
+    const businessName = "Control Finanzas";
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.text(`REGISTRO DE TESORERÍA - ${businessName.toUpperCase()}`, 14, 20);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(100);
+    doc.text(`Fecha de exportación: ${new Date().toLocaleDateString()}`, 14, 26);
+
+    let y = 35;
+    doc.setFillColor(79, 70, 229); // indigo-600
+    doc.rect(14, y, 268, 8, "F");
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(255);
+    doc.text("Fecha", 16, y + 5);
+    doc.text("Concepto", 40, y + 5);
+    doc.text("Categoría", 110, y + 5);
+    doc.text("Método", 155, y + 5);
+    doc.text("Tipo", 185, y + 5);
+    doc.text("Monto Orig.", 210, y + 5);
+    doc.text("Total (S/)", 240, y + 5);
+    doc.text("Estado", 262, y + 5);
+
+    doc.setTextColor(0);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+
+    filteredTransactions.forEach((t) => {
+      y += 8;
+      if (y > 185) {
+        doc.addPage();
+        y = 20;
+        doc.setFillColor(79, 70, 229);
+        doc.rect(14, y, 268, 8, "F");
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9);
+        doc.setTextColor(255);
+        doc.text("Fecha", 16, y + 5);
+        doc.text("Concepto", 40, y + 5);
+        doc.text("Categoría", 110, y + 5);
+        doc.text("Método", 155, y + 5);
+        doc.text("Tipo", 185, y + 5);
+        doc.text("Monto Orig.", 210, y + 5);
+        doc.text("Total (S/)", 240, y + 5);
+        doc.text("Estado", 262, y + 5);
+
+        doc.setTextColor(0);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        y += 8;
+      }
+
+      const totalSoles = t.currency === "USD" ? t.amount * (t.exchangeRate || 1) : t.amount;
+
+      doc.text(format(new Date(t.date), "yyyy-MM-dd"), 16, y + 5);
+      
+      const concepto = t.name || t.description || "Movimiento";
+      doc.text(concepto.substring(0, 40), 40, y + 5);
+      
+      const cat = t.category?.name || "Sin Categoría";
+      doc.text(cat.substring(0, 25), 110, y + 5);
+      
+      doc.text(t.paymentMethod || "CASH", 155, y + 5);
+      doc.text(t.type === "INCOME" ? "Ingreso" : "Egreso", 185, y + 5);
+      doc.text(`${t.currency || "PEN"} ${t.amount.toFixed(2)}`, 210, y + 5);
+      doc.text(`S/ ${totalSoles.toFixed(2)}`, 240, y + 5);
+      doc.text(t.status === "CANCELLED" ? "Anulado" : t.status === "PENDING" ? "Pendiente" : "Finalizado", 262, y + 5);
+    });
+
+    doc.save("Reporte_Tesoreria.pdf");
+    toast.success("Reporte de tesorería exportado a PDF");
   };
 
   const filteredTransactions = transactions.filter((t) => {
@@ -416,7 +534,7 @@ export default function BusinessFinancePage() {
                   </div>
                 </div>
 
-                <div className="pt-2 border-t border-gray-200/50">
+                <div className="pt-2 border-t border-gray-200/50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                   <DateRangePicker
                     dateFrom={dateFrom}
                     dateTo={dateTo}
@@ -427,6 +545,20 @@ export default function BusinessFinancePage() {
                       setDateTo("");
                     }}
                   />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={exportFinanceExcel}
+                      className="px-4 py-2 text-xs font-extrabold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-xl transition-all active:scale-95 flex items-center gap-1.5 border border-emerald-200"
+                    >
+                      Exportar Excel
+                    </button>
+                    <button
+                      onClick={exportFinancePdf}
+                      className="px-4 py-2 text-xs font-extrabold bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-xl transition-all active:scale-95 flex items-center gap-1.5 border border-rose-200"
+                    >
+                      Exportar PDF
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -543,37 +675,64 @@ export default function BusinessFinancePage() {
                           </td>
                           <td className="px-6 py-4 text-center">
                             <div className="flex justify-center items-center gap-1.5">
-                              {t.status !== "CANCELLED" && (
-                                <>
-                                  <button
-                                    onClick={() => handleEditClick(t)}
-                                    className="p-1.5 text-gray-400 hover:bg-indigo-50 hover:text-indigo-600 rounded-xl transition-all"
-                                    title="Editar movimiento"
-                                  >
-                                    <Edit className="w-4 h-4" />
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setTxIdToConfirm(t.id);
-                                      setIsRevertConfirmOpen(true);
-                                    }}
-                                    className="p-1.5 text-gray-400 hover:bg-amber-50 hover:text-amber-600 rounded-xl transition-all"
-                                    title="Devolver a pendientes (por cobrar/pagar)"
-                                  >
-                                    <RotateCcw className="w-4 h-4" />
-                                  </button>
-                                </>
-                              )}
-                              <button
-                                onClick={() => {
-                                  setTxIdToConfirm(t.id);
-                                  setIsDeleteConfirmOpen(true);
-                                }}
-                                className="p-1.5 text-gray-400 hover:bg-rose-50 hover:text-rose-600 rounded-xl transition-all"
-                                title="Eliminar permanentemente"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              {(() => {
+                                const matchPurchase = t.description?.match(/Pedido de Compra\. ID:\s*([a-fA-F0-9-]+)/);
+                                const purchaseOrderId = matchPurchase ? matchPurchase[1] : null;
+
+                                if (purchaseOrderId) {
+                                  if (t.status === "CANCELLED") {
+                                    return <span className="text-xs text-gray-400 font-semibold">—</span>;
+                                  }
+                                  return (
+                                    <button
+                                      onClick={() => {
+                                        setOrderToCancel({ id: purchaseOrderId, txId: t.id });
+                                        setIsCancelOrderConfirmOpen(true);
+                                      }}
+                                      className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
+                                      title="Cancelar Compra (Anula el egreso)"
+                                    >
+                                      <XCircle className="w-5 h-5" />
+                                    </button>
+                                  );
+                                }
+
+                                return (
+                                  <>
+                                    {t.status !== "CANCELLED" && (
+                                      <>
+                                        <button
+                                          onClick={() => handleEditClick(t)}
+                                          className="p-1.5 text-gray-400 hover:bg-indigo-50 hover:text-indigo-600 rounded-xl transition-all"
+                                          title="Editar movimiento"
+                                        >
+                                          <Edit className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                          onClick={() => {
+                                            setTxIdToConfirm(t.id);
+                                            setIsRevertConfirmOpen(true);
+                                          }}
+                                          className="p-1.5 text-gray-400 hover:bg-amber-50 hover:text-amber-600 rounded-xl transition-all"
+                                          title="Devolver a pendientes (por cobrar/pagar)"
+                                        >
+                                          <RotateCcw className="w-4 h-4" />
+                                        </button>
+                                      </>
+                                    )}
+                                    <button
+                                      onClick={() => {
+                                        setTxIdToConfirm(t.id);
+                                        setIsDeleteConfirmOpen(true);
+                                      }}
+                                      className="p-1.5 text-gray-400 hover:bg-rose-50 hover:text-rose-600 rounded-xl transition-all"
+                                      title="Eliminar permanentemente"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </>
+                                );
+                              })()}
                             </div>
                           </td>
                         </tr>
@@ -866,6 +1025,35 @@ export default function BusinessFinancePage() {
         confirmText="Devolver a Pendientes"
         cancelText="Cancelar"
         variant="warning"
+      />
+
+      <ConfirmModal
+        isOpen={isCancelOrderConfirmOpen}
+        onClose={() => {
+          setIsCancelOrderConfirmOpen(false);
+          setOrderToCancel(null);
+        }}
+        onConfirm={async () => {
+          if (orderToCancel) {
+            const t = toast.loading("Cancelando compra...");
+            try {
+              await cancelPurchaseOrderRequest(orderToCancel.id);
+              toast.dismiss(t);
+              toast.success("Compra cancelada. El egreso de tesorería ha sido anulado.");
+              setIsCancelOrderConfirmOpen(false);
+              setOrderToCancel(null);
+              loadData(); // Reload transactions
+            } catch (err: any) {
+              toast.dismiss(t);
+              toast.error(err?.response?.data?.message || "Error al cancelar compra");
+            }
+          }
+        }}
+        title="¿Cancelar esta compra?"
+        message="¿Estás seguro de que deseas cancelar esta compra? Se anulará el egreso en la Tesorería y el monto de dinero retornará a tu liquidez total. Esta acción no se puede deshacer."
+        confirmText="Sí, Cancelar Compra"
+        cancelText="No, Mantener"
+        variant="danger"
       />
     </Appshell>
   );

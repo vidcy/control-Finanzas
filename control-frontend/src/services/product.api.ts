@@ -14,6 +14,8 @@ export interface Product {
   sku?: string;
   costPrice: number;
   salePrice: number;
+  adjustedPrice?: number;
+  customCode?: number;
   stock: number;
   minStock: number;
   unit: string;
@@ -25,6 +27,7 @@ export interface Product {
   family?: { id: string; name: string };
   createdAt?: string;
   updatedAt?: string;
+  branchStocks?: any[];
 }
 
 export interface InventoryMovement {
@@ -96,6 +99,7 @@ export const checkoutCartRequest = async (data: {
   }>;
   paymentMethod: string;
   categoryId: string;
+  subCategoryId?: string | null;
   receiptUrl?: string | null;
 }) => {
   const res = await API.post("/products/checkout", data);
@@ -154,6 +158,7 @@ export interface PurchaseOrder {
   status: "PENDING" | "PAID" | "RECEIVED" | "CANCELLED";
   paymentMethod: string;
   categoryId: string;
+  subCategoryId?: string;
   receiptUrl?: string;
   createdAt: string;
   items: PurchaseOrderItem[];
@@ -263,6 +268,7 @@ export const payPurchaseOrderRequest = async (
   id: string,
   data: {
     categoryId: string;
+    subCategoryId?: string | null;
     paymentMethod: string;
     receiptUrl?: string | null;
   }

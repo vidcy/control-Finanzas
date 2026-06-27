@@ -27,9 +27,17 @@ export const createTransactionRequest = async (data: {
   }
 };
 
-export const getTransactionsRequest = async (workspace: string = "PERSONAL") => {
+export interface GetTransactionsParams {
+  workspace?: string;
+  isPosSale?: boolean;
+  startDate?: string;
+  endDate?: string;
+  userId?: string;
+}
+
+export const getTransactionsRequest = async (params?: GetTransactionsParams) => {
   try {
-    const res = await API.get(`/transactions?workspace=${workspace}`);
+    const res = await API.get("/transactions", { params });
     return res.data;
   } catch (error: any) {
     throw new Error(

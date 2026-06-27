@@ -120,6 +120,10 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (businessRuc && businessRuc.trim() !== "" && businessRuc.length !== 11) {
+      toast.error("El RUC debe tener exactamente 11 dígitos.");
+      return;
+    }
     setIsSavingProfile(true);
     try {
       let finalAvatarUrl = profileAvatar;
@@ -154,7 +158,8 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       localStorage.setItem("user", JSON.stringify(updatedUser));
       toast.success("Perfil actualizado con éxito");
     } catch (error: any) {
-      toast.error(error.message || "Error al guardar el perfil");
+      const msg = error.response?.data?.message || error.message || "Error al guardar el perfil";
+      toast.error(msg);
     } finally {
       setIsSavingProfile(false);
     }
@@ -866,6 +871,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                   onChange={(e) => setBusinessName(e.target.value)}
                 />
               </div>
+
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1">
                   RUC (11 dígitos)
@@ -874,14 +880,22 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                   type="text"
                   maxLength={11}
                   placeholder="Ej. 10203040506"
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none text-sm font-bold text-gray-700 bg-white"
+                  className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 focus:ring-purple-500 outline-none text-sm font-bold text-gray-700 bg-white ${
+                    businessRuc && businessRuc.length !== 11 ? "border-rose-300 focus:ring-rose-500" : "border-gray-200"
+                  }`}
                   value={businessRuc}
                   onChange={(e) => {
                     const val = e.target.value.replace(/\D/g, "");
                     setBusinessRuc(val);
                   }}
                 />
+                {businessRuc && businessRuc.length !== 11 && (
+                  <p className="text-[11px] text-rose-500 font-extrabold mt-1 animate-pulse">
+                    ⚠️ El RUC debe tener exactamente 11 dígitos numéricos. (Tiene {businessRuc.length})
+                  </p>
+                )}
               </div>
+
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1">
                   Razón Social

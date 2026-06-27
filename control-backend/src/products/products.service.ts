@@ -424,14 +424,22 @@ export class ProductsService {
   /**
    * Secure transactional POS checkout flow
    */
-  async checkout(userId: string, checkoutDto: any) {
-    const { items, paymentMethod, categoryId, receiptUrl } = checkoutDto;
+  async checkout(ownerId: string, workerId: string, checkoutDto: any) {
+    const { items, paymentMethod, categoryId, subCategoryId, receiptUrl } = checkoutDto;
 
     if (!items || items.length === 0) {
       throw new BadRequestException('El carrito de compras está vacío.');
     }
 
     return this.prisma.$transaction(async (tx) => {
+      // 0. Find active CashShift for the worker
+      const activeShift = await tx.cashShift.findFirst({
+        where: { userId: workerId, status: 'OPEN' },
+      });
+      if (!activeShift) {
+        throw new BadRequestException('No hay ninguna caja abierta para realizar ventas.');
+      }
+
       let totalAmount = 0;
       const salesDetails: string[] = [];
       const itemsToProcess: Array<{
@@ -455,7 +463,7 @@ export class ProductsService {
         }
 
         const product = await tx.product.findFirst({
-          where: { id: item.id, userId },
+          where: { id: item.id, userId: ownerId },
           include: { presentations: true },
         });
         if (!product) {
@@ -466,7 +474,7 @@ export class ProductsService {
 
         let equivalence = 1;
         let presentationName = product.unit;
-        let salePrice = product.salePrice;
+        let salePrice = item.salePrice !== undefined && item.salePrice !== null ? Number(item.salePrice) : product.salePrice;
 
         if (item.presentationId) {
           const pres = product.presentations.find(
@@ -479,7 +487,7 @@ export class ProductsService {
           }
           equivalence = pres.equivalence;
           presentationName = pres.name;
-          salePrice = pres.price;
+          salePrice = item.salePrice !== undefined && item.salePrice !== null ? Number(item.salePrice) : pres.price;
         }
 
         const requiredQty = parseFloat(item.quantity);
@@ -513,7 +521,7 @@ export class ProductsService {
           type: 'INCOME',
           amount: parseFloat(totalAmount.toFixed(2)),
           categoryId,
-          subCategoryId: null,
+          subCategoryId: subCategoryId || null,
           date: new Date(),
           status: 'PAID',
           currency: 'PEN',
@@ -521,7 +529,9 @@ export class ProductsService {
           description: `Venta en POS: ${salesDetails.join(', ')}`,
           workspace: 'BUSINESS',
           receiptUrl: receiptUrl || null,
-          userId,
+          userId: workerId,
+          cashShiftId: activeShift.id,
+          isPosSale: true,
         },
       });
 
@@ -547,7 +557,7 @@ export class ProductsService {
             presentationId: item.presentationId || null,
             presentationName,
             presentationQty: requiredQty,
-            userId,
+            userId: workerId,
             unitCost: product.costPrice, // CPP unit cost at sale
             totalCost: mainUnitsQty * product.costPrice,
             stockResult: updatedProduct.stock,
@@ -616,11 +626,13 @@ export class ProductsService {
     const prisma = tx || this.prisma;
     const transactions = await prisma.transaction.findMany({
       where: {
-        userId,
+        OR: [
+          { userId },
+          { user: { parentId: userId } }
+        ],
         workspace: 'BUSINESS',
-        status: {
-          in: ['PAID', 'PENDING'],
-        },
+        isPosSale: false,
+        status: 'PAID',
       },
       select: {
         type: true,
@@ -635,17 +647,9 @@ export class ProductsService {
 
     for (const t of transactions) {
       const amt = t.amountSoles || 0;
-      if (t.status === 'PAID') {
-        if (t.type === 'INCOME') {
-          income += amt;
-        } else {
-          expense += amt;
-        }
-      } else if (
-        t.status === 'PENDING' &&
-        t.type === 'EXPENSE' &&
-        t.description?.includes('Pedido de Compra')
-      ) {
+      if (t.type === 'INCOME') {
+        income += amt;
+      } else {
         expense += amt;
       }
     }
@@ -719,7 +723,7 @@ export class ProductsService {
         })
         .join(', ');
 
-      // 3. Create General Contable Transaction (Expense) ONLY IF PAID
+      // 3. Create General Contable Transaction (Expense)
       if (isPaid) {
         await tx.transaction.create({
           data: {
@@ -729,12 +733,30 @@ export class ProductsService {
             categoryId,
             subCategoryId: null,
             date: new Date(),
-            status: receiveImmediately ? 'PAID' : 'PENDING', // PENDING means "En Proceso"
+            status: 'PAID',
             currency: 'PEN',
             paymentMethod,
-            description: `Pedido de Compra. ID: ${purchaseOrder.id}. Ítems: ${itemDetails}. Estado: ${receiveImmediately ? 'Recibido en Almacén' : 'En Tránsito (Pedido)'}.`,
+            description: `Pedido de Compra. ID: ${purchaseOrder.id}. Ítems: ${itemDetails}. Estado: Pagado. ${receiveImmediately ? 'Recibido en Almacén.' : 'En Tránsito (Pedido).'}`,
             workspace: 'BUSINESS',
             receiptUrl: receiptUrl || null,
+            userId,
+          },
+        });
+      } else {
+        await tx.transaction.create({
+          data: {
+            name: `Compra de Mercadería: ${productNames.substring(0, 50)}${productNames.length > 50 ? '...' : ''}`,
+            type: 'EXPENSE',
+            amount: parseFloat(totalCost),
+            categoryId,
+            subCategoryId: null,
+            date: new Date(),
+            status: 'PENDING',
+            currency: 'PEN',
+            paymentMethod,
+            description: `Pedido de Compra. ID: ${purchaseOrder.id}. Ítems: ${itemDetails}. Estado: Pendiente de Pago.`,
+            workspace: 'BUSINESS',
+            receiptUrl: null,
             userId,
           },
         });
@@ -915,7 +937,7 @@ export class ProductsService {
    * Cancel/delete a pending purchase order
    */
   async payPurchaseOrder(userId: string, id: string, body: any) {
-    const { paymentMethod, categoryId, receiptUrl } = body;
+    const { paymentMethod, categoryId, subCategoryId, receiptUrl } = body;
 
     const order = await this.prisma.purchaseOrder.findFirst({
       where: { id, userId },
@@ -940,40 +962,69 @@ export class ProductsService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      // 1. Update status to PAID
+      // 1. Update status to PAID, wasPaid to true, and save subCategoryId
       const updatedOrder = await tx.purchaseOrder.update({
         where: { id },
         data: {
           status: 'PAID',
           paymentMethod,
           categoryId,
+          subCategoryId: subCategoryId || null,
           receiptUrl: receiptUrl || null,
+          wasPaid: true,
         },
       });
 
-      // 2. Create Treasury Transaction (status: PENDING which is En Proceso)
-      const productNames = order.items.map((item) => item.product.name).join(', ');
-      const itemDetails = order.items
-        .map((item) => `${item.quantity}x ${item.product.name}`)
-        .join(', ');
-
-      await tx.transaction.create({
-        data: {
-          name: `Compra de Mercadería: ${productNames.substring(0, 50)}${productNames.length > 50 ? '...' : ''}`,
-          type: 'EXPENSE',
-          amount: order.totalCost,
-          categoryId,
-          subCategoryId: null,
-          date: new Date(),
-          status: 'PENDING',
-          currency: 'PEN',
-          paymentMethod,
-          description: `Pedido de Compra. ID: ${order.id}. Ítems: ${itemDetails}. Estado: En Tránsito (Pedido).`,
-          workspace: 'BUSINESS',
-          receiptUrl: receiptUrl || null,
+      // 2. Locate or transition the PENDING transaction to PAID
+      const existingPendingTx = await tx.transaction.findFirst({
+        where: {
           userId,
+          description: {
+            contains: `Pedido de Compra. ID: ${id}`,
+          },
+          status: 'PENDING',
         },
       });
+
+      if (existingPendingTx) {
+        await tx.transaction.update({
+          where: { id: existingPendingTx.id },
+          data: {
+            status: 'PAID',
+            paymentMethod,
+            categoryId,
+            subCategoryId: subCategoryId || null,
+            receiptUrl: receiptUrl || null,
+            date: new Date(),
+            description: existingPendingTx.description
+              ? existingPendingTx.description.replace("Estado: Pendiente de Pago.", "Estado: Pagado. En Tránsito (Pedido).")
+              : `Pedido de Compra. ID: ${order.id}. Estado: Pagado. En Tránsito (Pedido).`,
+          },
+        });
+      } else {
+        const productNames = order.items.map((item) => item.product.name).join(', ');
+        const itemDetails = order.items
+          .map((item) => `${item.quantity}x ${item.product.name}`)
+          .join(', ');
+
+        await tx.transaction.create({
+          data: {
+            name: `Compra de Mercadería: ${productNames.substring(0, 50)}${productNames.length > 50 ? '...' : ''}`,
+            type: 'EXPENSE',
+            amount: order.totalCost,
+            categoryId,
+            subCategoryId: subCategoryId || null,
+            date: new Date(),
+            status: 'PAID',
+            currency: 'PEN',
+            paymentMethod,
+            description: `Pedido de Compra. ID: ${order.id}. Ítems: ${itemDetails}. Estado: Pagado. En Tránsito (Pedido).`,
+            workspace: 'BUSINESS',
+            receiptUrl: receiptUrl || null,
+            userId,
+          },
+        });
+      }
 
       return updatedOrder;
     });
@@ -993,28 +1044,48 @@ export class ProductsService {
       );
     }
 
+    if (order.wasPaid) {
+      throw new BadRequestException(
+        'No se puede eliminar un pedido que ya ha sido pagado previamente. Al haber sido pagado, ya generó movimientos y conciliación contable. Para anularlo, debe cancelarlo usando la opción de Cancelar.',
+      );
+    }
+
     return this.prisma.$transaction(async (tx) => {
-      // Verificar si hay registro activo en Tesorería asociado a este pedido
-      const treasuryRecord = await tx.transaction.findFirst({
+      // Si el pedido ya tiene un registro de pago CONFIRMADO (PAID) en Tesorería, no se puede eliminar
+      const paidTreasuryRecord = await tx.transaction.findFirst({
         where: {
           userId,
           description: {
             contains: `Pedido de Compra. ID: ${id}`,
           },
-          status: {
-            in: ['PAID', 'PENDING'],
-          },
+          status: 'PAID',
         },
       });
 
-      if (treasuryRecord) {
-        // Hay registro en Tesorería → no se puede eliminar, solo cancelar
+      if (paidTreasuryRecord) {
         throw new BadRequestException(
-          `TREASURY_RECORD_EXISTS|${treasuryRecord.id}|Este pedido ya fue confirmado y está registrado en Tesorería (ID: ${treasuryRecord.id.substring(0, 8)}...). Para eliminarlo, primero debe cancelarlo. El sistema cancelará el registro en Tesorería automáticamente.`,
+          `TREASURY_RECORD_EXISTS|${paidTreasuryRecord.id}|Este pedido ya tiene un pago confirmado registrado en Tesorería. No se puede eliminar, sólo cancelar. Al cancelarlo, se anulará el registro y regresará el saldo.`,
         );
       }
 
-      // Status PENDING sin registro en Tesorería → eliminar directamente
+      // Si existe un registro PENDING (Cuenta por Pagar), lo eliminamos junto al pedido
+      const pendingTreasuryRecord = await tx.transaction.findFirst({
+        where: {
+          userId,
+          description: {
+            contains: `Pedido de Compra. ID: ${id}`,
+          },
+          status: 'PENDING',
+        },
+      });
+
+      if (pendingTreasuryRecord) {
+        await tx.transaction.delete({
+          where: { id: pendingTreasuryRecord.id },
+        });
+      }
+
+      // Eliminar el pedido de compra
       return tx.purchaseOrder.delete({
         where: { id },
       });

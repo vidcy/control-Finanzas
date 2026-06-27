@@ -55,6 +55,7 @@ import {
 } from "../services/product.api";
 import type { Product, Presentation, LowStockAnalysisItem, PurchaseOrder } from "../services/product.api";
 import { listCategoriesRequest } from "../services/category.api";
+import { getTransactionsRequest } from "../services/transaction.api";
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
 import ConfirmModal from "../components/ui/ConfirmModal";
@@ -134,9 +135,9 @@ export default function BusinessInventoryPage() {
   const [activeTab, setActiveTab] = useState<"products" | "planner" | "labels">("products");
 
   // Branch context — only used when BUSINESS_BRANCHES is enabled
-  const hasBranches = user?.profiles?.includes("BUSINESS_BRANCHES");
-  const [branches, setBranches] = useState<any[]>([]);
-  const [activeBranchId, setActiveBranchId] = useState<string>(""); // "" = all branches / no filter
+  // const hasBranches = user?.profiles?.includes("BUSINESS_BRANCHES");
+  // const [branches, setBranches] = useState<any[]>([]);
+  // const [activeBranchId, setActiveBranchId] = useState<string>(""); // "" = all branches / no filter
 
   // Core Data
   const [products, setProducts] = useState<Product[]>([]);
@@ -180,6 +181,7 @@ export default function BusinessInventoryPage() {
     sku: "",
     costPrice: 0,
     salePrice: 0,
+    adjustedPrice: 0,
     stock: 0,
     minStock: 5,
     unit: "Unidad",
@@ -346,9 +348,26 @@ export default function BusinessInventoryPage() {
   const [payingOrderTotal, setPayingOrderTotal] = useState(0);
   const [payOrderData, setPayOrderData] = useState({
     categoryId: "",
+    subCategoryId: "",
     paymentMethod: "CASH",
   });
   const [payOrderFile, setPayOrderFile] = useState<File | null>(null);
+  const [treasuryLiquidity, setTreasuryLiquidity] = useState<number | null>(null);
+
+  const fetchTreasuryLiquidity = async () => {
+    try {
+      const txs = await getTransactionsRequest({ workspace: "BUSINESS" });
+      const income = txs
+        .filter((t: any) => t.type === "INCOME" && t.status === "PAID")
+        .reduce((acc: number, t: any) => acc + (t.currency === "USD" ? t.amount * (t.exchangeRate || 1) : t.amount), 0);
+      const expense = txs
+        .filter((t: any) => t.type === "EXPENSE" && t.status === "PAID")
+        .reduce((acc: number, t: any) => acc + (t.currency === "USD" ? t.amount * (t.exchangeRate || 1) : t.amount), 0);
+      setTreasuryLiquidity(income - expense);
+    } catch (error) {
+      console.error("Error al obtener liquidez de tesorería", error);
+    }
+  };
 
   // Barcode Printing States
   const [ticketProductId, setTicketProductId] = useState("");
@@ -392,15 +411,15 @@ export default function BusinessInventoryPage() {
       setCategories(cats.filter((c: any) => c.type === "EXPENSE"));
       await fetchBrandsAndFamilies();
       // Load branches if multi-branch module is enabled
-      if (hasBranches) {
-        try {
-          const { getBranchesRequest } = await import("../services/branch.api");
-          const branchData = await getBranchesRequest();
-          setBranches(branchData);
-        } catch {
-          // Not critical — just means no branch data
-        }
-      }
+      // if (hasBranches) {
+      //   try {
+      //     const { getBranchesRequest } = await import("../services/branch.api");
+      //     const branchData = await getBranchesRequest();
+      //     setBranches(branchData);
+      //   } catch {
+      //     // Not critical — just means no branch data
+      //   }
+      // }
     } catch (error) {
       toast.error("Error al cargar inventario");
     } finally {
@@ -556,6 +575,7 @@ export default function BusinessInventoryPage() {
         sku: code.trim(),
         costPrice: 0,
         salePrice: 0,
+        adjustedPrice: 0,
         stock: 0,
         minStock: 5,
         unit: "Unidad",
@@ -578,6 +598,7 @@ export default function BusinessInventoryPage() {
         sku: product.sku || "",
         costPrice: product.costPrice,
         salePrice: product.salePrice,
+        adjustedPrice: product.adjustedPrice || 0,
         stock: product.stock,
         minStock: product.minStock,
         unit: product.unit || "Unidad",
@@ -594,6 +615,7 @@ export default function BusinessInventoryPage() {
         sku: "",
         costPrice: 0,
         salePrice: 0,
+        adjustedPrice: 0,
         stock: 0,
         minStock: 5,
         unit: "Unidad",
@@ -614,6 +636,7 @@ export default function BusinessInventoryPage() {
       sku: "", // Clear SKU/Barcode so they can type or scan the new one
       costPrice: product.costPrice,
       salePrice: product.salePrice,
+      adjustedPrice: product.adjustedPrice || 0,
       stock: 0, // Reset stock for new item
       minStock: product.minStock,
       unit: product.unit || "Unidad",
@@ -867,62 +890,7 @@ export default function BusinessInventoryPage() {
     setIsConfirmOpen(true);
   };
 
-  /**
-   * Eliminar pedido: Solo si NO tiene registro en Tesorería (status=PENDING sin pago confirmado).
-   * Si tiene registro en Tesorería, debe cancelarse primero usando handleCancelOrder.
-   */
-  const handleDeleteOrder = async (orderId: string) => {
-    const order = purchaseOrders.find(o => o.id === orderId);
-    if (!order) return;
 
-    // Si el pedido ya está en Tesorería (PAID o RECEIVED), no se puede eliminar directamente
-    if (order.status === "PAID" || order.status === "RECEIVED") {
-      setConfirmConfig({
-        title: "⚠️ Pedido Registrado en Tesorería",
-        message: `Este pedido ya fue confirmado (Pago registrado en Tesorería). No se puede eliminar directamente.\n\n¿Desea CANCELARLO? Esto marcará el pedido como cancelado y también anulará el registro correspondiente en Tesorería.\n\n${order.status === "RECEIVED" ? "⛔ IMPORTANTE: Este pedido ya fue ingresado al almacén. Primero debe revertir el ingreso de stock y luego cancelarlo." : ""}`,
-        confirmText: order.status === "RECEIVED" ? "Revertir Ingreso Primero" : "Sí, Cancelar Pedido",
-        cancelText: "No, Mantener",
-        variant: "warning",
-        onConfirm: async () => {
-          if (order.status === "RECEIVED") {
-            // Dirigir al usuario a revertir primero
-            toast.error("Primero debe revertir el ingreso de stock usando el botón 'Revertir Ingreso', luego podrá cancelar el pedido.", { duration: 6000 });
-            return;
-          }
-          await handleCancelOrder(orderId);
-        }
-      });
-      setIsConfirmOpen(true);
-      return;
-    }
-
-    // PENDING sin registro en Tesorería → eliminar directamente
-    setConfirmConfig({
-      title: "Eliminar Pedido",
-      message: "Este pedido aún no fue confirmado (no tiene registro en Tesorería). ¿Estás seguro de que deseas eliminarlo permanentemente?",
-      confirmText: "Eliminar Pedido",
-      cancelText: "Cancelar",
-      variant: "danger",
-      onConfirm: async () => {
-        try {
-          await deletePurchaseOrderRequest(orderId);
-          toast.success("Pedido eliminado correctamente");
-          loadOrders();
-          loadPlannerData();
-          loadData();
-        } catch (err: any) {
-          const errMsg: string = err?.response?.data?.message || "";
-          // El backend puede devolver un mensaje especial si hay registro en Tesorería
-          if (errMsg.startsWith("TREASURY_RECORD_EXISTS")) {
-            toast.error("Este pedido tiene registro en Tesorería. Use el botón Cancelar en lugar de Eliminar.", { duration: 6000 });
-          } else {
-            toast.error(errMsg || "Error al eliminar pedido");
-          }
-        }
-      }
-    });
-    setIsConfirmOpen(true);
-  };
 
   /**
    * Cancelar pedido: Marca el pedido como CANCELLED y también cancela el registro en Tesorería si existe.
@@ -969,12 +937,39 @@ export default function BusinessInventoryPage() {
   };
 
   // ── Pay Order handler (PENDING → PAID) ──
-  const handleOpenPayOrder = (order: PurchaseOrder) => {
+  const handleOpenPayOrder = async (order: PurchaseOrder) => {
     setPayingOrderId(order.id);
     setPayingOrderTotal(order.totalCost);
-    setPayOrderData({ categoryId: categories[0]?.id || "", paymentMethod: order.paymentMethod || "CASH" });
     setPayOrderFile(null);
     setIsPayOrderModalOpen(true);
+
+    // Dynamic defaults for category and subcategory
+    let defaultCatId = categories[0]?.id || "";
+    let defaultSubId = "";
+
+    const catNegocioEgreso = categories.find((c: any) =>
+      c.name.toLowerCase().includes("negocio") && c.name.toLowerCase().includes("egreso")
+    ) || categories.find((c: any) => c.name.toLowerCase().includes("egreso"));
+
+    if (catNegocioEgreso) {
+      defaultCatId = catNegocioEgreso.id;
+      const subMercaderia = catNegocioEgreso.children?.find((s: any) =>
+        s.name.toLowerCase().includes("mercaderia") || s.name.toLowerCase().includes("mercadería")
+      );
+      if (subMercaderia) {
+        defaultSubId = subMercaderia.id;
+      } else if (catNegocioEgreso.children?.[0]) {
+        defaultSubId = catNegocioEgreso.children[0].id;
+      }
+    }
+
+    setPayOrderData({
+      categoryId: defaultCatId,
+      subCategoryId: defaultSubId,
+      paymentMethod: order.paymentMethod || "CASH",
+    });
+
+    await fetchTreasuryLiquidity();
   };
 
   const handlePayOrderSubmit = async (e: React.FormEvent) => {
@@ -982,6 +977,12 @@ export default function BusinessInventoryPage() {
     if (!payingOrderId) return;
     if (!payOrderData.categoryId) {
       toast.error("Selecciona una categoría de egreso");
+      return;
+    }
+
+    // Double check liquidity
+    if (treasuryLiquidity !== null && payingOrderTotal > treasuryLiquidity) {
+      toast.error("No se puede registrar el pago. Fondos insuficientes en Tesorería.");
       return;
     }
 
@@ -995,6 +996,7 @@ export default function BusinessInventoryPage() {
         }
         await payPurchaseOrderRequest(payingOrderId, {
           categoryId: payOrderData.categoryId,
+          subCategoryId: payOrderData.subCategoryId || null,
           paymentMethod: payOrderData.paymentMethod,
           receiptUrl: finalReceiptUrl || null,
         });
@@ -1285,6 +1287,99 @@ export default function BusinessInventoryPage() {
     return matchesSearch && matchesBrand && matchesFamily;
   });
 
+  const exportInventoryExcel = async () => {
+    if (filteredProducts.length === 0) {
+      toast.error("No hay productos para exportar");
+      return;
+    }
+    const XLSX = await import("xlsx");
+    const dataToExport = filteredProducts.map(p => ({
+      "SKU": p.sku || "",
+      "Nombre": p.name || "",
+      "Familia": p.family?.name || "",
+      "Marca": p.brand?.name || "",
+      "Stock Actual": p.stock || 0,
+      "Unidad": p.unit || "",
+      "Costo Compra (S/)": p.costPrice || 0,
+      "Precio Venta (S/)": p.salePrice || 0,
+      "Precio Ajustado (S/)": p.adjustedPrice || ""
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Productos");
+    XLSX.writeFile(workbook, "Inventario_Productos.xlsx");
+    toast.success("Productos exportados a Excel");
+  };
+
+  const exportInventoryPdf = async () => {
+    if (filteredProducts.length === 0) {
+      toast.error("No hay productos para exportar");
+      return;
+    }
+    const { jsPDF } = await import("jspdf");
+    const doc = new jsPDF("p", "mm", "a4");
+    const businessName = user?.businessName || "Control Finanzas";
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.text(`INVENTARIO DE PRODUCTOS - ${businessName.toUpperCase()}`, 14, 20);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(100);
+    doc.text(`Fecha de exportación: ${new Date().toLocaleDateString()}`, 14, 26);
+
+    let y = 35;
+    doc.setFillColor(79, 70, 229);
+    doc.rect(14, y, 182, 8, "F");
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(255);
+    doc.text("SKU", 16, y + 5);
+    doc.text("Producto", 45, y + 5);
+    doc.text("Stock", 110, y + 5);
+    doc.text("Costo (S/)", 135, y + 5);
+    doc.text("Precio (S/)", 160, y + 5);
+
+    doc.setTextColor(0);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+
+    filteredProducts.forEach((p) => {
+      y += 8;
+      if (y > 275) {
+        doc.addPage();
+        y = 20;
+        doc.setFillColor(79, 70, 229);
+        doc.rect(14, y, 182, 8, "F");
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9);
+        doc.setTextColor(255);
+        doc.text("SKU", 16, y + 5);
+        doc.text("Producto", 45, y + 5);
+        doc.text("Stock", 110, y + 5);
+        doc.text("Costo (S/)", 135, y + 5);
+        doc.text("Precio (S/)", 160, y + 5);
+
+        doc.setTextColor(0);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        y += 8;
+      }
+
+      doc.text(p.sku || "—", 16, y + 5);
+      doc.text((p.name || "").substring(0, 35), 45, y + 5);
+      doc.text(`${p.stock} ${p.unit}`, 110, y + 5);
+      doc.text(`S/ ${(p.costPrice || 0).toFixed(2)}`, 135, y + 5);
+      doc.text(`S/ ${(p.salePrice || 0).toFixed(2)}`, 160, y + 5);
+    });
+
+    doc.save("Inventario_Productos.pdf");
+    toast.success("Inventario exportado a PDF");
+  };
+
   const selectedPres = restockProduct?.presentations?.find(
     (p) => p.id === restockData.presentationId,
   );
@@ -1515,6 +1610,21 @@ export default function BusinessInventoryPage() {
                       Limpiar filtros
                     </button>
                   )}
+
+                  <div className="flex gap-2 shrink-0">
+                    <button
+                      onClick={exportInventoryExcel}
+                      className="px-4 py-3.5 text-xs font-extrabold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-2xl transition-all active:scale-95 border border-emerald-200 flex items-center gap-1.5 shadow-sm"
+                    >
+                      Exportar Excel
+                    </button>
+                    <button
+                      onClick={exportInventoryPdf}
+                      className="px-4 py-3.5 text-xs font-extrabold bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-2xl transition-all active:scale-95 border border-rose-200 flex items-center gap-1.5 shadow-sm"
+                    >
+                      Exportar PDF
+                    </button>
+                  </div>
                 </div>
 
                 {/* Active filter chips */}
@@ -2773,6 +2883,74 @@ export default function BusinessInventoryPage() {
                 className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
               />
             </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                P. Ajustado (Var) S/ <span className="text-xs text-gray-400 font-normal">(Opcional)</span>
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={formData.adjustedPrice || ""}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    adjustedPrice: e.target.value ? Number(e.target.value) : 0,
+                  })
+                }
+                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                placeholder="Ej. 11.50"
+              />
+              
+              {/* Margin Shortcuts */}
+              {formData.costPrice > 0 && (
+                <div className="flex gap-1.5 mt-1.5">
+                  {["+10%", "+20%", "+30%"].map((mStr) => {
+                    const pct = parseInt(mStr);
+                    const suggested = formData.costPrice * (1 + pct / 100);
+                    return (
+                      <button
+                        key={mStr}
+                        type="button"
+                        onClick={() =>
+                          setFormData({
+                            ...formData,
+                            adjustedPrice: Number(suggested.toFixed(2)),
+                          })
+                        }
+                        className="px-2 py-0.5 text-[10px] font-bold bg-indigo-50 text-indigo-600 rounded hover:bg-indigo-100 transition-colors"
+                      >
+                        {mStr} (S/ {suggested.toFixed(2)})
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Recommendations/Price Analysis */}
+              {formData.adjustedPrice !== undefined && formData.adjustedPrice > 0 && formData.costPrice > 0 && (() => {
+                const margin = ((formData.adjustedPrice - formData.costPrice) / formData.adjustedPrice) * 100;
+                if (formData.adjustedPrice <= formData.costPrice) {
+                  return (
+                    <p className="mt-1.5 text-xs font-semibold text-red-600 flex items-center gap-1">
+                      ⚠️ Peligro: El precio es menor/igual al costo (S/ {formData.costPrice.toFixed(2)}). ¡Estás perdiendo dinero!
+                    </p>
+                  );
+                } else if (margin < 10) {
+                  return (
+                    <p className="mt-1.5 text-xs font-semibold text-amber-600 flex items-center gap-1">
+                      ⚠️ Margen bajo: El margen es de {margin.toFixed(1)}%. Recomendamos subirlo.
+                    </p>
+                  );
+                } else {
+                  return (
+                    <p className="mt-1.5 text-xs font-semibold text-green-600 flex items-center gap-1">
+                      ✅ Precio viable: Margen saludable del {margin.toFixed(1)}%.
+                    </p>
+                  );
+                }
+              })()}
+            </div>
 
             {/* PRESENTATIONS */}
             <div className="md:col-span-2 border-t border-gray-100 pt-4">
@@ -3708,7 +3886,12 @@ export default function BusinessInventoryPage() {
             <label className="block text-xs font-black text-gray-700 mb-1.5">Categoría de Egreso *</label>
             <select
               value={payOrderData.categoryId}
-              onChange={(e) => setPayOrderData(prev => ({ ...prev, categoryId: e.target.value }))}
+              onChange={(e) => {
+                const catId = e.target.value;
+                const catObj = categories.find(c => c.id === catId);
+                const firstSub = catObj?.children?.[0]?.id || "";
+                setPayOrderData(prev => ({ ...prev, categoryId: catId, subCategoryId: firstSub }));
+              }}
               required
               className="w-full px-4 py-3 border border-gray-200 rounded-2xl text-sm font-bold text-gray-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
             >
@@ -3718,6 +3901,27 @@ export default function BusinessInventoryPage() {
               ))}
             </select>
           </div>
+
+          {(() => {
+            const selectedCategoryObj = categories.find(c => c.id === payOrderData.categoryId);
+            const subcategories = selectedCategoryObj?.children || [];
+            if (subcategories.length === 0) return null;
+            return (
+              <div>
+                <label className="block text-xs font-black text-gray-700 mb-1.5">Subcategoría de Egreso</label>
+                <select
+                  value={payOrderData.subCategoryId}
+                  onChange={(e) => setPayOrderData(prev => ({ ...prev, subCategoryId: e.target.value }))}
+                  className="w-full px-4 py-3 border border-gray-200 rounded-2xl text-sm font-bold text-gray-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                >
+                  <option value="">Seleccionar subcategoría...</option>
+                  {subcategories.map((sub: any) => (
+                    <option key={sub.id} value={sub.id}>{sub.name}</option>
+                  ))}
+                </select>
+              </div>
+            );
+          })()}
 
           <div>
             <label className="block text-xs font-black text-gray-700 mb-1.5">Método de Pago</label>
@@ -3749,6 +3953,37 @@ export default function BusinessInventoryPage() {
             )}
           </div>
 
+          {/* LIQUIDITY WARNING/BLOCK BANNER */}
+          {treasuryLiquidity !== null && payingOrderTotal > treasuryLiquidity && (
+            <div className="bg-red-50 border border-red-200 rounded-2xl p-4 space-y-3">
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="text-xs font-black text-red-950 uppercase tracking-wider">Fondos Insuficientes</h4>
+                  <p className="text-xs text-red-800 mt-0.5">
+                    El costo del pedido supera la liquidez disponible en Tesorería.
+                  </p>
+                </div>
+              </div>
+              <div className="text-xs space-y-1 pl-7 text-red-900 font-bold">
+                <div>• Costo del pedido: <span className="font-extrabold text-gray-900">S/ {payingOrderTotal.toFixed(2)}</span></div>
+                <div>• Saldo en caja: <span className="font-extrabold text-emerald-700">S/ {treasuryLiquidity.toFixed(2)}</span></div>
+                <div>• Monto faltante: <span className="font-black text-red-600">S/ {(payingOrderTotal - treasuryLiquidity).toFixed(2)}</span></div>
+              </div>
+              <div className="pt-1 pl-7">
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.location.href = "/business-finance";
+                  }}
+                  className="px-3 py-2 bg-gradient-to-r from-red-600 to-rose-600 text-white rounded-xl text-[10px] font-black transition-all shadow-md hover:scale-[1.02] active:scale-[0.98]"
+                >
+                  Ir a Tesorería a inyectar fondos
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-3 pt-2">
             <button
               type="button"
@@ -3759,7 +3994,12 @@ export default function BusinessInventoryPage() {
             </button>
             <button
               type="submit"
-              className="flex-1 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-2xl text-sm flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all"
+              disabled={treasuryLiquidity !== null && payingOrderTotal > treasuryLiquidity}
+              className={`flex-1 px-4 py-3 text-white font-extrabold rounded-2xl text-sm flex items-center justify-center gap-2 transition-all ${
+                treasuryLiquidity !== null && payingOrderTotal > treasuryLiquidity
+                  ? "bg-gray-300 cursor-not-allowed opacity-60"
+                  : "bg-indigo-600 hover:bg-indigo-700 active:scale-95 shadow-sm"
+              }`}
             >
               <CreditCard className="w-4 h-4" />
               Confirmar Pago

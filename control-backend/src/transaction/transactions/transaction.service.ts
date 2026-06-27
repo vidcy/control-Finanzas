@@ -73,18 +73,72 @@ export class TransactionService {
   // Backend devuelve UTC sin tocar fechas
   // =========================================================
   async listTransactions(userId: string, workspace: string = 'PERSONAL') {
-    return this.prisma.transaction.findMany({
-      where: {
-        userId,
-        status: {
-          in: [TransactionStatus.PAID, TransactionStatus.CANCELLED, TransactionStatus.PENDING],
-        },
-        workspace,
+    return this.listTransactionsFiltered({
+      ownerId: userId,
+      workspace,
+    });
+  }
+
+  async listTransactionsFiltered(options: {
+    ownerId: string;
+    workerId?: string;
+    workspace: string;
+    isPosSale?: boolean;
+    startDate?: string;
+    endDate?: string;
+    filterUserId?: string;
+  }) {
+    const { ownerId, workerId, workspace, isPosSale, startDate, endDate, filterUserId } = options;
+
+    const whereClause: any = {
+      workspace,
+      status: {
+        in: [TransactionStatus.PAID, TransactionStatus.CANCELLED],
       },
+    };
+
+    // Exclude individual POS sales by default unless specifically requested
+    whereClause.isPosSale = isPosSale !== undefined ? isPosSale : false;
+
+    if (workerId) {
+      // Worker: only see their own transactions
+      whereClause.userId = workerId;
+    } else {
+      // Owner: can filter by user or see all
+      if (filterUserId) {
+        whereClause.userId = filterUserId;
+      } else {
+        whereClause.OR = [
+          { userId: ownerId },
+          { user: { parentId: ownerId } }
+        ];
+      }
+    }
+
+    if (startDate || endDate) {
+      whereClause.date = {};
+      if (startDate) {
+        whereClause.date.gte = new Date(startDate);
+      }
+      if (endDate) {
+        whereClause.date.lte = new Date(endDate);
+      }
+    }
+
+    return this.prisma.transaction.findMany({
+      where: whereClause,
       orderBy: { date: 'desc' },
       include: {
         category: true,
         subCategory: true,
+        user: {
+          select: {
+            id: true,
+            name: true,
+            lastName: true,
+            email: true,
+          }
+        }
       },
     });
   }
@@ -92,11 +146,13 @@ export class TransactionService {
   async getLiquidity(userId: string, workspace: string = 'PERSONAL'): Promise<number> {
     const transactions = await this.prisma.transaction.findMany({
       where: {
-        userId,
+        OR: [
+          { userId },
+          { user: { parentId: userId } }
+        ],
         workspace,
-        status: {
-          in: [TransactionStatus.PAID, TransactionStatus.PENDING],
-        },
+        isPosSale: false, // Exclude individual POS sales!
+        status: TransactionStatus.PAID,
       },
       select: {
         type: true,
@@ -111,17 +167,9 @@ export class TransactionService {
 
     for (const t of transactions) {
       const amt = t.amountSoles || 0;
-      if (t.status === TransactionStatus.PAID) {
-        if (t.type === 'INCOME') {
-          income += amt;
-        } else {
-          expense += amt;
-        }
-      } else if (
-        t.status === TransactionStatus.PENDING &&
-        t.type === 'EXPENSE' &&
-        t.description?.includes('Pedido de Compra')
-      ) {
+      if (t.type === 'INCOME') {
+        income += amt;
+      } else {
         expense += amt;
       }
     }
@@ -288,12 +336,32 @@ export class TransactionService {
       }
     }
 
-    return this.prisma.transaction.update({
+    const updated = await this.prisma.transaction.update({
       where: { id },
       data: {
         status: dto.status as any,
         paidAt: dto.status === 'PAID' ? new Date() : null,
       },
     });
+
+    // Bidirectional sync with PurchaseOrder if linked
+    if (existing.description && existing.description.includes('Pedido de Compra. ID:')) {
+      const match = existing.description.match(/Pedido de Compra\. ID:\s*([a-fA-F0-9-]+|[0-9a-fA-F]+)/);
+      if (match && match[1]) {
+        const poId = match[1];
+        let poStatus: 'PENDING' | 'PAID' = 'PENDING';
+        if (dto.status === 'PAID') {
+          poStatus = 'PAID';
+        }
+        await this.prisma.purchaseOrder.update({
+          where: { id: poId },
+          data: { status: poStatus },
+        }).catch((err) => {
+          console.error("Failed to sync PurchaseOrder status from transaction:", err);
+        });
+      }
+    }
+
+    return updated;
   }
 }

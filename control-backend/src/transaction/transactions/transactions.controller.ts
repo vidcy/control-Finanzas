@@ -17,8 +17,25 @@ export class TransactionController {
   }
   @UseGuards(AuthGuard('jwt'))
   @Get()
-  listTransactions(@Req() req, @Query('workspace') workspace?: string) {
-    return this.transactionService.listTransactions(req.user.id, workspace);
+  listTransactions(
+    @Req() req,
+    @Query('workspace') workspace?: string,
+    @Query('isPosSale') isPosSale?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('userId') filterUserId?: string,
+  ) {
+    const ownerId = req.user.id;
+    const workerId = req.user.workerId;
+    return this.transactionService.listTransactionsFiltered({
+      ownerId,
+      workerId,
+      workspace: workspace || 'PERSONAL',
+      isPosSale: isPosSale === 'true' ? true : isPosSale === 'false' ? false : undefined,
+      startDate,
+      endDate,
+      filterUserId,
+    });
   }
   @UseGuards(AuthGuard('jwt'))
   @Get(':id')
