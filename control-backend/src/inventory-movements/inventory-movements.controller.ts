@@ -20,21 +20,61 @@ export class InventoryMovementsController {
     @Req() req,
     @Query('productId') productId?: string,
     @Query('type') type?: string,
+    @Query('branchId') branchId?: string,
+    @Query('userId') filterUserId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
   ) {
+    const ownerId = req.user.id;
+    const workerId = req.user.workerId;
+
+    const whereClause: any = {};
+
+    if (workerId) {
+      whereClause.OR = [{ userId: ownerId }, { user: { parentId: ownerId } }];
+    } else {
+      if (filterUserId) {
+        whereClause.userId = filterUserId;
+      } else {
+        whereClause.OR = [{ userId: ownerId }, { user: { parentId: ownerId } }];
+      }
+    }
+
+    if (productId) {
+      whereClause.productId = productId;
+    }
+    if (type) {
+      whereClause.type = type as any;
+    }
+    if (branchId) {
+      whereClause.branchId = branchId;
+    }
+    if (startDate || endDate) {
+      whereClause.createdAt = {};
+      if (startDate) {
+        whereClause.createdAt.gte = new Date(startDate);
+      }
+      if (endDate) {
+        whereClause.createdAt.lte = new Date(endDate);
+      }
+    }
+
     return this.prisma.inventoryMovement.findMany({
-      where: {
-        userId: req.user.id,
-        ...(productId ? { productId } : {}),
-        ...(type ? { type: type as any } : {}),
-      },
+      where: whereClause,
       include: {
         product: {
-          select: { id: true, name: true, unit: true, imageUrl: true },
+          select: { id: true, name: true, unit: true, imageUrl: true, sku: true },
         },
         presentation: { select: { id: true, name: true } },
+        user: {
+          select: { id: true, name: true, lastName: true },
+        },
+        branch: {
+          select: { id: true, name: true },
+        },
       },
       orderBy: { createdAt: 'desc' },
-      take: 200,
+      take: 500,
     });
   }
 

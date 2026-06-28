@@ -106,7 +106,12 @@ export class CashShiftService {
     });
   }
 
-  async closeShift(ownerId: string, workerId: string) {
+  async closeShift(
+    ownerId: string,
+    workerId: string,
+    categoryId?: string,
+    subCategoryId?: string,
+  ) {
     const activeShift = await this.prisma.cashShift.findFirst({
       where: { userId: workerId, status: 'OPEN' },
     });
@@ -143,41 +148,43 @@ export class CashShiftService {
       });
 
       // Register Treasury INCOME transaction
-      let categoryId = '';
-      let subCategoryId: string | null = null;
+      let categoryIdToUse = categoryId || '';
+      let subCategoryIdToUse: string | null = subCategoryId || null;
 
-      const incomeCategory = await tx.category.findFirst({
-        where: {
-          userId: ownerId,
-          type: 'INCOME',
-          name: { contains: 'Ingreso' },
-        },
-      });
-
-      if (incomeCategory) {
-        categoryId = incomeCategory.id;
-        const subCat = await tx.category.findFirst({
+      if (!categoryIdToUse) {
+        const incomeCategory = await tx.category.findFirst({
           where: {
-            parentId: incomeCategory.id,
-            name: { contains: 'Caja' },
+            userId: ownerId,
+            type: 'INCOME',
+            name: { contains: 'Ingreso' },
           },
         });
-        if (subCat) subCategoryId = subCat.id;
-      } else {
-        const firstCat = await tx.category.findFirst({
-          where: { userId: ownerId, type: 'INCOME' },
-        });
-        if (firstCat) categoryId = firstCat.id;
+
+        if (incomeCategory) {
+          categoryIdToUse = incomeCategory.id;
+          const subCat = await tx.category.findFirst({
+            where: {
+              parentId: incomeCategory.id,
+              name: { contains: 'Caja' },
+            },
+          });
+          if (subCat) subCategoryIdToUse = subCat.id;
+        } else {
+          const firstCat = await tx.category.findFirst({
+            where: { userId: ownerId, type: 'INCOME' },
+          });
+          if (firstCat) categoryIdToUse = firstCat.id;
+        }
       }
 
-      if (categoryId) {
+      if (categoryIdToUse) {
         await tx.transaction.create({
           data: {
             name: 'Cierre de Caja',
             type: 'INCOME',
             amount: finalBalance,
-            categoryId,
-            subCategoryId,
+            categoryId: categoryIdToUse,
+            subCategoryId: subCategoryIdToUse,
             date: new Date(),
             status: 'PAID',
             currency: 'PEN',

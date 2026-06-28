@@ -9,7 +9,7 @@ const API = Axios.create({
   baseURL: import.meta.env.VITE_API_URL,
   // console.log("BASE URL:", import.meta.env.VITE_API_URL);
 });
-console.log("🔥 VITE_API_URL =", import.meta.env.VITE_API_URL);
+//console.log("🔥 VITE_API_URL =", import.meta.env.VITE_API_URL);
 // 🔐 INTERCEPTOR JWT
 API.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
@@ -27,4 +27,3 @@ API.interceptors.request.use((config) => {
  * import axios from "./axios"
  */
 export default API;
-

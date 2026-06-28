@@ -24,6 +24,7 @@ export class TransactionController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('userId') filterUserId?: string,
+    @Query('branchId') branchId?: string,
   ) {
     const ownerId = req.user.id;
     const workerId = req.user.workerId;
@@ -32,10 +33,17 @@ export class TransactionController {
       workerId,
       workspace: workspace || 'PERSONAL',
       isPosSale:
-        isPosSale === 'true' ? true : isPosSale === 'false' ? false : undefined,
+        isPosSale === 'true'
+          ? true
+          : isPosSale === 'false'
+            ? false
+            : isPosSale === 'all'
+              ? 'all'
+              : undefined,
       startDate,
       endDate,
       filterUserId,
+      branchId,
     });
   }
   @UseGuards(AuthGuard('jwt'))

@@ -645,14 +645,20 @@ export class ProductsService {
     });
   }
 
-  /**
-   * Create a purchase order
-   */
+  async getOwnerId(userId: string): Promise<string> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { parentId: true },
+    });
+    return user?.parentId || userId;
+  }
+
   async getBusinessLiquidity(userId: string, tx?: any): Promise<number> {
     const prisma = tx || this.prisma;
+    const ownerId = await this.getOwnerId(userId);
     const transactions = await prisma.transaction.findMany({
       where: {
-        OR: [{ userId }, { user: { parentId: userId } }],
+        OR: [{ userId: ownerId }, { user: { parentId: ownerId } }],
         workspace: 'BUSINESS',
         isPosSale: false,
         status: 'PAID',
@@ -660,6 +666,7 @@ export class ProductsService {
       select: {
         type: true,
         amountSoles: true,
+        amount: true,
         status: true,
         description: true,
       },
@@ -669,7 +676,7 @@ export class ProductsService {
     let expense = 0;
 
     for (const t of transactions) {
-      const amt = t.amountSoles || 0;
+      const amt = t.amountSoles !== null && t.amountSoles !== undefined ? t.amountSoles : t.amount;
       if (t.type === 'INCOME') {
         income += amt;
       } else {
@@ -680,12 +687,14 @@ export class ProductsService {
     return income - expense;
   }
 
+
   async createPurchaseOrder(userId: string, body: any) {
     const {
       items,
       totalCost,
       paymentMethod,
       categoryId,
+      subCategoryId,
       receiptUrl,
       receiveImmediately,
       confirmPayment,
@@ -718,6 +727,7 @@ export class ProductsService {
           status: receiveImmediately ? 'RECEIVED' : isPaid ? 'PAID' : 'PENDING',
           paymentMethod,
           categoryId,
+          subCategoryId: subCategoryId || null,
           receiptUrl: receiptUrl || null,
           userId,
           items: {
@@ -765,7 +775,7 @@ export class ProductsService {
             type: 'EXPENSE',
             amount: parseFloat(totalCost),
             categoryId,
-            subCategoryId: null,
+            subCategoryId: subCategoryId || null,
             date: new Date(),
             status: 'PAID',
             currency: 'PEN',
@@ -783,7 +793,7 @@ export class ProductsService {
             type: 'EXPENSE',
             amount: parseFloat(totalCost),
             categoryId,
-            subCategoryId: null,
+            subCategoryId: subCategoryId || null,
             date: new Date(),
             status: 'PENDING',
             currency: 'PEN',
@@ -1320,7 +1330,7 @@ export class ProductsService {
    * Update / Edit a purchase order (reverting stock if RECEIVED, changing items, then re-applying if RECEIVED)
    */
   async updatePurchaseOrder(userId: string, id: string, body: any) {
-    const { items, totalCost, paymentMethod, categoryId, receiptUrl } = body;
+    const { items, totalCost, paymentMethod, categoryId, subCategoryId, receiptUrl } = body;
 
     const order = await this.prisma.purchaseOrder.findFirst({
       where: { id, userId },
@@ -1394,6 +1404,7 @@ export class ProductsService {
           totalCost: parseFloat(totalCost),
           paymentMethod,
           categoryId,
+          subCategoryId: subCategoryId || null,
           receiptUrl: receiptUrl || null,
           items: {
             create: items.map((item: any) => ({
@@ -1489,6 +1500,7 @@ export class ProductsService {
             name: `Compra de Mercadería: ${orderNames.substring(0, 50)}${orderNames.length > 50 ? '...' : ''}`,
             amount: parseFloat(totalCost),
             categoryId,
+            subCategoryId: subCategoryId || null,
             paymentMethod,
             receiptUrl: receiptUrl || null,
             description: `Pedido de Compra. ID: ${order.id}. Ítems: ${orderDetails}. Estado: ${isReceived ? 'Recibido en Almacén' : 'En Tránsito (Pedido)'}.`,
@@ -1501,7 +1513,7 @@ export class ProductsService {
             type: 'EXPENSE',
             amount: parseFloat(totalCost),
             categoryId,
-            subCategoryId: null,
+            subCategoryId: subCategoryId || null,
             date: new Date(),
             status: 'PAID',
             currency: 'PEN',

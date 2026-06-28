@@ -86,6 +86,7 @@ model User {
   products     Product[]
   cashShifts   CashShift[]
   purchaseOrders PurchaseOrder[]
+  inventoryMovements InventoryMovement[]
 
   branchId        String?
   branch          Branch?        @relation("BranchWorkers", fields: [branchId], references: [id], onDelete: SetNull)
@@ -325,6 +326,7 @@ model InventoryMovement {
   documentId      String?       // ID of associated Sale (Transaction) or PurchaseOrder
 
   userId          String
+  user            User          @relation(fields: [userId], references: [id])
   branchId        String?
   branch          Branch?       @relation(fields: [branchId], references: [id], onDelete: SetNull)
   createdAt       DateTime      @default(now())

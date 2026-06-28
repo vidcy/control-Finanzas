@@ -104,4 +104,8 @@ export class UpdateTransactionDto {
   @ValidateIf((o) => o.receiptUrl !== null)
   @IsString()
   receiptUrl?: string | null;
+
+  @IsOptional()
+  @IsUUID()
+  branchId?: string | null;
 }

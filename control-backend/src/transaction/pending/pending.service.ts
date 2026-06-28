@@ -1,5 +1,5 @@
 import { PrismaService } from '../../prisma/prisma.service';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { CreatePendingTransactionDto } from './create-pending.dto';
 import { UpdatePendingTransactionDto } from './update-pending.dto';
 import { MarkAsPaidDto } from './mark-pending.dto';
@@ -177,10 +177,54 @@ export class PendingTransactionService {
   // paidAt SIEMPRE en UTC
   // =========================================================
   async markTransactionAsPaid(id: string, dto: MarkAsPaidDto) {
+    const existing = await this.getPendingTransactionDetails(id);
+
+    if (dto.status === 'PAID' && existing.status !== 'PAID') {
+      if (existing.type === 'EXPENSE') {
+        const ownerId = await this.prisma.user.findUnique({
+          where: { id: existing.userId },
+          select: { parentId: true },
+        }).then(user => user?.parentId || existing.userId);
+
+        const txs = await this.prisma.transaction.findMany({
+          where: {
+            OR: [{ userId: ownerId }, { user: { parentId: ownerId } }],
+            workspace: existing.workspace,
+            isPosSale: false,
+            status: 'PAID',
+          },
+          select: {
+            type: true,
+            amountSoles: true,
+            amount: true,
+          },
+        });
+
+        let income = 0;
+        let expense = 0;
+        for (const t of txs) {
+          const amt = t.amountSoles !== null && t.amountSoles !== undefined ? t.amountSoles : t.amount;
+          if (t.type === 'INCOME') {
+            income += amt;
+          } else {
+            expense += amt;
+          }
+        }
+        const currentLiquidity = income - expense;
+
+        const amtToCheck = existing.amountSoles !== null && existing.amountSoles !== undefined ? existing.amountSoles : existing.amount;
+        if (amtToCheck > currentLiquidity) {
+          throw new BadRequestException(
+            `Límite de liquidez superado. No tiene suficiente liquidez en caja para realizar este pago. Liquidez disponible: S/ ${currentLiquidity.toFixed(2)}.`,
+          );
+        }
+      }
+    }
+
     return this.prisma.transaction.update({
       where: { id },
       data: {
-        status: dto.status,
+        status: dto.status as any,
         paidAt: dto.status === 'PAID' ? new Date() : null,
       },
     });

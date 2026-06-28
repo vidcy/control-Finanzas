@@ -5,7 +5,6 @@ import { toast } from "react-hot-toast";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import Modal from "../components/ui/Modal";
-import ConfirmModal from "../components/ui/ConfirmModal";
 import { useAuth } from "../auth/AuthContext";
 import {
   openCashShiftRequest,
@@ -52,6 +51,9 @@ export default function BusinessCashRegisterPage() {
 
   // Modal confirm close shift states
   const [isCloseConfirmOpen, setIsCloseConfirmOpen] = useState(false);
+  const [incomeCategories, setIncomeCategories] = useState<any[]>([]);
+  const [closeCategoryId, setCloseCategoryId] = useState("");
+  const [closeSubCategoryId, setCloseSubCategoryId] = useState("");
 
   const loadInitialData = async () => {
     try {
@@ -85,6 +87,30 @@ export default function BusinessCashRegisterPage() {
           s.name.toLowerCase().includes("caja")
         );
         setSelectedSubCategoryId(subCaja ? subCaja.id : (priority.children?.[0]?.id || ""));
+      }
+
+      const allIncomeCats = catList.filter(
+        (c: any) => c.type === "INCOME" && !c.parentId
+      );
+      setIncomeCategories(allIncomeCats);
+
+      // Default close category
+      if (allIncomeCats.length > 0) {
+        const priority = allIncomeCats.find(
+          (c: any) =>
+            c.name.toLowerCase().includes("negocio") &&
+            c.name.toLowerCase().includes("ingreso")
+        ) || allIncomeCats.find(
+          (c: any) =>
+            c.name.toLowerCase().includes("negocio") ||
+            c.name.toLowerCase().includes("ingreso")
+        ) || allIncomeCats[0];
+        
+        setCloseCategoryId(priority.id);
+        const subCaja = priority.children?.find((s: any) =>
+          s.name.toLowerCase().includes("caja")
+        );
+        setCloseSubCategoryId(subCaja ? subCaja.id : (priority.children?.[0]?.id || ""));
       }
 
       // Default branch
@@ -368,8 +394,9 @@ export default function BusinessCashRegisterPage() {
 
   const handleCloseShift = async () => {
     try {
-      await closeCashShiftRequest();
+      await closeCashShiftRequest(closeCategoryId, closeSubCategoryId || undefined);
       toast.success("Caja cerrada exitosamente");
+      setIsCloseConfirmOpen(false);
       loadActiveShiftAndHistory();
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Error al cerrar la caja");
@@ -745,16 +772,93 @@ export default function BusinessCashRegisterPage() {
         </form>
       </Modal>
 
-      <ConfirmModal
+      {/* MODAL: CERRAR CAJA (CON SELECCIÓN DE CATEGORÍA Y SUBCATEGORÍA DE INGRESO) */}
+      <Modal
         isOpen={isCloseConfirmOpen}
         onClose={() => setIsCloseConfirmOpen(false)}
-        onConfirm={handleCloseShift}
-        title="¿Cerrar caja actual?"
-        message="¿Estás seguro de que deseas cerrar el turno de caja actual? No podrás registrar nuevas ventas en el POS hasta abrir un nuevo turno."
-        confirmText="Cerrar Caja"
-        cancelText="Cancelar"
-        variant="warning"
-      />
+        title="Cerrar turno de caja"
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleCloseShift();
+          }}
+          className="space-y-4"
+        >
+          <div className="bg-amber-50 border border-amber-200/60 rounded-2xl p-4 text-xs text-amber-900 space-y-2">
+            <span className="font-bold text-sm block">⚠️ ¿Cerrar caja actual?</span>
+            <p className="leading-relaxed">
+              ¿Estás seguro de que deseas cerrar el turno de caja actual? No podrás registrar nuevas ventas en el POS hasta abrir un nuevo turno.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
+              Categoría Contable (Ingreso por Cierre)
+            </label>
+            <select
+              value={closeCategoryId}
+              onChange={(e) => {
+                const catId = e.target.value;
+                setCloseCategoryId(catId);
+                const catObj = incomeCategories.find((c) => c.id === catId);
+                const firstSub = catObj?.children?.[0]?.id || "";
+                setCloseSubCategoryId(firstSub);
+              }}
+              required
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-semibold bg-white"
+            >
+              <option value="">Seleccionar Categoría...</option>
+              {incomeCategories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {(() => {
+            const catObj = incomeCategories.find((c) => c.id === closeCategoryId);
+            const subcats = catObj?.children || [];
+            if (subcats.length === 0) return null;
+            return (
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
+                  Subcategoría Contable
+                </label>
+                <select
+                  value={closeSubCategoryId}
+                  onChange={(e) => setCloseSubCategoryId(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-semibold bg-white"
+                >
+                  <option value="">Seleccionar Subcategoría...</option>
+                  {subcats.map((s: any) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            );
+          })()}
+
+          <div className="pt-4 flex justify-end gap-3 border-t border-gray-100">
+            <button
+              type="button"
+              onClick={() => setIsCloseConfirmOpen(false)}
+              className="px-5 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200 transition-colors text-sm"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              className="px-5 py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl transition-all shadow-md shadow-amber-500/20 text-sm"
+            >
+              Confirmar y Cerrar Caja
+            </button>
+          </div>
+        </form>
+      </Modal>
 
       {/* MODAL: DETALLES DE TURNO DE CAJA */}
       <Modal

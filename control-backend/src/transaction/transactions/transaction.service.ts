@@ -33,10 +33,7 @@ export class TransactionService {
 
     // Validate liquidity for EXPENSE type
     const isPaid = dto.status === TransactionStatus.PAID || !dto.status; // defaults to PAID
-    const isPendingPurchase =
-      dto.status === TransactionStatus.PENDING &&
-      dto.description?.includes('Pedido de Compra');
-    if (dto.type === 'EXPENSE' && (isPaid || isPendingPurchase)) {
+    if (dto.type === 'EXPENSE' && isPaid) {
       const currentLiquidity = await this.getLiquidity(
         userId,
         dto.workspace || 'PERSONAL',
@@ -76,6 +73,7 @@ export class TransactionService {
         amountSoles,
         workspace: dto.workspace || 'PERSONAL',
         receiptUrl: dto.receiptUrl || null,
+        branchId: dto.branchId || null,
       },
     });
   }
@@ -95,10 +93,11 @@ export class TransactionService {
     ownerId: string;
     workerId?: string;
     workspace: string;
-    isPosSale?: boolean;
+    isPosSale?: boolean | 'all';
     startDate?: string;
     endDate?: string;
     filterUserId?: string;
+    branchId?: string;
   }) {
     const {
       ownerId,
@@ -108,6 +107,7 @@ export class TransactionService {
       startDate,
       endDate,
       filterUserId,
+      branchId,
     } = options;
 
     const whereClause: any = {
@@ -117,18 +117,34 @@ export class TransactionService {
       },
     };
 
-    // Exclude individual POS sales by default unless specifically requested
-    whereClause.isPosSale = isPosSale !== undefined ? isPosSale : false;
-
-    if (workerId) {
-      // Worker: only see their own transactions
-      whereClause.userId = workerId;
+    // Exclude individual POS sales by default unless specifically requested or set to 'all'
+    if (isPosSale === 'all') {
+      // do not filter by isPosSale
     } else {
-      // Owner: can filter by user or see all
+      whereClause.isPosSale = isPosSale !== undefined ? isPosSale : false;
+    }
+
+    if (branchId) {
+      whereClause.branchId = branchId;
+    }
+
+    if (workspace === 'BUSINESS') {
+      // In business workspace, workers and owners see the business-wide transactions
       if (filterUserId) {
         whereClause.userId = filterUserId;
       } else {
         whereClause.OR = [{ userId: ownerId }, { user: { parentId: ownerId } }];
+      }
+    } else {
+      // In personal workspace, workers (if any) only see their own transactions
+      if (workerId) {
+        whereClause.userId = workerId;
+      } else {
+        if (filterUserId) {
+          whereClause.userId = filterUserId;
+        } else {
+          whereClause.OR = [{ userId: ownerId }, { user: { parentId: ownerId } }];
+        }
       }
     }
 
@@ -156,17 +172,32 @@ export class TransactionService {
             email: true,
           },
         },
+        branch: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
       },
     });
+  }
+
+  async getOwnerId(userId: string): Promise<string> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { parentId: true },
+    });
+    return user?.parentId || userId;
   }
 
   async getLiquidity(
     userId: string,
     workspace: string = 'PERSONAL',
   ): Promise<number> {
+    const ownerId = await this.getOwnerId(userId);
     const transactions = await this.prisma.transaction.findMany({
       where: {
-        OR: [{ userId }, { user: { parentId: userId } }],
+        OR: [{ userId: ownerId }, { user: { parentId: ownerId } }],
         workspace,
         isPosSale: false, // Exclude individual POS sales!
         status: TransactionStatus.PAID,
@@ -174,6 +205,7 @@ export class TransactionService {
       select: {
         type: true,
         amountSoles: true,
+        amount: true,
         status: true,
         description: true,
       },
@@ -183,7 +215,7 @@ export class TransactionService {
     let expense = 0;
 
     for (const t of transactions) {
-      const amt = t.amountSoles || 0;
+      const amt = t.amountSoles !== null && t.amountSoles !== undefined ? t.amountSoles : t.amount;
       if (t.type === 'INCOME') {
         income += amt;
       } else {
@@ -234,22 +266,17 @@ export class TransactionService {
     // Validate liquidity difference on update
     const wasPaidExpense =
       existing.type === 'EXPENSE' &&
-      (existing.status === TransactionStatus.PAID ||
-        (existing.status === TransactionStatus.PENDING &&
-          existing.description?.includes('Pedido de Compra')));
+      existing.status === TransactionStatus.PAID;
 
     const targetStatus = dto.status ?? existing.status;
     const targetType = dto.type ?? existing.type;
-    const targetDesc = dto.description ?? existing.description;
 
     const isPaidExpense =
       targetType === 'EXPENSE' &&
-      (targetStatus === TransactionStatus.PAID ||
-        (targetStatus === TransactionStatus.PENDING &&
-          targetDesc?.includes('Pedido de Compra')));
+      targetStatus === TransactionStatus.PAID;
 
-    const oldAmount = existing.amountSoles || 0;
-    const newAmount = amountSoles || 0;
+    const oldAmount = existing.amountSoles !== null && existing.amountSoles !== undefined ? existing.amountSoles : existing.amount;
+    const newAmount = amountSoles !== null && amountSoles !== undefined ? amountSoles : amount;
 
     let diff = 0;
     if (wasPaidExpense) diff -= oldAmount;
@@ -298,6 +325,7 @@ export class TransactionService {
         exchangeRate,
         amountSoles,
         ...(dto.receiptUrl !== undefined && { receiptUrl: dto.receiptUrl }),
+        ...(dto.branchId !== undefined && { branchId: dto.branchId }),
       },
     });
   }
@@ -367,7 +395,8 @@ export class TransactionService {
           existing.userId,
           existing.workspace,
         );
-        if ((existing.amountSoles || 0) > currentLiquidity) {
+        const amtToCheck = existing.amountSoles !== null && existing.amountSoles !== undefined ? existing.amountSoles : existing.amount;
+        if (amtToCheck > currentLiquidity) {
           throw new BadRequestException(
             `Límite de liquidez superado. No tiene suficiente liquidez en caja para realizar este pago. Liquidez disponible: S/ ${currentLiquidity.toFixed(2)}.`,
           );

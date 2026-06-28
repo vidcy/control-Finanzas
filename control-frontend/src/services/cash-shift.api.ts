@@ -15,8 +15,8 @@ export const openCashShiftRequest = async (
   return res.data;
 };
 
-export const closeCashShiftRequest = async () => {
-  const res = await axios.post('/cash-shift/close');
+export const closeCashShiftRequest = async (categoryId?: string, subCategoryId?: string) => {
+  const res = await axios.post('/cash-shift/close', { categoryId, subCategoryId });
   return res.data;
 };
 

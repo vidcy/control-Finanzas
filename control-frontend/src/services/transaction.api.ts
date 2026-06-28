@@ -29,10 +29,11 @@ export const createTransactionRequest = async (data: {
 
 export interface GetTransactionsParams {
   workspace?: string;
-  isPosSale?: boolean;
+  isPosSale?: boolean | "all" | string;
   startDate?: string;
   endDate?: string;
   userId?: string;
+  branchId?: string;
 }
 
 export const getTransactionsRequest = async (params?: GetTransactionsParams) => {

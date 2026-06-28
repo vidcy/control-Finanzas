@@ -8,6 +8,7 @@ import {
   markAsPendingRequest,
 } from "../services/transaction.api";
 import { listCategoriesRequest } from "../services/category.api";
+import { getBranchesRequest } from "../services/branch.api";
 import {
   Landmark,
   ArrowUpRight,
@@ -56,6 +57,8 @@ export default function BusinessFinancePage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState<"ALL" | "INCOME" | "EXPENSE">("ALL");
   const [filterCategory, setFilterCategory] = useState("");
+  const [filterBranch, setFilterBranch] = useState("");
+  const [branches, setBranches] = useState<any[]>([]);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [txPage, setTxPage] = useState(1);
@@ -71,18 +74,21 @@ export default function BusinessFinancePage() {
     receiptUrl: null as string | File | null,
     currency: "PEN" as "PEN" | "USD",
     exchangeRate: 1,
+    branchId: "",
   });
 
 
   const loadData = async () => {
     try {
       setLoading(true);
-      const [txs, cats] = await Promise.all([
+      const [txs, cats, branchList] = await Promise.all([
         getTransactionsRequest({ workspace: "BUSINESS" }),
         listCategoriesRequest(),
+        getBranchesRequest(),
       ]);
       setTransactions(txs);
       setCategories(cats);
+      setBranches(branchList);
     } catch (error) {
       toast.error("Error cargando finanzas");
     } finally {
@@ -156,6 +162,7 @@ export default function BusinessFinancePage() {
         currency: formData.currency,
         exchangeRate: formData.currency === "USD" ? formData.exchangeRate : 1,
         date: editingTransaction ? new Date(editingTransaction.date) : new Date(),
+        branchId: formData.branchId || null,
       };
 
       if (editingTransaction) {
@@ -184,6 +191,7 @@ export default function BusinessFinancePage() {
         receiptUrl: null,
         currency: "PEN",
         exchangeRate: 1,
+        branchId: "",
       });
       loadData();
     } catch (error) {
@@ -204,6 +212,7 @@ export default function BusinessFinancePage() {
       receiptUrl: t.receiptUrl || null,
       currency: t.currency || "PEN",
       exchangeRate: t.exchangeRate || 1,
+      branchId: t.branchId || "",
     });
     setIsModalOpen(true);
   };
@@ -238,6 +247,7 @@ export default function BusinessFinancePage() {
       "Fecha": format(new Date(t.date), "yyyy-MM-dd"),
       "Concepto": t.name || t.description || "Movimiento",
       "Descripción": t.description || "",
+      "Sede": t.branch?.name || "Sede Central",
       "Categoría": t.category?.name || "Sin Categoría",
       "Subcategoría": t.subCategory?.name || "",
       "Tipo": t.type === "INCOME" ? "Ingreso" : "Egreso",
@@ -283,11 +293,12 @@ export default function BusinessFinancePage() {
     doc.setTextColor(255);
     doc.text("Fecha", 16, y + 5);
     doc.text("Concepto", 40, y + 5);
-    doc.text("Categoría", 110, y + 5);
-    doc.text("Método", 155, y + 5);
-    doc.text("Tipo", 185, y + 5);
-    doc.text("Monto Orig.", 210, y + 5);
-    doc.text("Total (S/)", 240, y + 5);
+    doc.text("Sede", 95, y + 5);
+    doc.text("Categoría", 125, y + 5);
+    doc.text("Método", 165, y + 5);
+    doc.text("Tipo", 190, y + 5);
+    doc.text("Monto Orig.", 212, y + 5);
+    doc.text("Total (S/)", 238, y + 5);
     doc.text("Estado", 262, y + 5);
 
     doc.setTextColor(0);
@@ -306,11 +317,12 @@ export default function BusinessFinancePage() {
         doc.setTextColor(255);
         doc.text("Fecha", 16, y + 5);
         doc.text("Concepto", 40, y + 5);
-        doc.text("Categoría", 110, y + 5);
-        doc.text("Método", 155, y + 5);
-        doc.text("Tipo", 185, y + 5);
-        doc.text("Monto Orig.", 210, y + 5);
-        doc.text("Total (S/)", 240, y + 5);
+        doc.text("Sede", 95, y + 5);
+        doc.text("Categoría", 125, y + 5);
+        doc.text("Método", 165, y + 5);
+        doc.text("Tipo", 190, y + 5);
+        doc.text("Monto Orig.", 212, y + 5);
+        doc.text("Total (S/)", 238, y + 5);
         doc.text("Estado", 262, y + 5);
 
         doc.setTextColor(0);
@@ -324,15 +336,18 @@ export default function BusinessFinancePage() {
       doc.text(format(new Date(t.date), "yyyy-MM-dd"), 16, y + 5);
       
       const concepto = t.name || t.description || "Movimiento";
-      doc.text(concepto.substring(0, 40), 40, y + 5);
+      doc.text(concepto.substring(0, 32), 40, y + 5);
+      
+      const branchName = t.branch?.name || "Sede Central";
+      doc.text(branchName.substring(0, 18), 95, y + 5);
       
       const cat = t.category?.name || "Sin Categoría";
-      doc.text(cat.substring(0, 25), 110, y + 5);
+      doc.text(cat.substring(0, 22), 125, y + 5);
       
-      doc.text(t.paymentMethod || "CASH", 155, y + 5);
-      doc.text(t.type === "INCOME" ? "Ingreso" : "Egreso", 185, y + 5);
-      doc.text(`${t.currency || "PEN"} ${t.amount.toFixed(2)}`, 210, y + 5);
-      doc.text(`S/ ${totalSoles.toFixed(2)}`, 240, y + 5);
+      doc.text(t.paymentMethod || "CASH", 165, y + 5);
+      doc.text(t.type === "INCOME" ? "Ingreso" : "Egreso", 190, y + 5);
+      doc.text(`${t.currency || "PEN"} ${t.amount.toFixed(2)}`, 212, y + 5);
+      doc.text(`S/ ${totalSoles.toFixed(2)}`, 238, y + 5);
       doc.text(t.status === "CANCELLED" ? "Anulado" : t.status === "PENDING" ? "Pendiente" : "Finalizado", 262, y + 5);
     });
 
@@ -350,11 +365,15 @@ export default function BusinessFinancePage() {
 
     const matchesCategory = !filterCategory || t.categoryId === filterCategory;
 
+    const matchesBranch =
+      !filterBranch ||
+      (filterBranch === "central" ? !t.branchId : t.branchId === filterBranch);
+
     const day = (t.date || "").slice(0, 10);
     const matchesDateFrom = !dateFrom || day >= dateFrom;
     const matchesDateTo = !dateTo || day <= dateTo;
 
-    return matchesSearch && matchesType && matchesCategory && matchesDateFrom && matchesDateTo;
+    return matchesSearch && matchesType && matchesCategory && matchesBranch && matchesDateFrom && matchesDateTo;
   });
 
 
@@ -485,7 +504,7 @@ export default function BusinessFinancePage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
                   {/* Search */}
-                  <div className="md:col-span-4 flex items-center bg-white border border-gray-200 rounded-xl px-3 py-2 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 transition-all">
+                  <div className="md:col-span-3 flex items-center bg-white border border-gray-200 rounded-xl px-3 py-2 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 transition-all">
                     <Search className="w-4 h-4 text-gray-400 mr-2 shrink-0" />
                     <input
                       type="text"
@@ -497,7 +516,7 @@ export default function BusinessFinancePage() {
                   </div>
 
                   {/* Type Filter Buttons */}
-                  <div className="md:col-span-4 flex bg-white border border-gray-200 rounded-xl p-1 shadow-sm gap-1">
+                  <div className="md:col-span-3 flex bg-white border border-gray-200 rounded-xl p-1 shadow-sm gap-1">
                     {(["ALL", "INCOME", "EXPENSE"] as const).map((t) => (
                       <button
                         key={t}
@@ -515,7 +534,7 @@ export default function BusinessFinancePage() {
                   </div>
 
                   {/* Category Filter */}
-                  <div className="md:col-span-4">
+                  <div className="md:col-span-3">
                     <select
                       value={filterCategory}
                       onChange={(e) => setFilterCategory(e.target.value)}
@@ -529,6 +548,23 @@ export default function BusinessFinancePage() {
                             {c.name} ({c.type === "INCOME" ? "Ingreso" : "Egreso"})
                           </option>
                         ))}
+                    </select>
+                  </div>
+
+                  {/* Sede Filter */}
+                  <div className="md:col-span-3">
+                    <select
+                      value={filterBranch}
+                      onChange={(e) => setFilterBranch(e.target.value)}
+                      className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2.5 shadow-sm text-xs font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-indigo-500 transition-all cursor-pointer"
+                    >
+                      <option value="">Todas las sedes</option>
+                      <option value="central">Sede Central (Matriz)</option>
+                      {branches.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>
@@ -567,6 +603,8 @@ export default function BusinessFinancePage() {
                     <tr>
                       <th className="px-6 py-4">Fecha</th>
                       <th className="px-6 py-4">Concepto</th>
+                      <th className="px-6 py-4 text-center">Tipo</th>
+                      <th className="px-6 py-4">Sede</th>
                       <th className="px-6 py-4">Categoría</th>
                       <th className="px-6 py-4">Método</th>
                       <th className="px-6 py-4 text-center">Comprobante</th>
@@ -582,7 +620,7 @@ export default function BusinessFinancePage() {
                     {filteredTransactions.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={11}
+                          colSpan={13}
                           className="px-6 py-10 text-center text-gray-400 font-medium"
                         >
                           {transactions.length === 0
@@ -608,6 +646,20 @@ export default function BusinessFinancePage() {
                             <div className="text-xs text-gray-400 max-w-xs truncate">
                               {t.description}
                             </div>
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            <span className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider ${
+                              t.type === "INCOME"
+                                ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
+                                : "bg-rose-50 text-rose-700 border border-rose-100"
+                            }`}>
+                              {t.type === "INCOME" ? "Ingreso" : "Egreso"}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="bg-blue-50 text-blue-700 px-2.5 py-1 rounded-lg text-xs font-black border border-blue-150">
+                              {t.branch?.name || "Sede Central"}
+                            </span>
                           </td>
                           <td className="px-6 py-4">
                             <span className="bg-gray-100 text-gray-600 px-2.5 py-1 rounded-lg text-xs font-semibold">
@@ -651,7 +703,7 @@ export default function BusinessFinancePage() {
                           <td className="px-6 py-4 text-right font-semibold text-gray-600 text-xs">
                             {t.currency === "USD" ? "$" : "S/"} {t.amount.toFixed(2)}
                           </td>
-                           <td
+                          <td
                             className={`px-6 py-4 text-right font-black ${t.type === "INCOME" ? "text-emerald-600" : "text-rose-600"}`}
                           >
                             {t.type === "INCOME" ? "+" : "-"} S/{" "}
@@ -782,6 +834,7 @@ export default function BusinessFinancePage() {
             receiptUrl: null,
             currency: "PEN",
             exchangeRate: 1,
+            branchId: "",
           });
         }}
         title={
@@ -808,6 +861,26 @@ export default function BusinessFinancePage() {
                   : "Ej. Alquiler Local, Pago Luz, Sueldo Empleado"
               }
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1 font-bold">
+              Sede / Sucursal
+            </label>
+            <select
+              value={formData.branchId || ""}
+              onChange={(e) =>
+                setFormData({ ...formData, branchId: e.target.value })
+              }
+              className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-semibold text-gray-700 cursor-pointer"
+            >
+              <option value="">Sede Central (Matriz)</option>
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="grid grid-cols-3 gap-3">
@@ -973,6 +1046,7 @@ export default function BusinessFinancePage() {
                   receiptUrl: null,
                   currency: "PEN",
                   exchangeRate: 1,
+                  branchId: "",
                 });
               }}
               className="px-5 py-2.5 bg-gray-100 text-gray-700 font-medium rounded-xl hover:bg-gray-200 transition-colors"

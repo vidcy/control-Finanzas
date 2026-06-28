@@ -109,6 +109,10 @@ export const checkoutCartRequest = async (data: {
 export const getInventoryMovementsRequest = async (params?: {
   productId?: string;
   type?: string;
+  branchId?: string;
+  userId?: string;
+  startDate?: string;
+  endDate?: string;
 }): Promise<InventoryMovement[]> => {
   const res = await API.get("/inventory-movements", { params });
   return res.data;
@@ -175,6 +179,7 @@ export const createPurchaseOrderRequest = async (data: {
   }>;
   totalCost: number;
   categoryId: string;
+  subCategoryId?: string | null;
   paymentMethod: string;
   receiptUrl?: string | null;
   receiveImmediately?: boolean;
@@ -216,6 +221,7 @@ export const updatePurchaseOrderRequest = async (
     }>;
     totalCost: number;
     categoryId: string;
+    subCategoryId?: string | null;
     paymentMethod: string;
     receiptUrl?: string | null;
   }

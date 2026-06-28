@@ -115,4 +115,8 @@ export class CreateTransactionDto {
   @ValidateIf((o) => o.receiptUrl !== null)
   @IsString()
   receiptUrl?: string | null;
+
+  @IsOptional()
+  @IsUUID()
+  branchId?: string | null;
 }

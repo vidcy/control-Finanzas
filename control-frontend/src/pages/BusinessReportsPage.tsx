@@ -14,6 +14,8 @@ import {
 } from "recharts";
 import { getTransactionsRequest } from "../services/transaction.api";
 import { getProductsRequest, getInventoryMovementsRequest } from "../services/product.api";
+import { getBranchesRequest } from "../services/branch.api";
+import { getWorkersRequest } from "../services/user.api";
 import {
   TrendingUp,
   Package,
@@ -26,13 +28,15 @@ import {
   ArrowUpDown,
   ShoppingBag,
 } from "lucide-react";
-import { format, subDays, parseISO, isSameDay } from "date-fns";
+import { format, subDays, parseISO, isSameDay, addDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "react-hot-toast";
 import DateRangePicker from "../components/ui/DateRangePicker";
 import { exportToExcel } from "../utils/exportExcel";
+import { useAuth } from "../auth/AuthContext";
 
 export default function BusinessReportsPage() {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<"general" | "ventas" | "tesoreria" | "inventario" | "kardex">("general");
   const [loading, setLoading] = useState(true);
 
@@ -40,12 +44,18 @@ export default function BusinessReportsPage() {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [movements, setMovements] = useState<any[]>([]);
+  const [branches, setBranches] = useState<any[]>([]);
+  const [workers, setWorkers] = useState<any[]>([]);
 
   // Filters
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [searchTx, setSearchTx] = useState("");
   const [searchProduct, setSearchProduct] = useState("");
+  const [selectedBranch, setSelectedBranch] = useState("");
+  const [selectedWorker, setSelectedWorker] = useState("");
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("");
+  const [selectedProduct, setSelectedProduct] = useState("");
 
   useEffect(() => {
     loadAllData();
@@ -54,14 +64,18 @@ export default function BusinessReportsPage() {
   const loadAllData = async () => {
     try {
       setLoading(true);
-      const [txs, prods, movs] = await Promise.all([
-        getTransactionsRequest({ workspace: "BUSINESS" }),
+      const [txs, prods, movs, branchList, workerList] = await Promise.all([
+        getTransactionsRequest({ workspace: "BUSINESS", isPosSale: "all" }),
         getProductsRequest(),
         getInventoryMovementsRequest(),
+        getBranchesRequest(),
+        getWorkersRequest(),
       ]);
       setTransactions(txs);
       setProducts(prods);
       setMovements(movs);
+      setBranches(branchList);
+      setWorkers(workerList);
     } catch (error) {
       console.error(error);
       toast.error("Error al cargar la información del servidor");
@@ -73,15 +87,24 @@ export default function BusinessReportsPage() {
   // 1. FILTERED DATASETS
   const filteredTxs = transactions.filter((t: any) => {
     if (!t.date) return true;
-    const day = t.date.slice(0, 10);
+    const day = typeof t.date === "string" ? t.date.slice(0, 10) : "";
     if (dateFrom && day < dateFrom) return false;
     if (dateTo && day > dateTo) return false;
+    if (selectedBranch && t.branchId !== selectedBranch) return false;
+    if (selectedWorker && t.userId !== selectedWorker) return false;
+    if (selectedPaymentMethod && t.paymentMethod !== selectedPaymentMethod) return false;
+    if (selectedProduct) {
+      const q = selectedProduct.toLowerCase();
+      const inName = (t.name || "").toLowerCase().includes(q);
+      const inDesc = (t.description || "").toLowerCase().includes(q);
+      if (!inName && !inDesc) return false;
+    }
     return true;
   });
 
   // POS Sales only - only count PAID sales!
   const filteredSales = filteredTxs.filter(
-    (t: any) => t.type === "INCOME" && t.name === "Venta en Caja" && t.status === "PAID"
+    (t: any) => t.type === "INCOME" && t.isPosSale && t.status === "PAID"
   );
 
 
@@ -99,10 +122,11 @@ export default function BusinessReportsPage() {
 
   // Treasury (inflow, outflow, loan, investment)
   const filteredTreasury = filteredTxs.filter((t: any) => {
+    if (t.isPosSale) return false;
     if (searchTx) {
       const q = searchTx.toLowerCase();
       return (
-        t.name.toLowerCase().includes(q) ||
+        (t.name || "").toLowerCase().includes(q) ||
         (t.description || "").toLowerCase().includes(q) ||
         (t.paymentMethod || "").toLowerCase().includes(q)
       );
@@ -113,9 +137,16 @@ export default function BusinessReportsPage() {
   // Kardex movements
   const filteredMovements = movements.filter((m: any) => {
     if (!m.createdAt) return true;
-    const day = m.createdAt.slice(0, 10);
+    const day = typeof m.createdAt === "string" ? m.createdAt.slice(0, 10) : "";
     if (dateFrom && day < dateFrom) return false;
     if (dateTo && day > dateTo) return false;
+    if (selectedBranch && m.branchId !== selectedBranch) return false;
+    if (selectedWorker && m.userId !== selectedWorker) return false;
+    if (selectedProduct) {
+      const q = selectedProduct.toLowerCase();
+      const inProdName = (m.product?.name || "").toLowerCase().includes(q);
+      if (!inProdName) return false;
+    }
     if (searchProduct) {
       const q = searchProduct.toLowerCase();
       return (
@@ -125,8 +156,6 @@ export default function BusinessReportsPage() {
     }
     return true;
   });
-
-
 
   // Inventory valuation
   const inventoryCostValuation = products.reduce(
@@ -156,13 +185,31 @@ export default function BusinessReportsPage() {
 
   // Daily Trend for Line Chart (Last 14 days or filtered dates)
   const getTrendData = () => {
+    const trendList: { date: string; ventas: number }[] = [];
     const daysToShow = 14;
-    const trendList = [];
-    for (let i = daysToShow - 1; i >= 0; i--) {
-      const date = subDays(new Date(), i);
-      const daySales = transactions.filter(
-        (t: any) => t.type === "INCOME" && t.name === "Venta en Caja" && t.status === "PAID" && isSameDay(parseISO(t.date), date)
+
+    let startDate = subDays(new Date(), daysToShow - 1);
+    let endDate = new Date();
+
+    if (dateFrom) {
+      startDate = parseISO(dateFrom);
+    }
+    if (dateTo) {
+      endDate = parseISO(dateTo);
+    }
+
+    const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
+    const step = diffDays > 31 ? Math.ceil(diffDays / 15) : 1;
+
+    for (let i = 0; i <= diffDays; i += step) {
+      const date = addDays(startDate, i);
+      if (date > endDate) break;
+
+      const daySales = filteredSales.filter((t: any) =>
+        isSameDay(parseISO(t.date), date)
       );
+
       trendList.push({
         date: format(date, "dd MMM", { locale: es }),
         ventas: daySales.reduce((sum: number, t: any) => sum + t.amount, 0),
@@ -181,12 +228,16 @@ export default function BusinessReportsPage() {
     await exportToExcel(
       filteredSales.map((s: any) => ({
         fecha: format(new Date(s.date), "dd/MM/yyyy HH:mm"),
+        sede: s.branch?.name || "Sede Central",
+        vendedor: s.user ? `${s.user.name} ${s.user.lastName || ""}` : "—",
         descripcion: s.description || "Venta",
         metodo: s.paymentMethod,
         monto: s.amount,
       })),
       [
         { key: "fecha", label: "Fecha" },
+        { key: "sede", label: "Sede" },
+        { key: "vendedor", label: "Vendedor" },
         { key: "descripcion", label: "Detalle Venta" },
         { key: "metodo", label: "Método de Pago" },
         { key: "monto", label: "Total Recaudado (S/)" },
@@ -200,6 +251,8 @@ export default function BusinessReportsPage() {
     await exportToExcel(
       filteredTreasury.map((t: any) => ({
         fecha: format(new Date(t.date), "dd/MM/yyyy HH:mm"),
+        sede: t.branch?.name || "Sede Central",
+        vendedor: t.user ? `${t.user.name} ${t.user.lastName || ""}` : "—",
         motivo: t.name,
         tipo: t.type === "INCOME" ? "Ingreso" : "Egreso",
         descripcion: t.description || "—",
@@ -208,6 +261,8 @@ export default function BusinessReportsPage() {
       })),
       [
         { key: "fecha", label: "Fecha/Hora" },
+        { key: "sede", label: "Sede" },
+        { key: "vendedor", label: "Vendedor" },
         { key: "motivo", label: "Motivo" },
         { key: "tipo", label: "Tipo" },
         { key: "descripcion", label: "Detalle" },
@@ -252,6 +307,8 @@ export default function BusinessReportsPage() {
     await exportToExcel(
       filteredMovements.map((m: any) => ({
         fecha: format(new Date(m.createdAt), "dd/MM/yyyy HH:mm"),
+        sede: m.branch?.name || "Sede Central",
+        vendedor: m.user ? `${m.user.name} ${m.user.lastName || ""}` : "—",
         producto: m.product?.name || "—",
         sku: m.product?.sku || "—",
         tipo: m.type === "IN" ? "Entrada" : "Salida",
@@ -260,6 +317,8 @@ export default function BusinessReportsPage() {
       })),
       [
         { key: "fecha", label: "Fecha" },
+        { key: "sede", label: "Sede" },
+        { key: "vendedor", label: "Colaborador" },
         { key: "producto", label: "Producto" },
         { key: "sku", label: "SKU" },
         { key: "tipo", label: "Tipo" },
@@ -282,49 +341,56 @@ export default function BusinessReportsPage() {
       
       // Header Banner
       doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.rect(0, 0, 210, 30, "F");
+      doc.rect(0, 0, 210, 32, "F");
       
       doc.setTextColor(255, 255, 255);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(16);
-      doc.text("REPORTE OPERATIVO DE VENTAS POS", 14, 13);
-      doc.setFontSize(9);
+      doc.text("REPORTE OPERATIVO DE VENTAS POS", 14, 11);
+      doc.setFontSize(8.5);
       doc.setFont("helvetica", "normal");
-      doc.text(`Filtro Rango: ${dateFrom || "Inicio"} al ${dateTo || "Hoy"}  |  Fecha Impresión: ${format(new Date(), "dd/MM/yyyy HH:mm")}`, 14, 22);
+      
+      const branchName = selectedBranch ? (branches.find(b => b.id === selectedBranch)?.name || "Sede") : "Todas";
+      const workerName = selectedWorker ? (selectedWorker === (user?.parentId || user?.id) ? "Propietario" : (workers.find(w => w.id === selectedWorker)?.name || "Colaborador")) : "Todos";
+      const pmName = selectedPaymentMethod ? selectedPaymentMethod : "Todos";
+      const filterText = `Sede: ${branchName} | Vendedor: ${workerName} | Medio: ${pmName}`;
+
+      doc.text(`Filtros: ${filterText}  |  Rango: ${dateFrom || "Inicio"} al ${dateTo || "Hoy"}`, 14, 19);
+      doc.text(`Fecha Impresión: ${format(new Date(), "dd/MM/yyyy HH:mm")}`, 14, 25);
 
       // Summary KPIs Box
       doc.setFillColor(243, 244, 246);
-      doc.roundedRect(14, 36, 182, 22, 2, 2, "F");
+      doc.roundedRect(14, 38, 182, 22, 2, 2, "F");
       
       doc.setTextColor(30, 41, 59);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8);
-      doc.text("TOTAL VENTAS", 20, 43);
+      doc.text("TOTAL VENTAS", 20, 45);
       doc.setFontSize(12);
-      doc.text(`S/ ${posSalesVolume.toFixed(2)}`, 20, 51);
+      doc.text(`S/ ${posSalesVolume.toFixed(2)}`, 20, 53);
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8);
-      doc.text("TRANSACCIONES", 80, 43);
+      doc.text("TRANSACCIONES", 80, 45);
       doc.setFontSize(12);
-      doc.text(`${filteredSales.length} ventas`, 80, 51);
+      doc.text(`${filteredSales.length} ventas`, 80, 53);
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8);
-      doc.text("TICKET PROMEDIO", 140, 43);
+      doc.text("TICKET PROMEDIO", 140, 45);
       doc.setFontSize(12);
-      doc.text(`S/ ${averageSalesTicket.toFixed(2)}`, 140, 51);
+      doc.text(`S/ ${averageSalesTicket.toFixed(2)}`, 140, 53);
 
       // Table Title
       doc.setTextColor(49, 46, 129);
       doc.setFontSize(10);
       doc.setFont("helvetica", "bold");
-      doc.text("DETALLE DE OPERACIONES EN PUNTO DE VENTA", 14, 66);
+      doc.text("DETALLE DE OPERACIONES EN PUNTO DE VENTA", 14, 68);
 
       // Draw table
-      const startY = 72;
-      const headers = ["Fecha/Hora", "Detalle de Venta", "Método", "Importe"];
-      const colWidths = [40, 85, 30, 27];
+      const startY = 74;
+      const headers = ["Fecha/Hora", "Sede", "Vendedor", "Detalle de Venta", "Método", "Importe"];
+      const colWidths = [28, 28, 28, 53, 20, 25];
       
       // Header row
       doc.setFillColor(49, 46, 129);
@@ -350,11 +416,13 @@ export default function BusinessReportsPage() {
           doc.setFillColor(248, 250, 252);
           doc.rect(14, y, 182, 6.5, "F");
         }
-        doc.setFontSize(7.5);
+        doc.setFontSize(7);
         
         let tx = 14;
         const row = [
           format(new Date(s.date), "dd/MM/yyyy HH:mm"),
+          s.branch?.name || "Sede Central",
+          s.user ? `${s.user.name} ${s.user.lastName || ""}` : "—",
           s.description || "Venta POS",
           s.paymentMethod || "CASH",
           `S/ ${s.amount.toFixed(2)}`,
@@ -395,52 +463,59 @@ export default function BusinessReportsPage() {
       
       // Header Banner
       doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.rect(0, 0, 210, 30, "F");
+      doc.rect(0, 0, 210, 32, "F");
       
       doc.setTextColor(255, 255, 255);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(16);
-      doc.text("ESTADO DE FLUJO DE CAJA & TESORERÍA", 14, 13);
-      doc.setFontSize(9);
+      doc.text("ESTADO DE FLUJO DE CAJA & TESORERÍA", 14, 11);
+      doc.setFontSize(8.5);
       doc.setFont("helvetica", "normal");
-      doc.text(`Filtro Rango: ${dateFrom || "Inicio"} al ${dateTo || "Hoy"}  |  Fecha Impresión: ${format(new Date(), "dd/MM/yyyy HH:mm")}`, 14, 22);
+
+      const branchName = selectedBranch ? (branches.find(b => b.id === selectedBranch)?.name || "Sede") : "Todas";
+      const workerName = selectedWorker ? (selectedWorker === (user?.parentId || user?.id) ? "Propietario" : (workers.find(w => w.id === selectedWorker)?.name || "Colaborador")) : "Todos";
+      const pmName = selectedPaymentMethod ? selectedPaymentMethod : "Todos";
+      const filterText = `Sede: ${branchName} | Vendedor: ${workerName} | Medio: ${pmName}`;
+
+      doc.text(`Filtros: ${filterText}  |  Rango: ${dateFrom || "Inicio"} al ${dateTo || "Hoy"}`, 14, 19);
+      doc.text(`Fecha Impresión: ${format(new Date(), "dd/MM/yyyy HH:mm")}`, 14, 25);
 
       // Summary KPIs Box
       doc.setFillColor(243, 244, 246);
-      doc.roundedRect(14, 36, 182, 22, 2, 2, "F");
+      doc.roundedRect(14, 38, 182, 22, 2, 2, "F");
       
       doc.setTextColor(30, 41, 59);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8);
-      doc.text("INGRESOS GENERALES", 20, 43);
+      doc.text("INGRESOS GENERALES", 20, 45);
       doc.setFontSize(12);
       doc.setTextColor(16, 185, 129);
-      doc.text(`+S/ ${totalIncome.toFixed(2)}`, 20, 51);
+      doc.text(`+S/ ${totalIncome.toFixed(2)}`, 20, 53);
 
       doc.setTextColor(30, 41, 59);
       doc.setFontSize(8);
-      doc.text("EGRESOS / PAGOS", 80, 43);
+      doc.text("EGRESOS / PAGOS", 80, 45);
       doc.setFontSize(12);
       doc.setTextColor(225, 29, 72);
-      doc.text(`-S/ ${totalExpense.toFixed(2)}`, 80, 51);
+      doc.text(`-S/ ${totalExpense.toFixed(2)}`, 80, 53);
 
       doc.setTextColor(30, 41, 59);
       doc.setFontSize(8);
-      doc.text("FLUJO NETO", 140, 43);
+      doc.text("FLUJO NETO", 140, 45);
       doc.setFontSize(12);
       doc.setTextColor(netCashFlow >= 0 ? 16 : 225, netCashFlow >= 0 ? 185 : 29, netCashFlow >= 0 ? 129 : 72);
-      doc.text(`S/ ${netCashFlow.toFixed(2)}`, 140, 51);
+      doc.text(`S/ ${netCashFlow.toFixed(2)}`, 140, 53);
 
       // Table Title
       doc.setTextColor(30, 41, 59);
       doc.setFontSize(10);
       doc.setFont("helvetica", "bold");
-      doc.text("HISTORIAL DE MOVIMIENTOS DE CAJA Y BANCOS", 14, 66);
+      doc.text("HISTORIAL DE MOVIMIENTOS DE CAJA Y BANCOS", 14, 68);
 
       // Draw table
-      const startY = 72;
-      const headers = ["Fecha", "Motivo", "Tipo", "Medio", "Importe"];
-      const colWidths = [35, 60, 25, 32, 30];
+      const startY = 74;
+      const headers = ["Fecha", "Sede", "Vendedor", "Motivo/Detalle", "Tipo", "Medio", "Importe"];
+      const colWidths = [28, 25, 25, 49, 18, 17, 20];
       
       // Header row
       doc.setFillColor(30, 41, 59);
@@ -465,19 +540,21 @@ export default function BusinessReportsPage() {
           doc.setFillColor(248, 250, 252);
           doc.rect(14, y, 182, 6.5, "F");
         }
-        doc.setFontSize(7.5);
+        doc.setFontSize(7);
         
         let tx = 14;
         const row = [
           format(new Date(t.date), "dd/MM/yyyy HH:mm"),
-          t.name,
+          t.branch?.name || "Sede Central",
+          t.user ? `${t.user.name} ${t.user.lastName || ""}` : "—",
+          t.name + (t.description ? ` (${t.description})` : ""),
           t.type === "INCOME" ? "Ingreso" : "Egreso",
           t.paymentMethod || "CASH",
           `S/ ${t.amount.toFixed(2)}`,
         ];
         
         row.forEach((val, i) => {
-          if (i === 2) {
+          if (i === 4) {
             doc.setTextColor(t.type === "INCOME" ? 16 : 225, t.type === "INCOME" ? 120 : 29, t.type === "INCOME" ? 87 : 72);
             doc.setFont("helvetica", "bold");
           } else {
@@ -537,6 +614,90 @@ export default function BusinessReportsPage() {
                 toast.success("Filtros de fecha eliminados");
               }}
             />
+          </div>
+        </div>
+
+        {/* FILTROS AVANZADOS */}
+        <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm grid grid-cols-1 sm:grid-cols-4 gap-4">
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Sede / Sucursal</label>
+            <select
+              value={selectedBranch}
+              onChange={(e) => {
+                setSelectedBranch(e.target.value);
+                toast.success("Filtro de Sede actualizado");
+              }}
+              className="w-full bg-slate-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-bold text-gray-700 outline-none focus:border-indigo-500 transition-colors"
+            >
+              <option value="">Todas las Sedes</option>
+              {branches.map((b: any) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Vendedor / Colaborador</label>
+            <select
+              value={selectedWorker}
+              onChange={(e) => {
+                setSelectedWorker(e.target.value);
+                toast.success("Filtro de Vendedor actualizado");
+              }}
+              className="w-full bg-slate-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-bold text-gray-700 outline-none focus:border-indigo-500 transition-colors"
+            >
+              <option value="">Todos los Vendedores</option>
+              {user && (
+                <option value={user.parentId || user.id}>
+                  Propietario / Administrador
+                </option>
+              )}
+              {workers.map((w: any) => (
+                <option key={w.id} value={w.id}>
+                  {w.name} {w.lastName || ""}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Método de Pago</label>
+            <select
+              value={selectedPaymentMethod}
+              onChange={(e) => {
+                setSelectedPaymentMethod(e.target.value);
+                toast.success("Filtro de Método de Pago actualizado");
+              }}
+              className="w-full bg-slate-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-bold text-gray-700 outline-none focus:border-indigo-500 transition-colors"
+            >
+              <option value="">Todos los Métodos</option>
+              <option value="CASH">Efectivo</option>
+              <option value="CARD">Tarjeta</option>
+              <option value="TRANSFER">Transferencia</option>
+              <option value="YAPE">Yape</option>
+              <option value="PLIN">Plin</option>
+            </select>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Producto</label>
+            <select
+              value={selectedProduct}
+              onChange={(e) => {
+                setSelectedProduct(e.target.value);
+                toast.success("Filtro de Producto actualizado");
+              }}
+              className="w-full bg-slate-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-bold text-gray-700 outline-none focus:border-indigo-500 transition-colors"
+            >
+              <option value="">Todos los Productos</option>
+              {products.map((p: any) => (
+                <option key={p.id} value={p.name}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
@@ -698,6 +859,8 @@ export default function BusinessReportsPage() {
                       <thead className="bg-slate-50 text-gray-500 uppercase text-xs font-bold">
                         <tr>
                           <th className="px-5 py-4 text-left">Fecha</th>
+                          <th className="px-5 py-4 text-left">Sede</th>
+                          <th className="px-5 py-4 text-left">Vendedor</th>
                           <th className="px-5 py-4 text-left">Glosa/Descripción</th>
                           <th className="px-5 py-4 text-center">Método de Pago</th>
                           <th className="px-5 py-4 text-right">Monto</th>
@@ -708,6 +871,12 @@ export default function BusinessReportsPage() {
                           <tr key={s.id} className="hover:bg-slate-50/40 transition-colors">
                             <td className="px-5 py-4 text-gray-500 whitespace-nowrap text-xs">
                               {format(new Date(s.date), "dd/MM/yyyy HH:mm")}
+                            </td>
+                            <td className="px-5 py-4 text-gray-600 font-semibold text-xs whitespace-nowrap">
+                              {s.branch?.name || "Sede Central"}
+                            </td>
+                            <td className="px-5 py-4 text-gray-600 font-medium text-xs whitespace-nowrap">
+                              {s.user ? `${s.user.name} ${s.user.lastName || ""}` : "—"}
                             </td>
                             <td className="px-5 py-4 text-gray-900 font-semibold">{s.description || "Venta de Caja"}</td>
                             <td className="px-5 py-4 text-center">
@@ -765,6 +934,8 @@ export default function BusinessReportsPage() {
                       <thead className="bg-slate-50 text-gray-500 uppercase text-xs font-bold">
                         <tr>
                           <th className="px-5 py-4 text-left">Fecha/Hora</th>
+                          <th className="px-5 py-4 text-left">Sede</th>
+                          <th className="px-5 py-4 text-left">Vendedor</th>
                           <th className="px-5 py-4 text-left">Motivo</th>
                           <th className="px-5 py-4 text-center">Tipo</th>
                           <th className="px-5 py-4 text-left">Caja/Cuenta</th>
@@ -777,6 +948,12 @@ export default function BusinessReportsPage() {
                           <tr key={t.id} className="hover:bg-slate-50/40 transition-colors">
                             <td className="px-5 py-4 text-gray-500 whitespace-nowrap text-xs">
                               {format(new Date(t.date), "dd/MM/yyyy HH:mm")}
+                            </td>
+                            <td className="px-5 py-4 text-gray-600 font-semibold text-xs whitespace-nowrap">
+                              {t.branch?.name || "Sede Central"}
+                            </td>
+                            <td className="px-5 py-4 text-gray-600 font-medium text-xs whitespace-nowrap">
+                              {t.user ? `${t.user.name} ${t.user.lastName || ""}` : "—"}
                             </td>
                             <td className="px-5 py-4">
                               <span className="font-bold text-gray-900 block">{t.name}</span>
@@ -921,6 +1098,8 @@ export default function BusinessReportsPage() {
                       <thead className="bg-slate-50 text-gray-500 uppercase text-xs font-bold">
                         <tr>
                           <th className="px-5 py-4 text-left">Fecha</th>
+                          <th className="px-5 py-4 text-left">Sede</th>
+                          <th className="px-5 py-4 text-left">Colaborador</th>
                           <th className="px-5 py-4 text-left">Producto</th>
                           <th className="px-5 py-4 text-center">Tipo</th>
                           <th className="px-5 py-4 text-right">Cantidad</th>
@@ -932,6 +1111,12 @@ export default function BusinessReportsPage() {
                           <tr key={m.id} className="hover:bg-slate-50/40 transition-colors">
                             <td className="px-5 py-4 text-gray-500 whitespace-nowrap text-xs">
                               {format(new Date(m.createdAt), "dd/MM/yyyy HH:mm")}
+                            </td>
+                            <td className="px-5 py-4 text-gray-600 font-semibold text-xs whitespace-nowrap">
+                              {m.branch?.name || "Sede Central"}
+                            </td>
+                            <td className="px-5 py-4 text-gray-600 font-medium text-xs whitespace-nowrap">
+                              {m.user ? `${m.user.name} ${m.user.lastName || ""}` : "—"}
                             </td>
                             <td className="px-5 py-4 font-semibold text-gray-900">{m.product?.name || "—"}</td>
                             <td className="px-5 py-4 text-center">
@@ -956,7 +1141,9 @@ export default function BusinessReportsPage() {
                                     ? "Compra"
                                     : m.reason === "REVERT_PURCHASE"
                                       ? "Reversión Compra"
-                                      : m.reason || "Ajuste"}
+                                      : m.reason === "ADJUSTMENT"
+                                        ? "Ajuste"
+                                        : m.reason || "Ajuste"}
                               </span>
                             </td>
                           </tr>

@@ -278,6 +278,7 @@ export default function BusinessInventoryPage() {
   const [isBulkPurchaseModalOpen, setIsBulkPurchaseModalOpen] = useState(false);
   const [bulkPurchaseData, setBulkPurchaseData] = useState({
     categoryId: "",
+    subCategoryId: "",
     paymentMethod: "CASH",
     receiptUrl: "" as string | File,
     receiveImmediately: false,
@@ -289,6 +290,7 @@ export default function BusinessInventoryPage() {
   const [editingPurchaseOrder, setEditingPurchaseOrder] = useState<PurchaseOrder | null>(null);
   const [editOrderData, setEditOrderData] = useState<{
     categoryId: string;
+    subCategoryId: string;
     paymentMethod: string;
     receiptUrl: string;
     items: Array<{
@@ -304,11 +306,14 @@ export default function BusinessInventoryPage() {
     }>;
   }>({
     categoryId: "",
+    subCategoryId: "",
     paymentMethod: "CASH",
     receiptUrl: "",
     items: [],
   });
   const [editOrderFile, setEditOrderFile] = useState<File | null>(null);
+  const [editOrderSearch, setEditOrderSearch] = useState("");
+
 
   // ── Add-to-planner: search existing inventory products ──
   const [isAddProductToOrderOpen, setIsAddProductToOrderOpen] = useState(false);
@@ -491,6 +496,7 @@ export default function BusinessInventoryPage() {
     } else if (activeTab === "planner") {
       loadPlannerData();
       loadOrders();
+      fetchTreasuryLiquidity();
     }
   }, [activeTab, plannerMonth]);
 
@@ -783,6 +789,7 @@ export default function BusinessInventoryPage() {
         items: itemsToBuy,
         totalCost,
         categoryId: bulkPurchaseData.categoryId,
+        subCategoryId: bulkPurchaseData.subCategoryId || null,
         paymentMethod: bulkPurchaseData.paymentMethod,
         receiptUrl: finalReceiptUrl || null,
         receiveImmediately: bulkPurchaseData.receiveImmediately,
@@ -802,6 +809,7 @@ export default function BusinessInventoryPage() {
       setExtraPlannerItems([]);
       setBulkPurchaseData({
         categoryId: "",
+        subCategoryId: "",
         paymentMethod: "CASH",
         receiptUrl: "",
         receiveImmediately: false,
@@ -809,6 +817,7 @@ export default function BusinessInventoryPage() {
       loadData();
       loadPlannerData();
       loadOrders();
+      fetchTreasuryLiquidity();
     } catch (err: any) {
       toast.dismiss(submitToast);
       toast.error(err?.response?.data?.message || "Error al registrar la compra");
@@ -843,6 +852,7 @@ export default function BusinessInventoryPage() {
         })),
         totalCost,
         categoryId: editOrderData.categoryId,
+        subCategoryId: editOrderData.subCategoryId || null,
         paymentMethod: editOrderData.paymentMethod,
         receiptUrl: finalReceiptUrl || null,
       });
@@ -856,6 +866,7 @@ export default function BusinessInventoryPage() {
       loadData();
       loadPlannerData();
       loadOrders();
+      fetchTreasuryLiquidity();
     } catch (err: any) {
       toast.dismiss(submitToast);
       toast.error(err?.response?.data?.message || "Error al actualizar pedido");
@@ -878,6 +889,7 @@ export default function BusinessInventoryPage() {
           loadData();
           loadPlannerData();
           loadOrders();
+          fetchTreasuryLiquidity();
         } catch (err: any) {
           toast.dismiss(rxToast);
           toast.error(err?.response?.data?.message || "Error al ingresar al stock");
@@ -902,6 +914,7 @@ export default function BusinessInventoryPage() {
       loadOrders();
       loadPlannerData();
       loadData();
+      fetchTreasuryLiquidity();
     } catch (err: any) {
       toast.dismiss(t);
       toast.error(err?.response?.data?.message || "Error al cancelar pedido");
@@ -924,6 +937,7 @@ export default function BusinessInventoryPage() {
           loadData();
           loadPlannerData();
           loadOrders();
+          fetchTreasuryLiquidity();
         } catch (err: any) {
           toast.dismiss(rxToast);
           toast.error(err?.response?.data?.message || "Error al revertir ingreso");
@@ -1003,6 +1017,7 @@ export default function BusinessInventoryPage() {
         setPayOrderFile(null);
         loadOrders();
         loadPlannerData();
+        fetchTreasuryLiquidity();
       } catch (err: any) {
         toast.dismiss(t);
         toast.error(err?.response?.data?.message || "Error al registrar el pago");
@@ -2056,12 +2071,32 @@ export default function BusinessInventoryPage() {
                                         onClick={() => {
                                           setSinglePurchaseItem(item as any);
                                           setBulkPurchaseFile(null);
+                                          
+                                          let defaultCatId = categories[0]?.id || "";
+                                          let defaultSubId = "";
+                                          const catNegocioEgreso = categories.find((c: any) =>
+                                            c.name.toLowerCase().includes("negocio") && c.name.toLowerCase().includes("egreso")
+                                          ) || categories.find((c: any) => c.name.toLowerCase().includes("egreso"));
+                                          if (catNegocioEgreso) {
+                                            defaultCatId = catNegocioEgreso.id;
+                                            const subMercaderia = catNegocioEgreso.children?.find((s: any) =>
+                                              s.name.toLowerCase().includes("mercaderia") || s.name.toLowerCase().includes("mercadería")
+                                            );
+                                            if (subMercaderia) {
+                                              defaultSubId = subMercaderia.id;
+                                            } else if (catNegocioEgreso.children?.[0]) {
+                                              defaultSubId = catNegocioEgreso.children[0].id;
+                                            }
+                                          }
+
                                           setBulkPurchaseData({
-                                            categoryId: "",
+                                            categoryId: defaultCatId,
+                                            subCategoryId: defaultSubId,
                                             paymentMethod: "CASH",
                                             receiptUrl: "",
                                             receiveImmediately: false,
                                           });
+                                          fetchTreasuryLiquidity();
                                           setIsBulkPurchaseModalOpen(true);
                                         }}
                                         className="px-2.5 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-bold flex items-center gap-1 transition-colors"
@@ -2134,6 +2169,31 @@ export default function BusinessInventoryPage() {
                               toast.error("Selecciona al menos un producto para comprar.");
                               return;
                             }
+                            let defaultCatId = categories[0]?.id || "";
+                            let defaultSubId = "";
+                            const catNegocioEgreso = categories.find((c: any) =>
+                              c.name.toLowerCase().includes("negocio") && c.name.toLowerCase().includes("egreso")
+                            ) || categories.find((c: any) => c.name.toLowerCase().includes("egreso"));
+                            if (catNegocioEgreso) {
+                              defaultCatId = catNegocioEgreso.id;
+                              const subMercaderia = catNegocioEgreso.children?.find((s: any) =>
+                                s.name.toLowerCase().includes("mercaderia") || s.name.toLowerCase().includes("mercadería")
+                              );
+                              if (subMercaderia) {
+                                defaultSubId = subMercaderia.id;
+                              } else if (catNegocioEgreso.children?.[0]) {
+                                defaultSubId = catNegocioEgreso.children[0].id;
+                              }
+                            }
+
+                            setBulkPurchaseData({
+                              categoryId: defaultCatId,
+                              subCategoryId: defaultSubId,
+                              paymentMethod: "CASH",
+                              receiptUrl: "",
+                              receiveImmediately: false,
+                            });
+                            fetchTreasuryLiquidity();
                             setIsBulkPurchaseModalOpen(true);
                           }}
                           disabled={selectedItemIds.length === 0}
@@ -2249,6 +2309,34 @@ export default function BusinessInventoryPage() {
                               </button>
                               <button
                                 onClick={() => {
+                                  setEditingPurchaseOrder(order);
+                                  setEditOrderData({
+                                    categoryId: order.categoryId,
+                                    subCategoryId: order.subCategoryId || "",
+                                    paymentMethod: order.paymentMethod,
+                                    receiptUrl: order.receiptUrl || "",
+                                    items: order.items.map(item => ({
+                                      id: item.id,
+                                      productId: item.productId,
+                                      name: item.product?.name || "Producto",
+                                      quantity: item.quantity,
+                                      costPrice: item.costPrice,
+                                      unit: item.product?.unit || "Unidad",
+                                      equivalence: item.equivalence,
+                                      presentationId: item.presentationId,
+                                      presentationName: item.presentationName,
+                                    })),
+                                  });
+                                  setEditOrderFile(null);
+                                  setIsEditOrderModalOpen(true);
+                                }}
+                                className="px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-2xl active:scale-95 transition-all flex items-center justify-center"
+                                title="Editar Pedido"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => {
                                   setConfirmConfig({
                                     title: "Eliminar Pedido Sin Pago",
                                     message: "Este pedido aún no tiene pago confirmado y NO está registrado en Tesorería. ¿Deseas eliminarlo?",
@@ -2261,6 +2349,7 @@ export default function BusinessInventoryPage() {
                                         toast.success("Pedido eliminado");
                                         loadOrders();
                                         loadPlannerData();
+                                        fetchTreasuryLiquidity();
                                       } catch (err: any) {
                                         toast.error(err?.response?.data?.message || "Error al eliminar");
                                       }
@@ -2351,6 +2440,7 @@ export default function BusinessInventoryPage() {
                                   setEditingPurchaseOrder(order);
                                   setEditOrderData({
                                     categoryId: order.categoryId,
+                                    subCategoryId: order.subCategoryId || "",
                                     paymentMethod: order.paymentMethod,
                                     receiptUrl: order.receiptUrl || "",
                                     items: order.items.map(item => ({
@@ -2489,6 +2579,7 @@ export default function BusinessInventoryPage() {
                                   setEditingPurchaseOrder(order);
                                   setEditOrderData({
                                     categoryId: order.categoryId,
+                                    subCategoryId: order.subCategoryId || "",
                                     paymentMethod: order.paymentMethod,
                                     receiptUrl: order.receiptUrl || "",
                                     items: order.items.map(item => ({
@@ -3388,9 +3479,16 @@ export default function BusinessInventoryPage() {
               <select
                 required
                 value={bulkPurchaseData.categoryId}
-                onChange={(e) =>
-                  setBulkPurchaseData({ ...bulkPurchaseData, categoryId: e.target.value })
-                }
+                onChange={(e) => {
+                  const catId = e.target.value;
+                  const catObj = categories.find((c: any) => c.id === catId);
+                  const firstSub = catObj?.children?.[0]?.id || "";
+                  setBulkPurchaseData({
+                    ...bulkPurchaseData,
+                    categoryId: catId,
+                    subCategoryId: firstSub,
+                  });
+                }}
                 className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-indigo-500 bg-white text-xs font-bold text-gray-700"
               >
                 <option value="">Selecciona categoría</option>
@@ -3401,6 +3499,37 @@ export default function BusinessInventoryPage() {
                 ))}
               </select>
             </div>
+
+            {(() => {
+              const catObj = categories.find((c: any) => c.id === bulkPurchaseData.categoryId);
+              const subcats = catObj?.children || [];
+              if (subcats.length === 0) return null;
+              return (
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    Subcategoría del Egreso *
+                  </label>
+                  <select
+                    required
+                    value={bulkPurchaseData.subCategoryId}
+                    onChange={(e) =>
+                      setBulkPurchaseData({
+                        ...bulkPurchaseData,
+                        subCategoryId: e.target.value,
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-indigo-500 bg-white text-xs font-bold text-gray-700"
+                  >
+                    <option value="">Selecciona subcategoría</option>
+                    {subcats.map((s: any) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })()}
 
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">
@@ -3437,6 +3566,48 @@ export default function BusinessInventoryPage() {
             </label>
           </div>
 
+          {(() => {
+            const totalCost = singlePurchaseItem ? (
+              (() => {
+                const qty = customQuantities[singlePurchaseItem.id] ?? singlePurchaseItem.deficit;
+                const cost = customCosts[singlePurchaseItem.id] ?? singlePurchaseItem.costPrice;
+                return qty * cost;
+              })()
+            ) : (
+              plannerItems
+                .filter(item => selectedItemIds.includes(item.id))
+                .reduce((sum, item) => {
+                  const qty = customQuantities[item.id] ?? item.deficit;
+                  const cost = customCosts[item.id] ?? item.costPrice;
+                  return sum + (qty * cost);
+                }, 0)
+            );
+
+            const hasInsufficientLiquidity = bulkPurchaseData.receiveImmediately && treasuryLiquidity !== null && totalCost > treasuryLiquidity;
+
+            if (!hasInsufficientLiquidity) return null;
+
+            return (
+              <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-3">
+                <div className="flex gap-3">
+                  <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <p className="font-extrabold text-xs text-rose-950">Fondos Insuficientes</p>
+                    <p className="text-[10.5px] text-rose-800 font-medium leading-relaxed">
+                      El costo total (S/ {totalCost.toFixed(2)}) supera la liquidez disponible en caja (S/ {treasuryLiquidity !== null ? treasuryLiquidity.toFixed(2) : "0.00"}).
+                    </p>
+                  </div>
+                </div>
+                <a
+                  href="/business-finance"
+                  className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[10.5px] rounded-xl text-center whitespace-nowrap shadow-sm transition-colors shrink-0"
+                >
+                  Ir a Tesorería
+                </a>
+              </div>
+            );
+          })()}
+
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
             <button
               type="button"
@@ -3451,7 +3622,25 @@ export default function BusinessInventoryPage() {
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-sm transition-colors"
+              disabled={(() => {
+                const totalCost = singlePurchaseItem ? (
+                  (() => {
+                    const qty = customQuantities[singlePurchaseItem.id] ?? singlePurchaseItem.deficit;
+                    const cost = customCosts[singlePurchaseItem.id] ?? singlePurchaseItem.costPrice;
+                    return qty * cost;
+                  })()
+                ) : (
+                  plannerItems
+                    .filter(item => selectedItemIds.includes(item.id))
+                    .reduce((sum, item) => {
+                      const qty = customQuantities[item.id] ?? item.deficit;
+                      const cost = customCosts[item.id] ?? item.costPrice;
+                      return sum + (qty * cost);
+                    }, 0)
+                );
+                return bulkPurchaseData.receiveImmediately && treasuryLiquidity !== null && totalCost > treasuryLiquidity;
+              })()}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:hover:bg-indigo-600 disabled:cursor-not-allowed text-white font-extrabold text-xs rounded-xl shadow-sm transition-colors"
             >
               Confirmar Pedido / Compra
             </button>
@@ -3466,6 +3655,7 @@ export default function BusinessInventoryPage() {
           setIsEditOrderModalOpen(false);
           setEditingPurchaseOrder(null);
           setEditOrderFile(null);
+          setEditOrderSearch("");
         }}
         title="Editar Registro de Compra / Pedido"
       >
@@ -3543,6 +3733,86 @@ export default function BusinessInventoryPage() {
                   );
                 })}
               </div>
+
+              {/* Agregar Producto al Pedido */}
+              <div className="bg-white p-3 rounded-xl border border-indigo-100/50 space-y-2 mt-2">
+                <span className="font-bold text-xs text-indigo-950 block">Agregar producto al pedido:</span>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Buscar por nombre o SKU..."
+                    value={editOrderSearch}
+                    onChange={(e) => setEditOrderSearch(e.target.value)}
+                    className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-gray-200 rounded-lg text-xs font-semibold text-gray-700 outline-none focus:bg-white focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+                {editOrderSearch.trim() !== "" && (
+                  <div className="max-h-36 overflow-y-auto border border-gray-100 rounded-lg divide-y divide-gray-50 bg-white">
+                    {products
+                      .filter((p) => {
+                        const search = editOrderSearch.toLowerCase();
+                        return (
+                          p.name.toLowerCase().includes(search) ||
+                          (p.sku || "").toLowerCase().includes(search)
+                        );
+                      })
+                      .slice(0, 5)
+                      .map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => {
+                            const alreadyIn = editOrderData.items.some(
+                              (item) => item.productId === p.id
+                            );
+                            if (alreadyIn) {
+                              toast.error("Este producto ya está en el pedido");
+                              return;
+                            }
+                            const newItem = {
+                              id: "temp-" + Math.random().toString(36).substring(2, 9),
+                              productId: p.id,
+                              name: p.name,
+                              quantity: 1,
+                              costPrice: p.costPrice || 0,
+                              unit: p.unit || "Unidad",
+                              equivalence: 1.0,
+                              presentationId: null,
+                              presentationName: null,
+                            };
+                            setEditOrderData((prev) => ({
+                              ...prev,
+                              items: [...prev.items, newItem],
+                            }));
+                            setEditOrderSearch("");
+                          }}
+                          className="w-full text-left px-3 py-2 text-xs hover:bg-indigo-50 flex justify-between items-center transition-colors"
+                        >
+                          <div className="truncate pr-2">
+                            <span className="font-bold text-gray-700 block truncate">{p.name}</span>
+                            <span className="text-[10px] text-gray-400 font-mono">{p.sku || "Sin SKU"} • Stock: {p.stock}</span>
+                          </div>
+                          <span className="text-[11px] font-black text-indigo-600 shrink-0">
+                            S/ {p.costPrice.toFixed(2)}
+                          </span>
+                        </button>
+                      ))}
+                    {products.filter((p) => {
+                      const search = editOrderSearch.toLowerCase();
+                      return (
+                        p.name.toLowerCase().includes(search) ||
+                        (p.sku || "").toLowerCase().includes(search)
+                      );
+                    }).length === 0 && (
+                      <div className="py-3 text-center text-xs text-gray-400 italic">
+                        No se encontraron productos
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               <div className="border-t border-indigo-200/50 pt-2 flex justify-between font-black text-sm text-indigo-950">
                 <span>Total Actualizado:</span>
                 <span>
@@ -3633,9 +3903,16 @@ export default function BusinessInventoryPage() {
                 <select
                   required
                   value={editOrderData.categoryId}
-                  onChange={(e) =>
-                    setEditOrderData({ ...editOrderData, categoryId: e.target.value })
-                  }
+                  onChange={(e) => {
+                    const catId = e.target.value;
+                    const catObj = categories.find((c: any) => c.id === catId);
+                    const firstSub = catObj?.children?.[0]?.id || "";
+                    setEditOrderData({
+                      ...editOrderData,
+                      categoryId: catId,
+                      subCategoryId: firstSub,
+                    });
+                  }}
                   className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-indigo-500 bg-white text-xs font-bold text-gray-700"
                 >
                   <option value="">Selecciona categoría</option>
@@ -3646,6 +3923,37 @@ export default function BusinessInventoryPage() {
                   ))}
                 </select>
               </div>
+
+              {(() => {
+                const catObj = categories.find((c: any) => c.id === editOrderData.categoryId);
+                const subcats = catObj?.children || [];
+                if (subcats.length === 0) return null;
+                return (
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">
+                      Subcategoría del Egreso *
+                    </label>
+                    <select
+                      required
+                      value={editOrderData.subCategoryId}
+                      onChange={(e) =>
+                        setEditOrderData({
+                          ...editOrderData,
+                          subCategoryId: e.target.value,
+                        })
+                      }
+                      className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-indigo-500 bg-white text-xs font-bold text-gray-700"
+                    >
+                      <option value="">Selecciona subcategoría</option>
+                      {subcats.map((s: any) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })()}
 
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1">

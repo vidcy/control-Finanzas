@@ -14,6 +14,7 @@ import {
   TrendingDown,
 } from "lucide-react";
 import { getAuditLogsRequest } from "../services/transaction.api";
+import { getBranchesRequest } from "../services/branch.api";
 import { format } from "date-fns";
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
@@ -22,6 +23,7 @@ import DateRangePicker from "../components/ui/DateRangePicker";
 export default function BusinessHistoryPage() {
   // Audit Logs
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [branches, setBranches] = useState<any[]>([]);
   const [loadingAudit, setLoadingAudit] = useState(true);
   const [searchAudit, setSearchAudit] = useState("");
   const [auditDateFrom, setAuditDateFrom] = useState("");
@@ -33,8 +35,12 @@ export default function BusinessHistoryPage() {
   const loadAuditLogs = async () => {
     setLoadingAudit(true);
     try {
-      const data = await getAuditLogsRequest();
+      const [data, branchList] = await Promise.all([
+        getAuditLogsRequest(),
+        getBranchesRequest(),
+      ]);
       setAuditLogs(data);
+      setBranches(branchList);
     } catch {
       toast.error("Error al cargar la bitácora de auditoría");
     } finally {
@@ -230,6 +236,23 @@ export default function BusinessHistoryPage() {
               <div className="relative border-l-2 border-indigo-100 ml-4 md:ml-6 space-y-6">
                 {filteredAudit.map((log) => {
                   const details = getAuditLogDetails(log);
+                  const newV = log.newValues
+                    ? typeof log.newValues === "string"
+                      ? JSON.parse(log.newValues)
+                      : log.newValues
+                    : null;
+                  const oldV = log.oldValues
+                    ? typeof log.oldValues === "string"
+                      ? JSON.parse(log.oldValues)
+                      : log.oldValues
+                    : null;
+                  const branchId = newV?.branchId || oldV?.branchId;
+                  const branchName = branchId
+                    ? branches.find((b) => b.id === branchId)?.name || "Sede Central"
+                    : (log.tableName === "Transaction" || log.tableName === "CashShift" ? "Sede Central" : null);
+
+                  const txType = newV?.type || oldV?.type;
+
                   return (
                     <div key={log.id} className="relative pl-6 md:pl-8 group">
                       {/* Dot indicator */}
@@ -242,13 +265,27 @@ export default function BusinessHistoryPage() {
                       {/* Log Item Card */}
                       <div className="bg-white hover:bg-gray-50/50 border border-gray-100 hover:border-gray-200 rounded-2xl p-4 transition-all shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <span className="text-xs font-black tracking-tight text-gray-800">
                               {details.title}
                             </span>
                             <span className="text-[10px] bg-gray-100 text-gray-500 font-bold px-1.5 py-0.5 rounded-md uppercase">
                               {log.tableName}
                             </span>
+                            {branchName && (
+                              <span className="text-[10px] bg-blue-50 text-blue-700 font-extrabold px-1.5 py-0.5 rounded-md uppercase border border-blue-100">
+                                Sede: {branchName}
+                              </span>
+                            )}
+                            {txType && (
+                              <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded-md uppercase border ${
+                                txType === "INCOME"
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-100"
+                                  : "bg-rose-50 text-rose-700 border-rose-100"
+                              }`}>
+                                {txType === "INCOME" ? "Ingreso" : "Egreso"}
+                              </span>
+                            )}
                           </div>
                           <p className="text-gray-600 text-xs mt-1 font-semibold">
                             {details.description}

@@ -37,10 +37,19 @@ export class CashShiftController {
   }
 
   @Post('close')
-  async closeShift(@Request() req) {
+  async closeShift(
+    @Request() req,
+    @Body('categoryId') categoryId?: string,
+    @Body('subCategoryId') subCategoryId?: string,
+  ) {
     const ownerId = req.user.id;
     const workerId = req.user.workerId || req.user.id;
-    return this.cashShiftService.closeShift(ownerId, workerId);
+    return this.cashShiftService.closeShift(
+      ownerId,
+      workerId,
+      categoryId,
+      subCategoryId,
+    );
   }
 
   @Get('active')
