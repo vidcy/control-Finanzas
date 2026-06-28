@@ -129,7 +129,11 @@ export class ProductsController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
   ) {
-    return this.productsService.getLowStockAnalysis(req.user.id, startDate, endDate);
+    return this.productsService.getLowStockAnalysis(
+      req.user.id,
+      startDate,
+      endDate,
+    );
   }
 
   @Get()

@@ -11,7 +11,7 @@ export class ProductsService {
   constructor(
     private prisma: PrismaService,
     private filesService: FilesService,
-  ) { }
+  ) {}
 
   async create(userId: string, data: any) {
     const { presentations, unit, ...productData } = data;
@@ -46,7 +46,8 @@ export class ProductsService {
         where: { userId },
         orderBy: { customCode: 'desc' },
       });
-      const nextCode = maxProduct && maxProduct.customCode ? maxProduct.customCode + 1 : 1;
+      const nextCode =
+        maxProduct && maxProduct.customCode ? maxProduct.customCode + 1 : 1;
 
       const product = await tx.product.create({
         data: {
@@ -250,7 +251,10 @@ export class ProductsService {
       }
 
       // If stock is changing, log adjustment
-      if (updateData.stock !== undefined && updateData.stock !== product.stock) {
+      if (
+        updateData.stock !== undefined &&
+        updateData.stock !== product.stock
+      ) {
         const diff = updateData.stock - product.stock;
         const type = diff > 0 ? 'IN' : 'OUT';
         const quantity = Math.abs(diff);
@@ -272,7 +276,11 @@ export class ProductsService {
         });
       }
 
-      if (updateData.imageUrl !== undefined && updateData.imageUrl !== product.imageUrl && product.imageUrl) {
+      if (
+        updateData.imageUrl !== undefined &&
+        updateData.imageUrl !== product.imageUrl &&
+        product.imageUrl
+      ) {
         await this.filesService.deleteFile(product.imageUrl);
       }
 
@@ -358,7 +366,9 @@ export class ProductsService {
     // Validate liquidity for restock
     const currentLiquidity = await this.getBusinessLiquidity(userId);
     if (parseFloat(totalCost) > currentLiquidity) {
-      throw new BadRequestException(`Límite de liquidez superado. No tiene suficiente liquidez en caja para realizar esta reposición. Liquidez disponible: S/ ${currentLiquidity.toFixed(2)}.`);
+      throw new BadRequestException(
+        `Límite de liquidez superado. No tiene suficiente liquidez en caja para realizar esta reposición. Liquidez disponible: S/ ${currentLiquidity.toFixed(2)}.`,
+      );
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -384,7 +394,9 @@ export class ProductsService {
       const purchaseUnitPrice = parseFloat(totalCost) / mainUnitsQty;
       let newCPP = product.costPrice;
       if (product.stock + mainUnitsQty > 0) {
-        newCPP = (product.stock * product.costPrice + parseFloat(totalCost)) / (product.stock + mainUnitsQty);
+        newCPP =
+          (product.stock * product.costPrice + parseFloat(totalCost)) /
+          (product.stock + mainUnitsQty);
       }
 
       // 3. Update Product Stock and CPP
@@ -425,7 +437,8 @@ export class ProductsService {
    * Secure transactional POS checkout flow
    */
   async checkout(ownerId: string, workerId: string, checkoutDto: any) {
-    const { items, paymentMethod, categoryId, subCategoryId, receiptUrl } = checkoutDto;
+    const { items, paymentMethod, categoryId, subCategoryId, receiptUrl } =
+      checkoutDto;
 
     if (!items || items.length === 0) {
       throw new BadRequestException('El carrito de compras está vacío.');
@@ -437,7 +450,9 @@ export class ProductsService {
         where: { userId: workerId, status: 'OPEN' },
       });
       if (!activeShift) {
-        throw new BadRequestException('No hay ninguna caja abierta para realizar ventas.');
+        throw new BadRequestException(
+          'No hay ninguna caja abierta para realizar ventas.',
+        );
       }
 
       let totalAmount = 0;
@@ -474,7 +489,10 @@ export class ProductsService {
 
         let equivalence = 1;
         let presentationName = product.unit;
-        let salePrice = item.salePrice !== undefined && item.salePrice !== null ? Number(item.salePrice) : product.salePrice;
+        let salePrice =
+          item.salePrice !== undefined && item.salePrice !== null
+            ? Number(item.salePrice)
+            : product.salePrice;
 
         if (item.presentationId) {
           const pres = product.presentations.find(
@@ -487,7 +505,10 @@ export class ProductsService {
           }
           equivalence = pres.equivalence;
           presentationName = pres.name;
-          salePrice = item.salePrice !== undefined && item.salePrice !== null ? Number(item.salePrice) : pres.price;
+          salePrice =
+            item.salePrice !== undefined && item.salePrice !== null
+              ? Number(item.salePrice)
+              : pres.price;
         }
 
         const requiredQty = parseFloat(item.quantity);
@@ -537,7 +558,8 @@ export class ProductsService {
 
       // 2. Process stock adjustments and movements
       for (const proc of itemsToProcess) {
-        const { product, item, mainUnitsQty, requiredQty, presentationName } = proc;
+        const { product, item, mainUnitsQty, requiredQty, presentationName } =
+          proc;
 
         // Subtract stock
         const updatedProduct = await tx.product.update({
@@ -574,21 +596,25 @@ export class ProductsService {
     });
   }
 
-  async getLowStockAnalysis(userId: string, startDate?: string, endDate?: string) {
+  async getLowStockAnalysis(
+    userId: string,
+    startDate?: string,
+    endDate?: string,
+  ) {
     const allProducts = await this.prisma.product.findMany({
       where: { userId },
       include: { presentations: true },
       orderBy: { name: 'asc' },
     });
 
-    const lowStockProducts = allProducts.filter(
-      (p) => p.stock <= p.minStock,
-    );
+    const lowStockProducts = allProducts.filter((p) => p.stock <= p.minStock);
 
     const productIds = lowStockProducts.map((p) => p.id);
     if (productIds.length === 0) return [];
 
-    const start = startDate ? new Date(startDate) : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    const start = startDate
+      ? new Date(startDate)
+      : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
     const end = endDate ? new Date(endDate) : new Date();
 
     const movements = await this.prisma.inventoryMovement.findMany({
@@ -626,10 +652,7 @@ export class ProductsService {
     const prisma = tx || this.prisma;
     const transactions = await prisma.transaction.findMany({
       where: {
-        OR: [
-          { userId },
-          { user: { parentId: userId } }
-        ],
+        OR: [{ userId }, { user: { parentId: userId } }],
         workspace: 'BUSINESS',
         isPosSale: false,
         status: 'PAID',
@@ -658,7 +681,15 @@ export class ProductsService {
   }
 
   async createPurchaseOrder(userId: string, body: any) {
-    const { items, totalCost, paymentMethod, categoryId, receiptUrl, receiveImmediately, confirmPayment } = body;
+    const {
+      items,
+      totalCost,
+      paymentMethod,
+      categoryId,
+      receiptUrl,
+      receiveImmediately,
+      confirmPayment,
+    } = body;
 
     if (!items || items.length === 0) {
       throw new BadRequestException('El pedido de compras está vacío.');
@@ -673,7 +704,9 @@ export class ProductsService {
     if (isPaid) {
       const currentLiquidity = await this.getBusinessLiquidity(userId);
       if (parseFloat(totalCost) > currentLiquidity) {
-        throw new BadRequestException(`Límite de liquidez superado. No tiene suficiente liquidez en caja para realizar esta compra. Liquidez disponible: S/ ${currentLiquidity.toFixed(2)}.`);
+        throw new BadRequestException(
+          `Límite de liquidez superado. No tiene suficiente liquidez en caja para realizar esta compra. Liquidez disponible: S/ ${currentLiquidity.toFixed(2)}.`,
+        );
       }
     }
 
@@ -682,7 +715,7 @@ export class ProductsService {
       const purchaseOrder = await tx.purchaseOrder.create({
         data: {
           totalCost: parseFloat(totalCost),
-          status: receiveImmediately ? 'RECEIVED' : (isPaid ? 'PAID' : 'PENDING'),
+          status: receiveImmediately ? 'RECEIVED' : isPaid ? 'PAID' : 'PENDING',
           paymentMethod,
           categoryId,
           receiptUrl: receiptUrl || null,
@@ -718,7 +751,8 @@ export class ProductsService {
         .map((item: any) => {
           const prod = dbProducts.find((p) => p.id === item.productId);
           const name = prod ? prod.name : 'Producto';
-          const presName = item.presentationName || (prod ? prod.unit : 'Unidad');
+          const presName =
+            item.presentationName || (prod ? prod.unit : 'Unidad');
           return `${item.quantity}x ${name} [${presName}]`;
         })
         .join(', ');
@@ -770,12 +804,16 @@ export class ProductsService {
             const equivalence = parseFloat(item.equivalence || 1.0);
             const mainUnitsQty = parseFloat(item.quantity) * equivalence;
             const presentationName = item.presentationName || prod.unit;
-            const itemCostPricePerBaseUnit = parseFloat(item.costPrice) / equivalence;
+            const itemCostPricePerBaseUnit =
+              parseFloat(item.costPrice) / equivalence;
 
             // Calculate CPP
             let newCPP = prod.costPrice;
             if (prod.stock + mainUnitsQty > 0) {
-              newCPP = (prod.stock * prod.costPrice + (mainUnitsQty * itemCostPricePerBaseUnit)) / (prod.stock + mainUnitsQty);
+              newCPP =
+                (prod.stock * prod.costPrice +
+                  mainUnitsQty * itemCostPricePerBaseUnit) /
+                (prod.stock + mainUnitsQty);
             }
 
             // Update stock and CPP
@@ -854,7 +892,9 @@ export class ProductsService {
       throw new BadRequestException('El pedido ya ha sido ingresado a stock');
     }
     if (order.status === 'PENDING') {
-      throw new BadRequestException('Debe registrar primero el pago del pedido antes de ingresarlo a stock.');
+      throw new BadRequestException(
+        'Debe registrar primero el pago del pedido antes de ingresarlo a stock.',
+      );
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -877,7 +917,10 @@ export class ProductsService {
       if (transaction) {
         let newDesc = transaction.description;
         if (newDesc) {
-          newDesc = newDesc.replace('Estado: En Tránsito (Pedido)', 'Estado: Recibido en Almacén');
+          newDesc = newDesc.replace(
+            'Estado: En Tránsito (Pedido)',
+            'Estado: Recibido en Almacén',
+          );
         }
         await tx.transaction.update({
           where: { id: transaction.id },
@@ -898,7 +941,10 @@ export class ProductsService {
         // Calculate CPP
         let newCPP = item.product.costPrice;
         if (item.product.stock + mainUnitsQty > 0) {
-          newCPP = (item.product.stock * item.product.costPrice + (mainUnitsQty * itemCostPricePerBaseUnit)) / (item.product.stock + mainUnitsQty);
+          newCPP =
+            (item.product.stock * item.product.costPrice +
+              mainUnitsQty * itemCostPricePerBaseUnit) /
+            (item.product.stock + mainUnitsQty);
         }
 
         // Update stock and CPP
@@ -958,7 +1004,9 @@ export class ProductsService {
     // Check liquidity
     const currentLiquidity = await this.getBusinessLiquidity(userId);
     if (order.totalCost > currentLiquidity) {
-      throw new BadRequestException(`Límite de liquidez superado. No tiene suficiente liquidez en caja para realizar este pago. Liquidez disponible: S/ ${currentLiquidity.toFixed(2)}.`);
+      throw new BadRequestException(
+        `Límite de liquidez superado. No tiene suficiente liquidez en caja para realizar este pago. Liquidez disponible: S/ ${currentLiquidity.toFixed(2)}.`,
+      );
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -997,12 +1045,17 @@ export class ProductsService {
             receiptUrl: receiptUrl || null,
             date: new Date(),
             description: existingPendingTx.description
-              ? existingPendingTx.description.replace("Estado: Pendiente de Pago.", "Estado: Pagado. En Tránsito (Pedido).")
+              ? existingPendingTx.description.replace(
+                  'Estado: Pendiente de Pago.',
+                  'Estado: Pagado. En Tránsito (Pedido).',
+                )
               : `Pedido de Compra. ID: ${order.id}. Estado: Pagado. En Tránsito (Pedido).`,
           },
         });
       } else {
-        const productNames = order.items.map((item) => item.product.name).join(', ');
+        const productNames = order.items
+          .map((item) => item.product.name)
+          .join(', ');
         const itemDetails = order.items
           .map((item) => `${item.quantity}x ${item.product.name}`)
           .join(', ');
@@ -1173,7 +1226,9 @@ export class ProductsService {
 
     if (!order) throw new NotFoundException('Pedido no encontrado');
     if (order.status !== 'RECEIVED') {
-      throw new BadRequestException('Solo se pueden revertir pedidos que ya han sido ingresados a stock (RECEIVED)');
+      throw new BadRequestException(
+        'Solo se pueden revertir pedidos que ya han sido ingresados a stock (RECEIVED)',
+      );
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -1196,7 +1251,10 @@ export class ProductsService {
       if (transaction) {
         let newDesc = transaction.description;
         if (newDesc) {
-          newDesc = newDesc.replace('Estado: Recibido en Almacén', 'Estado: En Tránsito (Pedido)');
+          newDesc = newDesc.replace(
+            'Estado: Recibido en Almacén',
+            'Estado: En Tránsito (Pedido)',
+          );
         }
         await tx.transaction.update({
           where: { id: transaction.id },
@@ -1221,7 +1279,9 @@ export class ProductsService {
 
         let revertedCPP = currentCPP;
         if (stockActual > 0) {
-          revertedCPP = (currentCPP * stockNew - mainUnitsQty * itemCostPricePerBaseUnit) / stockActual;
+          revertedCPP =
+            (currentCPP * stockNew - mainUnitsQty * itemCostPricePerBaseUnit) /
+            stockActual;
         }
 
         // Update stock and CPP
@@ -1274,7 +1334,9 @@ export class ProductsService {
       if (isReceived) {
         // Revert stock from old items
         for (const item of order.items) {
-          const product = await tx.product.findUnique({ where: { id: item.productId } });
+          const product = await tx.product.findUnique({
+            where: { id: item.productId },
+          });
           if (product) {
             const equivalence = item.equivalence || 1.0;
             const mainUnitsQty = item.quantity * equivalence;
@@ -1286,7 +1348,10 @@ export class ProductsService {
 
             let revertedCPP = currentCPP;
             if (stockActual > 0) {
-              revertedCPP = (currentCPP * stockNew - mainUnitsQty * itemCostPricePerBaseUnit) / stockActual;
+              revertedCPP =
+                (currentCPP * stockNew -
+                  mainUnitsQty * itemCostPricePerBaseUnit) /
+                stockActual;
             }
 
             const updatedProduct = await tx.product.update({
@@ -1353,7 +1418,9 @@ export class ProductsService {
       if (isReceived) {
         // Apply stock of new items
         for (const item of updatedOrder.items) {
-          const product = await tx.product.findUnique({ where: { id: item.productId } });
+          const product = await tx.product.findUnique({
+            where: { id: item.productId },
+          });
           if (product) {
             const equivalence = item.equivalence || 1.0;
             const mainUnitsQty = item.quantity * equivalence;
@@ -1362,7 +1429,10 @@ export class ProductsService {
 
             let newCPP = product.costPrice;
             if (product.stock + mainUnitsQty > 0) {
-              newCPP = (product.stock * product.costPrice + (mainUnitsQty * itemCostPricePerBaseUnit)) / (product.stock + mainUnitsQty);
+              newCPP =
+                (product.stock * product.costPrice +
+                  mainUnitsQty * itemCostPricePerBaseUnit) /
+                (product.stock + mainUnitsQty);
             }
 
             const updatedProduct = await tx.product.update({
@@ -1394,10 +1464,13 @@ export class ProductsService {
       }
 
       // Update associated general ledger transaction
-      const orderNames = updatedOrder.items.map((item) => item.product?.name || 'Producto').join(', ');
+      const orderNames = updatedOrder.items
+        .map((item) => item.product?.name || 'Producto')
+        .join(', ');
       const orderDetails = updatedOrder.items
         .map((item) => {
-          const presName = item.presentationName || item.product?.unit || 'Unidad';
+          const presName =
+            item.presentationName || item.product?.unit || 'Unidad';
           return `${item.quantity}x ${item.product?.name || 'Producto'} [${presName}]`;
         })
         .join(', ');
@@ -1535,4 +1608,3 @@ export class ProductsService {
     });
   }
 }
-

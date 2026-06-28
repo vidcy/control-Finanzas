@@ -1,5 +1,9 @@
 import { PrismaService } from 'src/prisma/prisma.service';
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import {
   CreateTransactionDto,
   Currency,
@@ -29,11 +33,18 @@ export class TransactionService {
 
     // Validate liquidity for EXPENSE type
     const isPaid = dto.status === TransactionStatus.PAID || !dto.status; // defaults to PAID
-    const isPendingPurchase = dto.status === TransactionStatus.PENDING && dto.description?.includes('Pedido de Compra');
+    const isPendingPurchase =
+      dto.status === TransactionStatus.PENDING &&
+      dto.description?.includes('Pedido de Compra');
     if (dto.type === 'EXPENSE' && (isPaid || isPendingPurchase)) {
-      const currentLiquidity = await this.getLiquidity(userId, dto.workspace || 'PERSONAL');
+      const currentLiquidity = await this.getLiquidity(
+        userId,
+        dto.workspace || 'PERSONAL',
+      );
       if (amountSoles > currentLiquidity) {
-        throw new BadRequestException(`Límite de liquidez superado. No tiene suficiente liquidez en caja para realizar esta operación. Liquidez disponible: S/ ${currentLiquidity.toFixed(2)}.`);
+        throw new BadRequestException(
+          `Límite de liquidez superado. No tiene suficiente liquidez en caja para realizar esta operación. Liquidez disponible: S/ ${currentLiquidity.toFixed(2)}.`,
+        );
       }
     }
 
@@ -42,7 +53,8 @@ export class TransactionService {
         userId,
         type: dto.type,
         categoryId: dto.categoryId,
-        subCategoryId: dto.subCategoryId === '' ? null : (dto.subCategoryId || null),
+        subCategoryId:
+          dto.subCategoryId === '' ? null : dto.subCategoryId || null,
 
         // 🔥 SIEMPRE UTC
         date: dto.date ? new Date(dto.date) : new Date(),
@@ -88,7 +100,15 @@ export class TransactionService {
     endDate?: string;
     filterUserId?: string;
   }) {
-    const { ownerId, workerId, workspace, isPosSale, startDate, endDate, filterUserId } = options;
+    const {
+      ownerId,
+      workerId,
+      workspace,
+      isPosSale,
+      startDate,
+      endDate,
+      filterUserId,
+    } = options;
 
     const whereClause: any = {
       workspace,
@@ -108,10 +128,7 @@ export class TransactionService {
       if (filterUserId) {
         whereClause.userId = filterUserId;
       } else {
-        whereClause.OR = [
-          { userId: ownerId },
-          { user: { parentId: ownerId } }
-        ];
+        whereClause.OR = [{ userId: ownerId }, { user: { parentId: ownerId } }];
       }
     }
 
@@ -137,19 +154,19 @@ export class TransactionService {
             name: true,
             lastName: true,
             email: true,
-          }
-        }
+          },
+        },
       },
     });
   }
 
-  async getLiquidity(userId: string, workspace: string = 'PERSONAL'): Promise<number> {
+  async getLiquidity(
+    userId: string,
+    workspace: string = 'PERSONAL',
+  ): Promise<number> {
     const transactions = await this.prisma.transaction.findMany({
       where: {
-        OR: [
-          { userId },
-          { user: { parentId: userId } }
-        ],
+        OR: [{ userId }, { user: { parentId: userId } }],
         workspace,
         isPosSale: false, // Exclude individual POS sales!
         status: TransactionStatus.PAID,
@@ -215,13 +232,21 @@ export class TransactionService {
     }
 
     // Validate liquidity difference on update
-    const wasPaidExpense = existing.type === 'EXPENSE' && (existing.status === TransactionStatus.PAID || (existing.status === TransactionStatus.PENDING && existing.description?.includes('Pedido de Compra')));
-    
+    const wasPaidExpense =
+      existing.type === 'EXPENSE' &&
+      (existing.status === TransactionStatus.PAID ||
+        (existing.status === TransactionStatus.PENDING &&
+          existing.description?.includes('Pedido de Compra')));
+
     const targetStatus = dto.status ?? existing.status;
     const targetType = dto.type ?? existing.type;
     const targetDesc = dto.description ?? existing.description;
-    
-    const isPaidExpense = targetType === 'EXPENSE' && (targetStatus === TransactionStatus.PAID || (targetStatus === TransactionStatus.PENDING && targetDesc?.includes('Pedido de Compra')));
+
+    const isPaidExpense =
+      targetType === 'EXPENSE' &&
+      (targetStatus === TransactionStatus.PAID ||
+        (targetStatus === TransactionStatus.PENDING &&
+          targetDesc?.includes('Pedido de Compra')));
 
     const oldAmount = existing.amountSoles || 0;
     const newAmount = amountSoles || 0;
@@ -231,13 +256,22 @@ export class TransactionService {
     if (isPaidExpense) diff += newAmount;
 
     if (diff > 0) {
-      const currentLiquidity = await this.getLiquidity(existing.userId, existing.workspace);
+      const currentLiquidity = await this.getLiquidity(
+        existing.userId,
+        existing.workspace,
+      );
       if (diff > currentLiquidity) {
-        throw new BadRequestException(`Límite de liquidez superado. No tiene suficiente liquidez en caja para esta modificación. Liquidez disponible: S/ ${currentLiquidity.toFixed(2)}.`);
+        throw new BadRequestException(
+          `Límite de liquidez superado. No tiene suficiente liquidez en caja para esta modificación. Liquidez disponible: S/ ${currentLiquidity.toFixed(2)}.`,
+        );
       }
     }
 
-    if (dto.receiptUrl !== undefined && dto.receiptUrl !== existing.receiptUrl && existing.receiptUrl) {
+    if (
+      dto.receiptUrl !== undefined &&
+      dto.receiptUrl !== existing.receiptUrl &&
+      existing.receiptUrl
+    ) {
       await this.filesService.deleteFile(existing.receiptUrl);
     }
 
@@ -329,9 +363,14 @@ export class TransactionService {
 
     if (dto.status === 'PAID' && existing.status !== 'PAID') {
       if (existing.type === 'EXPENSE') {
-        const currentLiquidity = await this.getLiquidity(existing.userId, existing.workspace);
+        const currentLiquidity = await this.getLiquidity(
+          existing.userId,
+          existing.workspace,
+        );
         if ((existing.amountSoles || 0) > currentLiquidity) {
-          throw new BadRequestException(`Límite de liquidez superado. No tiene suficiente liquidez en caja para realizar este pago. Liquidez disponible: S/ ${currentLiquidity.toFixed(2)}.`);
+          throw new BadRequestException(
+            `Límite de liquidez superado. No tiene suficiente liquidez en caja para realizar este pago. Liquidez disponible: S/ ${currentLiquidity.toFixed(2)}.`,
+          );
         }
       }
     }
@@ -345,20 +384,30 @@ export class TransactionService {
     });
 
     // Bidirectional sync with PurchaseOrder if linked
-    if (existing.description && existing.description.includes('Pedido de Compra. ID:')) {
-      const match = existing.description.match(/Pedido de Compra\. ID:\s*([a-fA-F0-9-]+|[0-9a-fA-F]+)/);
+    if (
+      existing.description &&
+      existing.description.includes('Pedido de Compra. ID:')
+    ) {
+      const match = existing.description.match(
+        /Pedido de Compra\. ID:\s*([a-fA-F0-9-]+|[0-9a-fA-F]+)/,
+      );
       if (match && match[1]) {
         const poId = match[1];
         let poStatus: 'PENDING' | 'PAID' = 'PENDING';
         if (dto.status === 'PAID') {
           poStatus = 'PAID';
         }
-        await this.prisma.purchaseOrder.update({
-          where: { id: poId },
-          data: { status: poStatus },
-        }).catch((err) => {
-          console.error("Failed to sync PurchaseOrder status from transaction:", err);
-        });
+        await this.prisma.purchaseOrder
+          .update({
+            where: { id: poId },
+            data: { status: poStatus },
+          })
+          .catch((err) => {
+            console.error(
+              'Failed to sync PurchaseOrder status from transaction:',
+              err,
+            );
+          });
       }
     }
 

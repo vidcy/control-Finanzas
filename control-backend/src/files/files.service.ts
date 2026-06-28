@@ -110,11 +110,15 @@ export class FilesService {
       const publicId = publicIdParts.join('/');
 
       // Intentar eliminar como imagen primero
-      let result = await cloudinary.uploader.destroy(publicId, { resource_type: 'image' });
+      let result = await cloudinary.uploader.destroy(publicId, {
+        resource_type: 'image',
+      });
       if (result.result === 'ok') return true;
 
       // Intentar eliminar como raw (para PDFs cargados como crudos)
-      result = await cloudinary.uploader.destroy(publicId, { resource_type: 'raw' });
+      result = await cloudinary.uploader.destroy(publicId, {
+        resource_type: 'raw',
+      });
       return result.result === 'ok';
     } catch (error) {
       console.error('Error al eliminar archivo de Cloudinary:', error);

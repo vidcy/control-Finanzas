@@ -22,4 +22,3 @@ import { FilesModule } from '../files/files.module';
   exports: [UsersService],
 })
 export class UsersModule {}
-
