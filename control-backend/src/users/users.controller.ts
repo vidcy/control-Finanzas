@@ -1,4 +1,17 @@
-import { Controller, Post, Body, Get, UseGuards, Req, Patch, Param, Inject, forwardRef, BadRequestException, Delete } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  Get,
+  UseGuards,
+  Req,
+  Patch,
+  Param,
+  Inject,
+  forwardRef,
+  BadRequestException,
+  Delete,
+} from '@nestjs/common';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from 'src/auth/jwt.guard';
 import { Roles } from 'src/auth/role.decorator';
@@ -27,19 +40,29 @@ export class UsersController {
     // 2. Validar contraseña
     const password = body.password || '';
     if (password.length < 8) {
-      throw new BadRequestException('La contraseña debe tener al menos 8 caracteres');
+      throw new BadRequestException(
+        'La contraseña debe tener al menos 8 caracteres',
+      );
     }
     if (!/[A-Z]/.test(password)) {
-      throw new BadRequestException('La contraseña debe incluir al menos una letra mayúscula');
+      throw new BadRequestException(
+        'La contraseña debe incluir al menos una letra mayúscula',
+      );
     }
     if (!/[a-z]/.test(password)) {
-      throw new BadRequestException('La contraseña debe incluir al menos una letra minúscula');
+      throw new BadRequestException(
+        'La contraseña debe incluir al menos una letra minúscula',
+      );
     }
     if (!/[0-9]/.test(password)) {
-      throw new BadRequestException('La contraseña debe incluir al menos un número');
+      throw new BadRequestException(
+        'La contraseña debe incluir al menos un número',
+      );
     }
     if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
-      throw new BadRequestException('La contraseña debe incluir al menos un carácter especial (ej: !@#$%)');
+      throw new BadRequestException(
+        'La contraseña debe incluir al menos un carácter especial (ej: !@#$%)',
+      );
     }
 
     // 3. Verificar si el correo ya está registrado
@@ -47,20 +70,28 @@ export class UsersController {
     if (existingUser) {
       if (!existingUser.isActive) {
         // Cuenta existe pero no está activada → reenviar correo
-        const activationToken = this.authService.generateActivationToken(existingUser.email);
+        const activationToken = this.authService.generateActivationToken(
+          existingUser.email,
+        );
         try {
-          await this.mailService.sendActivationEmail(existingUser.email, activationToken);
+          await this.mailService.sendActivationEmail(
+            existingUser.email,
+            activationToken,
+          );
         } catch (mailError) {
           console.error('Error reenviando correo de activación:', mailError);
         }
         return {
-          message: 'Tu cuenta ya fue registrada pero aún no está activa. Hemos reenviado el correo de activación a tu bandeja.',
+          message:
+            'Tu cuenta ya fue registrada pero aún no está activa. Hemos reenviado el correo de activación a tu bandeja.',
           activationRequired: true,
           alreadyExists: true,
         };
       } else {
         // Cuenta existe y está activa → indicar que inicie sesión
-        throw new BadRequestException('Este correo ya está registrado y activo. Por favor inicia sesión.');
+        throw new BadRequestException(
+          'Este correo ya está registrado y activo. Por favor inicia sesión.',
+        );
       }
     }
 
@@ -70,7 +101,9 @@ export class UsersController {
     const user = await this.usersService.createUsers(body);
 
     // 5. Generar token y enviar correo de activación
-    const activationToken = this.authService.generateActivationToken(user.email);
+    const activationToken = this.authService.generateActivationToken(
+      user.email,
+    );
     try {
       await this.mailService.sendActivationEmail(user.email, activationToken);
     } catch (mailError) {
@@ -78,7 +111,8 @@ export class UsersController {
     }
 
     return {
-      message: 'Usuario registrado correctamente. Por favor verifica tu correo para activar tu cuenta.',
+      message:
+        'Usuario registrado correctamente. Por favor verifica tu correo para activar tu cuenta.',
       activationRequired: true,
       alreadyExists: false,
       user: {
@@ -90,7 +124,6 @@ export class UsersController {
       },
     };
   }
-
 
   @Post('activate')
   async activate(@Body('token') token: string) {

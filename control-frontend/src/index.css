@@ -108,23 +108,61 @@
 .business-name-animated {
   background: linear-gradient(
     90deg,
-    #f472b6 0%,
-    #c084fc 15%,
-    #818cf8 30%,
-    #38bdf8 45%,
-    #34d399 60%,
-    #fbbf24 75%,
-    #f472b6 90%,
-    #c084fc 100%
+    #ff007f 0%,
+    #7928ca 20%,
+    #00dfd8 40%,
+    #40ff00 60%,
+    #ffeb00 80%,
+    #ff007f 100%
   );
   background-size: 300% auto;
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
-  animation: businessNameShimmer 3.5s linear infinite, businessNameGlow 2.5s ease-in-out infinite;
+  animation: businessNameShimmer 3s linear infinite, businessNameGlow 2s ease-in-out infinite;
   display: inline-block;
   max-width: 100%;
+}
+
+/* Nombre comercial grande: degradado premium muy vivo y brillante */
+@keyframes glowTextLarge {
+  0%, 100% {
+    filter: drop-shadow(0 0 15px rgba(236, 72, 153, 0.4)) drop-shadow(0 0 5px rgba(99, 102, 241, 0.3));
+  }
+  50% {
+    filter: drop-shadow(0 0 25px rgba(236, 72, 153, 0.6)) drop-shadow(0 0 8px rgba(99, 102, 241, 0.5));
+  }
+}
+.business-name-animated-large {
+  background: linear-gradient(
+    135deg,
+    #ec4899 0%,
+    #a855f7 25%,
+    #6366f1 50%,
+    #3b82f6 75%,
+    #10b981 100%
+  );
+  background-size: 250% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: businessNameShimmer 3s linear infinite, glowTextLarge 2.5s ease-in-out infinite;
+  font-weight: 900;
+  letter-spacing: -0.025em;
+  text-transform: uppercase;
+}
+
+/* Efecto de degradado que se mueve continuamente en el banner */
+@keyframes bannerGradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.animate-banner-gradient {
+  background-size: 200% 200% !important;
+  animation: bannerGradientShift 10s ease infinite;
 }
 
 /* THINK: azul/indigo/cyan vibrante con brillo */

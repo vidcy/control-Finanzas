@@ -31,7 +31,8 @@ export class TransactionController {
       ownerId,
       workerId,
       workspace: workspace || 'PERSONAL',
-      isPosSale: isPosSale === 'true' ? true : isPosSale === 'false' ? false : undefined,
+      isPosSale:
+        isPosSale === 'true' ? true : isPosSale === 'false' ? false : undefined,
       startDate,
       endDate,
       filterUserId,

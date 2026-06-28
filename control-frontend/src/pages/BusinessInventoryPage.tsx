@@ -64,6 +64,7 @@ import { useAuth } from "../auth/AuthContext";
 import {
   getReceiptAbsoluteUrl,
   ProductImageUploader,
+  uploadProductImageFile,
 } from "../components/ui/ImageUploader";
 
 // Helper dynamically loading CDN scripts to bypass React 19 dependency conflict issues
@@ -656,8 +657,6 @@ export default function BusinessInventoryPage() {
       if (formData.imageUrl instanceof File) {
         const uploadToast = toast.loading("Subiendo foto del producto...");
         try {
-          const { uploadProductImageFile } =
-            await import("../components/ui/ImageUploader");
           finalImageUrl = await uploadProductImageFile(formData.imageUrl);
           toast.dismiss(uploadToast);
         } catch {
@@ -777,7 +776,6 @@ export default function BusinessInventoryPage() {
     try {
       let finalReceiptUrl = "";
       if (bulkPurchaseFile) {
-        const { uploadProductImageFile } = await import("../components/ui/ImageUploader");
         finalReceiptUrl = await uploadProductImageFile(bulkPurchaseFile);
       }
 
@@ -831,7 +829,6 @@ export default function BusinessInventoryPage() {
     try {
       let finalReceiptUrl = editOrderData.receiptUrl;
       if (editOrderFile) {
-        const { uploadProductImageFile } = await import("../components/ui/ImageUploader");
         finalReceiptUrl = await uploadProductImageFile(editOrderFile);
       }
 
@@ -991,7 +988,6 @@ export default function BusinessInventoryPage() {
       try {
         let finalReceiptUrl: string | null = null;
         if (payOrderFile) {
-          const { uploadProductImageFile } = await import("../components/ui/ImageUploader");
           finalReceiptUrl = await uploadProductImageFile(payOrderFile);
         }
         await payPurchaseOrderRequest(payingOrderId, {

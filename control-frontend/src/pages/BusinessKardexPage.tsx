@@ -1069,8 +1069,8 @@ export default function BusinessKardexPage() {
                 className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-2xl text-xs font-semibold text-gray-700 outline-none focus:bg-white focus:ring-2 focus:ring-teal-500 transition-all truncate"
               >
                 <option value="ALL">✨ Todas las Op.</option>
-                <option value="IN">📥 Todas las Entradas (IN)</option>
-                <option value="OUT">📤 Todas las Salidas (OUT)</option>
+                <option value="IN">📥 Todas las Entradas</option>
+                <option value="OUT">📤 Todas las Salidas</option>
                 <option value="PURCHASE">🛒 Compras de Stock</option>
                 <option value="SALE">💰 Ventas POS</option>
                 <option value="ADJUSTMENT">🔧 Ajustes Manuales</option>
@@ -1250,6 +1250,8 @@ export default function BusinessKardexPage() {
                                 ? "Venta"
                                 : isRevert
                                 ? "Reversión"
+                                : m.reason === "ADJUSTMENT"
+                                ? "Ajuste"
                                 : m.reason || "Ajuste"}
                             </span>
                           </span>
@@ -1507,6 +1509,8 @@ export default function BusinessKardexPage() {
                         ? "Venta en Punto de Venta (POS)"
                         : selectedMovementForDetail.reason === "REVERT_PURCHASE"
                         ? "Reversión de Compra / Devolución"
+                        : selectedMovementForDetail.reason === "ADJUSTMENT"
+                        ? "Ajuste de Inventario"
                         : selectedMovementForDetail.reason || "Ajuste de Inventario"}
                     </h3>
                   </div>

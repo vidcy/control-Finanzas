@@ -1,4 +1,9 @@
-import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Cron, CronExpression } from '@nestjs/schedule';
 
@@ -45,14 +50,23 @@ export class CashShiftService {
     categoryId?: string;
     subCategoryId?: string;
   }) {
-    const { ownerId, workerId, initialBalance, branchId, categoryId, subCategoryId } = options;
+    const {
+      ownerId,
+      workerId,
+      initialBalance,
+      branchId,
+      categoryId,
+      subCategoryId,
+    } = options;
 
     const activeShift = await this.prisma.cashShift.findFirst({
       where: { userId: workerId, status: 'OPEN' },
     });
 
     if (activeShift) {
-      throw new BadRequestException('Ya existe una caja abierta para este usuario.');
+      throw new BadRequestException(
+        'Ya existe una caja abierta para este usuario.',
+      );
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -98,7 +112,9 @@ export class CashShiftService {
     });
 
     if (!activeShift) {
-      throw new BadRequestException('No hay ninguna caja abierta para este usuario.');
+      throw new BadRequestException(
+        'No hay ninguna caja abierta para este usuario.',
+      );
     }
 
     const sales = await this.prisma.transaction.aggregate({
@@ -190,9 +206,9 @@ export class CashShiftService {
             id: true,
             name: true,
             lastName: true,
-          }
-        }
-      }
+          },
+        },
+      },
     });
 
     if (!shift) return null;
@@ -232,7 +248,16 @@ export class CashShiftService {
     startDate?: string;
     endDate?: string;
   }) {
-    const { ownerId, loggedInWorkerId, page, limit, branchId, workerId, startDate, endDate } = options;
+    const {
+      ownerId,
+      loggedInWorkerId,
+      page,
+      limit,
+      branchId,
+      workerId,
+      startDate,
+      endDate,
+    } = options;
 
     const whereClause: any = {
       status: 'CLOSED',
@@ -244,10 +269,7 @@ export class CashShiftService {
       if (workerId) {
         whereClause.userId = workerId;
       } else {
-        whereClause.OR = [
-          { userId: ownerId },
-          { user: { parentId: ownerId } }
-        ];
+        whereClause.OR = [{ userId: ownerId }, { user: { parentId: ownerId } }];
       }
     }
 
@@ -281,13 +303,13 @@ export class CashShiftService {
               name: true,
               lastName: true,
               email: true,
-            }
-          }
-        }
+            },
+          },
+        },
       }),
       this.prisma.cashShift.count({
         where: whereClause,
-      })
+      }),
     ]);
 
     return {
@@ -304,8 +326,8 @@ export class CashShiftService {
       where: {
         id,
         OR: workerId
-          ? [ { userId: workerId } ]
-          : [ { userId: ownerId }, { user: { parentId: ownerId } } ],
+          ? [{ userId: workerId }]
+          : [{ userId: ownerId }, { user: { parentId: ownerId } }],
       },
       include: {
         branch: true,
@@ -315,13 +337,15 @@ export class CashShiftService {
             name: true,
             lastName: true,
             email: true,
-          }
-        }
-      }
+          },
+        },
+      },
     });
 
     if (!shift) {
-      throw new NotFoundException('Cierre de caja no encontrado o no tiene permisos para verlo.');
+      throw new NotFoundException(
+        'Cierre de caja no encontrado o no tiene permisos para verlo.',
+      );
     }
 
     const sales = await this.prisma.transaction.findMany({

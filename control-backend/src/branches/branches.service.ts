@@ -1,4 +1,8 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -38,7 +42,11 @@ export class BranchesService {
     });
   }
 
-  async updateBranch(userId: string, id: string, data: { name?: string; address?: string }) {
+  async updateBranch(
+    userId: string,
+    id: string,
+    data: { name?: string; address?: string },
+  ) {
     const branch = await this.prisma.branch.findFirst({
       where: { id, userId },
     });

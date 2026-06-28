@@ -1,7 +1,7 @@
-/* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useState, useEffect } from "react";
 import type { ReactNode } from "react";
-import { loginRequest } from "../services/auth.api";
+import { loginRequest, registerRequest } from "../services/auth.api";
+import { getUserRequest } from "../services/user.api";
 
 export type WorkspaceType = "PERSONAL" | "BUSINESS";
 
@@ -83,7 +83,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     const syncProfile = async () => {
       try {
-        const { getUserRequest } = await import("../services/user.api");
         const freshUser = await getUserRequest();
 
         if (freshUser.isActive === false) {
@@ -115,7 +114,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
 
     syncProfile();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   /**
@@ -160,7 +158,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
    */
   const register = async (registerData: any) => {
     try {
-      const { registerRequest } = await import("../services/auth.api");
       const data = await registerRequest(registerData);
 
       if (data.activationRequired) {

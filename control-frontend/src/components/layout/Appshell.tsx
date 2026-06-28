@@ -490,7 +490,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
         {/* BRAND */}
         <div className="h-20 flex items-center justify-between px-8 border-b border-gray-100/50">
           <div className="flex items-center min-w-0">
-            <div className="w-10 h-10 rounded-xl overflow-hidden shadow-md flex-shrink-0 bg-white flex items-center justify-center">
+            <div className={`w-10 h-10 rounded-xl overflow-hidden shadow-md flex-shrink-0 bg-white flex items-center justify-center transition-all duration-300 ${activeWorkspace === "BUSINESS" ? "ring-2 ring-purple-400 ring-offset-2 scale-105" : ""}`}>
               <img
                 src={
                   activeWorkspace === "BUSINESS" && user?.businessLogo

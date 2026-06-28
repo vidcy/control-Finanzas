@@ -1,4 +1,10 @@
-import { ConflictException, Injectable, ForbiddenException, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  ForbiddenException,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { CategoriesService } from 'src/category/category.service';
@@ -34,7 +40,10 @@ export class UsersService {
         email: data.email,
         password: hashedPassword,
         role: (data.role || 'USER') as 'ADMIN' | 'USER',
-        profiles: data.profiles && data.profiles.length > 0 ? data.profiles : ['PERSONAL'],
+        profiles:
+          data.profiles && data.profiles.length > 0
+            ? data.profiles
+            : ['PERSONAL'],
         isActive: data.isActive !== undefined ? data.isActive : true,
         parentId: data.parentId || null,
       },
@@ -62,7 +71,7 @@ export class UsersService {
         profiles: true,
         blockedProfiles: true,
         parentId: true,
-      }
+      },
     });
   }
   async findUser(id: string) {
@@ -145,11 +154,16 @@ export class UsersService {
     }
 
     // Validar RUC si se envía (11 dígitos numéricos en Perú)
-    if (updateData.businessRuc !== undefined && updateData.businessRuc !== null) {
+    if (
+      updateData.businessRuc !== undefined &&
+      updateData.businessRuc !== null
+    ) {
       const rucStr = String(updateData.businessRuc).trim();
       if (rucStr !== '') {
         if (!/^\d{11}$/.test(rucStr)) {
-          throw new BadRequestException('El RUC debe tener exactamente 11 dígitos numéricos.');
+          throw new BadRequestException(
+            'El RUC debe tener exactamente 11 dígitos numéricos.',
+          );
         }
       }
     }
@@ -171,9 +185,11 @@ export class UsersService {
         currentUser.personalAvatar &&
         updateData.personalAvatar !== currentUser.personalAvatar
       ) {
-        this.filesService.deleteFile(currentUser.personalAvatar).catch((err) =>
-          console.error('Error deleting old personalAvatar:', err),
-        );
+        this.filesService
+          .deleteFile(currentUser.personalAvatar)
+          .catch((err) =>
+            console.error('Error deleting old personalAvatar:', err),
+          );
       }
       // 2. Logo del negocio (businessLogo)
       if (
@@ -181,9 +197,11 @@ export class UsersService {
         currentUser.businessLogo &&
         updateData.businessLogo !== currentUser.businessLogo
       ) {
-        this.filesService.deleteFile(currentUser.businessLogo).catch((err) =>
-          console.error('Error deleting old businessLogo:', err),
-        );
+        this.filesService
+          .deleteFile(currentUser.businessLogo)
+          .catch((err) =>
+            console.error('Error deleting old businessLogo:', err),
+          );
       }
       // 3. Banner del negocio (businessBanner)
       if (
@@ -191,9 +209,11 @@ export class UsersService {
         currentUser.businessBanner &&
         updateData.businessBanner !== currentUser.businessBanner
       ) {
-        this.filesService.deleteFile(currentUser.businessBanner).catch((err) =>
-          console.error('Error deleting old businessBanner:', err),
-        );
+        this.filesService
+          .deleteFile(currentUser.businessBanner)
+          .catch((err) =>
+            console.error('Error deleting old businessBanner:', err),
+          );
       }
     }
 
@@ -221,12 +241,17 @@ export class UsersService {
   }
 
   async updateProfiles(id: string, profiles: string[]) {
-    const user = await this.prisma.user.findUnique({ where: { id }, select: { blockedProfiles: true } });
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: { blockedProfiles: true },
+    });
     if (user?.blockedProfiles) {
       const blocked = user.blockedProfiles as string[];
       for (const p of profiles) {
         if (blocked.includes(p)) {
-          throw new ForbiddenException("El módulo fue desabilitado, comuníquese con soporte-think@ccoplex.com o al 912509111");
+          throw new ForbiddenException(
+            'El módulo fue desabilitado, comuníquese con soporte-think@ccoplex.com o al 912509111',
+          );
         }
       }
     }
@@ -269,7 +294,9 @@ export class UsersService {
       where: { email: data.email },
     });
     if (existingUser) {
-      throw new ConflictException('Usuario/trabajador ya existe con este correo');
+      throw new ConflictException(
+        'Usuario/trabajador ya existe con este correo',
+      );
     }
 
     const hashedPassword = await bcrypt.hash(data.password, 10);

@@ -27,7 +27,7 @@ import Modal from "../components/ui/Modal";
 import ConfirmModal from "../components/ui/ConfirmModal";
 import { format } from "date-fns";
 import BusinessAiAdvisor from "../components/dashboard/BusinessAiAdvisor";
-import ImageUploader, { getReceiptAbsoluteUrl } from "../components/ui/ImageUploader";
+import ImageUploader, { getReceiptAbsoluteUrl, uploadReceiptFile } from "../components/ui/ImageUploader";
 import Pagination from "../components/ui/Pagination";
 import DateRangePicker from "../components/ui/DateRangePicker";
 import { cancelPurchaseOrderRequest } from "../services/product.api";
@@ -134,7 +134,6 @@ export default function BusinessFinancePage() {
       if (formData.receiptUrl instanceof File) {
         const uploadToast = toast.loading("Subiendo comprobante...");
         try {
-          const { uploadReceiptFile } = await import("../components/ui/ImageUploader");
           finalReceiptUrl = await uploadReceiptFile(formData.receiptUrl);
           toast.dismiss(uploadToast);
         } catch {

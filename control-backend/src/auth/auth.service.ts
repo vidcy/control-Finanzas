@@ -25,7 +25,9 @@ export class AuthService {
 
     // ✅ Check account activation BEFORE password so the error is clear
     if (!user.isActive)
-      throw new UnauthorizedException('Tu cuenta no está activa. Por favor, revisa tu correo y haz clic en el enlace de activación.');
+      throw new UnauthorizedException(
+        'Tu cuenta no está activa. Por favor, revisa tu correo y haz clic en el enlace de activación.',
+      );
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) throw new UnauthorizedException('Contraseña incorrecta');
@@ -97,19 +99,29 @@ export class AuthService {
   private validatePasswordStrength(password: string) {
     const pwd = password || '';
     if (pwd.length < 8) {
-      throw new BadRequestException('La contraseña debe tener al menos 8 caracteres');
+      throw new BadRequestException(
+        'La contraseña debe tener al menos 8 caracteres',
+      );
     }
     if (!/[A-Z]/.test(pwd)) {
-      throw new BadRequestException('La contraseña debe incluir al menos una letra mayúscula');
+      throw new BadRequestException(
+        'La contraseña debe incluir al menos una letra mayúscula',
+      );
     }
     if (!/[a-z]/.test(pwd)) {
-      throw new BadRequestException('La contraseña debe incluir al menos una letra minúscula');
+      throw new BadRequestException(
+        'La contraseña debe incluir al menos una letra minúscula',
+      );
     }
     if (!/[0-9]/.test(pwd)) {
-      throw new BadRequestException('La contraseña debe incluir al menos un número');
+      throw new BadRequestException(
+        'La contraseña debe incluir al menos un número',
+      );
     }
     if (!/[!@#$%^&*(),.?":{}|<>]/.test(pwd)) {
-      throw new BadRequestException('La contraseña debe incluir al menos un carácter especial (ej: !@#$%)');
+      throw new BadRequestException(
+        'La contraseña debe incluir al menos un carácter especial (ej: !@#$%)',
+      );
     }
   }
 

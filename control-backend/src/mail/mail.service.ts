@@ -4,32 +4,36 @@ import fetch from 'node-fetch';
 @Injectable()
 export class MailService {
   private async sendMail(to: string, subject: string, html: string) {
-    if (process.env.SMTP2GO_API_KEY && process.env.SMTP2GO_SENDER) {
-      console.log('Sending email via SMTP2GO API to:', to);
-      const response = await fetch('https://api.smtp2go.com/v3/email/send', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          api_key: process.env.SMTP2GO_API_KEY,
-          to: [to],
-          sender: process.env.SMTP2GO_SENDER,
-          subject: subject,
-          html_body: html,
-        }),
-      });
+    const apiKey = process.env.SMTP2GO_API_KEY;
+    const sender = process.env.SMTP2GO_SENDER;
 
-      const data: any = await response.json();
-      if (!data?.data?.succeeded) {
-        console.error('SMTP2GO error:', data);
-        throw new Error('SMTP2GO mail delivery failed');
-      }
-      return data;
+    if (!apiKey || !sender) {
+      const errorMsg = 'SMTP2GO configuration is missing (SMTP2GO_API_KEY or SMTP2GO_SENDER)';
+      console.error(errorMsg);
+      throw new Error(errorMsg);
     }
 
-    console.warn('No mail provider configured (SMTP2GO). Email not sent.');
-    return { skipped: true };
+    console.log('Sending email via SMTP2GO API to:', to);
+    const response = await fetch('https://api.smtp2go.com/v3/email/send', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        api_key: apiKey,
+        to: [to],
+        sender: sender,
+        subject: subject,
+        html_body: html,
+      }),
+    });
+
+    const data: any = await response.json();
+    if (!data?.data?.succeeded) {
+      console.error('SMTP2GO error:', data);
+      throw new Error('SMTP2GO mail delivery failed');
+    }
+    return data;
   }
 
   async sendResetPassword(email: string, token: string) {
