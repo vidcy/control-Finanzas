@@ -20,7 +20,7 @@ import {
   User,
   FileDown,
 } from "lucide-react";
-import ImageUploader, { getReceiptAbsoluteUrl } from "../components/ui/ImageUploader";
+import ImageUploader, { getReceiptAbsoluteUrl, uploadReceiptFile } from "../components/ui/ImageUploader";
 import { toast } from "react-hot-toast";
 import { listCategoriesRequest } from "../services/category.api";
 import ConfirmModal from "../components/ui/ConfirmModal";
@@ -357,7 +357,6 @@ export default function IncomePage() {
       if (formData.receiptUrl instanceof File) {
         const uploadToast = toast.loading("Subiendo comprobante...");
         try {
-          const { uploadReceiptFile } = await import("../components/ui/ImageUploader");
           finalReceiptUrl = await uploadReceiptFile(formData.receiptUrl);
           toast.dismiss(uploadToast);
         } catch (uploadError: any) {

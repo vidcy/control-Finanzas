@@ -15,6 +15,7 @@ import {
 } from "../services/transaction.api";
 import ReceiptUploader, {
   getReceiptAbsoluteUrl,
+  uploadReceiptFile,
 } from "../components/ui/ImageUploader";
 
 import { formatStock } from "./BusinessInventoryPage";
@@ -303,8 +304,6 @@ export default function BusinessPosPage() {
       if (editReceiptUrl instanceof File) {
         const uploadToast = toast.loading("Subiendo comprobante...");
         try {
-          const { uploadReceiptFile } =
-            await import("../components/ui/ImageUploader");
           finalReceiptUrl = await uploadReceiptFile(editReceiptUrl);
           toast.dismiss(uploadToast);
         } catch (error: any) {
@@ -648,8 +647,6 @@ export default function BusinessPosPage() {
         // Caso A: El usuario seleccionó un archivo nuevo -> Subimos a Cloudinary
         const uploadToast = toast.loading("Subiendo comprobante...");
         try {
-          const { uploadReceiptFile } =
-            await import("../components/ui/ImageUploader");
           finalReceiptUrl = await uploadReceiptFile(receiptUrl);
           toast.dismiss(uploadToast);
         } catch (err: any) {

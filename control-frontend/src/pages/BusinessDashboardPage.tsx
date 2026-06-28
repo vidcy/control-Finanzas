@@ -174,31 +174,31 @@ export default function BusinessDashboardPage() {
               }
             : {};
 
-          // Dynamic colors based on margin
-          let gradientClass = "bg-gradient-to-br from-indigo-700 via-purple-800 to-slate-900 border-indigo-500/20";
+          // Dynamic light, vivid, animated gradients based on profit margin
+          let gradientClass = "bg-gradient-to-br from-indigo-100 via-purple-100 to-slate-200 border-indigo-200 shadow-xl shadow-indigo-100/40 animate-banner-gradient text-slate-800";
           let badgeText = "Análisis Operativo";
-          let badgeColor = "bg-indigo-500/20 text-indigo-200 border-indigo-400/30";
+          let badgeColor = "bg-indigo-500/10 text-indigo-800 border-indigo-300/40";
           
           if (!hasCustomBanner) {
             if (profitMargin >= 30) {
-              gradientClass = "bg-gradient-to-tr from-emerald-600 via-teal-600 to-indigo-950 border-emerald-500/30 shadow-lg shadow-emerald-500/5";
+              gradientClass = "bg-gradient-to-tr from-emerald-100 via-teal-100 to-sky-200 border-emerald-200/60 shadow-xl shadow-emerald-100/40 animate-banner-gradient text-slate-800";
               badgeText = `Rendimiento Sobresaliente 🚀 (${profitMargin.toFixed(1)}% margen)`;
-              badgeColor = "bg-emerald-500/20 text-emerald-100 border-emerald-400/30";
+              badgeColor = "bg-emerald-500/10 text-emerald-800 border-emerald-300/40";
             } else if (profitMargin >= 0) {
-              gradientClass = "bg-gradient-to-tr from-indigo-600 via-violet-700 to-slate-950 border-indigo-500/30 shadow-lg shadow-indigo-500/5";
+              gradientClass = "bg-gradient-to-tr from-sky-100 via-indigo-100 to-purple-200 border-indigo-200/60 shadow-xl shadow-indigo-100/40 animate-banner-gradient text-slate-800";
               badgeText = `Operación Estable 📈 (${profitMargin.toFixed(1)}% margen)`;
-              badgeColor = "bg-indigo-500/20 text-indigo-100 border-indigo-400/30";
+              badgeColor = "bg-indigo-500/10 text-indigo-800 border-indigo-300/40";
             } else {
-              gradientClass = "bg-gradient-to-tr from-amber-600 via-rose-600 to-slate-950 border-rose-500/30 shadow-lg shadow-rose-500/5";
+              gradientClass = "bg-gradient-to-tr from-amber-100 via-orange-100 to-rose-200 border-rose-200/60 shadow-xl shadow-rose-100/40 animate-banner-gradient text-slate-800";
               badgeText = `Alerta de Rentabilidad ⚠️ (${profitMargin.toFixed(1)}% margen)`;
-              badgeColor = "bg-rose-500/20 text-rose-100 border-rose-400/30";
+              badgeColor = "bg-rose-500/10 text-rose-800 border-rose-300/40";
             }
           }
 
           return (
             <div
               style={bannerStyle}
-              className={`border rounded-3xl p-8 shadow-sm relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-all duration-700 ${
+              className={`border rounded-[2rem] p-8 shadow-sm relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-all duration-700 ${
                 hasCustomBanner ? "text-white border-transparent" : gradientClass
               }`}
             >
@@ -206,7 +206,7 @@ export default function BusinessDashboardPage() {
                 <div className="absolute inset-0 bg-gradient-to-r from-gray-950/80 via-gray-900/60 to-transparent backdrop-blur-[2px] z-0"></div>
               ) : (
                 <>
-                  <div className="absolute -right-10 -top-10 w-96 h-96 bg-white/5 rounded-full blur-3xl pointer-events-none animate-pulse"></div>
+                  <div className="absolute -right-10 -top-10 w-96 h-96 bg-white/20 rounded-full blur-3xl pointer-events-none animate-pulse"></div>
                   <div className="absolute -left-10 -bottom-10 w-72 h-72 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none"></div>
                 </>
               )}
@@ -214,19 +214,19 @@ export default function BusinessDashboardPage() {
               <div className="relative z-10 flex items-center gap-6">
                 {user?.businessLogo ? (
                   <div className="relative group">
-                    <div className="absolute -inset-1 bg-gradient-to-r from-pink-600 to-purple-600 rounded-full blur opacity-25 group-hover:opacity-75 transition duration-1000 group-hover:duration-200"></div>
+                    <div className="absolute -inset-1 bg-gradient-to-r from-pink-500 to-purple-500 rounded-full blur opacity-25 group-hover:opacity-75 transition duration-1000 group-hover:duration-200"></div>
                     <img
                       src={getReceiptAbsoluteUrl(user.businessLogo) || ""}
                       crossOrigin="anonymous"
                       alt="Logo"
-                      className="relative w-20 h-20 rounded-full object-cover border-2 border-white/80 shadow-md bg-white flex-shrink-0"
+                      className="relative w-20 h-20 rounded-full object-cover border-2 border-white/85 shadow-md bg-white flex-shrink-0"
                       onError={(e) => {
                         (e.target as HTMLImageElement).style.display = "none";
                       }}
                     />
                   </div>
                 ) : (
-                  <div className="w-16 h-16 rounded-2xl bg-white/10 flex items-center justify-center border border-white/20 text-white font-black text-2xl shadow-inner">
+                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center border border-white/50 text-white font-black text-2xl shadow-lg shadow-indigo-500/20">
                     {user?.businessName ? user.businessName.substring(0, 2).toUpperCase() : "B"}
                   </div>
                 )}
@@ -236,10 +236,10 @@ export default function BusinessDashboardPage() {
                       {badgeText}
                     </span>
                   )}
-                  <h1 className="text-4xl font-black tracking-tight drop-shadow-sm uppercase">
+                  <h1 className="text-4xl font-extrabold tracking-tight drop-shadow-sm uppercase business-name-animated-large">
                     {user?.businessName ? user.businessName : "Mi Negocio"}
                   </h1>
-                  <p className={hasCustomBanner ? "text-gray-200 font-semibold text-sm" : "text-indigo-100/90 font-medium text-sm"}>
+                  <p className={hasCustomBanner ? "text-gray-200 font-semibold text-sm" : "text-slate-600 font-semibold text-sm"}>
                     {user?.businessName
                       ? `${user.businessRubro || "Empresa"} • Resumen de Operación y Liquidez`
                       : "Estado y rentabilidad comercial de tu negocio en tiempo real."}
@@ -249,9 +249,9 @@ export default function BusinessDashboardPage() {
               <div className="flex gap-3 relative z-10">
                 <Link
                   to="/business-pos"
-                  className="bg-white text-indigo-950 hover:bg-indigo-50 px-6 py-3.5 rounded-2xl font-bold flex items-center gap-2 hover:shadow-xl transition-all duration-300 active:scale-95 border border-white/20"
+                  className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white px-6 py-3.5 rounded-2xl font-bold flex items-center gap-2 hover:shadow-xl hover:shadow-indigo-500/20 transition-all duration-300 active:scale-95 border border-indigo-500/10"
                 >
-                  <DollarSign className="w-5 h-5 text-indigo-600" />
+                  <DollarSign className="w-5 h-5 text-white" />
                   Punto de Venta POS
                 </Link>
               </div>
@@ -300,12 +300,12 @@ export default function BusinessDashboardPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               
               {/* LIQUIDEZ / DINERO DISPONIBLE */}
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex flex-col justify-between relative overflow-hidden group hover:shadow-md transition-shadow">
-                <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-50 rounded-full opacity-60 blur-xl transform translate-x-4 -translate-y-4"></div>
+              <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex flex-col justify-between relative overflow-hidden group hover:shadow-xl hover:shadow-emerald-500/5 hover:-translate-y-1 transition-all duration-300">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-100/50 rounded-full opacity-60 blur-xl transform translate-x-4 -translate-y-4 group-hover:scale-110 transition-transform"></div>
                 <div>
                   <div className="flex justify-between items-center mb-4 relative z-10">
                     <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Caja y Bancos (Efectivo)</span>
-                    <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center">
+                    <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center border border-emerald-100/80">
                       <Wallet className="w-5 h-5 text-emerald-600" />
                     </div>
                   </div>
@@ -313,13 +313,13 @@ export default function BusinessDashboardPage() {
                     S/ {metrics.businessLiquidity.toFixed(2)}
                   </h3>
                 </div>
-                <div className="mt-4 pt-3 border-t border-gray-50 space-y-1">
+                <div className="mt-4 pt-3 border-t border-gray-100 space-y-1.5">
                   <div className="flex justify-between text-[11px] font-bold text-gray-500">
-                    <span className="flex items-center gap-1"><Coins className="w-3 h-3 text-amber-500" /> Efectivo:</span>
+                    <span className="flex items-center gap-1"><Coins className="w-3.5 h-3.5 text-amber-500" /> Efectivo:</span>
                     <span className="text-gray-800">S/ {(metrics.liquidityByMethod.CASH || 0).toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between text-[11px] font-bold text-gray-500">
-                    <span className="flex items-center gap-1"><ArrowUpRight className="w-3 h-3 text-indigo-500" /> Transferencia/Yape:</span>
+                    <span className="flex items-center gap-1"><ArrowUpRight className="w-3.5 h-3.5 text-indigo-500" /> Transferencia/Yape:</span>
                     <span className="text-gray-800">
                       S/ {((metrics.liquidityByMethod.TRANSFER || 0) + (metrics.liquidityByMethod.YAPE || 0) + (metrics.liquidityByMethod.PLIN || 0)).toFixed(2)}
                     </span>
@@ -328,12 +328,12 @@ export default function BusinessDashboardPage() {
               </div>
 
               {/* VENTAS DEL MES Y DEL DÍA */}
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex flex-col justify-between relative overflow-hidden group hover:shadow-md transition-shadow">
-                <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-50 rounded-full opacity-60 blur-xl transform translate-x-4 -translate-y-4"></div>
+              <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex flex-col justify-between relative overflow-hidden group hover:shadow-xl hover:shadow-indigo-500/5 hover:-translate-y-1 transition-all duration-300">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-100/50 rounded-full opacity-60 blur-xl transform translate-x-4 -translate-y-4 group-hover:scale-110 transition-transform"></div>
                 <div>
                   <div className="flex justify-between items-center mb-4 relative z-10">
                     <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Ventas del Mes</span>
-                    <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center">
+                    <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center border border-indigo-100/80">
                       <TrendingUp className="w-5 h-5 text-indigo-600" />
                     </div>
                   </div>
@@ -341,21 +341,21 @@ export default function BusinessDashboardPage() {
                     S/ {metrics.monthlySales.toFixed(2)}
                   </h3>
                 </div>
-                <div className="mt-4 pt-3 border-t border-gray-50 flex justify-between items-center">
+                <div className="mt-4 pt-3 border-t border-gray-100 flex justify-between items-center">
                   <span className="text-xs font-bold text-gray-500">Ventas de Hoy:</span>
-                  <span className="text-xs font-extrabold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg">
+                  <span className="text-xs font-extrabold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100/40">
                     S/ {metrics.dailySales.toFixed(2)}
                   </span>
                 </div>
               </div>
 
               {/* PATRIMONIO VALORADO (ACTIVOS TOTALES) */}
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex flex-col justify-between relative overflow-hidden group hover:shadow-md transition-shadow">
-                <div className="absolute top-0 right-0 w-24 h-24 bg-blue-50 rounded-full opacity-60 blur-xl transform translate-x-4 -translate-y-4"></div>
+              <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex flex-col justify-between relative overflow-hidden group hover:shadow-xl hover:shadow-blue-500/5 hover:-translate-y-1 transition-all duration-300">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-blue-100/50 rounded-full opacity-60 blur-xl transform translate-x-4 -translate-y-4 group-hover:scale-110 transition-transform"></div>
                 <div>
                   <div className="flex justify-between items-center mb-4 relative z-10">
                     <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Patrimonio Estimado</span>
-                    <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center">
+                    <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center border border-blue-100/80">
                       <Package className="w-5 h-5 text-blue-600" />
                     </div>
                   </div>
@@ -363,7 +363,7 @@ export default function BusinessDashboardPage() {
                     S/ {metrics.patrimonio.toFixed(2)}
                   </h3>
                 </div>
-                <div className="mt-4 pt-3 border-t border-gray-50 space-y-1">
+                <div className="mt-4 pt-3 border-t border-gray-100 space-y-1.5">
                   <div className="flex justify-between text-[11px] font-bold text-gray-500">
                     <span>Dinero Líquido:</span>
                     <span className="text-gray-800">S/ {metrics.businessLiquidity.toFixed(2)}</span>
@@ -376,12 +376,12 @@ export default function BusinessDashboardPage() {
               </div>
 
               {/* GASTOS OPERATIVOS DEL MES */}
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex flex-col justify-between relative overflow-hidden group hover:shadow-md transition-shadow">
-                <div className="absolute top-0 right-0 w-24 h-24 bg-rose-50 rounded-full opacity-60 blur-xl transform translate-x-4 -translate-y-4"></div>
+              <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex flex-col justify-between relative overflow-hidden group hover:shadow-xl hover:shadow-rose-500/5 hover:-translate-y-1 transition-all duration-300">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-rose-100/50 rounded-full opacity-60 blur-xl transform translate-x-4 -translate-y-4 group-hover:scale-110 transition-transform"></div>
                 <div>
                   <div className="flex justify-between items-center mb-4 relative z-10">
                     <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Egresos / Gastos Mes</span>
-                    <div className="w-10 h-10 bg-rose-50 rounded-xl flex items-center justify-center">
+                    <div className="w-10 h-10 bg-rose-50 rounded-xl flex items-center justify-center border border-rose-100/80">
                       <TrendingDown className="w-5 h-5 text-rose-600" />
                     </div>
                   </div>
@@ -389,9 +389,9 @@ export default function BusinessDashboardPage() {
                     S/ {metrics.totalOpex.toFixed(2)}
                   </h3>
                 </div>
-                <div className="mt-4 pt-3 border-t border-gray-50 flex justify-between items-center">
+                <div className="mt-4 pt-3 border-t border-gray-100 flex justify-between items-center">
                   <span className="text-xs font-bold text-gray-500">Margen Comercial:</span>
-                  <span className={`text-xs font-extrabold px-2.5 py-1 rounded-lg ${profitMargin > 0 ? 'text-emerald-700 bg-emerald-50' : 'text-rose-700 bg-rose-50'}`}>
+                  <span className={`text-xs font-extrabold px-2.5 py-1 rounded-lg border ${profitMargin > 0 ? 'text-emerald-700 bg-emerald-50 border-emerald-100/40' : 'text-rose-700 bg-rose-50 border-rose-100/40'}`}>
                     {profitMargin.toFixed(1)}%
                   </span>
                 </div>
