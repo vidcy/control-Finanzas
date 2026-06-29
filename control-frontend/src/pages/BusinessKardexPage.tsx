@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import Appshell from "../components/layout/Appshell";
+import Pagination from "../components/ui/Pagination";
 import {
   Search,
   ArrowRightLeft,
@@ -73,6 +74,8 @@ export default function BusinessKardexPage() {
   const [filterFamilyId, setFilterFamilyId] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 6;
 
   // UI Control States
   const [isExporting, setIsExporting] = useState(false);
@@ -310,6 +313,14 @@ export default function BusinessKardexPage() {
       return true;
     });
   }, [enrichedMovementsList, searchQuery, filterType, dateFrom, dateTo, filterBrandId, filterFamilyId, products]);
+
+  const paginatedMovements = useMemo(() => {
+    return filteredMovements.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  }, [filteredMovements, currentPage, pageSize]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedProductId, searchQuery, filterType, filterBrandId, filterFamilyId, dateFrom, dateTo]);
 
   // Metrics calculations
   const metrics = useMemo(() => {
@@ -1196,7 +1207,7 @@ export default function BusinessKardexPage() {
                     </td>
                   </tr>
                 ) : (
-                  filteredMovements.map((m) => {
+                  paginatedMovements.map((m) => {
                     const isEntry = m.type === "IN";
                     const isPurchase = m.reason === "PURCHASE";
                     const isSale = m.reason === "SALE";
@@ -1309,6 +1320,16 @@ export default function BusinessKardexPage() {
 
             </table>
           </div>
+
+          {!loading && filteredMovements.length > 0 && (
+            <Pagination
+              currentPage={currentPage}
+              totalItems={filteredMovements.length}
+              pageSize={pageSize}
+              onPageChange={(p) => setCurrentPage(p)}
+              className="border-t border-gray-100 bg-white"
+            />
+          )}
 
           {/* Table Footer Summary Stats */}
           {!loading && filteredMovements.length > 0 && (

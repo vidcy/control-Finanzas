@@ -19,6 +19,7 @@ import { format } from "date-fns";
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
 import DateRangePicker from "../components/ui/DateRangePicker";
+import Pagination from "../components/ui/Pagination";
 
 export default function BusinessHistoryPage() {
   // Audit Logs
@@ -28,6 +29,8 @@ export default function BusinessHistoryPage() {
   const [searchAudit, setSearchAudit] = useState("");
   const [auditDateFrom, setAuditDateFrom] = useState("");
   const [auditDateTo, setAuditDateTo] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 6;
 
   // Detail Modal
   const [viewLogDetail, setViewLogDetail] = useState<any>(null);
@@ -176,6 +179,12 @@ export default function BusinessHistoryPage() {
     return true;
   });
 
+  const paginatedAudit = filteredAudit.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchAudit, auditDateFrom, auditDateTo]);
+
   return (
     <Appshell>
       <div className="space-y-6">
@@ -233,8 +242,9 @@ export default function BusinessHistoryPage() {
                 </p>
               </div>
             ) : (
-              <div className="relative border-l-2 border-indigo-100 ml-4 md:ml-6 space-y-6">
-                {filteredAudit.map((log) => {
+              <>
+                <div className="relative border-l-2 border-indigo-100 ml-4 md:ml-6 space-y-6">
+                  {paginatedAudit.map((log) => {
                   const details = getAuditLogDetails(log);
                   const newV = log.newValues
                     ? typeof log.newValues === "string"
@@ -315,8 +325,18 @@ export default function BusinessHistoryPage() {
                   );
                 })}
               </div>
-            )}
-          </div>
+              {filteredAudit.length > 0 && (
+                <Pagination
+                  currentPage={currentPage}
+                  totalItems={filteredAudit.length}
+                  pageSize={pageSize}
+                  onPageChange={(p) => setCurrentPage(p)}
+                  className="pt-4 border-t border-gray-100 mt-6"
+                />
+              )}
+            </>
+          )}
+        </div>
         </div>
       </div>
 

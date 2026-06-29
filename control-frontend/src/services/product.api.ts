@@ -12,6 +12,7 @@ export interface Product {
   name: string;
   description?: string;
   sku?: string;
+  color?: string;
   costPrice: number;
   salePrice: number;
   adjustedPrice?: number;
@@ -126,6 +127,7 @@ export const deleteInventoryMovementRequest = async (id: string) => {
 export interface LowStockAnalysisItem extends Product {
   soldQty: number;
   deficit: number;
+  pendingOrderQty?: number;
 }
 
 export const getLowStockAnalysisRequest = async (

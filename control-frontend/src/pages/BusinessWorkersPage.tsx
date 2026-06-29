@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import FinanceAppShell from "../components/layout/Appshell";
 import ConfirmModal from "../components/ui/ConfirmModal";
 import Modal from "../components/ui/Modal";
+import Pagination from "../components/ui/Pagination";
 import { 
   Users, 
   UserPlus, 
@@ -56,6 +57,9 @@ export default function BusinessWorkersPage() {
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 6;
+  const paginatedWorkers = workers.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   
   // Modal states
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -239,8 +243,9 @@ export default function BusinessWorkersPage() {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {workers.map((worker) => {
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {paginatedWorkers.map((worker) => {
               const initials = `${worker.name?.[0] || ""}${worker.lastName?.[0] || ""}`.toUpperCase();
               
               return (
@@ -333,6 +338,16 @@ export default function BusinessWorkersPage() {
                 </div>
               );
             })}
+            </div>
+            {workers.length > 0 && (
+              <Pagination
+                currentPage={currentPage}
+                totalItems={workers.length}
+                pageSize={pageSize}
+                onPageChange={(p) => setCurrentPage(p)}
+                className="pt-4"
+              />
+            )}
           </div>
         )}
 

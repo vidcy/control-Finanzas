@@ -207,13 +207,17 @@ export default function IncomePage() {
   // 🔥 Separa por tipo (INCOME/EXPENSE) si es necesario
   const income = filtered;
 
-  const ITEMS_PER_PAGE = 20;
+  const ITEMS_PER_PAGE = 6;
 
-  // Paginación (solo para desktop)
-  const incomeDesktop = income.slice(
+  // Paginación (para desktop y mobile)
+  const paginatedIncomes = income.slice(
     (incomePage - 1) * ITEMS_PER_PAGE,
     incomePage * ITEMS_PER_PAGE
   );
+
+  useEffect(() => {
+    setIncomePage(1);
+  }, [searchTerm, dateFrom, dateTo]);
 
 
   useEffect(() => {
@@ -561,7 +565,7 @@ export default function IncomePage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-emerald-50">
-                {incomeDesktop.map((inc, index) => {
+                {paginatedIncomes.map((inc, index) => {
                   const montoSoles =
                     inc.currency === "USD"
                       ? inc.amount * inc.exchangeRate
@@ -724,18 +728,11 @@ export default function IncomePage() {
                 })}
               </tbody>
             </table>
-            <Pagination
-              currentPage={incomePage}
-              totalItems={income.length}
-              pageSize={ITEMS_PER_PAGE}
-              onPageChange={(p) => setIncomePage(p)}
-              className="px-4 py-3 border-t border-gray-100"
-            />
           </div>
 
           {/* VISTA MÓVIL: CARDS */}
           <div className="md:hidden divide-y divide-gray-100">
-            {filtered.map((inc) => {
+            {paginatedIncomes.map((inc) => {
               const montoSoles =
                 inc.currency === "USD"
                   ? inc.amount * inc.exchangeRate
@@ -884,6 +881,16 @@ export default function IncomePage() {
             <div className="p-20 text-center text-gray-400 font-bold uppercase tracking-widest text-xs">
               Sin registros de ingresos
             </div>
+          )}
+
+          {filtered.length > 0 && (
+            <Pagination
+              currentPage={incomePage}
+              totalItems={income.length}
+              pageSize={ITEMS_PER_PAGE}
+              onPageChange={(p) => setIncomePage(p)}
+              className="px-6 py-4 border-t border-gray-100 bg-white"
+            />
           )}
         </div>
 

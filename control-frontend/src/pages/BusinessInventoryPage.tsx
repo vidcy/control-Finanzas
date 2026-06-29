@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import Appshell from "../components/layout/Appshell";
 import { motion, AnimatePresence } from "framer-motion";
+import JsBarcode from "jsbarcode";
 import {
   Package,
   Plus,
@@ -129,6 +130,36 @@ export function formatStock(
   return parts.join(" + ");
 }
 
+export const playScannerBeep = (freq = 800, duration = 0.08) => {
+  try {
+    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const oscillator = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+    
+    oscillator.type = "sine";
+    oscillator.frequency.value = freq;
+    gainNode.gain.setValueAtTime(0.04, audioCtx.currentTime);
+    
+    oscillator.start();
+    oscillator.stop(audioCtx.currentTime + duration);
+  } catch (err) {
+    console.warn("Audio beep error", err);
+  }
+};
+
+const CURATED_COLORS = [
+  { name: "Navy Blue", value: "#1E3A8A" },
+  { name: "Emerald", value: "#10B981" },
+  { name: "Ruby", value: "#DC2626" },
+  { name: "Matte Black", value: "#1F2937" },
+  { name: "Amber", value: "#F59E0B" },
+  { name: "Violet", value: "#7C3AED" },
+  { name: "Slate", value: "#64748B" }
+];
+
 export default function BusinessInventoryPage() {
   const { user } = useAuth();
   
@@ -173,13 +204,24 @@ export default function BusinessInventoryPage() {
 
   // Pagination states
   const [productPage, setProductPage] = useState(1);
-  const [productPageSize, setProductPageSize] = useState(20);
+  const [productPageSize, setProductPageSize] = useState(6);
+  const [orderPage, setOrderPage] = useState(1);
+  const orderPageSize = 6;
+
+  useEffect(() => {
+    setProductPage(1);
+  }, [searchTerm, filterBrandId, filterFamilyId]);
+
+  useEffect(() => {
+    setOrderPage(1);
+  }, [ordersSubTab]);
 
   // Form State - Defaulting Unit to "Unidad"
   const [formData, setFormData] = useState({
     name: "",
     description: "",
     sku: "",
+    color: "",
     costPrice: 0,
     salePrice: 0,
     adjustedPrice: 0,
@@ -272,8 +314,19 @@ export default function BusinessInventoryPage() {
   });
   const [customQuantities, setCustomQuantities] = useState<Record<string, number>>({});
   const [customCosts, setCustomCosts] = useState<Record<string, number>>({});
+  const [selectedPresentations, setSelectedPresentations] = useState<Record<string, string>>({});
+  const [isCreatingFromPlanner, setIsCreatingFromPlanner] = useState(false);
+  const [customPlannerQty, setCustomPlannerQty] = useState(1);
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
+  const ordersFiltered = useMemo(() => {
+    const statusToFilter = ordersSubTab === "pending" ? "PENDING" : ordersSubTab === "transit" ? "PAID" : "RECEIVED";
+    return purchaseOrders.filter(o => o.status === statusToFilter);
+  }, [purchaseOrders, ordersSubTab]);
+
+  const paginatedOrders = useMemo(() => {
+    return ordersFiltered.slice((orderPage - 1) * orderPageSize, orderPage * orderPageSize);
+  }, [ordersFiltered, orderPage, orderPageSize]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [isBulkPurchaseModalOpen, setIsBulkPurchaseModalOpen] = useState(false);
   const [bulkPurchaseData, setBulkPurchaseData] = useState({
@@ -335,18 +388,10 @@ export default function BusinessInventoryPage() {
     brandId?: string;
     familyId?: string;
     isNew?: boolean; // true = not yet in DB, will be created on purchase
+    pendingOrderQty?: number;
   }>>([]);
 
-  // ── New product quick-register modal ──
-  const [isNewProductForOrderOpen, setIsNewProductForOrderOpen] = useState(false);
-  const [newOrderProductData, setNewOrderProductData] = useState({
-    name: "",
-    sku: "",
-    unit: "Unidad",
-    costPrice: 0,
-    salePrice: 0,
-    quantity: 1,
-  });
+
 
   // ── Pay order modal (for PENDING orders) ──
   const [isPayOrderModalOpen, setIsPayOrderModalOpen] = useState(false);
@@ -377,6 +422,7 @@ export default function BusinessInventoryPage() {
 
   // Barcode Printing States
   const [ticketProductId, setTicketProductId] = useState("");
+  const [codeType, setCodeType] = useState<"qr" | "barcode">("qr");
   const [ticketQuantity, setTicketQuantity] = useState(12);
   const [ticketBusinessName, setTicketBusinessName] = useState(user?.businessName || "Think");
   const [labelSearchTerm, setLabelSearchTerm] = useState("");
@@ -397,6 +443,90 @@ export default function BusinessInventoryPage() {
       return matchesSearch && matchesBrand && matchesFamily;
     });
   }, [products, labelSearchTerm, labelFilterBrandId, labelFilterFamilyId]);
+
+  // Physical Barcode Scanner Configurations
+  const [isScannerConfigOpen, setIsScannerConfigOpen] = useState(false);
+  const [scannerEnabled, setScannerEnabled] = useState<boolean>(() => {
+    const saved = localStorage.getItem("barcodeScannerEnabled");
+    return saved !== null ? saved === "true" : true;
+  });
+  const [scannerSensitivity, setScannerSensitivity] = useState<number>(() => {
+    const saved = localStorage.getItem("barcodeScannerSensitivity");
+    return saved !== null ? Number(saved) : 40;
+  });
+  const [scanTestResult, setScanTestResult] = useState("");
+
+  // Persist configurations
+  useEffect(() => {
+    localStorage.setItem("barcodeScannerEnabled", String(scannerEnabled));
+  }, [scannerEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem("barcodeScannerSensitivity", String(scannerSensitivity));
+  }, [scannerSensitivity]);
+
+  // Physical Barcode Scanner listener
+  useEffect(() => {
+    if (!scannerEnabled) return;
+
+    let buffer = "";
+    let lastKeyTime = Date.now();
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore keys typed in input/textarea/select fields
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement
+      ) {
+        return;
+      }
+
+      const currentTime = Date.now();
+      
+      // If time since last key is more than sensitivity limit, reset buffer
+      if (currentTime - lastKeyTime > scannerSensitivity) {
+        buffer = "";
+      }
+
+      if (e.key === "Enter") {
+        if (buffer.length >= 3) {
+          e.preventDefault();
+          
+          // Successful scan!
+          playScannerBeep(850, 0.08);
+          setScanTestResult(buffer);
+          
+          // Search product
+          const cleanCode = buffer.trim().toLowerCase();
+          const match = products.find((p) => {
+            const matchesSku = p.sku && p.sku.toLowerCase() === cleanCode;
+            const matchesCodeRaw = p.customCode && String(p.customCode) === cleanCode;
+            const matchesCodePadded = p.customCode && String(p.customCode).padStart(4, "0") === cleanCode;
+            return matchesSku || matchesCodeRaw || matchesCodePadded;
+          });
+
+          if (match) {
+            handleOpenModal(match);
+            toast.success(`Producto encontrado: ${match.name}`);
+          } else {
+            toast.error(`Código escaneado: "${buffer}", pero no coincide con ningún producto.`);
+          }
+          
+          buffer = "";
+        }
+      } else if (e.key.length === 1) {
+        buffer += e.key;
+      }
+
+      lastKeyTime = currentTime;
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [products, scannerEnabled, scannerSensitivity]);
 
   // Premium metrics computations
   const totalProducts = products.length;
@@ -446,33 +576,38 @@ export default function BusinessInventoryPage() {
         getPurchaseOrdersRequest(),
       ]);
 
-      // Extract product IDs of PENDING or PAID (in transit) orders
-      const pendingProductIds = new Set<string>();
+      // Calculate pending quantity for each product
+      const pendingQuantities: Record<string, number> = {};
       orders
         .filter((order) => order.status === "PENDING" || order.status === "PAID")
         .forEach((order) => {
           order.items.forEach((item) => {
-            pendingProductIds.add(item.productId);
+            const pendingQtyInBaseUnits = item.quantity * (item.equivalence || 1.0);
+            pendingQuantities[item.productId] = (pendingQuantities[item.productId] || 0) + pendingQtyInBaseUnits;
           });
         });
 
-      // Filter out low stock analysis items that are already ordered
-      const filteredData = data.filter((item) => !pendingProductIds.has(item.id));
+      // Enrich low stock analysis items with pendingOrderQty
+      const enrichedData = data.map((item) => ({
+        ...item,
+        pendingOrderQty: pendingQuantities[item.id] || 0,
+      }));
 
-      setPlannerItems(filteredData);
-      setSelectedItemIds(filteredData.map((item) => item.id));
+      setPlannerItems(enrichedData);
+      setSelectedItemIds(enrichedData.map((item) => item.id));
 
       // Initialize custom fields if not set
       const qtys: Record<string, number> = {};
       const costs: Record<string, number> = {};
-      filteredData.forEach((item) => {
-        qtys[item.id] = customQuantities[item.id] !== undefined ? customQuantities[item.id] : item.deficit;
+      enrichedData.forEach((item) => {
+        const defaultQty = item.deficit > 0 ? item.deficit : 1;
+        qtys[item.id] = customQuantities[item.id] !== undefined ? customQuantities[item.id] : defaultQty;
         costs[item.id] = customCosts[item.id] !== undefined ? customCosts[item.id] : item.costPrice;
       });
       setCustomQuantities((prev) => ({ ...qtys, ...prev }));
       setCustomCosts((prev) => ({ ...costs, ...prev }));
     } catch {
-      toast.error("Error al cargar planificador de compras");
+      toast.error("Error al cargar lista de compras");
     } finally {
       setPlannerLoading(false);
     }
@@ -500,34 +635,54 @@ export default function BusinessInventoryPage() {
     }
   }, [activeTab, plannerMonth]);
 
-  // Render QR Codes in the ticket print preview sheet
+  // Render QR Codes or Barcodes in the ticket print preview sheet
   useEffect(() => {
     if (activeTab === "labels" && ticketProductId) {
-      loadQrCodeGenerator().then((QRCodeObj) => {
-        const prod = products.find((p) => p.id === ticketProductId);
-        if (prod) {
-          const qrText = prod.sku || String(prod.customCode || 0).padStart(4, "0");
+      const prod = products.find((p) => p.id === ticketProductId);
+      if (prod) {
+        const codeText = prod.sku || String(prod.customCode || 0).padStart(4, "0");
+        if (codeType === "qr") {
+          loadQrCodeGenerator().then((QRCodeObj) => {
+            setTimeout(() => {
+              const canvases = document.querySelectorAll(".qr-preview-canvas");
+              canvases.forEach((canvas) => {
+                try {
+                  QRCodeObj.toCanvas(canvas, codeText, {
+                    width: 60,
+                    margin: 1,
+                    color: {
+                      dark: "#000000",
+                      light: "#ffffff"
+                    }
+                  });
+                } catch (err) {
+                  console.error("QRCode rendering error", err);
+                }
+              });
+            }, 50);
+          });
+        } else {
           setTimeout(() => {
-            const canvases = document.querySelectorAll(".qr-preview-canvas");
+            const canvases = document.querySelectorAll(".barcode-preview-canvas");
             canvases.forEach((canvas) => {
               try {
-                QRCodeObj.toCanvas(canvas, qrText, {
-                  width: 60,
-                  margin: 1,
-                  color: {
-                    dark: "#000000",
-                    light: "#ffffff"
-                  }
+                JsBarcode(canvas, codeText, {
+                  format: "CODE128",
+                  width: 1.2,
+                  height: 35,
+                  displayValue: true,
+                  fontSize: 8,
+                  margin: 2
                 });
               } catch (err) {
-                console.error("QRCode rendering error", err);
+                console.error("Barcode rendering error", err);
               }
             });
           }, 50);
         }
-      });
+      }
     }
-  }, [activeTab, ticketProductId, ticketQuantity, products]);
+  }, [activeTab, ticketProductId, ticketQuantity, products, codeType]);
 
   // Webcam Scanner Effect
   useEffect(() => {
@@ -580,6 +735,7 @@ export default function BusinessInventoryPage() {
         name: "",
         description: "",
         sku: code.trim(),
+        color: "",
         costPrice: 0,
         salePrice: 0,
         adjustedPrice: 0,
@@ -603,6 +759,7 @@ export default function BusinessInventoryPage() {
         name: product.name,
         description: product.description || "",
         sku: product.sku || "",
+        color: product.color || "",
         costPrice: product.costPrice,
         salePrice: product.salePrice,
         adjustedPrice: product.adjustedPrice || 0,
@@ -620,6 +777,7 @@ export default function BusinessInventoryPage() {
         name: "",
         description: "",
         sku: "",
+        color: "",
         costPrice: 0,
         salePrice: 0,
         adjustedPrice: 0,
@@ -641,6 +799,7 @@ export default function BusinessInventoryPage() {
       name: product.name,
       description: product.description || "",
       sku: "", // Clear SKU/Barcode so they can type or scan the new one
+      color: product.color || "",
       costPrice: product.costPrice,
       salePrice: product.salePrice,
       adjustedPrice: product.adjustedPrice || 0,
@@ -676,13 +835,31 @@ export default function BusinessInventoryPage() {
         ...formData,
         imageUrl: finalImageUrl || undefined,
       };
+      let createdProduct = null;
       if (editingProduct) {
         await updateProductRequest(editingProduct.id, payload as any);
         toast.success("Producto actualizado");
       } else {
-        await createProductRequest(payload as any);
+        createdProduct = await createProductRequest(payload as any);
         toast.success("Producto creado");
       }
+
+      if (!editingProduct && isCreatingFromPlanner && createdProduct) {
+        const newItem = {
+          ...createdProduct,
+          soldQty: 0,
+          deficit: 0,
+          isNew: true,
+        };
+        setExtraPlannerItems(prev => [...prev, newItem]);
+        setSelectedItemIds(prev => [...prev, createdProduct.id]);
+        setCustomQuantities(prev => ({ ...prev, [createdProduct.id]: customPlannerQty || 1 }));
+        setCustomCosts(prev => ({ ...prev, [createdProduct.id]: createdProduct.costPrice }));
+        
+        setIsCreatingFromPlanner(false);
+        setCustomPlannerQty(1);
+      }
+
       setIsModalOpen(false);
       loadData();
       if (activeTab === "planner") loadPlannerData();
@@ -756,22 +933,38 @@ export default function BusinessInventoryPage() {
 
     const itemsToBuy = singlePurchaseItem
       ? [
-          {
-            productId: singlePurchaseItem.id,
-            quantity: customQuantities[singlePurchaseItem.id] ?? singlePurchaseItem.deficit,
-            equivalence: 1.0,
-            costPrice: customCosts[singlePurchaseItem.id] ?? singlePurchaseItem.costPrice,
-          },
+          (() => {
+            const presId = selectedPresentations[singlePurchaseItem.id] || "base";
+            const isBase = presId === "base";
+            const pres = isBase ? null : singlePurchaseItem.presentations?.find(p => p.id === presId);
+            const equivalence = pres ? pres.equivalence : 1.0;
+            const presName = pres ? pres.name : null;
+            return {
+              productId: singlePurchaseItem.id,
+              quantity: customQuantities[singlePurchaseItem.id] ?? (singlePurchaseItem.deficit > 0 ? singlePurchaseItem.deficit : 1),
+              equivalence,
+              presentationId: isBase ? undefined : presId,
+              presentationName: presName || undefined,
+              costPrice: customCosts[singlePurchaseItem.id] ?? singlePurchaseItem.costPrice,
+            };
+          })()
         ]
       : allItems
           .filter(item => selectedItemIds.includes(item.id))
           .map(item => {
-            const qty = customQuantities[item.id] ?? item.deficit;
-            const cost = customCosts[item.id] ?? item.costPrice;
+            const presId = selectedPresentations[item.id] || "base";
+            const isBase = presId === "base";
+            const pres = isBase ? null : item.presentations?.find(p => p.id === presId);
+            const equivalence = pres ? pres.equivalence : 1.0;
+            const presName = pres ? pres.name : null;
+            const qty = customQuantities[item.id] ?? (item.deficit > 0 ? item.deficit : 1);
+            const cost = customCosts[item.id] ?? (item.costPrice * equivalence);
             return {
               productId: item.id,
               quantity: qty,
-              equivalence: 1.0,
+              equivalence,
+              presentationId: isBase ? undefined : presId,
+              presentationName: presName || undefined,
               costPrice: cost,
             };
           });
@@ -1042,16 +1235,17 @@ export default function BusinessInventoryPage() {
 
   // ── Add existing inventory product to planner ──
   const handleAddExistingProductToPlanner = (product: Product) => {
-    const alreadyIn = plannerItems.some(i => i.id === product.id) || extraPlannerItems.some(i => i.id === product.id);
+    const alreadyIn = plannerItems.some((item) => item.id === product.id) ||
+      extraPlannerItems.some((item) => item.id === product.id);
     if (alreadyIn) {
-      toast.error("Este producto ya está en el planificador");
+      toast.error("Este producto ya está en la lista de compras");
       return;
     }
     const newItem = {
       ...product,
       soldQty: 0,
       deficit: 0,
-      presentations: product.presentations || [],
+      isNew: false,
     };
     setExtraPlannerItems(prev => [...prev, newItem]);
     setSelectedItemIds(prev => [...prev, product.id]);
@@ -1059,55 +1253,10 @@ export default function BusinessInventoryPage() {
     setCustomCosts(prev => ({ ...prev, [product.id]: product.costPrice }));
     setIsAddProductToOrderOpen(false);
     setAddProductSearch("");
-    toast.success(`"${product.name}" agregado al planificador`);
+    toast.success(`"${product.name}" agregado a la lista de compras`);
   };
 
-  // ── Add completely new product to planner (will be created in DB on purchase) ──
-  const handleAddNewProductToPlanner = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newOrderProductData.name.trim()) {
-      toast.error("El nombre del producto es requerido");
-      return;
-    }
-    const t = toast.loading("Creando producto en inventario...");
-    try {
-      const created = await createProductRequest({
-        name: newOrderProductData.name.trim(),
-        sku: newOrderProductData.sku || undefined,
-        unit: newOrderProductData.unit || "Unidad",
-        costPrice: newOrderProductData.costPrice,
-        salePrice: newOrderProductData.salePrice,
-        stock: 0,
-        minStock: 0,
-        description: "",
-        imageUrl: "",
-        presentations: [],
-        brandId: undefined,
-        familyId: undefined,
-      } as any);
-      toast.dismiss(t);
-      toast.success(`Producto "${created.name}" creado. Ahora lo puedes incluir en tu compra.`);
 
-      // Add to extra planner items so user can include it in the purchase order
-      const newItem = {
-        ...created,
-        soldQty: 0,
-        deficit: 0,
-        isNew: true,
-      };
-      setExtraPlannerItems(prev => [...prev, newItem]);
-      setSelectedItemIds(prev => [...prev, created.id]);
-      setCustomQuantities(prev => ({ ...prev, [created.id]: newOrderProductData.quantity || 1 }));
-      setCustomCosts(prev => ({ ...prev, [created.id]: newOrderProductData.costPrice }));
-
-      // Reset form and close
-      setNewOrderProductData({ name: "", sku: "", unit: "Unidad", costPrice: 0, salePrice: 0, quantity: 1 });
-      setIsNewProductForOrderOpen(false);
-    } catch (err: any) {
-      toast.dismiss(t);
-      toast.error(err?.response?.data?.message || "Error al crear el producto");
-    }
-  };
 
   // ── Remove an extra planner item ──
   const handleRemoveExtraPlannerItem = (id: string) => {
@@ -1117,11 +1266,23 @@ export default function BusinessInventoryPage() {
     setCustomCosts(prev => { const n = { ...prev }; delete n[id]; return n; });
   };
 
-  const handleExportExcel = async () => {
+  const handlePresentationChange = (productId: string, val: string, baseCost: number, presentations: any[]) => {
+    setSelectedPresentations(prev => ({ ...prev, [productId]: val }));
+    let equivalence = 1;
+    if (val !== "base") {
+      const pres = presentations.find(p => p.id === val);
+      if (pres) {
+        equivalence = pres.equivalence;
+      }
+    }
+    setCustomCosts(prev => ({ ...prev, [productId]: baseCost * equivalence }));
+  };
 
+  const handleExportExcel = async () => {
+    const allItems = [...plannerItems, ...extraPlannerItems];
     const itemsToExport = selectedItemIds.length > 0
-      ? plannerItems.filter(item => selectedItemIds.includes(item.id))
-      : plannerItems;
+      ? allItems.filter(item => selectedItemIds.includes(item.id))
+      : allItems;
 
     if (itemsToExport.length === 0) {
       toast.error("No hay elementos seleccionados para exportar");
@@ -1129,29 +1290,40 @@ export default function BusinessInventoryPage() {
     }
 
     const dataToExport = itemsToExport.map(item => {
-      const buyQty = customQuantities[item.id] ?? item.deficit;
-      const cost = customCosts[item.id] ?? item.costPrice;
+      const presId = selectedPresentations[item.id] || "base";
+      const isBase = presId === "base";
+      const pres = isBase ? null : item.presentations?.find(p => p.id === presId);
+      const equivalence = pres ? pres.equivalence : 1.0;
+      const presName = pres ? pres.name : null;
+      const qty = customQuantities[item.id] ?? (item.deficit > 0 ? item.deficit : 1);
+      const cost = customCosts[item.id] ?? (item.costPrice * equivalence);
       return {
         "Producto": item.name,
+        "Presentación": presName || item.unit,
         "SKU / Código": item.sku || "Sin SKU",
         "Stock Actual": `${item.stock} ${item.unit}`,
         "Stock Mínimo": `${item.minStock} ${item.unit}`,
         "Vendidos (Mes)": `${item.soldQty} ${item.unit}`,
-        "Déficit": `${item.deficit} ${item.unit}`,
+        "Déficit": `${item.deficit > 0 ? item.deficit : 0} ${item.unit}`,
         "Costo Unitario (S/)": cost,
-        "Cantidad Comprar": buyQty,
-        "Subtotal Proyectado (S/)": buyQty * cost
+        "Cantidad Comprar": qty,
+        "Subtotal Proyectado (S/)": qty * cost
       };
     });
 
     const totalProyectado = itemsToExport.reduce((acc, item) => {
-      const qty = customQuantities[item.id] ?? item.deficit;
-      const cost = customCosts[item.id] ?? item.costPrice;
+      const presId = selectedPresentations[item.id] || "base";
+      const isBase = presId === "base";
+      const pres = isBase ? null : item.presentations?.find(p => p.id === presId);
+      const equivalence = pres ? pres.equivalence : 1.0;
+      const qty = customQuantities[item.id] ?? (item.deficit > 0 ? item.deficit : 1);
+      const cost = customCosts[item.id] ?? (item.costPrice * equivalence);
       return acc + (qty * cost);
     }, 0);
 
     dataToExport.push({
       "Producto": "TOTAL PLANIFICADO",
+      "Presentación": "",
       "SKU / Código": "",
       "Stock Actual": "",
       "Stock Mínimo": "",
@@ -1171,9 +1343,10 @@ export default function BusinessInventoryPage() {
   };
 
   const handleExportPDF = async () => {
+    const allItems = [...plannerItems, ...extraPlannerItems];
     const itemsToExport = selectedItemIds.length > 0
-      ? plannerItems.filter(item => selectedItemIds.includes(item.id))
-      : plannerItems;
+      ? allItems.filter(item => selectedItemIds.includes(item.id))
+      : allItems;
 
     if (itemsToExport.length === 0) {
       toast.error("No hay elementos seleccionados para exportar");
@@ -1213,19 +1386,24 @@ export default function BusinessInventoryPage() {
     
     let grandTotal = 0;
     itemsToExport.forEach((item) => {
-      y += 8;
-      if (y > 275) {
+      y += 10;
+      if (y > 270) {
         doc.addPage();
         y = 20;
       }
       
-      const qty = customQuantities[item.id] ?? item.deficit;
-      const cost = customCosts[item.id] ?? item.costPrice;
+      const presId = selectedPresentations[item.id] || "base";
+      const isBase = presId === "base";
+      const pres = isBase ? null : item.presentations?.find(p => p.id === presId);
+      const equivalence = pres ? pres.equivalence : 1.0;
+      const presName = pres ? pres.name : null;
+      const qty = customQuantities[item.id] ?? (item.deficit > 0 ? item.deficit : 1);
+      const cost = customCosts[item.id] ?? (item.costPrice * equivalence);
       const subtotal = qty * cost;
       grandTotal += subtotal;
 
       doc.setDrawColor(240);
-      doc.line(14, y + 6, 196, y + 6);
+      doc.line(14, y + 8, 196, y + 8);
 
       const name = item.name.length > 35 ? item.name.substring(0, 32) + "..." : item.name;
       doc.setFont("helvetica", "bold");
@@ -1233,12 +1411,12 @@ export default function BusinessInventoryPage() {
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8);
       doc.setTextColor(120);
-      doc.text(`SKU: ${item.sku || "Sin SKU"}`, 16, y + 8);
+      doc.text(`SKU: ${item.sku || "Sin SKU"} | Pres: ${presName || item.unit}`, 16, y + 8);
       doc.setFontSize(9);
       doc.setTextColor(0);
 
       doc.text(`${item.stock} / ${item.minStock} ${item.unit}`, 85, y + 5);
-      doc.text(`${item.deficit} ${item.unit}`, 120, y + 5);
+      doc.text(`${item.deficit > 0 ? item.deficit : 0} ${item.unit}`, 120, y + 5);
       doc.text(`S/ ${cost.toFixed(2)}`, 140, y + 5);
       doc.setFont("helvetica", "bold");
       doc.text(`${qty}`, 160, y + 5);
@@ -1262,7 +1440,12 @@ export default function BusinessInventoryPage() {
   };
 
   const handleCopyShoppingList = () => {
-    if (plannerItems.length === 0) {
+    const allItems = [...plannerItems, ...extraPlannerItems];
+    const itemsToExport = selectedItemIds.length > 0
+      ? allItems.filter(item => selectedItemIds.includes(item.id))
+      : allItems;
+
+    if (itemsToExport.length === 0) {
       toast.error("No hay elementos en la lista de compras");
       return;
     }
@@ -1271,13 +1454,18 @@ export default function BusinessInventoryPage() {
       "------------------------------------------",
     ];
     let grandTotal = 0;
-    plannerItems.forEach((item) => {
-      const qty = customQuantities[item.id] || 0;
-      const cost = customCosts[item.id] || 0;
+    itemsToExport.forEach((item) => {
+      const presId = selectedPresentations[item.id] || "base";
+      const isBase = presId === "base";
+      const pres = isBase ? null : item.presentations?.find(p => p.id === presId);
+      const equivalence = pres ? pres.equivalence : 1.0;
+      const presName = pres ? pres.name : null;
+      const qty = customQuantities[item.id] ?? (item.deficit > 0 ? item.deficit : 1);
+      const cost = customCosts[item.id] ?? (item.costPrice * equivalence);
       const total = qty * cost;
       grandTotal += total;
       lines.push(
-        `- ${item.name} (${item.sku || "Sin SKU"}): Comprar ${qty} ${item.unit} | Costo unitario: S/ ${cost.toFixed(2)} | Subtotal: S/ ${total.toFixed(2)}`
+        `- ${item.name} (${item.sku || "Sin SKU"}) [${presName || item.unit}]: Comprar ${qty} | Costo unitario: S/ ${cost.toFixed(2)} | Subtotal: S/ ${total.toFixed(2)}`
       );
     });
     lines.push("------------------------------------------");
@@ -1464,7 +1652,7 @@ export default function BusinessInventoryPage() {
         <div className="flex border-b border-gray-100 gap-6">
           {[
             { id: "products", label: "Productos en Stock", icon: Package },
-            { id: "planner", label: "Planificador de Compras", icon: TrendingUp },
+            { id: "planner", label: "Compras", icon: TrendingUp },
             { id: "labels", label: "Diseñar Tickets / Etiquetas", icon: BarcodeIcon }
           ].map((tab) => {
             const Icon = tab.icon;
@@ -1872,7 +2060,7 @@ export default function BusinessInventoryPage() {
                   {/* PLANNER CONTROLS */}
                   <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-gray-100 pb-5">
                     <div className="space-y-1">
-                      <h2 className="text-xl font-black text-gray-900">Planificador e Historial de Reabastecimiento</h2>
+                      <h2 className="text-xl font-black text-gray-900">Compras e Historial de Reabastecimiento</h2>
                       <p className="text-sm text-gray-500 font-medium">
                         Monitorea productos por debajo del stock mínimo y evalúa el ritmo de ventas mensual para calcular la compra.
                       </p>
@@ -1882,13 +2070,33 @@ export default function BusinessInventoryPage() {
                       <button
                         onClick={() => setIsAddProductToOrderOpen(true)}
                         className="bg-blue-50 hover:bg-blue-100 text-blue-700 px-4 py-2.5 rounded-2xl text-xs font-bold flex items-center gap-2 transition-all active:scale-95 border border-blue-100"
-                        title="Agregar producto del inventario al planificador"
+                        title="Agregar producto del inventario a la lista de compras"
                       >
                         <ListPlus className="w-4 h-4" />
                         Agregar Producto
                       </button>
                       <button
-                        onClick={() => setIsNewProductForOrderOpen(true)}
+                        onClick={() => {
+                          setEditingProduct(null);
+                          setFormData({
+                            name: "",
+                            description: "",
+                            sku: "",
+                            costPrice: 0,
+                            salePrice: 0,
+                            adjustedPrice: 0,
+                            stock: 0,
+                            minStock: 5,
+                            unit: "Unidad",
+                            imageUrl: "",
+                            presentations: [],
+                            brandId: "",
+                            familyId: "",
+                          });
+                          setIsCreatingFromPlanner(true);
+                          setCustomPlannerQty(1);
+                          setIsModalOpen(true);
+                        }}
                         className="bg-purple-50 hover:bg-purple-100 text-purple-700 px-4 py-2.5 rounded-2xl text-xs font-bold flex items-center gap-2 transition-all active:scale-95 border border-purple-100"
                         title="Registrar un nuevo producto para esta compra"
                       >
@@ -1969,6 +2177,7 @@ export default function BusinessInventoryPage() {
                               <th className="py-4 px-4 text-center">Stock Mínimo</th>
                               <th className="py-4 px-4 text-center text-indigo-600">Vendidos en Mes</th>
                               <th className="py-4 px-4 text-center">Déficit</th>
+                              <th className="py-4 px-4 text-center">Presentación</th>
                               <th className="py-4 px-4 text-right">Costo Unitario (S/)</th>
                               <th className="py-4 px-4 text-center" style={{ width: "130px" }}>Comprar Cant.</th>
                               <th className="py-4 px-4 text-right text-indigo-700">Subtotal Proyectado</th>
@@ -2021,6 +2230,11 @@ export default function BusinessInventoryPage() {
                                           )}
                                         </div>
                                         <div className="text-[10px] text-gray-400 font-mono font-semibold">{item.sku || 'Sin SKU'}</div>
+                                        {item.pendingOrderQty && item.pendingOrderQty > 0 ? (
+                                          <div className="text-[10px] text-amber-600 font-black mt-0.5 flex items-center gap-1 bg-amber-50 px-1.5 py-0.5 rounded-lg w-max border border-amber-100">
+                                            <span>🚚 {item.pendingOrderQty} {item.unit} en camino</span>
+                                          </div>
+                                        ) : null}
                                       </div>
                                     </div>
                                   </td>
@@ -2035,6 +2249,24 @@ export default function BusinessInventoryPage() {
                                   </td>
                                   <td className="py-3.5 px-4 text-center font-bold text-amber-600">
                                     {item.deficit > 0 ? `${item.deficit} ${item.unit}` : <span className="text-gray-300">—</span>}
+                                  </td>
+                                  <td className="py-3.5 px-4 text-center">
+                                    {item.presentations && item.presentations.length > 0 ? (
+                                      <select
+                                        value={selectedPresentations[item.id] || "base"}
+                                        onChange={(e) => handlePresentationChange(item.id, e.target.value, item.costPrice, item.presentations || [])}
+                                        className="px-2 py-1 border border-gray-200 rounded-lg outline-none text-xs font-bold text-gray-700 bg-white focus:ring-1 focus:ring-indigo-500"
+                                      >
+                                        <option value="base">{item.unit} (Base)</option>
+                                        {item.presentations.map((pres) => (
+                                          <option key={pres.id} value={pres.id}>
+                                            {pres.name} ({pres.equivalence} {item.unit})
+                                          </option>
+                                        ))}
+                                      </select>
+                                    ) : (
+                                      <span className="text-xs text-gray-400 font-bold">{item.unit}</span>
+                                    )}
                                   </td>
                                   <td className="py-3.5 px-4 text-right font-medium">
                                     <input
@@ -2117,7 +2349,7 @@ export default function BusinessInventoryPage() {
                                         <button
                                           onClick={() => handleRemoveExtraPlannerItem(item.id)}
                                           className="p-1.5 bg-rose-50 hover:bg-rose-100 rounded-lg text-rose-600"
-                                          title="Quitar del planificador"
+                                          title="Quitar de la lista de compras"
                                         >
                                           <X className="w-3.5 h-3.5" />
                                         </button>
@@ -2261,7 +2493,7 @@ export default function BusinessInventoryPage() {
                       <p className="font-bold text-xs">Cargando pedidos...</p>
                     </div>
                   ) : ordersSubTab === "pending" ? (
-                    purchaseOrders.filter(o => o.status === "PENDING").length === 0 ? (
+                    ordersFiltered.length === 0 ? (
                       <div className="py-12 bg-slate-50 border border-dashed border-gray-200 rounded-3xl text-center text-gray-400 flex flex-col items-center justify-center">
                         <Truck className="w-10 h-10 text-slate-300 mb-2" />
                         <p className="font-bold text-sm text-gray-700">No hay pedidos pendientes de pago</p>
@@ -2269,7 +2501,7 @@ export default function BusinessInventoryPage() {
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {purchaseOrders.filter(o => o.status === "PENDING").map((order) => (
+                        {paginatedOrders.map((order) => (
                           <div key={order.id} className="bg-white border border-amber-100 rounded-3xl p-5 shadow-sm space-y-4 hover:shadow-md transition-shadow">
                             <div className="flex justify-between items-start">
                               <div>
@@ -2368,7 +2600,7 @@ export default function BusinessInventoryPage() {
                       </div>
                     )
                   ) : ordersSubTab === "transit" ? (
-                    purchaseOrders.filter(o => o.status === "PAID").length === 0 ? (
+                    ordersFiltered.length === 0 ? (
                       <div className="py-12 bg-slate-50 border border-dashed border-gray-200 rounded-3xl text-center text-gray-400 flex flex-col items-center justify-center">
                         <Truck className="w-10 h-10 text-slate-300 mb-2" />
                         <p className="font-bold text-sm text-gray-700">No hay pedidos en tránsito</p>
@@ -2376,7 +2608,7 @@ export default function BusinessInventoryPage() {
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {purchaseOrders.filter(o => o.status === "PAID").map((order) => (
+                        {paginatedOrders.map((order) => (
                           <div key={order.id} className="bg-white border border-indigo-100 rounded-3xl p-5 shadow-sm space-y-4 hover:shadow-md transition-shadow">
                             <div className="flex justify-between items-start">
                               <div>
@@ -2488,7 +2720,7 @@ export default function BusinessInventoryPage() {
                     )
                   ) : (
 
-                    purchaseOrders.filter(o => o.status === "RECEIVED").length === 0 ? (
+                    ordersFiltered.length === 0 ? (
                       <div className="py-12 bg-slate-50 border border-dashed border-gray-200 rounded-3xl text-center text-gray-400 flex flex-col items-center justify-center">
                         <Truck className="w-10 h-10 text-slate-300 mb-2" />
                         <p className="font-bold text-sm text-gray-700">No hay compras ingresadas</p>
@@ -2496,7 +2728,7 @@ export default function BusinessInventoryPage() {
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {purchaseOrders.filter(o => o.status === "RECEIVED").map((order) => (
+                        {paginatedOrders.map((order) => (
                           <div key={order.id} className="bg-white border border-gray-100 rounded-3xl p-5 shadow-sm space-y-4 hover:shadow-md transition-shadow">
                             <div className="flex justify-between items-start">
                               <div>
@@ -2608,6 +2840,16 @@ export default function BusinessInventoryPage() {
                       </div>
                     )
                   )}
+
+                  {!ordersLoading && ordersFiltered.length > 0 && (
+                    <Pagination
+                      currentPage={orderPage}
+                      totalItems={ordersFiltered.length}
+                      pageSize={orderPageSize}
+                      onPageChange={(p) => setOrderPage(p)}
+                      className="border-t border-gray-100 pt-4 mt-4"
+                    />
+                  )}
                 </div>
               </div>
             )}
@@ -2690,7 +2932,7 @@ export default function BusinessInventoryPage() {
                 </div>
 
                 {/* FORM CONTROLS */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50/50 p-5 rounded-2xl border border-gray-100 no-print">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-slate-50/50 p-5 rounded-2xl border border-gray-100 no-print animate-fade-in">
                   <div>
                     <label className="block text-xs font-black uppercase text-gray-500 mb-2">Cantidad de Tickets (Copia)</label>
                     <input
@@ -2712,6 +2954,18 @@ export default function BusinessInventoryPage() {
                       placeholder="Nombre de tienda"
                       className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-bold text-gray-700 shadow-sm"
                     />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-black uppercase text-gray-500 mb-2">Tipo de Código</label>
+                    <select
+                      value={codeType}
+                      onChange={(e) => setCodeType(e.target.value as "qr" | "barcode")}
+                      className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-bold text-gray-700 shadow-sm"
+                    >
+                      <option value="qr">Código QR</option>
+                      <option value="barcode">Código de Barras</option>
+                    </select>
                   </div>
                 </div>
 
@@ -2742,7 +2996,11 @@ export default function BusinessInventoryPage() {
                               <div className="text-xs font-black text-slate-800 my-0.5">
                                 S/ {prod?.salePrice.toFixed(2)}
                               </div>
-                              <canvas className="qr-preview-canvas w-16 h-16 my-1"></canvas>
+                              {codeType === "qr" ? (
+                                <canvas className="qr-preview-canvas w-16 h-16 my-1"></canvas>
+                              ) : (
+                                <canvas className="barcode-preview-canvas max-w-full h-10 my-1"></canvas>
+                              )}
                             </div>
                           );
                         })}
@@ -2808,6 +3066,20 @@ export default function BusinessInventoryPage() {
                 placeholder="Ej. Talla 41, Color Negro, Motor 800W, etc."
               />
             </div>
+            {editingProduct && (
+              <div className="md:col-span-2">
+                <label className="block text-sm font-semibold text-gray-500 mb-1">
+                  Código Autoincrementable
+                </label>
+                <input
+                  type="text"
+                  disabled
+                  readOnly
+                  value={`Cód: #` + String((editingProduct as any).customCode || 0).padStart(4, "0")}
+                  className="w-full px-4 py-2 bg-gray-100 border border-gray-200 rounded-xl text-gray-500 outline-none cursor-not-allowed font-semibold"
+                />
+              </div>
+            )}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">
                 SKU / Código de Barras
@@ -2843,6 +3115,48 @@ export default function BusinessInventoryPage() {
                 <option value="Saco">Saco</option>
                 <option value="Bolsa">Bolsa</option>
               </select>
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                Color del Producto (Opcional)
+              </label>
+              <div className="flex flex-wrap items-center gap-3">
+                {CURATED_COLORS.map((curColor) => (
+                  <button
+                    key={curColor.value}
+                    type="button"
+                    onClick={() => setFormData({ ...formData, color: curColor.value })}
+                    className="w-8 h-8 rounded-full border-2 transition-all hover:scale-110 flex items-center justify-center cursor-pointer shadow-sm"
+                    style={{
+                      backgroundColor: curColor.value,
+                      borderColor: formData.color === curColor.value ? "#4F46E5" : "transparent"
+                    }}
+                    title={curColor.name}
+                  >
+                    {formData.color === curColor.value && (
+                      <span className="w-2.5 h-2.5 bg-white rounded-full"></span>
+                    )}
+                  </button>
+                ))}
+                <div className="flex items-center gap-2 border border-gray-200 rounded-xl px-3 py-1 bg-white shadow-sm">
+                  <input
+                    type="color"
+                    value={formData.color && formData.color.startsWith("#") ? formData.color : "#ffffff"}
+                    onChange={(e) => setFormData({ ...formData, color: e.target.value })}
+                    className="w-8 h-8 rounded-lg cursor-pointer border border-gray-200 p-0"
+                  />
+                  <span className="text-xs font-bold text-gray-600">Personalizado</span>
+                </div>
+                {formData.color && (
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, color: "" })}
+                    className="text-xs font-bold text-red-500 hover:text-red-750 underline ml-2 cursor-pointer"
+                  >
+                    Quitar color
+                  </button>
+                )}
+              </div>
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">
@@ -3154,6 +3468,24 @@ export default function BusinessInventoryPage() {
               )}
             </div>
           </div>
+
+          {isCreatingFromPlanner && (
+            <div className="border-t border-gray-100 pt-4">
+              <label className="block text-sm font-bold text-indigo-700 mb-1">
+                Cantidad a comprar en esta orden
+              </label>
+              <input
+                type="number"
+                required
+                min="1"
+                step="any"
+                value={customPlannerQty}
+                onChange={(e) => setCustomPlannerQty(Number(e.target.value))}
+                className="w-full px-4 py-2 border border-indigo-200 bg-indigo-50/10 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-indigo-900"
+                placeholder="Ej. 10, 50, 100"
+              />
+            </div>
+          )}
 
           <div className="mt-6 flex justify-end gap-3">
             <button
@@ -3670,9 +4002,47 @@ export default function BusinessInventoryPage() {
                       <div className="flex justify-between items-center">
                         <span className="font-extrabold text-xs text-gray-800 truncate block max-w-[170px]">{item.name}</span>
                         <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-gray-400 font-bold bg-slate-100 px-1.5 py-0.5 rounded">
-                            {item.presentationName || item.unit}
-                          </span>
+                          {(() => {
+                            const prod = products.find(p => p.id === item.productId);
+                            const hasPresentations = prod?.presentations && prod.presentations.length > 0;
+                            if (hasPresentations && prod) {
+                              return (
+                                <select
+                                  value={item.presentationId || "base"}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    const isBase = val === "base";
+                                    const pres = isBase ? null : prod.presentations?.find(p => p.id === val);
+                                    const equivalence = pres ? pres.equivalence : 1.0;
+                                    const presName = pres ? pres.name : null;
+                                    
+                                    const updatedItems = [...editOrderData.items];
+                                    updatedItems[index] = {
+                                      ...updatedItems[index],
+                                      presentationId: isBase ? null : val,
+                                      presentationName: presName,
+                                      equivalence,
+                                      costPrice: prod.costPrice * equivalence,
+                                    };
+                                    setEditOrderData({ ...editOrderData, items: updatedItems });
+                                  }}
+                                  className="px-1.5 py-0.5 border border-gray-200 rounded text-[10px] font-bold text-gray-700 bg-white focus:ring-1 focus:ring-indigo-500"
+                                >
+                                  <option value="base">{item.unit || prod.unit} (Base)</option>
+                                  {prod.presentations?.map((pres) => (
+                                    <option key={pres.id} value={pres.id}>
+                                      {pres.name} ({pres.equivalence} {item.unit || prod.unit})
+                                    </option>
+                                  ))}
+                                </select>
+                              );
+                            }
+                            return (
+                              <span className="text-[10px] text-gray-400 font-bold bg-slate-100 px-1.5 py-0.5 rounded">
+                                {item.presentationName || item.unit}
+                              </span>
+                            );
+                          })()}
                           <button
                             type="button"
                             onClick={() => {
@@ -4312,11 +4682,11 @@ export default function BusinessInventoryPage() {
         </form>
       </Modal>
 
-      {/* MODAL: Agregar Producto existente al Planificador */}
+      {/* MODAL: Agregar Producto existente a Compras */}
       <Modal
         isOpen={isAddProductToOrderOpen}
         onClose={() => { setIsAddProductToOrderOpen(false); setAddProductSearch(""); }}
-        title="Agregar Producto al Planificador"
+        title="Agregar Producto a Compras"
         maxWidth="max-w-lg"
       >
         <div className="space-y-4">
@@ -4379,7 +4749,29 @@ export default function BusinessInventoryPage() {
           <div className="pt-2 border-t border-gray-100">
             <button
               type="button"
-              onClick={() => { setIsAddProductToOrderOpen(false); setIsNewProductForOrderOpen(true); }}
+              onClick={() => {
+                setIsAddProductToOrderOpen(false);
+                setEditingProduct(null);
+                setFormData({
+                  name: "",
+                  description: "",
+                  sku: "",
+                  color: "",
+                  costPrice: 0,
+                  salePrice: 0,
+                  adjustedPrice: 0,
+                  stock: 0,
+                  minStock: 5,
+                  unit: "Unidad",
+                  imageUrl: "",
+                  presentations: [],
+                  brandId: "",
+                  familyId: "",
+                });
+                setIsCreatingFromPlanner(true);
+                setCustomPlannerQty(1);
+                setIsModalOpen(true);
+              }}
               className="w-full py-2.5 border-2 border-dashed border-purple-200 text-purple-600 rounded-2xl text-sm font-bold hover:bg-purple-50 transition-colors flex items-center justify-center gap-2"
             >
               <PackagePlus className="w-4 h-4" />
@@ -4389,111 +4781,98 @@ export default function BusinessInventoryPage() {
         </div>
       </Modal>
 
-      {/* MODAL: Registrar Nuevo Producto para la Compra */}
-      <Modal
-        isOpen={isNewProductForOrderOpen}
-        onClose={() => { setIsNewProductForOrderOpen(false); setNewOrderProductData({ name: "", sku: "", unit: "Unidad", costPrice: 0, salePrice: 0, quantity: 1 }); }}
-        title="Registrar Nuevo Producto para Compra"
-        maxWidth="max-w-md"
-      >
-        <form onSubmit={handleAddNewProductToPlanner} className="space-y-4">
-          <div className="bg-blue-50 border border-blue-100 rounded-2xl p-3 text-xs text-blue-700 font-semibold flex items-start gap-2">
-            <PackagePlus className="w-4 h-4 flex-shrink-0 mt-0.5 text-blue-600" />
-            <span>
-              Este producto se creará en tu inventario con stock 0. Al concretar la compra, el stock se actualizará automáticamente.
-            </span>
-          </div>
+      {/* PANEL FLOTANTE: CONFIGURACIÓN LECTOR CÓDIGO DE BARRAS FÍSICO */}
+      <div className="fixed bottom-6 right-6 z-[999] no-print">
+        {/* Floating Trigger Button */}
+        <button
+          type="button"
+          onClick={() => setIsScannerConfigOpen(!isScannerConfigOpen)}
+          className={`flex items-center gap-2 px-4 py-3 rounded-full text-white font-bold text-xs shadow-2xl transition-all hover:scale-105 active:scale-95 cursor-pointer ${isScannerConfigOpen ? "bg-red-500" : "bg-indigo-600 hover:bg-indigo-750"}`}
+        >
+          <span>{isScannerConfigOpen ? "Cerrar Panel ✖" : "Configurar Lector 🔌"}</span>
+          {scannerEnabled && !isScannerConfigOpen && (
+            <span className="w-2.5 h-2.5 bg-emerald-400 rounded-full animate-ping"></span>
+          )}
+        </button>
 
-          <div>
-            <label className="block text-xs font-black text-gray-700 mb-1.5">Nombre del Producto *</label>
-            <input
-              type="text"
-              placeholder="Ej: Zapatos Nike Air Max Talla 42"
-              value={newOrderProductData.name}
-              onChange={(e) => setNewOrderProductData(prev => ({ ...prev, name: e.target.value }))}
-              required
-              autoFocus
-              className="w-full px-4 py-3 border border-gray-200 rounded-2xl text-sm font-medium outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
-            />
-          </div>
+        {/* Floating Config Card */}
+        {isScannerConfigOpen && (
+          <div className="absolute bottom-16 right-0 w-80 bg-white/95 backdrop-blur-md rounded-3xl border border-gray-150 p-5 shadow-2xl space-y-4 animate-in fade-in slide-in-from-bottom-5 duration-200">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+              <h4 className="font-extrabold text-sm text-gray-800 flex items-center gap-1.5">
+                <span>Lector Físico (Teclado)</span>
+              </h4>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-black ${scannerEnabled ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600"}`}>
+                {scannerEnabled ? "ACTIVO" : "APAGADO"}
+              </span>
+            </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-black text-gray-700 mb-1.5">SKU (opcional)</label>
-              <input
-                type="text"
-                placeholder="Ej: NK-AM-42"
-                value={newOrderProductData.sku}
-                onChange={(e) => setNewOrderProductData(prev => ({ ...prev, sku: e.target.value }))}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-2xl text-sm font-medium outline-none focus:border-indigo-400"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-black text-gray-700 mb-1.5">Unidad</label>
-              <input
-                type="text"
-                placeholder="Unidad, Par, Caja..."
-                value={newOrderProductData.unit}
-                onChange={(e) => setNewOrderProductData(prev => ({ ...prev, unit: e.target.value }))}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-2xl text-sm font-medium outline-none focus:border-indigo-400"
-              />
-            </div>
-          </div>
+            <div className="space-y-3.5">
+              {/* Toggle Enable */}
+              <label className="flex items-center justify-between cursor-pointer">
+                <span className="text-xs font-semibold text-gray-600">Escuchar teclado global</span>
+                <input
+                  type="checkbox"
+                  checked={scannerEnabled}
+                  onChange={(e) => {
+                    setScannerEnabled(e.target.checked);
+                    playScannerBeep(e.target.checked ? 900 : 600, 0.1);
+                  }}
+                  className="w-4 h-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded cursor-pointer"
+                />
+              </label>
 
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs font-black text-gray-700 mb-1.5">Costo (S/)</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={newOrderProductData.costPrice}
-                onChange={(e) => setNewOrderProductData(prev => ({ ...prev, costPrice: Number(e.target.value) }))}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-2xl text-sm font-medium outline-none focus:border-indigo-400"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-black text-gray-700 mb-1.5">Precio Venta (S/)</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={newOrderProductData.salePrice}
-                onChange={(e) => setNewOrderProductData(prev => ({ ...prev, salePrice: Number(e.target.value) }))}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-2xl text-sm font-medium outline-none focus:border-indigo-400"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-black text-gray-700 mb-1.5">Cantidad</label>
-              <input
-                type="number"
-                min="1"
-                step="1"
-                value={newOrderProductData.quantity}
-                onChange={(e) => setNewOrderProductData(prev => ({ ...prev, quantity: Number(e.target.value) }))}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-2xl text-sm font-medium outline-none focus:border-indigo-400"
-              />
-            </div>
-          </div>
+              {/* Sensitivity Slider */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-gray-655">Sensibilidad (Max entre teclas)</span>
+                  <span className="text-xs font-black text-indigo-600">{scannerSensitivity}ms</span>
+                </div>
+                <input
+                  type="range"
+                  min="20"
+                  max="150"
+                  step="5"
+                  value={scannerSensitivity}
+                  onChange={(e) => setScannerSensitivity(Number(e.target.value))}
+                  className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                />
+                <p className="text-[10px] text-gray-400 leading-tight">
+                  Valores más bajos (ej. 40ms) evitan que la escritura manual sea detectada como escaneo.
+                </p>
+              </div>
 
-          <div className="flex gap-3 pt-2">
-            <button
-              type="button"
-              onClick={() => { setIsNewProductForOrderOpen(false); setIsAddProductToOrderOpen(true); }}
-              className="flex-1 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl text-sm transition-all"
-            >
-              Volver
-            </button>
-            <button
-              type="submit"
-              className="flex-1 px-4 py-3 bg-purple-600 hover:bg-purple-700 text-white font-extrabold rounded-2xl text-sm flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all"
-            >
-              <PackagePlus className="w-4 h-4" />
-              Crear y Agregar
-            </button>
+              {/* Scan Test Box */}
+              <div className="bg-slate-50 p-3 rounded-2xl border border-gray-100 text-center space-y-1.5">
+                <span className="block text-[10px] font-black uppercase text-gray-450">Prueba de Lectura</span>
+                {scanTestResult ? (
+                  <div className="space-y-1">
+                    <span className="block text-xs font-bold text-gray-800 break-all bg-white px-2 py-1 rounded-lg border border-gray-200 font-mono">
+                      {scanTestResult}
+                    </span>
+                    <span className="block text-[9px] text-emerald-600 font-bold">
+                      Beep! Lectura Exitosa ✓
+                    </span>
+                  </div>
+                ) : (
+                  <span className="block text-[10px] text-gray-450 italic leading-snug">
+                    Escanea un código con el lector físico para probar el pitido y ver el resultado.
+                  </span>
+                )}
+                {scanTestResult && (
+                  <button
+                    type="button"
+                    onClick={() => setScanTestResult("")}
+                    className="text-[10px] text-gray-400 underline hover:text-gray-600 cursor-pointer"
+                  >
+                    Limpiar prueba
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
-        </form>
-      </Modal>
+        )}
+      </div>
 
     </Appshell>
   );

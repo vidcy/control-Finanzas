@@ -1,5 +1,6 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Appshell from "../components/layout/Appshell";
+import Pagination from "../components/ui/Pagination";
 import Modal from "../components/ui/Modal";
 import {
   Plus,
@@ -199,22 +200,17 @@ export default function ExpensesPage() {
   // 🔥 Separa por tipo (INCOME/EXPENSE) si es necesario
   const expense = filtered;
 
-  const ITEMS_PER_PAGE = 4;
+  const ITEMS_PER_PAGE = 6;
 
-  // Calcular número de páginas de ingresos a cobrar
-  const expenseTotalPages = Math.ceil(expense.length / ITEMS_PER_PAGE);
-
-  // Genera un array [1, 2, 3, ..., total] para renderizar los botones de paginación.
-  const getPages = useCallback(
-    (total: number) => Array.from({ length: total }, (_, i) => i + 1),
-    []
-  );
-
-  // Paginación (solo para desktop)
-  const expenseDesktop = expense.slice(
+  // Paginación (para desktop y mobile)
+  const paginatedExpenses = expense.slice(
     (expensesPage - 1) * ITEMS_PER_PAGE,
     expensesPage * ITEMS_PER_PAGE
   );
+
+  useEffect(() => {
+    setExpensesPage(1);
+  }, [searchTerm, dateFrom, dateTo]);
 
   useEffect(() => {
     loadData();
@@ -578,7 +574,7 @@ export default function ExpensesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50/50">
-                {expenseDesktop.map((exp) => {
+                {paginatedExpenses.map((exp) => {
                   const montoSoles =
                     exp.currency === "USD"
                       ? exp.amount * exp.exchangeRate
@@ -755,64 +751,11 @@ export default function ExpensesPage() {
                 })}
               </tbody>
             </table>
-            <div className="flex justify-center items-center gap-2 py-4 border-t border-gray-100 bg-white">
-              {/* IR AL INICIO */}
-              <button
-                onClick={() => setExpensesPage(1)}
-                disabled={expensesPage === 1}
-                className="px-3 py-1 text-sm font-black disabled:opacity-30"
-              >
-                « Inicio
-              </button>
-
-              {/* ATRÁS */}
-              <button
-                onClick={() => setExpensesPage((p) => Math.max(p - 1, 1))}
-                disabled={expensesPage === 1}
-                className="px-3 py-1 text-sm font-black disabled:opacity-30"
-              >
-                ‹ Atrás
-              </button>
-
-              {/* NÚMEROS */}
-              {getPages(expenseTotalPages).map((page) => (
-                <button
-                  key={page}
-                  onClick={() => typeof page === "number" && setExpensesPage(page)}
-                  className={`px-3 py-1 text-sm font-black rounded-lg transition-all ${expensesPage === page
-                    ? "bg-black text-white"
-                    : "text-gray-500 hover:bg-gray-100"
-                    }`}
-                >
-                  {page}
-                </button>
-              ))}
-
-              {/* SIGUIENTE */}
-              <button
-                onClick={() =>
-                  setExpensesPage((p) => Math.min(p + 1, expenseTotalPages))
-                }
-                disabled={expensesPage === expenseTotalPages}
-                className="px-3 py-1 text-sm font-black disabled:opacity-30"
-              >
-                Siguiente ›
-              </button>
-
-              {/* IR AL FINAL */}
-              <button
-                onClick={() => setExpensesPage(expenseTotalPages)}
-                disabled={expensesPage === expenseTotalPages}
-                className="px-3 py-1 text-sm font-black disabled:opacity-30"
-              >
-                Fin »
-              </button>
-            </div>
           </div>
 
           {/* VISTA MÓVIL: CARDS */}
           <div className="md:hidden divide-y divide-gray-100">
-            {filtered.map((exp) => {
+            {paginatedExpenses.map((exp) => {
               const montoSoles =
                 exp.currency === "USD"
                   ? exp.amount * exp.exchangeRate
@@ -962,6 +905,16 @@ export default function ExpensesPage() {
             <div className="p-20 text-center text-gray-400 font-bold uppercase tracking-widest text-xs">
               Sin registros de egresos
             </div>
+          )}
+
+          {filtered.length > 0 && (
+            <Pagination
+              currentPage={expensesPage}
+              totalItems={filtered.length}
+              pageSize={ITEMS_PER_PAGE}
+              onPageChange={(p) => setExpensesPage(p)}
+              className="px-6 py-4 border-t border-gray-100 bg-white"
+            />
           )}
         </div>
         {/* end bg-white outer container */}

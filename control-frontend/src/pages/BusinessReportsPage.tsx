@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Appshell from "../components/layout/Appshell";
 import {
   BarChart,
@@ -34,6 +34,7 @@ import { toast } from "react-hot-toast";
 import DateRangePicker from "../components/ui/DateRangePicker";
 import { exportToExcel } from "../utils/exportExcel";
 import { useAuth } from "../auth/AuthContext";
+import Pagination from "../components/ui/Pagination";
 
 export default function BusinessReportsPage() {
   const { user } = useAuth();
@@ -56,6 +57,30 @@ export default function BusinessReportsPage() {
   const [selectedWorker, setSelectedWorker] = useState("");
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("");
   const [selectedProduct, setSelectedProduct] = useState("");
+
+  // Pagination states
+  const [salesPage, setSalesPage] = useState(1);
+  const [treasuryPage, setTreasuryPage] = useState(1);
+  const [inventoryPage, setInventoryPage] = useState(1);
+  const [kardexPage, setKardexPage] = useState(1);
+  const pageSize = 6;
+
+  // Reset pagination on filter change
+  useEffect(() => {
+    setSalesPage(1);
+    setTreasuryPage(1);
+    setInventoryPage(1);
+    setKardexPage(1);
+  }, [
+    dateFrom,
+    dateTo,
+    searchTx,
+    searchProduct,
+    selectedBranch,
+    selectedWorker,
+    selectedPaymentMethod,
+    selectedProduct,
+  ]);
 
   useEffect(() => {
     loadAllData();
@@ -156,6 +181,22 @@ export default function BusinessReportsPage() {
     }
     return true;
   });
+
+  const paginatedSales = useMemo(() => {
+    return filteredSales.slice((salesPage - 1) * pageSize, salesPage * pageSize);
+  }, [filteredSales, salesPage, pageSize]);
+
+  const paginatedTreasury = useMemo(() => {
+    return filteredTreasury.slice((treasuryPage - 1) * pageSize, treasuryPage * pageSize);
+  }, [filteredTreasury, treasuryPage, pageSize]);
+
+  const paginatedProducts = useMemo(() => {
+    return products.slice((inventoryPage - 1) * pageSize, inventoryPage * pageSize);
+  }, [products, inventoryPage, pageSize]);
+
+  const paginatedMovements = useMemo(() => {
+    return filteredMovements.slice((kardexPage - 1) * pageSize, kardexPage * pageSize);
+  }, [filteredMovements, kardexPage, pageSize]);
 
   // Inventory valuation
   const inventoryCostValuation = products.reduce(
@@ -867,7 +908,7 @@ export default function BusinessReportsPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-50">
-                        {filteredSales.map((s: any) => (
+                        {paginatedSales.map((s: any) => (
                           <tr key={s.id} className="hover:bg-slate-50/40 transition-colors">
                             <td className="px-5 py-4 text-gray-500 whitespace-nowrap text-xs">
                               {format(new Date(s.date), "dd/MM/yyyy HH:mm")}
@@ -890,6 +931,15 @@ export default function BusinessReportsPage() {
                       </tbody>
                     </table>
                   </div>
+                  {filteredSales.length > 0 && (
+                    <Pagination
+                      currentPage={salesPage}
+                      totalItems={filteredSales.length}
+                      pageSize={6}
+                      onPageChange={(p) => setSalesPage(p)}
+                      className="border-t border-gray-100 bg-gray-50 px-4 py-3"
+                    />
+                  )}
                 </div>
               </div>
             )}
@@ -944,7 +994,7 @@ export default function BusinessReportsPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-50">
-                        {filteredTreasury.map((t: any) => (
+                        {paginatedTreasury.map((t: any) => (
                           <tr key={t.id} className="hover:bg-slate-50/40 transition-colors">
                             <td className="px-5 py-4 text-gray-500 whitespace-nowrap text-xs">
                               {format(new Date(t.date), "dd/MM/yyyy HH:mm")}
@@ -994,6 +1044,15 @@ export default function BusinessReportsPage() {
                       </tbody>
                     </table>
                   </div>
+                  {filteredTreasury.length > 0 && (
+                    <Pagination
+                      currentPage={treasuryPage}
+                      totalItems={filteredTreasury.length}
+                      pageSize={6}
+                      onPageChange={(p) => setTreasuryPage(p)}
+                      className="border-t border-gray-100 bg-gray-50 px-4 py-3"
+                    />
+                  )}
                 </div>
               </div>
             )}
@@ -1042,7 +1101,7 @@ export default function BusinessReportsPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-50">
-                        {products.map((p: any) => (
+                        {paginatedProducts.map((p: any) => (
                           <tr key={p.id} className="hover:bg-slate-50/40 transition-colors">
                             <td className="px-5 py-4 text-gray-500 whitespace-nowrap text-xs font-mono">{p.sku || "—"}</td>
                             <td className="px-5 py-4 font-semibold text-gray-900">{p.name}</td>
@@ -1060,6 +1119,15 @@ export default function BusinessReportsPage() {
                       </tbody>
                     </table>
                   </div>
+                  {products.length > 0 && (
+                    <Pagination
+                      currentPage={inventoryPage}
+                      totalItems={products.length}
+                      pageSize={6}
+                      onPageChange={(p) => setInventoryPage(p)}
+                      className="border-t border-gray-100 bg-gray-50 px-4 py-3"
+                    />
+                  )}
                 </div>
               </div>
             )}
@@ -1107,7 +1175,7 @@ export default function BusinessReportsPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-50">
-                        {filteredMovements.map((m: any) => (
+                        {paginatedMovements.map((m: any) => (
                           <tr key={m.id} className="hover:bg-slate-50/40 transition-colors">
                             <td className="px-5 py-4 text-gray-500 whitespace-nowrap text-xs">
                               {format(new Date(m.createdAt), "dd/MM/yyyy HH:mm")}
@@ -1151,6 +1219,15 @@ export default function BusinessReportsPage() {
                       </tbody>
                     </table>
                   </div>
+                  {filteredMovements.length > 0 && (
+                    <Pagination
+                      currentPage={kardexPage}
+                      totalItems={filteredMovements.length}
+                      pageSize={6}
+                      onPageChange={(p) => setKardexPage(p)}
+                      className="border-t border-gray-100 bg-gray-50 px-4 py-3"
+                    />
+                  )}
                 </div>
               </div>
             )}

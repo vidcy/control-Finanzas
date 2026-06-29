@@ -49,6 +49,12 @@ export class ProductsService {
       const nextCode =
         maxProduct && maxProduct.customCode ? maxProduct.customCode + 1 : 1;
 
+      // Find the first branch of the user to initialize its stock
+      const firstBranch = await tx.branch.findFirst({
+        where: { userId },
+        orderBy: { createdAt: 'asc' },
+      });
+
       const product = await tx.product.create({
         data: {
           ...productData,
@@ -63,6 +69,16 @@ export class ProductsService {
           userId,
         },
       });
+
+      if (firstBranch) {
+        await tx.branchStock.create({
+          data: {
+            productId: product.id,
+            branchId: firstBranch.id,
+            stock: stock,
+          },
+        });
+      }
 
       // If initial stock is greater than 0, create an initial inventory movement
       if (stock > 0) {
@@ -79,6 +95,7 @@ export class ProductsService {
             unitCost: costPrice,
             totalCost: stock * costPrice,
             stockResult: stock,
+            branchId: firstBranch ? firstBranch.id : null,
           },
         });
       }
@@ -399,6 +416,12 @@ export class ProductsService {
           (product.stock + mainUnitsQty);
       }
 
+      // Find the first branch of the user to allocate stock
+      const firstBranch = await tx.branch.findFirst({
+        where: { userId },
+        orderBy: { createdAt: 'asc' },
+      });
+
       // 3. Update Product Stock and CPP
       const updatedProduct = await tx.product.update({
         where: { id: productId },
@@ -407,6 +430,32 @@ export class ProductsService {
           costPrice: newCPP,
         },
       });
+
+      // Update or create BranchStock for the first branch
+      if (firstBranch) {
+        const bStock = await tx.branchStock.findUnique({
+          where: {
+            productId_branchId: {
+              productId,
+              branchId: firstBranch.id,
+            },
+          },
+        });
+        if (bStock) {
+          await tx.branchStock.update({
+            where: { id: bStock.id },
+            data: { stock: { increment: mainUnitsQty } },
+          });
+        } else {
+          await tx.branchStock.create({
+            data: {
+              productId,
+              branchId: firstBranch.id,
+              stock: mainUnitsQty,
+            },
+          });
+        }
+      }
 
       // 4. Create Inventory Movement (Kardex details populated)
       await tx.inventoryMovement.create({
@@ -423,6 +472,7 @@ export class ProductsService {
           totalCost: parseFloat(totalCost),
           stockResult: updatedProduct.stock,
           documentId: transaction.id,
+          branchId: firstBranch ? firstBranch.id : null,
         },
       });
 
@@ -514,9 +564,23 @@ export class ProductsService {
         const requiredQty = parseFloat(item.quantity);
         const mainUnitsQty = requiredQty * equivalence;
 
-        if (product.stock < mainUnitsQty) {
+        let availableStock = product.stock;
+        let branchStockRecord = null;
+        if (activeShift.branchId) {
+          branchStockRecord = await tx.branchStock.findUnique({
+            where: {
+              productId_branchId: {
+                productId: product.id,
+                branchId: activeShift.branchId,
+              },
+            },
+          });
+          availableStock = branchStockRecord ? branchStockRecord.stock : 0;
+        }
+
+        if (availableStock < mainUnitsQty) {
           throw new BadRequestException(
-            `Stock insuficiente para "${product.name}". Disponible: ${product.stock} ${product.unit}, Requerido: ${mainUnitsQty} ${product.unit}.`,
+            `Stock insuficiente en esta sede para "${product.name}". Disponible: ${availableStock} ${product.unit}, Requerido: ${mainUnitsQty} ${product.unit}.`,
           );
         }
 
@@ -532,6 +596,7 @@ export class ProductsService {
           requiredQty,
           presentationName,
           salePrice,
+          branchStockRecord,
         });
       }
 
@@ -553,15 +618,36 @@ export class ProductsService {
           userId: workerId,
           cashShiftId: activeShift.id,
           isPosSale: true,
+          branchId: activeShift.branchId || null,
         },
       });
 
       // 2. Process stock adjustments and movements
       for (const proc of itemsToProcess) {
-        const { product, item, mainUnitsQty, requiredQty, presentationName } =
+        const { product, item, mainUnitsQty, requiredQty, presentationName, branchStockRecord } =
           proc;
 
-        // Subtract stock
+        // Subtract stock from branch-specific stock
+        if (activeShift.branchId) {
+          if (branchStockRecord) {
+            await tx.branchStock.update({
+              where: { id: branchStockRecord.id },
+              data: {
+                stock: { decrement: mainUnitsQty },
+              },
+            });
+          } else {
+            await tx.branchStock.create({
+              data: {
+                productId: product.id,
+                branchId: activeShift.branchId,
+                stock: -mainUnitsQty,
+              },
+            });
+          }
+        }
+
+        // Subtract stock globally
         const updatedProduct = await tx.product.update({
           where: { id: product.id },
           data: {
@@ -582,8 +668,11 @@ export class ProductsService {
             userId: workerId,
             unitCost: product.costPrice, // CPP unit cost at sale
             totalCost: mainUnitsQty * product.costPrice,
-            stockResult: updatedProduct.stock,
+            stockResult: activeShift.branchId
+              ? (branchStockRecord ? branchStockRecord.stock - mainUnitsQty : -mainUnitsQty)
+              : updatedProduct.stock,
             documentId: transaction.id,
+            branchId: activeShift.branchId || null,
           },
         });
       }
@@ -941,6 +1030,12 @@ export class ProductsService {
         });
       }
 
+      // Find the first branch of the user to allocate stock
+      const firstBranch = await tx.branch.findFirst({
+        where: { userId },
+        orderBy: { createdAt: 'asc' },
+      });
+
       // 2. Loop through items to increment stock & log inventory movement
       for (const item of order.items) {
         const equivalence = item.equivalence || 1.0;
@@ -966,6 +1061,32 @@ export class ProductsService {
           },
         });
 
+        // Update or create BranchStock for the first branch
+        if (firstBranch) {
+          const bStock = await tx.branchStock.findUnique({
+            where: {
+              productId_branchId: {
+                productId: item.productId,
+                branchId: firstBranch.id,
+              },
+            },
+          });
+          if (bStock) {
+            await tx.branchStock.update({
+              where: { id: bStock.id },
+              data: { stock: { increment: mainUnitsQty } },
+            });
+          } else {
+            await tx.branchStock.create({
+              data: {
+                productId: item.productId,
+                branchId: firstBranch.id,
+                stock: mainUnitsQty,
+              },
+            });
+          }
+        }
+
         // Log inventory movement (populated with Kardex fields)
         await tx.inventoryMovement.create({
           data: {
@@ -981,6 +1102,7 @@ export class ProductsService {
             totalCost: mainUnitsQty * itemCostPricePerBaseUnit,
             stockResult: updatedProduct.stock,
             documentId: order.id,
+            branchId: firstBranch ? firstBranch.id : null,
           },
         });
       }
@@ -1275,6 +1397,12 @@ export class ProductsService {
         });
       }
 
+      // Find the first branch of the user to deduct stock from
+      const firstBranch = await tx.branch.findFirst({
+        where: { userId },
+        orderBy: { createdAt: 'asc' },
+      });
+
       // 2. Loop through items to decrement stock & log inventory movement (OUT)
       for (const item of order.items) {
         const equivalence = item.equivalence || 1.0;
@@ -1303,6 +1431,24 @@ export class ProductsService {
           },
         });
 
+        // Decrement BranchStock for the first branch
+        if (firstBranch) {
+          const bStock = await tx.branchStock.findUnique({
+            where: {
+              productId_branchId: {
+                productId: item.productId,
+                branchId: firstBranch.id,
+              },
+            },
+          });
+          if (bStock) {
+            await tx.branchStock.update({
+              where: { id: bStock.id },
+              data: { stock: { decrement: mainUnitsQty } },
+            });
+          }
+        }
+
         // Log movement (OUT) (populated with Kardex fields)
         await tx.inventoryMovement.create({
           data: {
@@ -1318,6 +1464,7 @@ export class ProductsService {
             totalCost: mainUnitsQty * itemCostPricePerBaseUnit,
             stockResult: updatedProduct.stock,
             documentId: order.id,
+            branchId: firstBranch ? firstBranch.id : null,
           },
         });
       }

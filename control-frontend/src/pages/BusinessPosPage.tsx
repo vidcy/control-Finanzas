@@ -17,6 +17,7 @@ import ReceiptUploader, {
   getReceiptAbsoluteUrl,
   uploadReceiptFile,
 } from "../components/ui/ImageUploader";
+import Pagination from "../components/ui/Pagination";
 
 import { formatStock } from "./BusinessInventoryPage";
 import {
@@ -125,6 +126,37 @@ export default function BusinessPosPage() {
   const [receiptUrl, setReceiptUrl] = useState<string | File | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
 
+  // Hover Product Tooltip
+  const [hoveredProduct, setHoveredProduct] = useState<Product | null>(null);
+  const [tooltipCoords, setTooltipCoords] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  // Physical Barcode Scanner Configurations
+  const [isScannerConfigOpen, setIsScannerConfigOpen] = useState(false);
+  const [scannerEnabled, setScannerEnabled] = useState<boolean>(() => {
+    const saved = localStorage.getItem("barcodeScannerEnabled");
+    return saved !== null ? saved === "true" : true;
+  });
+  const [scannerSensitivity, setScannerSensitivity] = useState<number>(() => {
+    const saved = localStorage.getItem("barcodeScannerSensitivity");
+    return saved !== null ? Number(saved) : 40;
+  });
+  const [scanTestResult, setScanTestResult] = useState("");
+
+  // Persist configurations
+  useEffect(() => {
+    localStorage.setItem("barcodeScannerEnabled", String(scannerEnabled));
+  }, [scannerEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem("barcodeScannerSensitivity", String(scannerSensitivity));
+  }, [scannerSensitivity]);
+
+  // Mobile responsive view tab state
+  const [mobileTab, setMobileTab] = useState<"catalog" | "cart">("catalog");
+  
+  // Sales list pagination state
+  const [salesPage, setSalesPage] = useState(1);
+
   // Price adjustment modal state
   const [adjustingCartIndex, setAdjustingCartIndex] = useState<number | null>(null);
   const [customAdjustedPrice, setCustomAdjustedPrice] = useState<number>(0);
@@ -202,6 +234,10 @@ export default function BusinessPosPage() {
       loadSales();
     }
   }, [isSalesListOpen, salesStartDate, salesEndDate]);
+
+  useEffect(() => {
+    setSalesPage(1);
+  }, [salesStartDate, salesEndDate, isSalesListOpen]);
 
   const exportPosSalesExcel = async () => {
     if (sales.length === 0) {
@@ -403,8 +439,12 @@ export default function BusinessPosPage() {
   }, []);
 
   const addToCart = (product: Product) => {
-    if (product.stock <= 0) {
-      toast.error("Sin stock disponible");
+    const availableStock = activeShift?.branchId
+      ? (product.branchStocks?.find((bs: any) => bs.branchId === activeShift.branchId)?.stock || 0)
+      : product.stock;
+
+    if (availableStock <= 0) {
+      toast.error("Sin stock disponible en esta sede");
       return;
     }
 
@@ -416,8 +456,8 @@ export default function BusinessPosPage() {
     if (existingIndex > -1) {
       const existing = cart[existingIndex];
       const newQty = existing.quantity + 1;
-      if (newQty > product.stock) {
-        toast.error("Stock máximo alcanzado");
+      if (newQty > availableStock) {
+        toast.error("Stock máximo alcanzado en esta sede");
         return;
       }
       setCart(
@@ -455,6 +495,7 @@ export default function BusinessPosPage() {
 
   const handleBarcodeScanned = (code: string) => {
     const cleanCode = code.trim().toLowerCase();
+    setScanTestResult(code);
     const match = products.find((p) => {
       const matchesSku = p.sku && p.sku.toLowerCase() === cleanCode;
       const matchesCodeRaw = (p as any).customCode && String((p as any).customCode) === cleanCode;
@@ -474,6 +515,8 @@ export default function BusinessPosPage() {
 
   // Keyboard/USB Scanner listener
   useEffect(() => {
+    if (!scannerEnabled) return;
+
     let buffer = "";
     let lastKeyTime = Date.now();
 
@@ -487,7 +530,7 @@ export default function BusinessPosPage() {
       }
 
       const currentTime = Date.now();
-      if (currentTime - lastKeyTime > 50) {
+      if (currentTime - lastKeyTime > scannerSensitivity) {
         buffer = "";
       }
 
@@ -508,7 +551,7 @@ export default function BusinessPosPage() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [products, cart, activeShift]);
+  }, [products, cart, activeShift, scannerEnabled, scannerSensitivity]);
 
   // Webcam Scanner Effect
   useEffect(() => {
@@ -583,8 +626,12 @@ export default function BusinessPosPage() {
         (p: any) => p.id === item.presentationId,
       );
       const equivalence = pres ? pres.equivalence : 1;
-      if (newQ * equivalence > item.stock) {
-        toast.error("Supera el stock disponible");
+      const availableStock = activeShift?.branchId
+        ? (item.branchStocks?.find((bs: any) => bs.branchId === activeShift.branchId)?.stock || 0)
+        : item.stock;
+
+      if (newQ * equivalence > availableStock) {
+        toast.error("Supera el stock disponible en esta sede");
         return;
       }
     }
@@ -1061,9 +1108,30 @@ export default function BusinessPosPage() {
         </div>
       )}
 
-      <div className="flex flex-col lg:flex-row h-[calc(100vh-6rem)] gap-4">
+      {/* Mobile view selector */}
+      <div className="lg:hidden flex bg-white/85 backdrop-blur-md p-1.5 rounded-2xl border border-gray-200 shadow-sm mb-3">
+        <button
+          onClick={() => setMobileTab("catalog")}
+          className={`flex-1 py-3 px-4 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${mobileTab === "catalog" ? "bg-indigo-600 text-white shadow-md" : "text-gray-500 hover:text-indigo-600"}`}
+        >
+          <Package className="w-4 h-4" /> Catálogo
+        </button>
+        <button
+          onClick={() => setMobileTab("cart")}
+          className={`flex-1 py-3 px-4 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 relative ${mobileTab === "cart" ? "bg-indigo-600 text-white shadow-md" : "text-gray-500 hover:text-indigo-600"}`}
+        >
+          <ShoppingCart className="w-4 h-4" /> Carrito
+          {cart.length > 0 && (
+            <span className="absolute -top-1 -right-1 bg-rose-500 text-white w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black animate-pulse">
+              {cart.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      <div className="flex flex-col lg:flex-row h-[calc(100vh-13rem)] lg:h-[calc(100vh-11.5rem)] gap-4">
         {/* LEFT: CATALOG */}
-        <div className="flex-1 flex flex-col min-h-0 bg-gray-50/50 relative">
+        <div className={`flex-1 flex flex-col min-h-0 bg-gray-50/50 relative ${mobileTab === "catalog" ? "flex" : "hidden lg:flex"}`}>
           {!activeShift && !loading && (
             <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] z-20 flex items-center justify-center">
               <div className="bg-white p-8 rounded-3xl shadow-2xl border border-rose-100 text-center max-w-sm mx-4">
@@ -1125,55 +1193,82 @@ export default function BusinessPosPage() {
               </div>
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-                {filteredProducts.map((p) => (
-                  <div
-                    key={p.id}
-                    onClick={() => addToCart(p)}
-                    className={`bg-white rounded-2xl border hover:border-indigo-300 hover:shadow-lg transition-all cursor-pointer group flex flex-col overflow-hidden shadow-sm ${p.stock <= 0 ? "opacity-50 cursor-not-allowed" : ""}`}
-                  >
-                    {/* Product image */}
-                    <div className="w-full h-24 bg-gradient-to-br from-gray-50 to-indigo-50 overflow-hidden relative">
-                      {p.imageUrl ? (
-                        <img
-                          src={getReceiptAbsoluteUrl(p.imageUrl) || p.imageUrl}
-                          alt={p.name}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.display =
-                              "none";
-                          }}
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <Package className="w-8 h-8 text-indigo-200" />
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="p-3 flex-1 flex flex-col justify-between">
-                      <div>
-                        <h3 className="font-bold text-gray-800 group-hover:text-indigo-600 transition-colors line-clamp-2 text-sm">
-                          {p.name}
-                        </h3>
-                        <span
-                          className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full inline-block mt-1 ${p.stock > 0 ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}
-                        >
-                          {formatStock(p.stock, p.unit, p.presentations)}
-                        </span>
+                {filteredProducts.map((p) => {
+                  const availableStock = activeShift?.branchId
+                    ? (p.branchStocks?.find((bs: any) => bs.branchId === activeShift.branchId)?.stock || 0)
+                    : p.stock;
+                  return (
+                    <div
+                      key={p.id}
+                      onClick={() => addToCart(p)}
+                      onMouseEnter={(e) => {
+                        setHoveredProduct(p);
+                        const x = Math.min(e.clientX + 15, window.innerWidth - 300);
+                        const y = Math.min(e.clientY + 15, window.innerHeight - 250);
+                        setTooltipCoords({ x, y });
+                      }}
+                      onMouseMove={(e) => {
+                        const x = Math.min(e.clientX + 15, window.innerWidth - 300);
+                        const y = Math.min(e.clientY + 15, window.innerHeight - 250);
+                        setTooltipCoords({ x, y });
+                      }}
+                      onMouseLeave={() => {
+                        setHoveredProduct(null);
+                      }}
+                      className={`bg-white rounded-2xl border hover:border-indigo-300 hover:shadow-lg transition-all cursor-pointer group flex flex-col overflow-hidden shadow-sm relative ${availableStock <= 0 ? "opacity-50 cursor-not-allowed" : ""}`}
+                    >
+                      {/* Product image */}
+                      <div className="w-full h-24 bg-gradient-to-br from-gray-50 to-indigo-50 overflow-hidden relative">
+                        {p.color && (
+                          <div
+                            className="absolute top-2 right-2 w-4 h-4 rounded-full border border-white shadow-sm z-10 animate-pulse"
+                            style={{ backgroundColor: p.color }}
+                            title={`Color del producto`}
+                          />
+                        )}
+                        {p.imageUrl ? (
+                          <img
+                            src={getReceiptAbsoluteUrl(p.imageUrl) || p.imageUrl}
+                            alt={p.name}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display =
+                                "none";
+                            }}
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <Package className="w-8 h-8 text-indigo-200" />
+                          </div>
+                        )}
                       </div>
-                      <p className="text-base font-black text-gray-900 mt-2">
-                        S/ {p.salePrice.toFixed(2)}
-                      </p>
+
+                      <div className="p-3 flex-1 flex flex-col justify-between">
+                        <div>
+                          <h3 className="font-bold text-gray-800 group-hover:text-indigo-600 transition-colors line-clamp-2 text-sm">
+                            {p.name}
+                          </h3>
+                          <span
+                            className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full inline-block mt-1 ${availableStock > 0 ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}
+                          >
+                            {activeShift?.branchId ? "Sede: " : ""}
+                            {formatStock(availableStock, p.unit, p.presentations)}
+                          </span>
+                        </div>
+                        <p className="text-base font-black text-gray-900 mt-2">
+                          S/ {p.salePrice.toFixed(2)}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
         </div>
 
         {/* RIGHT: CART */}
-        <div className="w-full lg:w-[400px] flex flex-col bg-white rounded-[2rem] shadow-sm border border-gray-100 overflow-hidden">
+        <div className={`w-full lg:w-[400px] flex flex-col bg-white rounded-[2rem] shadow-sm border border-gray-100 overflow-hidden ${mobileTab === "cart" ? "flex" : "hidden lg:flex"}`}>
           <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-gray-50">
             <h2 className="text-xl font-black text-gray-900 flex items-center gap-2">
               <ShoppingCart className="w-5 h-5" /> Ticket Actual
@@ -1222,6 +1317,34 @@ export default function BusinessPosPage() {
                           const pres = item.presentations?.find(
                             (p: any) => p.id === presId,
                           );
+                          const equivalence = pres ? pres.equivalence : 1;
+                          const availableStock = activeShift?.branchId
+                            ? (item.branchStocks?.find((bs: any) => bs.branchId === activeShift.branchId)?.stock || 0)
+                            : item.stock;
+
+                          if (item.quantity * equivalence > availableStock) {
+                            const maxQty = Math.floor(availableStock / equivalence);
+                            if (maxQty < 1) {
+                              toast.error("No hay stock suficiente en esta sede para esta presentación.");
+                              return;
+                            }
+                            toast.error(`La cantidad supera el stock de la sede. Ajustando cantidad a ${maxQty}.`);
+                            const newPrice = pres ? pres.price : item.originalSalePrice;
+                            setCart(
+                              cart.map((c, i) =>
+                                i === index
+                                  ? {
+                                    ...c,
+                                    presentationId: presId || undefined,
+                                    salePrice: newPrice,
+                                    quantity: maxQty
+                                  }
+                                  : c,
+                              ),
+                            );
+                            return;
+                          }
+
                           const newPrice = pres
                             ? pres.price
                             : item.originalSalePrice;
@@ -1886,7 +2009,8 @@ export default function BusinessPosPage() {
                 </p>
               </div>
             ) : (
-              <div className="overflow-x-auto max-h-[50vh] custom-scrollbar">
+              <>
+                <div className="overflow-x-auto max-h-[50vh] custom-scrollbar">
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 text-gray-500 uppercase text-[10px] font-bold tracking-wider">
                     <tr>
@@ -1901,7 +2025,7 @@ export default function BusinessPosPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {sales.map((sale) => (
+                    {sales.slice((salesPage - 1) * 6, salesPage * 6).map((sale) => (
                       <tr
                         key={sale.id}
                         className="hover:bg-gray-50 transition-colors"
@@ -1985,7 +2109,17 @@ export default function BusinessPosPage() {
                   </tbody>
                 </table>
               </div>
-            )}
+              {sales.length > 0 && (
+                <Pagination
+                  currentPage={salesPage}
+                  totalItems={sales.length}
+                  pageSize={6}
+                  onPageChange={(page) => setSalesPage(page)}
+                  className="border-t border-gray-100 bg-gray-50 px-4 py-3"
+                />
+              )}
+            </>
+          )}
           </div>
           <div className="flex justify-end pt-2">
             <button
@@ -2274,6 +2408,177 @@ export default function BusinessPosPage() {
           </div>
         )}
       </Modal>
+
+      {/* FLOATING HOVER TOOLTIP POP OVER */}
+      {hoveredProduct && (
+        <div
+          className="fixed z-[1000] w-64 bg-slate-900/95 text-white rounded-2xl shadow-2xl p-4 border border-slate-700 pointer-events-none text-xs space-y-2 animate-in fade-in zoom-in-95 duration-100 backdrop-blur-sm"
+          style={{
+            left: `${tooltipCoords.x}px`,
+            top: `${tooltipCoords.y}px`,
+          }}
+        >
+          <div className="flex items-center justify-between border-b border-slate-700 pb-1.5">
+            <h4 className="font-extrabold text-sm text-indigo-400 truncate max-w-[70%]">
+              {hoveredProduct.name}
+            </h4>
+            {hoveredProduct.color && (
+              <span
+                className="w-3.5 h-3.5 rounded-full border border-white"
+                style={{ backgroundColor: hoveredProduct.color }}
+              />
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 text-[11px]">
+            <div>
+              <span className="block text-[9px] uppercase font-black text-slate-400">Código</span>
+              <span className="font-bold font-mono">
+                {hoveredProduct.sku || `Cód: #${String(hoveredProduct.customCode || 0).padStart(4, "0")}`}
+              </span>
+            </div>
+
+            <div>
+              <span className="block text-[9px] uppercase font-black text-slate-400">Unidad</span>
+              <span className="font-bold">{hoveredProduct.unit}</span>
+            </div>
+
+            <div>
+              <span className="block text-[9px] uppercase font-black text-slate-400">Stock Sede</span>
+              <span className="font-bold text-emerald-400">
+                {(() => {
+                  const bsStock = activeShift?.branchId
+                    ? (hoveredProduct.branchStocks?.find((bs: any) => bs.branchId === activeShift.branchId)?.stock || 0)
+                    : hoveredProduct.stock;
+                  return bsStock;
+                })()}
+              </span>
+            </div>
+
+            <div>
+              <span className="block text-[9px] uppercase font-black text-slate-400">Stock Global</span>
+              <span className="font-bold text-cyan-400">{hoveredProduct.stock}</span>
+            </div>
+
+            <div>
+              <span className="block text-[9px] uppercase font-black text-slate-400">Precio Costo</span>
+              <span className="font-bold text-rose-300">S/ {hoveredProduct.costPrice.toFixed(2)}</span>
+            </div>
+
+            <div>
+              <span className="block text-[9px] uppercase font-black text-slate-400">Precio Venta</span>
+              <span className="font-bold text-emerald-300 font-extrabold">S/ {hoveredProduct.salePrice.toFixed(2)}</span>
+            </div>
+
+            <div className="col-span-2">
+              <span className="block text-[9px] uppercase font-black text-slate-400">Marca / Familia</span>
+              <span className="font-semibold text-slate-300">
+                {hoveredProduct.brand?.name || "Sin marca"} / {hoveredProduct.family?.name || "Sin familia"}
+              </span>
+            </div>
+
+            {hoveredProduct.description && (
+              <div className="col-span-2 border-t border-slate-800 pt-1.5 mt-0.5">
+                <span className="block text-[9px] uppercase font-black text-slate-400">Descripción</span>
+                <p className="text-slate-300 leading-snug line-clamp-2">{hoveredProduct.description}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* PANEL FLOTANTE: CONFIGURACIÓN LECTOR CÓDIGO DE BARRAS FÍSICO */}
+      <div className="fixed bottom-6 right-6 z-[999] no-print">
+        {/* Floating Trigger Button */}
+        <button
+          type="button"
+          onClick={() => setIsScannerConfigOpen(!isScannerConfigOpen)}
+          className={`flex items-center gap-2 px-4 py-3 rounded-full text-white font-bold text-xs shadow-2xl transition-all hover:scale-105 active:scale-95 cursor-pointer ${isScannerConfigOpen ? "bg-red-500" : "bg-indigo-600 hover:bg-indigo-750"}`}
+        >
+          <span>{isScannerConfigOpen ? "Cerrar Panel ✖" : "Configurar Lector 🔌"}</span>
+          {scannerEnabled && !isScannerConfigOpen && (
+            <span className="w-2.5 h-2.5 bg-emerald-400 rounded-full animate-ping"></span>
+          )}
+        </button>
+
+        {/* Floating Config Card */}
+        {isScannerConfigOpen && (
+          <div className="absolute bottom-16 right-0 w-80 bg-white/95 backdrop-blur-md rounded-3xl border border-gray-150 p-5 shadow-2xl space-y-4 animate-in fade-in slide-in-from-bottom-5 duration-200">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+              <h4 className="font-extrabold text-sm text-gray-800 flex items-center gap-1.5">
+                <span>Lector Físico (Teclado)</span>
+              </h4>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-black ${scannerEnabled ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600"}`}>
+                {scannerEnabled ? "ACTIVO" : "APAGADO"}
+              </span>
+            </div>
+
+            <div className="space-y-3.5">
+              {/* Toggle Enable */}
+              <label className="flex items-center justify-between cursor-pointer">
+                <span className="text-xs font-semibold text-gray-600">Escuchar teclado global</span>
+                <input
+                  type="checkbox"
+                  checked={scannerEnabled}
+                  onChange={(e) => {
+                    setScannerEnabled(e.target.checked);
+                    playBeep();
+                  }}
+                  className="w-4 h-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded cursor-pointer"
+                />
+              </label>
+
+              {/* Sensitivity Slider */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-gray-655">Sensibilidad (Max entre teclas)</span>
+                  <span className="text-xs font-black text-indigo-600">{scannerSensitivity}ms</span>
+                </div>
+                <input
+                  type="range"
+                  min="20"
+                  max="150"
+                  step="5"
+                  value={scannerSensitivity}
+                  onChange={(e) => setScannerSensitivity(Number(e.target.value))}
+                  className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                />
+                <p className="text-[10px] text-gray-400 leading-tight">
+                  Valores más bajos (ej. 40ms) evitan que la escritura manual sea detectada como escaneo.
+                </p>
+              </div>
+
+              {/* Scan Test Box */}
+              <div className="bg-slate-50 p-3 rounded-2xl border border-gray-100 text-center space-y-1.5">
+                <span className="block text-[10px] font-black uppercase text-gray-450">Prueba de Lectura</span>
+                {scanTestResult ? (
+                  <div className="space-y-1">
+                    <span className="block text-xs font-bold text-gray-800 break-all bg-white px-2 py-1 rounded-lg border border-gray-200 font-mono">
+                      {scanTestResult}
+                    </span>
+                    <span className="block text-[9px] text-emerald-600 font-bold">
+                      Beep! Lectura Exitosa ✓
+                    </span>
+                  </div>
+                ) : (
+                  <span className="block text-[10px] text-gray-450 italic leading-snug">
+                    Escanea un código con el lector físico para probar el pitido y ver el resultado.
+                  </span>
+                )}
+                {scanTestResult && (
+                  <button
+                    type="button"
+                    onClick={() => setScanTestResult("")}
+                    className="text-[10px] text-gray-400 underline hover:text-gray-600 cursor-pointer"
+                  >
+                    Limpiar prueba
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </Appshell>
   );
 }

@@ -218,6 +218,7 @@ model Product {
   description String?
   sku         String?
   customCode  Int      @default(0)
+  color       String?  // Color opcional del producto
   costPrice   Float    // Precio de compra/costo
   salePrice   Float    // Precio de venta
   adjustedPrice Float?  // Precio ajustado sugerido/variable

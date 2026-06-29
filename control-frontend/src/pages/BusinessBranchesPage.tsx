@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import FinanceAppShell from "../components/layout/Appshell";
 import ConfirmModal from "../components/ui/ConfirmModal";
 import Modal from "../components/ui/Modal";
+import Pagination from "../components/ui/Pagination";
 import { 
   Building, 
   MapPin, 
@@ -32,6 +33,13 @@ import type { Product } from "../services/product.api";
 export default function BusinessBranchesPage() {
   const [activeTab, setActiveTab] = useState<"list" | "transfer" | "stocks">("list");
   
+  // Pagination states
+  const [branchPage, setBranchPage] = useState(1);
+  const branchPageSize = 6;
+
+  const [stockPage, setStockPage] = useState(1);
+  const stockPageSize = 6;
+
   // States for branches CRUD
   const [branches, setBranches] = useState<Branch[]>([]);
   const [isLoadingBranches, setIsLoadingBranches] = useState(false);
@@ -225,6 +233,18 @@ export default function BusinessBranchesPage() {
     );
   }, [branchStocks, searchQuery]);
 
+  const paginatedBranches = useMemo(() => {
+    return branches.slice((branchPage - 1) * branchPageSize, branchPage * branchPageSize);
+  }, [branches, branchPage, branchPageSize]);
+
+  const paginatedStocks = useMemo(() => {
+    return filteredStocks.slice((stockPage - 1) * stockPageSize, stockPage * stockPageSize);
+  }, [filteredStocks, stockPage, stockPageSize]);
+
+  useEffect(() => {
+    setStockPage(1);
+  }, [searchQuery]);
+
   return (
     <FinanceAppShell>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative z-10">
@@ -296,14 +316,14 @@ export default function BusinessBranchesPage() {
 
         {/* TAB 1: LIST OF BRANCHES */}
         {activeTab === "list" && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="w-full">
             {isLoadingBranches ? (
-              <div className="col-span-full py-12 flex flex-col items-center justify-center text-gray-400">
+              <div className="py-12 flex flex-col items-center justify-center text-gray-400">
                 <div className="w-12 h-12 border-4 border-rose-500 border-t-transparent rounded-full animate-spin mb-4"></div>
                 <p className="font-bold">Cargando sedes de tu negocio...</p>
               </div>
             ) : branches.length === 0 ? (
-              <div className="col-span-full py-16 text-center bg-white rounded-3xl border border-gray-100 shadow-sm">
+              <div className="py-16 text-center bg-white rounded-3xl border border-gray-100 shadow-sm">
                 <Building className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                 <h3 className="text-xl font-bold text-gray-800">No hay sedes registradas</h3>
                 <p className="text-gray-500 mt-1 mb-6">Empieza registrando una sede para segregar tu inventario y cajas.</p>
@@ -315,59 +335,72 @@ export default function BusinessBranchesPage() {
                 </button>
               </div>
             ) : (
-              branches.map((b) => (
-                <div 
-                  key={b.id} 
-                  className="bg-white rounded-3xl border border-gray-100 shadow-sm hover:shadow-xl hover:border-rose-100 transition-all p-6 relative overflow-hidden group"
-                >
-                  <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-rose-50 to-transparent rounded-bl-full opacity-60 group-hover:scale-110 transition-transform"></div>
-                  
-                  <div className="flex items-start justify-between gap-4 mb-4">
-                    <div className="p-3.5 bg-rose-50 text-rose-500 rounded-2xl">
-                      <Building className="w-6 h-6" />
-                    </div>
-                    
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => handleOpenEdit(b)}
-                        className="p-2 text-gray-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
-                        title="Editar sede"
-                      >
-                        <Edit3 className="w-5 h-5" />
-                      </button>
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {paginatedBranches.map((b) => (
+                    <div 
+                      key={b.id} 
+                      className="bg-white rounded-3xl border border-gray-100 shadow-sm hover:shadow-xl hover:border-rose-100 transition-all p-6 relative overflow-hidden group"
+                    >
+                      <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-rose-50 to-transparent rounded-bl-full opacity-60 group-hover:scale-110 transition-transform"></div>
                       
-                      {branches.length > 1 && (
-                        <button
-                          onClick={() => {
-                            setBranchToDelete(b.id);
-                            setIsDeleteModalOpen(true);
-                          }}
-                          className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
-                          title="Eliminar sede"
-                        >
-                          <Trash2 className="w-5 h-5" />
-                        </button>
+                      <div className="flex items-start justify-between gap-4 mb-4">
+                        <div className="p-3.5 bg-rose-50 text-rose-500 rounded-2xl">
+                          <Building className="w-6 h-6" />
+                        </div>
+                        
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => handleOpenEdit(b)}
+                            className="p-2 text-gray-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
+                            title="Editar sede"
+                          >
+                            <Edit3 className="w-5 h-5" />
+                          </button>
+                          
+                          {branches.length > 1 && (
+                            <button
+                              onClick={() => {
+                                setBranchToDelete(b.id);
+                                setIsDeleteModalOpen(true);
+                              }}
+                              className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                              title="Eliminar sede"
+                            >
+                              <Trash2 className="w-5 h-5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <h3 className="text-xl font-black text-gray-900 group-hover:text-rose-600 transition-colors">
+                        {b.name}
+                      </h3>
+                      
+                      {b.address && (
+                        <div className="flex items-center gap-2 text-gray-500 text-sm font-semibold mt-2">
+                          <MapPin className="w-4 h-4 text-gray-400 shrink-0" />
+                          <span className="truncate">{b.address}</span>
+                        </div>
                       )}
-                    </div>
-                  </div>
 
-                  <h3 className="text-xl font-black text-gray-900 group-hover:text-rose-600 transition-colors">
-                    {b.name}
-                  </h3>
-                  
-                  {b.address && (
-                    <div className="flex items-center gap-2 text-gray-500 text-sm font-semibold mt-2">
-                      <MapPin className="w-4 h-4 text-gray-400 shrink-0" />
-                      <span className="truncate">{b.address}</span>
+                      <div className="mt-6 pt-4 border-t border-gray-50 flex items-center justify-between text-xs font-bold text-gray-400">
+                        <span>CREADA EL</span>
+                        <span className="text-gray-600">{new Date(b.createdAt).toLocaleDateString()}</span>
+                      </div>
                     </div>
-                  )}
-
-                  <div className="mt-6 pt-4 border-t border-gray-50 flex items-center justify-between text-xs font-bold text-gray-400">
-                    <span>CREADA EL</span>
-                    <span className="text-gray-600">{new Date(b.createdAt).toLocaleDateString()}</span>
-                  </div>
+                  ))}
                 </div>
-              ))
+                {branches.length > 0 && (
+                  <Pagination
+                    currentPage={branchPage}
+                    totalItems={branches.length}
+                    pageSize={branchPageSize}
+                    onPageChange={(p) => setBranchPage(p)}
+                    className="pt-4"
+                  />
+                )}
+              </div>
             )}
           </div>
         )}
@@ -509,7 +542,7 @@ export default function BusinessBranchesPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 text-sm font-semibold text-gray-700">
-                    {filteredStocks.map((prod: any) => (
+                    {paginatedStocks.map((prod: any) => (
                       <tr key={prod.id} className="hover:bg-gray-50/55 transition-colors">
                         <td className="py-5 px-6">
                           <div className="font-extrabold text-gray-900">{prod.name}</div>
@@ -558,6 +591,15 @@ export default function BusinessBranchesPage() {
                     ))}
                   </tbody>
                 </table>
+                {filteredStocks.length > 0 && (
+                  <Pagination
+                    currentPage={stockPage}
+                    totalItems={filteredStocks.length}
+                    pageSize={stockPageSize}
+                    onPageChange={(p) => setStockPage(p)}
+                    className="border-t border-gray-100 px-6 py-4"
+                  />
+                )}
               </div>
             )}
           </div>

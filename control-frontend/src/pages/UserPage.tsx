@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Appshell from "../components/layout/Appshell";
 import Modal from "../components/ui/Modal";
+import Pagination from "../components/ui/Pagination";
 import {
   Users,
   Plus,
@@ -43,6 +44,8 @@ export default function UserPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 6;
 
   useEffect(() => {
     fetchUsers();
@@ -211,11 +214,22 @@ export default function UserPage() {
     }
   };
 
-  const filteredUsers = users.filter(
-    (u) =>
-      (u.name ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (u.email ?? "").toLowerCase().includes(searchTerm.toLowerCase()),
-  );
+  const filteredUsers = users.filter((user) => {
+    const search = searchTerm.toLowerCase();
+    return (
+      user.name.toLowerCase().includes(search) ||
+      user.lastName.toLowerCase().includes(search) ||
+      user.email.toLowerCase().includes(search)
+    );
+  });
+
+  const paginatedUsers = useMemo(() => {
+    return filteredUsers.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  }, [filteredUsers, currentPage, pageSize]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
 
   return (
     <Appshell>
@@ -284,7 +298,7 @@ export default function UserPage() {
                     </td>
                   </tr>
                 ) : (
-                  filteredUsers.map((user) => (
+                  paginatedUsers.map((user) => (
                     <tr
                       key={user.id}
                       className="hover:bg-purple-50/30 transition-all group"
@@ -488,7 +502,7 @@ export default function UserPage() {
                 <Loader2 className="w-10 h-10 text-purple-500 animate-spin mx-auto mb-4" />
               </div>
             ) : (
-              filteredUsers.map((user) => (
+              paginatedUsers.map((user) => (
                 <div key={user.id} className="p-6 space-y-4">
                   <div className="flex justify-between items-start">
                     <div className="flex items-center gap-4">
@@ -658,6 +672,15 @@ export default function UserPage() {
               ))
             )}
           </div>
+          {!loading && filteredUsers.length > 0 && (
+            <Pagination
+              currentPage={currentPage}
+              totalItems={filteredUsers.length}
+              pageSize={pageSize}
+              onPageChange={(p) => setCurrentPage(p)}
+              className="px-6 py-4 border-t border-gray-100 bg-white"
+            />
+          )}
           {/* EMPTY STATE */}
           {!loading && filteredUsers.length === 0 && (
             <div className="p-20 text-center">

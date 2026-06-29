@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import Appshell from "../components/layout/Appshell";
-import { Lock, Unlock, History, DollarSign, Eye, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Lock, Unlock, History, DollarSign, Eye, Loader2 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import Modal from "../components/ui/Modal";
+import Pagination from "../components/ui/Pagination";
 import { useAuth } from "../auth/AuthContext";
 import {
   openCashShiftRequest,
@@ -42,7 +43,7 @@ export default function BusinessCashRegisterPage() {
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
 
   // Shift Details Modal State
   const [selectedShiftId, setSelectedShiftId] = useState<string | null>(null);
@@ -137,7 +138,7 @@ export default function BusinessCashRegisterPage() {
     try {
       const params = {
         page,
-        limit: 10,
+        limit: 6,
         branchId: filterBranchId || undefined,
         workerId: filterWorkerId || undefined,
         startDate: filterStartDate ? `${filterStartDate}T00:00:00.000Z` : undefined,
@@ -145,7 +146,7 @@ export default function BusinessCashRegisterPage() {
       };
       const res = await getCashShiftHistoryRequest(params);
       setHistory(res.items || []);
-      setTotalPages(res.totalPages || 1);
+      setTotalItems(res.total || 0);
     } catch {
       toast.error("Error al cargar historial");
     } finally {
@@ -167,7 +168,14 @@ export default function BusinessCashRegisterPage() {
     if (!loading) {
       loadHistory(currentPage);
     }
-  }, [currentPage, filterBranchId, filterWorkerId, filterStartDate, filterEndDate]);
+  }, [currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+    if (currentPage === 1 && !loading) {
+      loadHistory(1);
+    }
+  }, [filterBranchId, filterWorkerId, filterStartDate, filterEndDate]);
 
   const exportHistoryExcel = async () => {
     if (history.length === 0) {
@@ -657,28 +665,14 @@ export default function BusinessCashRegisterPage() {
           </div>
 
           {/* Pagination Controls */}
-          {totalPages > 1 && (
-            <div className="p-4 border-t border-gray-100 flex items-center justify-between bg-gray-50">
-              <span className="text-xs text-gray-500 font-bold">
-                Pág. {currentPage} de {totalPages}
-              </span>
-              <div className="flex gap-2">
-                <button
-                  disabled={currentPage === 1}
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  className={`p-2 rounded-lg border text-gray-600 transition-all ${currentPage === 1 ? "bg-gray-100 opacity-50 cursor-not-allowed" : "bg-white hover:bg-gray-100"}`}
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                <button
-                  disabled={currentPage === totalPages}
-                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                  className={`p-2 rounded-lg border text-gray-600 transition-all ${currentPage === totalPages ? "bg-gray-100 opacity-50 cursor-not-allowed" : "bg-white hover:bg-gray-100"}`}
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
+          {totalItems > 0 && (
+            <Pagination
+              currentPage={currentPage}
+              totalItems={totalItems}
+              pageSize={6}
+              onPageChange={(p) => setCurrentPage(p)}
+              className="border-t border-gray-100 bg-gray-50 px-6 py-4"
+            />
           )}
         </div>
       </div>

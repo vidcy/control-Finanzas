@@ -12,6 +12,7 @@ import { Clock, CheckCircle2, TrendingUp, TrendingDown, Trash2, AlertCircle, Edi
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
 import ConfirmModal from "../components/ui/ConfirmModal";
+import Pagination from "../components/ui/Pagination";
 import { format, isPast, isToday } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -22,6 +23,8 @@ export default function BusinessPendingPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [type, setType] = useState<"INCOME" | "EXPENSE">("INCOME");
   const [editingPending, setEditingPending] = useState<any>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 6;
 
   // Modal confirm delete states
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -155,6 +158,11 @@ export default function BusinessPendingPage() {
 
   const filteredCategories = categories.filter(c => c.type === type);
   const activePending = pending.filter(p => p.status === "PENDING");
+  const paginatedPending = activePending.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [type, pending]);
 
   return (
     <Appshell>
@@ -234,7 +242,7 @@ export default function BusinessPendingPage() {
                       <td colSpan={8} className="px-6 py-10 text-center text-gray-400 font-medium">No hay cuentas pendientes registradas. ¡Todo al día!</td>
                     </tr>
                   ) : (
-                    activePending.map(p => {
+                    paginatedPending.map(p => {
                       const isVencido = p.dueDate && isPast(new Date(p.dueDate)) && !isToday(new Date(p.dueDate));
                       const isIngreso = p.type === "INCOME";
 
@@ -295,6 +303,15 @@ export default function BusinessPendingPage() {
                 </tbody>
               </table>
             </div>
+            {activePending.length > 0 && (
+              <Pagination
+                currentPage={currentPage}
+                totalItems={activePending.length}
+                pageSize={pageSize}
+                onPageChange={(p) => setCurrentPage(p)}
+                className="px-6 py-4 border-t border-gray-100 bg-white"
+              />
+            )}
           </div>
         )}
       </div>

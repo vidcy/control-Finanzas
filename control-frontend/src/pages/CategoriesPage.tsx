@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Appshell from "../components/layout/Appshell";
 import Modal from "../components/ui/Modal";
+import Pagination from "../components/ui/Pagination";
 
 import {
   listCategoriesRequest,
@@ -38,6 +39,8 @@ export default function CategoriesPage() {
   const [activeTab, setActiveTab] = useState<"INCOME" | "EXPENSE">("INCOME");
   const [searchTerm, setSearchTerm] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 6;
 
   // Modal States
   const [isCatModalOpen, setIsCatModalOpen] = useState(false);
@@ -98,6 +101,14 @@ export default function CategoriesPage() {
       c.type === activeTab &&
       c.name.toLowerCase().includes(searchTerm.toLowerCase()),
   );
+
+  const paginatedCategories = useMemo(() => {
+    return filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  }, [filtered, currentPage, pageSize]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, searchTerm]);
 
   const handleOpenCatModal = () => {
     setCatForm({ name: "", color: "bg-indigo-500" });
@@ -264,8 +275,9 @@ export default function CategoriesPage() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
-            {filtered.map((category) => (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
+              {paginatedCategories.map((category) => (
               <div
                 key={category.id}
                 className="bg-white rounded-[2.5rem] p-8 border border-white shadow-[0_20px_60px_-10px_rgba(0,0,0,0.05)] hover:shadow-[0_20px_60px_-10px_rgba(0,0,0,0.1)] transition-all group flex flex-col min-h-[420px] relative overflow-hidden"
@@ -340,7 +352,17 @@ export default function CategoriesPage() {
                   <Plus className="w-4 h-4" /> Nuevo Sub-ítem
                 </button>
               </div>
-            ))}
+              ))}
+            </div>
+            {filtered.length > 0 && (
+              <Pagination
+                currentPage={currentPage}
+                totalItems={filtered.length}
+                pageSize={pageSize}
+                onPageChange={(p) => setCurrentPage(p)}
+                className="mt-6"
+              />
+            )}
           </div>
         )}
 

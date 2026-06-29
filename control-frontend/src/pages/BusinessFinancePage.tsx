@@ -62,7 +62,7 @@ export default function BusinessFinancePage() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [txPage, setTxPage] = useState(1);
-  const [txPageSize, setTxPageSize] = useState(20);
+  const [txPageSize, setTxPageSize] = useState(6);
 
   const [formData, setFormData] = useState({
     name: "",
