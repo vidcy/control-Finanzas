@@ -23,6 +23,7 @@ CREATE TABLE `User` (
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
     `branchId` VARCHAR(191) NULL,
+    `advisorLabel` VARCHAR(191) NOT NULL DEFAULT 'Asesor de venta',
 
     UNIQUE INDEX `User_email_key`(`email`),
     PRIMARY KEY (`id`)
@@ -79,6 +80,9 @@ CREATE TABLE `Transaction` (
     `branchId` VARCHAR(191) NULL,
     `isPosSale` BOOLEAN NOT NULL DEFAULT false,
     `cashShiftId` VARCHAR(191) NULL,
+    `advisorId` VARCHAR(191) NULL,
+    `commissionPercentage` DOUBLE NULL,
+    `commissionAmount` DOUBLE NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
 
@@ -92,6 +96,7 @@ CREATE TABLE `Product` (
     `description` VARCHAR(191) NULL,
     `sku` VARCHAR(191) NULL,
     `customCode` INTEGER NOT NULL DEFAULT 0,
+    `color` VARCHAR(191) NULL,
     `costPrice` DOUBLE NOT NULL,
     `salePrice` DOUBLE NOT NULL,
     `adjustedPrice` DOUBLE NULL,
@@ -252,6 +257,19 @@ CREATE TABLE `Family` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
+-- CreateTable
+CREATE TABLE `Advisor` (
+    `id` VARCHAR(191) NOT NULL,
+    `name` VARCHAR(191) NOT NULL,
+    `commissionPercentage` DOUBLE NOT NULL DEFAULT 0.0,
+    `isActive` BOOLEAN NOT NULL DEFAULT true,
+    `userId` VARCHAR(191) NOT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
 -- AddForeignKey
 ALTER TABLE `User` ADD CONSTRAINT `User_branchId_fkey` FOREIGN KEY (`branchId`) REFERENCES `Branch`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
@@ -278,6 +296,9 @@ ALTER TABLE `Transaction` ADD CONSTRAINT `Transaction_branchId_fkey` FOREIGN KEY
 
 -- AddForeignKey
 ALTER TABLE `Transaction` ADD CONSTRAINT `Transaction_cashShiftId_fkey` FOREIGN KEY (`cashShiftId`) REFERENCES `CashShift`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `Transaction` ADD CONSTRAINT `Transaction_advisorId_fkey` FOREIGN KEY (`advisorId`) REFERENCES `Advisor`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE `Product` ADD CONSTRAINT `Product_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `User`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -332,4 +353,7 @@ ALTER TABLE `Brand` ADD CONSTRAINT `Brand_userId_fkey` FOREIGN KEY (`userId`) RE
 
 -- AddForeignKey
 ALTER TABLE `Family` ADD CONSTRAINT `Family_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `User`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `Advisor` ADD CONSTRAINT `Advisor_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `User`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
