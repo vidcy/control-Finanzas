@@ -19,12 +19,19 @@ export class BranchesService {
     if (branches.length === 0) {
       const defaultBranch = await this.prisma.branch.create({
         data: {
-          name: 'Sede Principal',
-          address: 'Av. Principal 123',
+          name: 'Almacén Central',
+          address: 'Principal / Matriz',
           userId,
         },
       });
       branches = [defaultBranch];
+    } else if (branches[0].name === 'Sede Principal') {
+      // Automatically migrate Sede Principal to Almacén Central to match the warehouse flow
+      const updated = await this.prisma.branch.update({
+        where: { id: branches[0].id },
+        data: { name: 'Almacén Central', address: 'Principal / Matriz' },
+      });
+      branches[0] = updated;
     }
     return branches;
   }
@@ -72,6 +79,7 @@ export class BranchesService {
   }
 
   async getBranchStocks(userId: string) {
+    await this.ensureBranchStocksExist(userId);
     // Get all products of this owner with branch stocks, brand and family
     const products = await this.prisma.product.findMany({
       where: { userId },
@@ -87,6 +95,51 @@ export class BranchesService {
       orderBy: { name: 'asc' },
     });
     return products;
+  }
+
+  private async ensureBranchStocksExist(userId: string) {
+    const firstBranch = await this.prisma.branch.findFirst({
+      where: { userId },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (!firstBranch) return;
+
+    const products = await this.prisma.product.findMany({
+      where: { userId },
+      include: {
+        branchStocks: true,
+      },
+    });
+
+    const toCreate = [];
+    for (const prod of products) {
+      const hasFirstBranch = prod.branchStocks.some(
+        (bs) => bs.branchId === firstBranch.id,
+      );
+      if (!hasFirstBranch) {
+        const otherStockSum = prod.branchStocks.reduce(
+          (sum, bs) => sum + bs.stock,
+          0,
+        );
+        const firstBranchStockVal = Math.max(0, prod.stock - otherStockSum);
+
+        toCreate.push({
+          productId: prod.id,
+          branchId: firstBranch.id,
+          stock: firstBranchStockVal,
+        });
+      }
+    }
+
+    if (toCreate.length > 0) {
+      await this.prisma.$transaction(
+        toCreate.map((item) =>
+          this.prisma.branchStock.create({
+            data: item,
+          }),
+        ),
+      );
+    }
   }
 
   async transferStock(

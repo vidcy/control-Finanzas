@@ -25,6 +25,7 @@ export class TransactionController {
     @Query('endDate') endDate?: string,
     @Query('userId') filterUserId?: string,
     @Query('branchId') branchId?: string,
+    @Query('advisorId') advisorId?: string,
   ) {
     const ownerId = req.user.id;
     const workerId = req.user.workerId;
@@ -44,6 +45,7 @@ export class TransactionController {
       endDate,
       filterUserId,
       branchId,
+      advisorId,
     });
   }
   @UseGuards(AuthGuard('jwt'))

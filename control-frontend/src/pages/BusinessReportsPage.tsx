@@ -16,6 +16,7 @@ import { getTransactionsRequest } from "../services/transaction.api";
 import { getProductsRequest, getInventoryMovementsRequest } from "../services/product.api";
 import { getBranchesRequest } from "../services/branch.api";
 import { getWorkersRequest } from "../services/user.api";
+import { getAdvisorsRequest } from "../services/advisor.api";
 import {
   TrendingUp,
   Package,
@@ -38,7 +39,7 @@ import Pagination from "../components/ui/Pagination";
 
 export default function BusinessReportsPage() {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<"general" | "ventas" | "tesoreria" | "inventario" | "kardex">("general");
+  const [activeTab, setActiveTab] = useState<"general" | "ventas" | "tesoreria" | "inventario" | "kardex" | "comisiones">("general");
   const [loading, setLoading] = useState(true);
 
   // Raw Database Data
@@ -47,6 +48,7 @@ export default function BusinessReportsPage() {
   const [movements, setMovements] = useState<any[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
   const [workers, setWorkers] = useState<any[]>([]);
+  const [advisors, setAdvisors] = useState<any[]>([]);
 
   // Filters
   const [dateFrom, setDateFrom] = useState("");
@@ -57,12 +59,14 @@ export default function BusinessReportsPage() {
   const [selectedWorker, setSelectedWorker] = useState("");
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("");
   const [selectedProduct, setSelectedProduct] = useState("");
+  const [selectedAdvisor, setSelectedAdvisor] = useState("");
 
   // Pagination states
   const [salesPage, setSalesPage] = useState(1);
   const [treasuryPage, setTreasuryPage] = useState(1);
   const [inventoryPage, setInventoryPage] = useState(1);
   const [kardexPage, setKardexPage] = useState(1);
+  const [commissionsPage, setCommissionsPage] = useState(1);
   const pageSize = 6;
 
   // Reset pagination on filter change
@@ -71,6 +75,7 @@ export default function BusinessReportsPage() {
     setTreasuryPage(1);
     setInventoryPage(1);
     setKardexPage(1);
+    setCommissionsPage(1);
   }, [
     dateFrom,
     dateTo,
@@ -80,6 +85,7 @@ export default function BusinessReportsPage() {
     selectedWorker,
     selectedPaymentMethod,
     selectedProduct,
+    selectedAdvisor,
   ]);
 
   useEffect(() => {
@@ -89,18 +95,20 @@ export default function BusinessReportsPage() {
   const loadAllData = async () => {
     try {
       setLoading(true);
-      const [txs, prods, movs, branchList, workerList] = await Promise.all([
+      const [txs, prods, movs, branchList, workerList, advisorList] = await Promise.all([
         getTransactionsRequest({ workspace: "BUSINESS", isPosSale: "all" }),
         getProductsRequest(),
         getInventoryMovementsRequest(),
         getBranchesRequest(),
         getWorkersRequest(),
+        getAdvisorsRequest(),
       ]);
       setTransactions(txs);
       setProducts(prods);
       setMovements(movs);
       setBranches(branchList);
       setWorkers(workerList);
+      setAdvisors(advisorList || []);
     } catch (error) {
       console.error(error);
       toast.error("Error al cargar la información del servidor");
@@ -118,6 +126,7 @@ export default function BusinessReportsPage() {
     if (selectedBranch && t.branchId !== selectedBranch) return false;
     if (selectedWorker && t.userId !== selectedWorker) return false;
     if (selectedPaymentMethod && t.paymentMethod !== selectedPaymentMethod) return false;
+    if (selectedAdvisor && t.advisorId !== selectedAdvisor) return false;
     if (selectedProduct) {
       const q = selectedProduct.toLowerCase();
       const inName = (t.name || "").toLowerCase().includes(q);
@@ -197,6 +206,75 @@ export default function BusinessReportsPage() {
   const paginatedMovements = useMemo(() => {
     return filteredMovements.slice((kardexPage - 1) * pageSize, kardexPage * pageSize);
   }, [filteredMovements, kardexPage, pageSize]);
+
+  // Filtered sales with advisor
+  const filteredAdvisorSales = useMemo(() => {
+    return filteredSales.filter((t: any) => t.advisorId || t.advisor);
+  }, [filteredSales]);
+
+  // Advisor statistics
+  const advisorStats = useMemo(() => {
+    const totalSalesVol = filteredAdvisorSales.reduce((sum: number, t: any) => sum + t.amount, 0);
+    const totalCommAmt = filteredAdvisorSales.reduce((sum: number, t: any) => {
+      const rate = t.commissionPercentage ?? t.advisor?.commissionPercentage ?? 0;
+      const amt = t.commissionAmount ?? (t.amount * rate) / 100;
+      return sum + amt;
+    }, 0);
+    return {
+      totalSalesVol,
+      totalCommAmt,
+      avgCommPercent: totalSalesVol > 0 ? (totalCommAmt / totalSalesVol) * 100 : 0,
+      count: filteredAdvisorSales.length,
+    };
+  }, [filteredAdvisorSales]);
+
+  // Per-advisor performance
+  const perAdvisorStats = useMemo(() => {
+    const statsMap: Record<string, { id: string; name: string; baseRate: number; salesCount: number; salesVol: number; commAmt: number }> = {};
+    
+    // Initialize with all active advisors
+    advisors.forEach((adv: any) => {
+      statsMap[adv.id] = {
+        id: adv.id,
+        name: adv.name,
+        baseRate: adv.commissionPercentage,
+        salesCount: 0,
+        salesVol: 0,
+        commAmt: 0,
+      };
+    });
+
+    // Populate from transactions
+    filteredAdvisorSales.forEach((t: any) => {
+      const advId = t.advisorId || t.advisor?.id;
+      if (!advId) return;
+
+      const rate = t.commissionPercentage ?? t.advisor?.commissionPercentage ?? 0;
+      const amt = t.commissionAmount ?? (t.amount * rate) / 100;
+
+      if (!statsMap[advId]) {
+        statsMap[advId] = {
+          id: advId,
+          name: t.advisor?.name || "Asesor Inactivo/Eliminado",
+          baseRate: rate,
+          salesCount: 0,
+          salesVol: 0,
+          commAmt: 0,
+        };
+      }
+
+      statsMap[advId].salesCount += 1;
+      statsMap[advId].salesVol += t.amount;
+      statsMap[advId].commAmt += amt;
+    });
+
+    return Object.values(statsMap).sort((a, b) => b.salesVol - a.salesVol);
+  }, [advisors, filteredAdvisorSales]);
+
+  // Paginated advisor sales for the detail table
+  const paginatedAdvisorSales = useMemo(() => {
+    return filteredAdvisorSales.slice((commissionsPage - 1) * pageSize, commissionsPage * pageSize);
+  }, [filteredAdvisorSales, commissionsPage, pageSize]);
 
   // Inventory valuation
   const inventoryCostValuation = products.reduce(
@@ -626,6 +704,169 @@ export default function BusinessReportsPage() {
     }
   };
 
+  const exportCommissionsExcel = async () => {
+    await exportToExcel(
+      filteredAdvisorSales.map((s: any) => {
+        const rate = s.commissionPercentage ?? s.advisor?.commissionPercentage ?? 0;
+        const commAmt = s.commissionAmount ?? (s.amount * rate) / 100;
+        return {
+          fecha: format(new Date(s.date), "dd/MM/yyyy HH:mm"),
+          asesor: s.advisor?.name || "—",
+          tasaComision: `${rate}%`,
+          comision: commAmt,
+          ventaSole: s.amount,
+          sede: s.branch?.name || "—",
+          vendedor: s.user ? `${s.user.name} ${s.user.lastName || ""}` : "—",
+          detalle: s.description || "Venta POS",
+        };
+      }),
+      [
+        { key: "fecha", label: "Fecha/Hora" },
+        { key: "asesor", label: "Asesor de Venta" },
+        { key: "tasaComision", label: "% Comisión" },
+        { key: "comision", label: "Monto Comisión (S/)" },
+        { key: "ventaSole", label: "Monto Venta (S/)" },
+        { key: "sede", label: "Sede" },
+        { key: "vendedor", label: "Vendedor" },
+        { key: "detalle", label: "Detalle" },
+      ],
+      `Reporte_Comisiones_Asesores_${format(new Date(), "yyyyMMdd")}`
+    );
+    toast.success("Excel de Comisiones exportado");
+  };
+
+  const exportCommissionsPdf = async () => {
+    try {
+      const { jsPDF } = await import("jspdf");
+      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+
+      const primaryColor = [79, 70, 229]; // Indigo
+      
+      // Header Banner
+      doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.rect(0, 0, 210, 32, "F");
+      
+      doc.setTextColor(255, 255, 255);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(15);
+      doc.text("REPORTE DE COMISIONES DE ASESORES DE VENTA", 14, 11);
+      doc.setFontSize(8.5);
+      doc.setFont("helvetica", "normal");
+
+      const advName = selectedAdvisor ? (advisors.find(a => a.id === selectedAdvisor)?.name || "Asesor") : "Todos";
+      const branchName = selectedBranch ? (branches.find(b => b.id === selectedBranch)?.name || "Sede") : "Todas";
+      const filterText = `Asesor: ${advName} | Sede: ${branchName}`;
+
+      doc.text(`Filtros: ${filterText}  |  Rango: ${dateFrom || "Inicio"} al ${dateTo || "Hoy"}`, 14, 19);
+      doc.text(`Fecha Impresión: ${format(new Date(), "dd/MM/yyyy HH:mm")}`, 14, 25);
+
+      // Summary KPIs Box
+      doc.setFillColor(243, 244, 246);
+      doc.roundedRect(14, 38, 182, 22, 2, 2, "F");
+      
+      doc.setTextColor(30, 41, 59);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.text("VOLUMEN VENTA ASESORES", 20, 45);
+      doc.setFontSize(12);
+      doc.text(`S/ ${advisorStats.totalSalesVol.toFixed(2)}`, 20, 53);
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.text("TOTAL COMISIONES", 80, 45);
+      doc.setFontSize(12);
+      doc.setTextColor(79, 70, 229);
+      doc.text(`S/ ${advisorStats.totalCommAmt.toFixed(2)}`, 80, 53);
+
+      doc.setTextColor(30, 41, 59);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.text("TASA PROMEDIO", 140, 45);
+      doc.setFontSize(12);
+      doc.text(`${advisorStats.avgCommPercent.toFixed(1)}%`, 140, 53);
+
+      // Table Title
+      doc.setTextColor(30, 41, 59);
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.text("DETALLE DE COMISIONES POR TRANSACCIÓN", 14, 68);
+
+      // Draw table
+      const startY = 74;
+      const headers = ["Fecha", "Asesor", "Detalle de Venta", "Sede", "Importe", "Comis.", "Comis. S/"];
+      const colWidths = [26, 32, 45, 25, 20, 14, 20];
+      
+      // Header row
+      doc.setFillColor(79, 70, 229);
+      doc.rect(14, startY, 182, 7, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(8);
+      let cx = 14;
+      headers.forEach((h, i) => {
+        doc.text(h, cx + 2, startY + 5);
+        cx += colWidths[i];
+      });
+
+      let y = startY + 7;
+      doc.setFont("helvetica", "normal");
+      
+      filteredAdvisorSales.forEach((s, idx) => {
+        if (y > 270) {
+          doc.addPage();
+          y = 15;
+        }
+        if (idx % 2 === 0) {
+          doc.setFillColor(248, 250, 252);
+          doc.rect(14, y, 182, 6.5, "F");
+        }
+        doc.setFontSize(7);
+        
+        let tx = 14;
+        const rate = s.commissionPercentage ?? s.advisor?.commissionPercentage ?? 0;
+        const commAmt = s.commissionAmount ?? (s.amount * rate) / 100;
+        
+        const row = [
+          format(new Date(s.date), "dd/MM/yyyy HH:mm"),
+          s.advisor?.name || "—",
+          s.description || "Venta POS",
+          s.branch?.name || "—",
+          `S/ ${s.amount.toFixed(2)}`,
+          `${rate}%`,
+          `S/ ${commAmt.toFixed(2)}`,
+        ];
+        
+        row.forEach((val, i) => {
+          if (i === 6) {
+            doc.setTextColor(79, 70, 229);
+            doc.setFont("helvetica", "bold");
+          } else {
+            doc.setTextColor(51, 65, 85);
+            doc.setFont("helvetica", "normal");
+          }
+          doc.text(val, tx + 2, y + 4.5);
+          tx += colWidths[i];
+        });
+        y += 6.5;
+      });
+
+      // Page numbers & footer
+      const totalPages = doc.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        doc.setFontSize(7);
+        doc.setTextColor(148, 163, 184);
+        doc.text("Think ERP Finanzas — Todos los derechos reservados", 14, 287);
+        doc.text(`Página ${i} de ${totalPages}`, 180, 287);
+      }
+
+      doc.save(`Comisiones_Asesores_${format(new Date(), "yyyyMMdd")}.pdf`);
+      toast.success("PDF de Comisiones descargado");
+    } catch (err) {
+      console.error(err);
+      toast.error("Error al generar PDF");
+    }
+  };
+
   return (
     <Appshell>
       <div className="space-y-6 max-w-7xl mx-auto pb-10 px-4">
@@ -659,7 +900,7 @@ export default function BusinessReportsPage() {
         </div>
 
         {/* FILTROS AVANZADOS */}
-        <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm grid grid-cols-1 sm:grid-cols-4 gap-4">
+        <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm grid grid-cols-1 sm:grid-cols-5 gap-4">
           <div className="space-y-1">
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Sede / Sucursal</label>
             <select
@@ -719,6 +960,25 @@ export default function BusinessReportsPage() {
               <option value="TRANSFER">Transferencia</option>
               <option value="YAPE">Yape</option>
               <option value="PLIN">Plin</option>
+            </select>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Asesor de Venta</label>
+            <select
+              value={selectedAdvisor}
+              onChange={(e) => {
+                setSelectedAdvisor(e.target.value);
+                toast.success("Filtro de Asesor actualizado");
+              }}
+              className="w-full bg-slate-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-bold text-gray-700 outline-none focus:border-indigo-500 transition-colors"
+            >
+              <option value="">Todos los Asesores</option>
+              {advisors.map((adv: any) => (
+                <option key={adv.id} value={adv.id}>
+                  {adv.name} ({adv.commissionPercentage}%)
+                </option>
+              ))}
             </select>
           </div>
 
@@ -783,6 +1043,14 @@ export default function BusinessReportsPage() {
             }`}
           >
             <ArrowUpDown className="w-4 h-4" /> Movimientos Kardex
+          </button>
+          <button
+            onClick={() => setActiveTab("comisiones")}
+            className={`flex-1 min-w-[120px] py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all ${
+              activeTab === "comisiones" ? "bg-indigo-600 text-white shadow-md" : "text-gray-500 hover:text-gray-800 hover:bg-gray-50"
+            }`}
+          >
+            <DollarSign className="w-4 h-4" /> Comisiones Asesores
           </button>
         </div>
 
@@ -1225,6 +1493,158 @@ export default function BusinessReportsPage() {
                       totalItems={filteredMovements.length}
                       pageSize={6}
                       onPageChange={(p) => setKardexPage(p)}
+                      className="border-t border-gray-100 bg-gray-50 px-4 py-3"
+                    />
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* TAB CONTENT: COMISIONES */}
+            {activeTab === "comisiones" && (
+              <div className="space-y-6">
+                <div className="flex justify-between items-center bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex-wrap gap-4">
+                  <div>
+                    <h3 className="text-base font-bold text-gray-900">Comisiones de Asesores de Venta</h3>
+                    <p className="text-xs text-gray-400 mt-0.5">Control de comisiones y rendimiento comercial por asesor asignado en caja.</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={exportCommissionsExcel}
+                      className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 border border-gray-200 text-gray-700 text-xs font-bold rounded-xl shadow-sm hover:bg-emerald-50 hover:border-emerald-200 hover:text-emerald-700 transition-all"
+                    >
+                      <FileDown className="w-4 h-4" /> Exportar Excel
+                    </button>
+                    <button
+                      onClick={exportCommissionsPdf}
+                      className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-xs font-bold rounded-xl shadow-sm hover:bg-indigo-700 transition-all"
+                    >
+                      <FileDown className="w-4 h-4" /> Exportar PDF
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-6">
+                  <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Volumen Total Asesores</span>
+                    <span className="text-xl font-extrabold text-indigo-600">S/ {advisorStats.totalSalesVol.toFixed(2)}</span>
+                  </div>
+                  <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Total Comisiones</span>
+                    <span className="text-xl font-extrabold text-indigo-600">S/ {advisorStats.totalCommAmt.toFixed(2)}</span>
+                  </div>
+                  <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Tasa Comisión Promedio</span>
+                    <span className="text-xl font-extrabold text-indigo-600">{advisorStats.avgCommPercent.toFixed(2)}%</span>
+                  </div>
+                  <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Cantidad de Ventas</span>
+                    <span className="text-xl font-extrabold text-indigo-600">{advisorStats.count} ventas</span>
+                  </div>
+                </div>
+
+                {/* Performance Breakdown per Advisor */}
+                <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+                  <h3 className="text-sm font-bold text-gray-800 mb-4">Rendimiento por Asesor</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-50 text-gray-500 uppercase text-[10px] font-bold">
+                        <tr>
+                          <th className="px-5 py-3 text-left">Asesor de Venta</th>
+                          <th className="px-5 py-3 text-center">Tasa Base</th>
+                          <th className="px-5 py-3 text-center">Ventas Realizadas</th>
+                          <th className="px-5 py-3 text-right">Volumen Vendido</th>
+                          <th className="px-5 py-3 text-right">Comisión Generada</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 font-semibold text-gray-700">
+                        {perAdvisorStats.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="text-center py-6 text-xs text-gray-400">
+                              Ningún asesor tiene operaciones registradas en el período seleccionado.
+                            </td>
+                          </tr>
+                        ) : (
+                          perAdvisorStats.map((ast: any) => (
+                            <tr key={ast.id} className="hover:bg-slate-50/20 transition-colors">
+                              <td className="px-5 py-3 text-gray-900 font-extrabold">{ast.name}</td>
+                              <td className="px-5 py-3 text-center text-gray-500">{ast.baseRate}%</td>
+                              <td className="px-5 py-3 text-center text-gray-500">{ast.salesCount}</td>
+                              <td className="px-5 py-3 text-right text-gray-900">S/ {ast.salesVol.toFixed(2)}</td>
+                              <td className="px-5 py-3 text-right text-indigo-600 font-black">S/ {ast.commAmt.toFixed(2)}</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Detailed Transactions List */}
+                <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+                  <div className="p-4 bg-slate-50/50 border-b border-gray-100 flex justify-between text-xs font-bold text-gray-500">
+                    <span>Lista Detallada de Transacciones con Asesor</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-50 text-gray-500 uppercase text-xs font-bold">
+                        <tr>
+                          <th className="px-5 py-4 text-left">Fecha/Hora</th>
+                          <th className="px-5 py-4 text-left">Asesor</th>
+                          <th className="px-5 py-4 text-left">Glosa/Detalle</th>
+                          <th className="px-5 py-4 text-left">Sede</th>
+                          <th className="px-5 py-4 text-right">Monto Venta</th>
+                          <th className="px-5 py-4 text-center">% Comis.</th>
+                          <th className="px-5 py-4 text-right">Comisión S/</th>
+                          <th className="px-5 py-4 text-left">Vendedor</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {paginatedAdvisorSales.length === 0 ? (
+                          <tr>
+                            <td colSpan={8} className="text-center py-8 text-xs text-gray-400 font-bold">
+                              No hay transacciones asociadas a asesores en este filtro.
+                            </td>
+                          </tr>
+                        ) : (
+                          paginatedAdvisorSales.map((s: any) => {
+                            const rate = s.commissionPercentage ?? s.advisor?.commissionPercentage ?? 0;
+                            const commAmt = s.commissionAmount ?? (s.amount * rate) / 100;
+                            return (
+                              <tr key={s.id} className="hover:bg-slate-50/40 transition-colors">
+                                <td className="px-5 py-4 text-gray-500 whitespace-nowrap text-xs">
+                                  {format(new Date(s.date), "dd/MM/yyyy HH:mm")}
+                                </td>
+                                <td className="px-5 py-4 text-gray-900 font-bold text-xs whitespace-nowrap">
+                                  {s.advisor?.name || "—"}
+                                </td>
+                                <td className="px-5 py-4 text-gray-600 font-semibold">{s.description || "Venta POS"}</td>
+                                <td className="px-5 py-4 text-gray-600 font-semibold text-xs whitespace-nowrap">
+                                  {s.branch?.name || "Sede Central"}
+                                </td>
+                                <td className="px-5 py-4 text-right font-bold text-gray-900">S/ {s.amount.toFixed(2)}</td>
+                                <td className="px-5 py-4 text-center">
+                                  <span className="text-xs bg-slate-100 text-gray-600 font-bold px-2 py-0.5 rounded">
+                                    {rate}%
+                                  </span>
+                                </td>
+                                <td className="px-5 py-4 text-right font-black text-indigo-700">S/ {commAmt.toFixed(2)}</td>
+                                <td className="px-5 py-4 text-gray-500 text-xs whitespace-nowrap">
+                                  {s.user ? `${s.user.name} ${s.user.lastName || ""}` : "—"}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  {filteredAdvisorSales.length > 0 && (
+                    <Pagination
+                      currentPage={commissionsPage}
+                      totalItems={filteredAdvisorSales.length}
+                      pageSize={6}
+                      onPageChange={(p) => setCommissionsPage(p)}
                       className="border-t border-gray-100 bg-gray-50 px-4 py-3"
                     />
                   )}

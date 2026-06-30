@@ -21,6 +21,8 @@ import PendingPage from "../pages/PendingPage";
 import BusinessHistoryPage from "../pages/BusinessHistoryPage";
 import BusinessBranchesPage from "../pages/BusinessBranchesPage";
 import BusinessWorkersPage from "../pages/BusinessWorkersPage";
+import BusinessAdvisorsPage from "../pages/BusinessAdvisorsPage";
+import BusinessCommissionsPage from "../pages/BusinessCommissionsPage";
 
 import LandingPage from "../pages/LandingPage";
 
@@ -128,6 +130,22 @@ export default function AppRoutes() {
         element={
           <ProtectedRoute>
             <BusinessWorkersPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/business-advisors"
+        element={
+          <ProtectedRoute>
+            <BusinessAdvisorsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/business-commissions"
+        element={
+          <ProtectedRoute>
+            <BusinessCommissionsPage />
           </ProtectedRoute>
         }
       />

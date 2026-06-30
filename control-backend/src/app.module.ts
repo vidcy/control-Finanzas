@@ -21,6 +21,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { InventoryMovementsModule } from './inventory-movements/inventory-movements.module';
 import { AuditModule } from './audit/audit.module';
 import { BranchesModule } from './branches/branches.module';
+import { AdvisorsModule } from './advisors/advisors.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { BranchesModule } from './branches/branches.module';
     InventoryMovementsModule,
     AuditModule,
     BranchesModule,
+    AdvisorsModule,
     ConfigModule.forRoot({
       isGlobal: true,
     }),

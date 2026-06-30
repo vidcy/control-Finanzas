@@ -33,6 +33,7 @@ import {
   type InventoryMovement
 } from "../services/product.api";
 import { listCategoriesRequest } from "../services/category.api";
+import { getBranchesRequest } from "../services/branch.api";
 import API from "../services/axios";
 import { format } from "date-fns";
 import { toast } from "react-hot-toast";
@@ -64,10 +65,12 @@ export default function BusinessKardexPage() {
   const [movements, setMovements] = useState<InventoryMovement[]>([]);
   const [brands, setBrands] = useState<any[]>([]);
   const [families, setFamilies] = useState<any[]>([]);
+  const [branches, setBranches] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Filters State
   const [selectedProductId, setSelectedProductId] = useState<string>("ALL");
+  const [selectedBranchId, setSelectedBranchId] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<string>("ALL"); // ALL, IN, OUT, ADJUSTMENT, REVERT
   const [filterBrandId, setFilterBrandId] = useState("");
@@ -86,6 +89,7 @@ export default function BusinessKardexPage() {
 
   // Stock Adjustment Form States
   const [adjustProductId, setAdjustProductId] = useState("");
+  const [adjustBranchId, setAdjustBranchId] = useState("");
   const [adjustType, setAdjustType] = useState<"IN" | "OUT">("IN");
   const [adjustQty, setAdjustQty] = useState<number>(0);
   const [adjustReason, setAdjustReason] = useState("Ajuste manual de inventario");
@@ -95,16 +99,18 @@ export default function BusinessKardexPage() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [prodsData, movsData, brandsData, familiesData] = await Promise.all([
+      const [prodsData, movsData, brandsData, familiesData, branchesData] = await Promise.all([
         getProductsRequest(),
         getInventoryMovementsRequest(),
         getBrandsRequest(),
-        getFamiliesRequest()
+        getFamiliesRequest(),
+        getBranchesRequest()
       ]);
       setProducts(prodsData);
       setMovements(movsData);
       setBrands(brandsData);
       setFamilies(familiesData);
+      setBranches(branchesData);
     } catch (err: any) {
       toast.error("Error al cargar la información del Kardex");
     } finally {
@@ -116,13 +122,16 @@ export default function BusinessKardexPage() {
     loadData();
   }, []);
 
-  // Compute Running Kardex Balances Chronologically per Product
+  // Compute Running Kardex Balances Chronologically per Product, filtered by branch
   const computedMovementsMap = useMemo(() => {
     const map: Record<string, EnrichedMovement[]> = {};
 
-    // Group movements by product
+    // Group movements by product, filtering by branch if selected
     const grouped: Record<string, InventoryMovement[]> = {};
     movements.forEach((m) => {
+      if (selectedBranchId !== "ALL" && m.branchId !== selectedBranchId) {
+        return;
+      }
       if (!grouped[m.productId]) {
         grouped[m.productId] = [];
       }
@@ -173,10 +182,7 @@ export default function BusinessKardexPage() {
           computedTotalCost: totalCost,
           computedRunningCPP: runningCPP,
           computedRunningValue: runningQty * runningCPP,
-          computedStockResult:
-            m.stockResult !== null && m.stockResult !== undefined
-              ? m.stockResult
-              : runningQty
+          computedStockResult: runningQty
         };
       });
 
@@ -185,24 +191,28 @@ export default function BusinessKardexPage() {
     });
 
     return map;
-  }, [movements, products]);
+  }, [movements, products, selectedBranchId]);
 
-  // Reconciliation Check
+  // Reconciliation Check based on Selected Sede stock
   const isReconciled = useMemo(() => {
     let reconciled = true;
     products.forEach((p) => {
       const prodMovs = computedMovementsMap[p.id] || [];
+      const targetStock = selectedBranchId === "ALL"
+        ? p.stock
+        : (p.branchStocks?.find((bs) => bs.branchId === selectedBranchId)?.stock ?? 0);
+
       if (prodMovs.length > 0) {
         const lastMov = prodMovs[0];
-        if (p.stock !== lastMov.computedStockResult) {
+        if (targetStock !== lastMov.computedStockResult) {
           reconciled = false;
         }
-      } else if (p.stock !== 0) {
+      } else if (targetStock !== 0) {
         reconciled = false;
       }
     });
     return reconciled;
-  }, [products, computedMovementsMap]);
+  }, [products, computedMovementsMap, selectedBranchId]);
 
   // Seeding Demo Data
   const handleSeedDemoData = async () => {
@@ -320,19 +330,41 @@ export default function BusinessKardexPage() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [selectedProductId, searchQuery, filterType, filterBrandId, filterFamilyId, dateFrom, dateTo]);
+  }, [selectedProductId, selectedBranchId, searchQuery, filterType, filterBrandId, filterFamilyId, dateFrom, dateTo]);
 
-  // Metrics calculations
+  // Metrics calculations based on selected Branch stock
   const metrics = useMemo(() => {
     // Inventory Valuation
-    const totalValuation = products.reduce((acc, p) => acc + p.stock * p.costPrice, 0);
+    const totalValuation = products.reduce((acc, p) => {
+      const stock = selectedBranchId === "ALL"
+        ? p.stock
+        : (p.branchStocks?.find(bs => bs.branchId === selectedBranchId)?.stock ?? 0);
+      return acc + stock * p.costPrice;
+    }, 0);
+
     // Total Stock units
-    const totalStock = products.reduce((acc, p) => acc + p.stock, 0);
+    const totalStock = products.reduce((acc, p) => {
+      const stock = selectedBranchId === "ALL"
+        ? p.stock
+        : (p.branchStocks?.find(bs => bs.branchId === selectedBranchId)?.stock ?? 0);
+      return acc + stock;
+    }, 0);
+
     // Low stock warnings
-    const lowStockCount = products.filter((p) => p.stock <= p.minStock).length;
+    const lowStockCount = products.filter((p) => {
+      const stock = selectedBranchId === "ALL"
+        ? p.stock
+        : (p.branchStocks?.find(bs => bs.branchId === selectedBranchId)?.stock ?? 0);
+      return stock <= p.minStock;
+    }).length;
+
     // Entry / Exit ratios
-    const entriesCount = movements.filter((m) => m.type === "IN").length;
-    const exitsCount = movements.filter((m) => m.type === "OUT").length;
+    const filteredMovs = selectedBranchId === "ALL"
+      ? movements
+      : movements.filter(m => m.branchId === selectedBranchId);
+
+    const entriesCount = filteredMovs.filter((m) => m.type === "IN").length;
+    const exitsCount = filteredMovs.filter((m) => m.type === "OUT").length;
 
     return {
       totalValuation,
@@ -340,7 +372,7 @@ export default function BusinessKardexPage() {
       lowStockCount,
       rotation: { entriesCount, exitsCount }
     };
-  }, [products, movements]);
+  }, [products, movements, selectedBranchId]);
 
   // Sparkline chart data for selected product or overview
   const chartData = useMemo(() => {
@@ -358,16 +390,21 @@ export default function BusinessKardexPage() {
         }));
     }
 
-    // Default overview: top 8 products by valuation
+    // Default overview: top 8 products by valuation in the selected branch
     return [...products]
-      .sort((a, b) => b.stock * b.costPrice - a.stock * a.costPrice)
-      .slice(0, 8)
-      .map((p) => ({
-        name: p.name.substring(0, 12),
-        valor: p.stock * p.costPrice,
-        stock: p.stock
-      }));
-  }, [selectedProductId, computedMovementsMap, products]);
+      .map((p) => {
+        const stock = selectedBranchId === "ALL"
+          ? p.stock
+          : (p.branchStocks?.find(bs => bs.branchId === selectedBranchId)?.stock ?? 0);
+        return {
+          name: p.name.substring(0, 12),
+          valor: stock * p.costPrice,
+          stock: stock
+        };
+      })
+      .sort((a, b) => b.valor - a.valor)
+      .slice(0, 8);
+  }, [selectedProductId, computedMovementsMap, products, selectedBranchId]);
 
   // Handle Manual Stock Adjustment
   const handleSaveAdjustmentSubmit = async (e: React.FormEvent) => {
@@ -381,6 +418,21 @@ export default function BusinessKardexPage() {
       return;
     }
 
+    const product = products.find((p) => p.id === adjustProductId);
+    if (!product) {
+      toast.error("Producto no encontrado");
+      return;
+    }
+
+    const currentBranchStock = adjustBranchId === "ALL" || !adjustBranchId
+      ? product.stock
+      : (product.branchStocks?.find((bs: any) => bs.branchId === adjustBranchId)?.stock ?? 0);
+
+    if (adjustType === "OUT" && adjustQty > currentBranchStock) {
+      toast.error(`No puede retirar más stock del disponible en esta sede (Disponible: ${currentBranchStock})`);
+      return;
+    }
+
     setIsConfirmModalOpen(true);
   };
 
@@ -391,18 +443,21 @@ export default function BusinessKardexPage() {
       const product = products.find((p) => p.id === adjustProductId);
       if (!product) throw new Error("Producto no encontrado");
 
-      // Calculate final target stock
+      // Calculate new global stock for the product
       const stockDiff = adjustType === "IN" ? adjustQty : -adjustQty;
-      const targetStock = product.stock + stockDiff;
+      const targetGlobalStock = product.stock + stockDiff;
 
-      if (targetStock < 0) {
-        toast.error("El stock no puede ser negativo tras el ajuste.");
+      if (targetGlobalStock < 0) {
+        toast.error("El stock global no puede ser negativo tras el ajuste.");
         setIsSavingAdjustment(false);
         return;
       }
 
-      // Update product stock directly (triggers ADJUSTMENT movement automatically in backend service)
-      await updateProductRequest(adjustProductId, { stock: targetStock });
+      // Update product stock directly and pass branchId
+      await updateProductRequest(adjustProductId, {
+        stock: targetGlobalStock,
+        branchId: adjustBranchId || undefined
+      } as any);
 
       toast.success("Ajuste de inventario registrado con éxito");
       setIsAdjustModalOpen(false);
@@ -502,9 +557,10 @@ export default function BusinessKardexPage() {
       doc.rect(0, 0, 297, 24, "F");
       
       doc.setTextColor(255, 255, 255);
-      doc.setFontSize(16);
+      doc.setFontSize(14);
       doc.setFont("helvetica", "bold");
-      doc.text("KARDEX INVENTARIO VALORADO (CPP)", 14, 10);
+      const branchLabel = selectedBranchId === "ALL" ? "CONSOLIDADO GLOBAL" : (branches.find(b => b.id === selectedBranchId)?.name || "").toUpperCase();
+      doc.text(`KARDEX VALORADO (CPP) - ${branchLabel}`, 14, 10);
       
       doc.setFontSize(9);
       doc.setFont("helvetica", "normal");
@@ -738,7 +794,10 @@ export default function BusinessKardexPage() {
             </button>
 
             <button
-              onClick={() => setIsAdjustModalOpen(true)}
+              onClick={() => {
+                setAdjustBranchId(selectedBranchId !== "ALL" ? selectedBranchId : (branches[0]?.id || ""));
+                setIsAdjustModalOpen(true);
+              }}
               className="px-4 py-3 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs rounded-2xl shadow-md hover:shadow-teal-100 transition-all flex items-center gap-2 active:scale-95"
             >
               <PlusCircle className="w-4 h-4" />
@@ -959,11 +1018,21 @@ export default function BusinessKardexPage() {
                     <p className="text-sm font-black text-gray-700 mt-1">{selectedProductDetail.minStock} {selectedProductDetail.unit}</p>
                   </div>
                   <div className="p-3 bg-gray-50/30 rounded-xl border border-gray-100">
-                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">Stock Actual</p>
+                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">
+                      Stock {selectedBranchId === "ALL" ? "Global" : "en Sede"}
+                    </p>
                     <p className={`text-sm font-black mt-1 ${
-                      selectedProductDetail.stock <= selectedProductDetail.minStock ? "text-red-600" : "text-emerald-600"
+                      (() => {
+                        const stock = selectedBranchId === "ALL"
+                          ? selectedProductDetail.stock
+                          : (selectedProductDetail.branchStocks?.find((bs: any) => bs.branchId === selectedBranchId)?.stock ?? 0);
+                        return stock <= selectedProductDetail.minStock ? "text-red-650" : "text-emerald-600";
+                      })()
                     }`}>
-                      {selectedProductDetail.stock} {selectedProductDetail.unit}
+                      {selectedBranchId === "ALL"
+                        ? selectedProductDetail.stock
+                        : (selectedProductDetail.branchStocks?.find((bs: any) => bs.branchId === selectedBranchId)?.stock ?? 0)}{" "}
+                      {selectedProductDetail.unit}
                     </p>
                   </div>
                   <div className="p-3 bg-teal-50/30 rounded-xl border border-teal-100/50">
@@ -1007,7 +1076,7 @@ export default function BusinessKardexPage() {
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3">
+          <div className={`grid grid-cols-1 sm:grid-cols-2 ${branches.length > 1 ? "lg:grid-cols-8" : "lg:grid-cols-7"} gap-3`}>
             
             {/* Search query */}
             <div className="space-y-1">
@@ -1023,6 +1092,25 @@ export default function BusinessKardexPage() {
                 />
               </div>
             </div>
+
+            {/* Branch Selector (only if multiple branches exist) */}
+            {branches.length > 1 && (
+              <div className="space-y-1">
+                <label className="block text-[10px] font-bold text-gray-400 uppercase">Sede / Almacén</label>
+                <select
+                  value={selectedBranchId}
+                  onChange={(e) => setSelectedBranchId(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-2xl text-xs font-semibold text-gray-700 outline-none focus:bg-white focus:ring-2 focus:ring-teal-500 transition-all truncate"
+                >
+                  <option value="ALL">🏢 Consolidado (Todos)</option>
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      🏢 {b.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* Product Selector */}
             <div className="space-y-1">
@@ -1123,7 +1211,7 @@ export default function BusinessKardexPage() {
               {/* Header Blocks Row 1 */}
               <thead>
                 <tr className="bg-teal-700 text-white text-[10px] font-black uppercase tracking-wider text-center border-b border-teal-800">
-                  <th colSpan={3} className="px-4 py-3.5 text-left border-r border-teal-800">DOCUMENTACIÓN Y REFERENCIAS</th>
+                  <th colSpan={branches.length > 1 ? 4 : 3} className="px-4 py-3.5 text-left border-r border-teal-800">DOCUMENTACIÓN Y REFERENCIAS</th>
                   <th colSpan={3} className="px-4 py-3.5 border-r border-teal-800 bg-teal-800/40">ENTRADAS (INGRESOS A ALMACÉN)</th>
                   <th colSpan={3} className="px-4 py-3.5 border-r border-teal-800 bg-rose-900/10">SALIDAS (RETIROS DE ALMACÉN)</th>
                   <th colSpan={3} className="px-4 py-3.5 bg-teal-800/20">SALDOS RESULTANTES (VALORACIÓN CPP)</th>
@@ -1132,6 +1220,9 @@ export default function BusinessKardexPage() {
                 {/* Header Sub-columns Row 2 */}
                 <tr className="bg-teal-600/90 text-white text-[9px] font-black uppercase tracking-wider text-center border-b border-gray-100">
                   <th className="px-4 py-2.5 text-left border-r border-teal-700/50">Fecha y Hora</th>
+                  {branches.length > 1 && (
+                    <th className="px-4 py-2.5 text-left border-r border-teal-700/50">Sede</th>
+                  )}
                   <th className="px-4 py-2.5 text-left border-r border-teal-700/50">Producto / Item</th>
                   <th className="px-4 py-2.5 text-left border-r border-teal-700/50">Motivo / Operación</th>
                   
@@ -1159,6 +1250,9 @@ export default function BusinessKardexPage() {
                   Array.from({ length: 6 }).map((_, i) => (
                     <tr key={i} className="animate-pulse">
                       <td className="px-4 py-4"><div className="h-3 w-20 bg-gray-100 rounded"></div></td>
+                      {branches.length > 1 && (
+                        <td className="px-4 py-4"><div className="h-3 w-16 bg-gray-100 rounded"></div></td>
+                      )}
                       <td className="px-4 py-4"><div className="h-3 w-28 bg-gray-100 rounded"></div></td>
                       <td className="px-4 py-4"><div className="h-3.5 w-16 bg-gray-100 rounded-full"></div></td>
                       <td colSpan={9} className="px-4 py-4 bg-gray-50/20"><div className="h-3 w-full bg-gray-100 rounded"></div></td>
@@ -1167,7 +1261,7 @@ export default function BusinessKardexPage() {
                 ) : filteredMovements.length === 0 ? (
                   // Empty State
                   <tr>
-                    <td colSpan={12} className="py-16 text-center">
+                    <td colSpan={branches.length > 1 ? 13 : 12} className="py-16 text-center">
                       {movements.length === 0 ? (
                         <div className="flex flex-col items-center justify-center max-w-md mx-auto p-6 bg-slate-50/50 rounded-3xl border border-dashed border-gray-200 shadow-sm animate-fade-in">
                           <div className="p-3.5 bg-indigo-50 text-indigo-600 rounded-full mb-4 animate-bounce">
@@ -1224,6 +1318,13 @@ export default function BusinessKardexPage() {
                         <td className="px-4 py-3 text-left border-r border-gray-100 text-gray-500 font-mono text-[10px]">
                           {format(new Date(m.createdAt), "dd/MM/yy HH:mm")}
                         </td>
+
+                        {/* Sede/Branch column */}
+                        {branches.length > 1 && (
+                          <td className="px-4 py-3 text-left border-r border-gray-100 text-xs font-semibold text-gray-600">
+                            🏢 {m.branch?.name || "Almacén Central"}
+                          </td>
+                        )}
 
                         {/* Product Detail */}
                         <td className="px-4 py-3 text-left border-r border-gray-100">
@@ -1371,13 +1472,37 @@ export default function BusinessKardexPage() {
                 className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 outline-none focus:bg-white focus:ring-2 focus:ring-teal-500 transition-all"
               >
                 <option value="">-- Elija un producto --</option>
-                {products.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} (Stock actual: {p.stock} {p.unit})
-                  </option>
-                ))}
+                {products.map((p) => {
+                  const stockDetails = p.branchStocks && p.branchStocks.length > 0
+                    ? ` | ` + p.branchStocks.map(bs => `${branches.find(b => b.id === bs.branchId)?.name || "Sede"}: ${bs.stock}`).join(", ")
+                    : "";
+                  return (
+                    <option key={p.id} value={p.id}>
+                      {p.name} (Stock global: {p.stock} {p.unit}{stockDetails})
+                    </option>
+                  );
+                })}
               </select>
             </div>
+
+            {branches.length > 0 && (
+              <div className="space-y-1">
+                <label className="block text-[10px] font-black text-gray-400 uppercase">Sede / Almacén a Ajustar</label>
+                <select
+                  value={adjustBranchId}
+                  onChange={(e) => setAdjustBranchId(e.target.value)}
+                  required
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 outline-none focus:bg-white focus:ring-2 focus:ring-teal-500 transition-all"
+                >
+                  <option value="">-- Elija una sede --</option>
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      🏢 {b.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-4">
               
@@ -1466,6 +1591,9 @@ export default function BusinessKardexPage() {
             </p>
             <div className="p-3 bg-gray-50 rounded-xl border border-gray-100 text-xs font-bold text-gray-700 space-y-1">
               <p>Producto: <span className="text-teal-700">{products.find((p) => p.id === adjustProductId)?.name}</span></p>
+              {branches.length > 0 && (
+                <p>Sede/Almacén: <span className="text-indigo-700">{branches.find((b) => b.id === adjustBranchId)?.name || "Almacén Central"}</span></p>
+              )}
               <p>Ajuste: <span className={adjustType === "IN" ? "text-emerald-600" : "text-rose-600"}>
                 {adjustType === "IN" ? "Entrada (+)" : "Salida (-)"} de {adjustQty} unidades
               </span></p>

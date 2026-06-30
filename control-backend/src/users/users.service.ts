@@ -130,6 +130,7 @@ export class UsersService {
         businessLogo: true,
         businessBanner: true,
         parentId: true,
+        advisorLabel: true,
       },
     });
   }
@@ -145,6 +146,7 @@ export class UsersService {
       'businessRubro',
       'businessLogo',
       'businessBanner',
+      'advisorLabel',
     ];
     const updateData: any = {};
     for (const key of allowedFields) {

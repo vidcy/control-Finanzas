@@ -69,6 +69,9 @@ export default function BusinessBranchesPage() {
     try {
       const data = await getBranchesRequest();
       setBranches(data);
+      if (data.length > 0) {
+        setFromBranchId(data[0].id);
+      }
     } catch (error: any) {
       toast.error(error.message || "Error al cargar sedes");
     } finally {
@@ -417,81 +420,98 @@ export default function BusinessBranchesPage() {
                 <p className="text-gray-500 text-sm">Mueve existencias de productos de forma segura entre tus sucursales.</p>
               </div>
             </div>
+            {branches.length < 2 ? (
+              <div className="bg-slate-50 border border-slate-100 rounded-3xl p-8 text-center flex flex-col items-center justify-center">
+                <div className="p-4 bg-indigo-50 text-indigo-600 rounded-full mb-4">
+                  <ArrowRightLeft className="w-8 h-8" />
+                </div>
+                <h3 className="font-extrabold text-gray-800 text-lg">Traslados no disponibles</h3>
+                <p className="text-gray-500 text-sm mt-2 max-w-md">
+                  Se requiere registrar al menos una sede alterna adicional a la matriz en la pestaña <strong>Sedes / Sucursales</strong> para poder realizar traslados de mercadería entre ellas.
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                  {/* Product Selector */}
+                  <div className="col-span-full">
+                    <label className="block text-gray-700 font-extrabold mb-2">Producto a trasladar</label>
+                    <select
+                      value={selectedProductId}
+                      onChange={(e) => setSelectedProductId(e.target.value)}
+                      className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-rose-500 focus:bg-white transition-all font-semibold outline-none"
+                    >
+                      <option value="">-- Seleccione un Producto --</option>
+                      {products.map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} {p.sku ? `(SKU: ${p.sku})` : ""} - Stock Total: {p.stock} {p.unit}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-              {/* Product Selector */}
-              <div className="col-span-full">
-                <label className="block text-gray-700 font-extrabold mb-2">Producto a trasladar</label>
-                <select
-                  value={selectedProductId}
-                  onChange={(e) => setSelectedProductId(e.target.value)}
-                  className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-rose-500 focus:bg-white transition-all font-semibold outline-none"
+                  {/* Source Branch Selector */}
+                  <div>
+                    <label className="block text-gray-700 font-extrabold mb-2">Sede Origen</label>
+                    <select
+                      value={fromBranchId}
+                      onChange={(e) => setFromBranchId(e.target.value)}
+                      className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-rose-500 focus:bg-white transition-all font-semibold outline-none"
+                    >
+                      <option value="">-- Seleccione Origen --</option>
+                      {branches.map((b, index) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name} {index === 0 ? " (Almacén Central / Matriz)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                    {selectedProductId && fromBranchId && (
+                      <p className="text-xs font-bold text-gray-500 mt-1.5 flex items-center gap-1.5">
+                        <Info className="w-3.5 h-3.5 text-rose-500" />
+                        <span>Stock disponible en origen: <strong className="text-rose-600 font-extrabold">{sourceStock} {selectedProduct?.unit}</strong></span>
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Destination Branch Selector */}
+                  <div>
+                    <label className="block text-gray-700 font-extrabold mb-2">Sede Destino</label>
+                    <select
+                      value={toBranchId}
+                      onChange={(e) => setToBranchId(e.target.value)}
+                      className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-rose-500 focus:bg-white transition-all font-semibold outline-none"
+                    >
+                      <option value="">-- Seleccione Destino --</option>
+                      {branches.filter(b => b.id !== fromBranchId).map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name} {branches[0]?.id === b.id ? " (Almacén Central / Matriz)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Transfer Quantity */}
+                  <div className="col-span-full">
+                    <label className="block text-gray-700 font-extrabold mb-2">Cantidad a Trasladar</label>
+                    <input
+                      type="number"
+                      placeholder="Ej. 15"
+                      value={transferQty}
+                      onChange={(e) => setTransferQty(e.target.value === "" ? "" : Number(e.target.value))}
+                      className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-rose-500 focus:bg-white transition-all font-semibold outline-none"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  onClick={handlePreTransfer}
+                  className="w-full py-4 bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 text-white font-extrabold rounded-2xl shadow-lg shadow-rose-100 transition-all active:scale-95 flex items-center justify-center gap-2"
                 >
-                  <option value="">-- Seleccione un Producto --</option>
-                  {products.map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} {p.sku ? `(SKU: ${p.sku})` : ""} - Stock Total: {p.stock} {p.unit}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Source Branch Selector */}
-              <div>
-                <label className="block text-gray-700 font-extrabold mb-2">Sede Origen</label>
-                <select
-                  value={fromBranchId}
-                  onChange={(e) => setFromBranchId(e.target.value)}
-                  className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-rose-500 focus:bg-white transition-all font-semibold outline-none"
-                >
-                  <option value="">-- Seleccione Origen --</option>
-                  {branches.map(b => (
-                    <option key={b.id} value={b.id}>{b.name}</option>
-                  ))}
-                </select>
-                {selectedProductId && fromBranchId && (
-                  <p className="text-xs font-bold text-gray-500 mt-1.5 flex items-center gap-1.5">
-                    <Info className="w-3.5 h-3.5 text-rose-500" />
-                    <span>Stock disponible en origen: <strong className="text-rose-600 font-extrabold">{sourceStock} {selectedProduct?.unit}</strong></span>
-                  </p>
-                )}
-              </div>
-
-              {/* Destination Branch Selector */}
-              <div>
-                <label className="block text-gray-700 font-extrabold mb-2">Sede Destino</label>
-                <select
-                  value={toBranchId}
-                  onChange={(e) => setToBranchId(e.target.value)}
-                  className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-rose-500 focus:bg-white transition-all font-semibold outline-none"
-                >
-                  <option value="">-- Seleccione Destino --</option>
-                  {branches.map(b => (
-                    <option key={b.id} value={b.id}>{b.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Transfer Quantity */}
-              <div className="col-span-full">
-                <label className="block text-gray-700 font-extrabold mb-2">Cantidad a Trasladar</label>
-                <input
-                  type="number"
-                  placeholder="Ej. 15"
-                  value={transferQty}
-                  onChange={(e) => setTransferQty(e.target.value === "" ? "" : Number(e.target.value))}
-                  className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-rose-500 focus:bg-white transition-all font-semibold outline-none"
-                />
-              </div>
-            </div>
-
-            <button
-              onClick={handlePreTransfer}
-              className="w-full py-4 bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 text-white font-extrabold rounded-2xl shadow-lg shadow-rose-100 transition-all active:scale-95 flex items-center justify-center gap-2"
-            >
-              <ArrowRight className="w-5 h-5" />
-              <span>Solicitar Traslado de Inventario</span>
-            </button>
+                  <ArrowRight className="w-5 h-5" />
+                  <span>Solicitar Traslado de Inventario</span>
+                </button>
+              </>
+            )}
           </div>
         )}
 
@@ -534,9 +554,9 @@ export default function BusinessBranchesPage() {
                       <th className="py-4 px-6">Producto / SKU</th>
                       <th className="py-4 px-6">Clasificación</th>
                       <th className="py-4 px-6 text-center">Stock Global</th>
-                      {branches.map(b => (
+                      {branches.map((b, index) => (
                         <th key={b.id} className="py-4 px-6 text-center bg-rose-50/20 text-rose-700 font-extrabold">
-                          {b.name}
+                          {b.name} {index === 0 ? " (Almacén Central / Matriz)" : ""}
                         </th>
                       ))}
                     </tr>

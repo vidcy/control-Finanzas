@@ -108,4 +108,16 @@ export class UpdateTransactionDto {
   @IsOptional()
   @IsUUID()
   branchId?: string | null;
+
+  @IsOptional()
+  @IsUUID()
+  advisorId?: string | null;
+
+  @IsOptional()
+  @IsNumber()
+  commissionPercentage?: number | null;
+
+  @IsOptional()
+  @IsNumber()
+  commissionAmount?: number | null;
 }

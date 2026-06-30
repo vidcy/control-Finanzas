@@ -437,14 +437,32 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       }] : []),
     ...((!user?.parentId && user?.profiles?.includes("BUSINESS_WORKERS")) ||
       (user?.parentId && user?.profiles?.includes("BUSINESS_WORKERS"))
-      ? [{
-        name: "Personal / Roles",
-        path: "/business-workers",
-        icon: Users,
-        color: "from-indigo-500 to-blue-600",
-        bgActive: "bg-indigo-50 text-indigo-700",
-        profile: "BUSINESS_WORKERS",
-      }] : []),
+      ? [
+          {
+            name: "Personal / Roles",
+            path: "/business-workers",
+            icon: Users,
+            color: "from-indigo-500 to-blue-600",
+            bgActive: "bg-indigo-50 text-indigo-700",
+            profile: "BUSINESS_WORKERS",
+          },
+          {
+            name: `${user?.advisorLabel || "Asesor de venta"}es`,
+            path: "/business-advisors",
+            icon: Users,
+            color: "from-indigo-500 to-blue-600",
+            bgActive: "bg-indigo-50 text-indigo-700",
+            profile: "BUSINESS_WORKERS",
+          },
+          {
+            name: "Comisiones",
+            path: "/business-commissions",
+            icon: TrendingUp,
+            color: "from-emerald-500 to-teal-600",
+            bgActive: "bg-emerald-50 text-emerald-700",
+            profile: "BUSINESS_WORKERS",
+          }
+        ] : []),
   ];
 
   const activeMenu = activeWorkspace === "BUSINESS"

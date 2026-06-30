@@ -3,24 +3,19 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 async function main() {
-  const users = await prisma.user.findMany({
-    select: { id: true, email: true, name: true }
+  const branches = await prisma.branch.findMany({
+    include: {
+      stocks: {
+        include: {
+          product: true
+        }
+      }
+    }
   });
-  console.log('--- USERS ---');
-  console.log(users);
-
-  const products = await prisma.product.findMany({
-    include: { presentations: true }
-  });
-  console.log('--- PRODUCTS ---');
-  console.log(JSON.stringify(products, null, 2));
-
-  const shifts = await prisma.cashShift.findMany();
-  console.log('--- CASH SHIFTS ---');
-  console.log(shifts);
+  console.log('--- BRANCHES AND STOCKS ---');
+  console.log(JSON.stringify(branches, null, 2));
 }
 
 main()
   .catch((e) => console.error(e))
   .finally(() => prisma.$disconnect());
-

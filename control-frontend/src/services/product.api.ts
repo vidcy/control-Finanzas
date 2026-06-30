@@ -47,6 +47,8 @@ export interface InventoryMovement {
   stockResult?: number;
   documentId?: string;
   userId: string;
+  branchId?: string;
+  branch?: { id: string; name: string };
   createdAt: string;
 }
 
@@ -102,6 +104,9 @@ export const checkoutCartRequest = async (data: {
   categoryId: string;
   subCategoryId?: string | null;
   receiptUrl?: string | null;
+  advisorId?: string | null;
+  commissionPercentage?: number | null;
+  commissionAmount?: number | null;
 }) => {
   const res = await API.post("/products/checkout", data);
   return res.data;

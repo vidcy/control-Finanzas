@@ -168,8 +168,8 @@ export default function BusinessInventoryPage() {
 
   // Branch context — only used when BUSINESS_BRANCHES is enabled
   // const hasBranches = user?.profiles?.includes("BUSINESS_BRANCHES");
-  // const [branches, setBranches] = useState<any[]>([]);
-  // const [activeBranchId, setActiveBranchId] = useState<string>(""); // "" = all branches / no filter
+  const [branches, setBranches] = useState<any[]>([]);
+  const [activeBranchId, setActiveBranchId] = useState<string>(""); // "" = all branches / no filter
 
   // Core Data
   const [products, setProducts] = useState<Product[]>([]);
@@ -210,7 +210,7 @@ export default function BusinessInventoryPage() {
 
   useEffect(() => {
     setProductPage(1);
-  }, [searchTerm, filterBrandId, filterFamilyId]);
+  }, [searchTerm, filterBrandId, filterFamilyId, activeBranchId]);
 
   useEffect(() => {
     setOrderPage(1);
@@ -465,61 +465,106 @@ export default function BusinessInventoryPage() {
     localStorage.setItem("barcodeScannerSensitivity", String(scannerSensitivity));
   }, [scannerSensitivity]);
 
-  // Physical Barcode Scanner listener
+    // Keyboard/USB Scanner listener
   useEffect(() => {
     if (!scannerEnabled) return;
 
     let buffer = "";
     let lastKeyTime = Date.now();
+    let isFastTyping = false;
+    let firstCharLogged = "";
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore keys typed in input/textarea/select fields
-      if (
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement ||
-        e.target instanceof HTMLSelectElement
-      ) {
+      const currentTime = Date.now();
+      const timeDiff = currentTime - lastKeyTime;
+      lastKeyTime = currentTime;
+
+      // Ignore standard helper keys
+      if (e.key.length > 1 && e.key !== "Enter") {
         return;
       }
 
-      const currentTime = Date.now();
-      
-      // If time since last key is more than sensitivity limit, reset buffer
-      if (currentTime - lastKeyTime > scannerSensitivity) {
-        buffer = "";
+      const isFast = timeDiff <= scannerSensitivity;
+      if (isFast) {
+        isFastTyping = true;
+      } else {
+        isFastTyping = false;
       }
 
-      if (e.key === "Enter") {
-        if (buffer.length >= 3) {
-          e.preventDefault();
-          
-          // Successful scan!
-          playScannerBeep(850, 0.08);
-          setScanTestResult(buffer);
-          
-          // Search product
-          const cleanCode = buffer.trim().toLowerCase();
-          const match = products.find((p) => {
-            const matchesSku = p.sku && p.sku.toLowerCase() === cleanCode;
-            const matchesCodeRaw = p.customCode && String(p.customCode) === cleanCode;
-            const matchesCodePadded = p.customCode && String(p.customCode).padStart(4, "0") === cleanCode;
-            return matchesSku || matchesCodeRaw || matchesCodePadded;
-          });
+      if (isFastTyping) {
+        e.preventDefault();
 
-          if (match) {
-            handleOpenModal(match);
-            toast.success(`Producto encontrado: ${match.name}`);
-          } else {
-            toast.error(`Código escaneado: "${buffer}", pero no coincide con ningún producto.`);
+        // Anti-pollution cleanup for the first character that might have been typed slowly
+        if (buffer.length === 1 && firstCharLogged) {
+          const activeEl = document.activeElement;
+          if (
+            activeEl instanceof HTMLInputElement ||
+            activeEl instanceof HTMLTextAreaElement
+          ) {
+            const val = activeEl.value;
+            if (val.endsWith(firstCharLogged)) {
+              activeEl.value = val.slice(0, -1);
+              const ev = new Event("input", { bubbles: true });
+              activeEl.dispatchEvent(ev);
+            }
           }
-          
-          buffer = "";
+          firstCharLogged = "";
         }
-      } else if (e.key.length === 1) {
-        buffer += e.key;
-      }
 
-      lastKeyTime = currentTime;
+        if (e.key === "Enter") {
+          if (buffer.length >= 3) {
+            playScannerBeep(850, 0.08);
+            setScanTestResult(buffer);
+            
+            const cleanCode = buffer.trim().toLowerCase();
+            const match = products.find((p) => {
+              const matchesSku = p.sku && p.sku.toLowerCase() === cleanCode;
+              const matchesCodeRaw = p.customCode && String(p.customCode) === cleanCode;
+              const matchesCodePadded = p.customCode && String(p.customCode).padStart(4, "0") === cleanCode;
+              return matchesSku || matchesCodeRaw || matchesCodePadded;
+            });
+
+            if (match) {
+              handleOpenModal(match);
+              toast.success(`Producto encontrado: ${match.name}`);
+            } else {
+              toast.error(`Código escaneado: "${buffer}", pero no coincide con ningún producto.`);
+            }
+          }
+          buffer = "";
+          isFastTyping = false;
+        } else {
+          buffer += e.key;
+        }
+      } else {
+        // Slow key press
+        if (e.key === "Enter") {
+          if (buffer.length >= 3) {
+            e.preventDefault();
+            playScannerBeep(850, 0.08);
+            setScanTestResult(buffer);
+            
+            const cleanCode = buffer.trim().toLowerCase();
+            const match = products.find((p) => {
+              const matchesSku = p.sku && p.sku.toLowerCase() === cleanCode;
+              const matchesCodeRaw = p.customCode && String(p.customCode) === cleanCode;
+              const matchesCodePadded = p.customCode && String(p.customCode).padStart(4, "0") === cleanCode;
+              return matchesSku || matchesCodeRaw || matchesCodePadded;
+            });
+
+            if (match) {
+              handleOpenModal(match);
+              toast.success(`Producto encontrado: ${match.name}`);
+            } else {
+              toast.error(`Código escaneado: "${buffer}", pero no coincide con ningún producto.`);
+            }
+            buffer = "";
+          }
+        } else {
+          buffer = e.key;
+          firstCharLogged = e.key;
+        }
+      }
     };
 
     window.addEventListener("keydown", handleKeyDown);
@@ -530,9 +575,24 @@ export default function BusinessInventoryPage() {
 
   // Premium metrics computations
   const totalProducts = products.length;
-  const criticalStockCount = products.filter(p => p.stock <= p.minStock).length;
-  const totalInventoryCost = products.reduce((acc, p) => acc + (p.stock * p.costPrice), 0);
-  const totalInventorySale = products.reduce((acc, p) => acc + (p.stock * p.salePrice), 0);
+  const criticalStockCount = products.filter(p => {
+    const displayStock = activeBranchId
+      ? (p.branchStocks?.find((bs: any) => bs.branchId === activeBranchId)?.stock ?? 0)
+      : p.stock;
+    return displayStock <= p.minStock;
+  }).length;
+  const totalInventoryCost = products.reduce((acc, p) => {
+    const displayStock = activeBranchId
+      ? (p.branchStocks?.find((bs: any) => bs.branchId === activeBranchId)?.stock ?? 0)
+      : p.stock;
+    return acc + (displayStock * p.costPrice);
+  }, 0);
+  const totalInventorySale = products.reduce((acc, p) => {
+    const displayStock = activeBranchId
+      ? (p.branchStocks?.find((bs: any) => bs.branchId === activeBranchId)?.stock ?? 0)
+      : p.stock;
+    return acc + (displayStock * p.salePrice);
+  }, 0);
   const potentialProfit = totalInventorySale - totalInventoryCost;
   const expectedProfitMargin = totalInventorySale > 0 ? (potentialProfit / totalInventorySale) * 100 : 0;
 
@@ -547,15 +607,13 @@ export default function BusinessInventoryPage() {
       setCategories(cats.filter((c: any) => c.type === "EXPENSE"));
       await fetchBrandsAndFamilies();
       // Load branches if multi-branch module is enabled
-      // if (hasBranches) {
-      //   try {
-      //     const { getBranchesRequest } = await import("../services/branch.api");
-      //     const branchData = await getBranchesRequest();
-      //     setBranches(branchData);
-      //   } catch {
-      //     // Not critical — just means no branch data
-      //   }
-      // }
+      try {
+        const { getBranchesRequest } = await import("../services/branch.api");
+        const branchData = await getBranchesRequest();
+        setBranches(branchData);
+      } catch {
+        // Not critical — just means no branch data
+      }
     } catch (error) {
       toast.error("Error al cargar inventario");
     } finally {
@@ -1492,17 +1550,22 @@ export default function BusinessInventoryPage() {
       return;
     }
     const XLSX = await import("xlsx");
-    const dataToExport = filteredProducts.map(p => ({
-      "SKU": p.sku || "",
-      "Nombre": p.name || "",
-      "Familia": p.family?.name || "",
-      "Marca": p.brand?.name || "",
-      "Stock Actual": p.stock || 0,
-      "Unidad": p.unit || "",
-      "Costo Compra (S/)": p.costPrice || 0,
-      "Precio Venta (S/)": p.salePrice || 0,
-      "Precio Ajustado (S/)": p.adjustedPrice || ""
-    }));
+    const dataToExport = filteredProducts.map(p => {
+      const displayStock = activeBranchId
+        ? (p.branchStocks?.find((bs: any) => bs.branchId === activeBranchId)?.stock ?? 0)
+        : p.stock;
+      return {
+        "SKU": p.sku || "",
+        "Nombre": p.name || "",
+        "Familia": p.family?.name || "",
+        "Marca": p.brand?.name || "",
+        "Stock Actual": displayStock,
+        "Unidad": p.unit || "",
+        "Costo Compra (S/)": p.costPrice || 0,
+        "Precio Venta (S/)": p.salePrice || 0,
+        "Precio Ajustado (S/)": p.adjustedPrice || ""
+      };
+    });
 
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
     const workbook = XLSX.utils.book_new();
@@ -1800,10 +1863,26 @@ export default function BusinessInventoryPage() {
                     </select>
                   )}
 
+                  {/* Sede/Almacén filter */}
+                  {branches.length > 0 && (
+                    <select
+                      value={activeBranchId}
+                      onChange={(e) => setActiveBranchId(e.target.value)}
+                      className="bg-white border border-gray-100 shadow-sm rounded-2xl px-4 py-3.5 text-sm font-bold text-gray-700 outline-none focus:border-indigo-400 min-w-[160px]"
+                    >
+                      <option value="">Almacén General (Todos)</option>
+                      {branches.map((b, index) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name} {index === 0 ? " (Almacén Central / Matriz)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
                   {/* Clear all filters */}
-                  {(filterBrandId || filterFamilyId) && (
+                  {(filterBrandId || filterFamilyId || activeBranchId) && (
                     <button
-                      onClick={() => { setFilterBrandId(""); setFilterFamilyId(""); }}
+                      onClick={() => { setFilterBrandId(""); setFilterFamilyId(""); setActiveBranchId(""); }}
                       className="px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-bold rounded-2xl transition-all whitespace-nowrap"
                     >
                       Limpiar filtros
@@ -1827,8 +1906,14 @@ export default function BusinessInventoryPage() {
                 </div>
 
                 {/* Active filter chips */}
-                {(filterBrandId || filterFamilyId) && (
+                {(filterBrandId || filterFamilyId || activeBranchId) && (
                   <div className="flex flex-wrap gap-2">
+                    {activeBranchId && (
+                      <span className="px-3 py-1.5 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-xl border border-emerald-100 flex items-center gap-1.5">
+                        Almacén: {branches.find(b => b.id === activeBranchId)?.name} {branches[0]?.id === activeBranchId ? "(Almacén Central / Matriz)" : ""}
+                        <button onClick={() => setActiveBranchId("")} className="text-emerald-400 hover:text-emerald-700 font-black">✕</button>
+                      </span>
+                    )}
                     {filterBrandId && (
                       <span className="px-3 py-1.5 bg-blue-50 text-blue-700 text-xs font-bold rounded-xl border border-blue-100 flex items-center gap-1.5">
                         Marca: {brands.find(b => b.id === filterBrandId)?.name}
@@ -1872,38 +1957,42 @@ export default function BusinessInventoryPage() {
                       </p>
                     </div>
                   ) : (
-                    paginatedProducts.map((p) => (
-                      <div
-                        key={p.id}
-                        className="bg-white rounded-3xl border border-gray-100 shadow-sm hover:shadow-xl hover:border-indigo-100 transition-all duration-300 group overflow-hidden flex flex-col relative"
-                      >
-                        {/* Product Image */}
-                        <div className="relative w-full h-36 bg-gradient-to-br from-gray-50 to-indigo-50 overflow-hidden">
-                          {p.imageUrl ? (
-                            <img
-                              src={getReceiptAbsoluteUrl(p.imageUrl) || p.imageUrl}
-                              alt={p.name}
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                              onError={(e) => {
-                                (e.target as HTMLImageElement).style.display = "none";
-                              }}
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center">
-                              <Package className="w-12 h-12 text-indigo-100" />
+                    paginatedProducts.map((p) => {
+                      const displayStock = activeBranchId
+                        ? (p.branchStocks?.find((bs: any) => bs.branchId === activeBranchId)?.stock ?? 0)
+                        : p.stock;
+                      return (
+                        <div
+                          key={p.id}
+                          className="bg-white rounded-3xl border border-gray-100 shadow-sm hover:shadow-xl hover:border-indigo-100 transition-all duration-300 group overflow-hidden flex flex-col relative"
+                        >
+                          {/* Product Image */}
+                          <div className="relative w-full h-36 bg-gradient-to-br from-gray-50 to-indigo-50 overflow-hidden">
+                            {p.imageUrl ? (
+                              <img
+                                src={getReceiptAbsoluteUrl(p.imageUrl) || p.imageUrl}
+                                alt={p.name}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).style.display = "none";
+                                }}
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center">
+                                <Package className="w-12 h-12 text-indigo-100" />
+                              </div>
+                            )}
+                            {/* Stock status badge */}
+                            <div
+                              className={`absolute top-3 right-3 px-2.5 py-1 rounded-xl text-[9px] font-black uppercase tracking-wider shadow-sm ${
+                                displayStock <= p.minStock
+                                  ? "bg-rose-500 text-white"
+                                  : "bg-emerald-500 text-white"
+                              }`}
+                            >
+                              {displayStock <= p.minStock ? "Stock bajo" : "En Stock"}
                             </div>
-                          )}
-                          {/* Stock status badge */}
-                          <div
-                            className={`absolute top-3 right-3 px-2.5 py-1 rounded-xl text-[9px] font-black uppercase tracking-wider shadow-sm ${
-                              p.stock <= p.minStock
-                                ? "bg-rose-500 text-white"
-                                : "bg-emerald-500 text-white"
-                            }`}
-                          >
-                            {p.stock <= p.minStock ? "Stock bajo" : "En Stock"}
                           </div>
-                        </div>
 
                         {/* Card Info */}
                         <div className="p-5 flex-1 flex flex-col">
@@ -1961,10 +2050,10 @@ export default function BusinessInventoryPage() {
                                 Stock disponible
                               </div>
                               <div className="font-black text-gray-900 text-xs flex items-baseline gap-1">
-                                <span className="text-sm font-extrabold">{formatStock(p.stock, p.unit, p.presentations)}</span>
+                                <span className="text-sm font-extrabold">{formatStock(displayStock, p.unit, p.presentations)}</span>
                               </div>
                               <div className="text-[9px] text-gray-400 mt-0.5">
-                                ({p.stock} {p.unit} base • min: {p.minStock})
+                                ({displayStock} {p.unit} base • min: {p.minStock})
                               </div>
                             </div>
 
@@ -2034,7 +2123,8 @@ export default function BusinessInventoryPage() {
                           </div>
                         </div>
                       </div>
-                    ))
+                    )
+                  })
                   )}
                 </div>
                 {/* Pagination for products grid */}
@@ -2082,6 +2172,7 @@ export default function BusinessInventoryPage() {
                             name: "",
                             description: "",
                             sku: "",
+                            color: "",
                             costPrice: 0,
                             salePrice: 0,
                             adjustedPrice: 0,

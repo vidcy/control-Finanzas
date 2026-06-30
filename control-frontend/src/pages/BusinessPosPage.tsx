@@ -8,6 +8,8 @@ import {
 import type { Product } from "../services/product.api";
 import { listCategoriesRequest } from "../services/category.api";
 import { getActiveCashShiftRequest } from "../services/cash-shift.api";
+import { getAdvisorsRequest } from "../services/advisor.api";
+import type { Advisor } from "../services/advisor.api";
 import {
   getTransactionsRequest,
   updateTransactionRequest,
@@ -19,7 +21,7 @@ import ReceiptUploader, {
 } from "../components/ui/ImageUploader";
 import Pagination from "../components/ui/Pagination";
 
-import { formatStock } from "./BusinessInventoryPage";
+import { formatStock, playScannerBeep } from "./BusinessInventoryPage";
 import {
   ShoppingCart,
   Search,
@@ -164,6 +166,9 @@ export default function BusinessPosPage() {
   // Checkout payment states
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [amountPaid, setAmountPaid] = useState("");
+  const [advisors, setAdvisors] = useState<Advisor[]>([]);
+  const [selectedAdvisorId, setSelectedAdvisorId] = useState<string>("");
+  const [commissionPercentage, setCommissionPercentage] = useState<number | "">("");
 
   // Venta Libre Modal
   const [isCustomSaleOpen, setIsCustomSaleOpen] = useState(false);
@@ -396,12 +401,14 @@ export default function BusinessPosPage() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [prods, cats, shiftRes] = await Promise.all([
+      const [prods, cats, shiftRes, advisorsList] = await Promise.all([
         getProductsRequest(),
         listCategoriesRequest(),
         getActiveCashShiftRequest().catch(() => null),
+        getAdvisorsRequest({ isActive: true }).catch(() => []),
       ]);
       setProducts(prods);
+      setAdvisors(advisorsList);
 
       const allIncomeCats = cats.filter(
         (c: any) => c.type === "INCOME" && !c.parentId,
@@ -519,32 +526,70 @@ export default function BusinessPosPage() {
 
     let buffer = "";
     let lastKeyTime = Date.now();
+    let isFastTyping = false;
+    let firstCharLogged = "";
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement ||
-        e.target instanceof HTMLSelectElement
-      ) {
+      const currentTime = Date.now();
+      const timeDiff = currentTime - lastKeyTime;
+      lastKeyTime = currentTime;
+
+      // Ignore standard helper keys
+      if (e.key.length > 1 && e.key !== "Enter") {
         return;
       }
 
-      const currentTime = Date.now();
-      if (currentTime - lastKeyTime > scannerSensitivity) {
-        buffer = "";
+      const isFast = timeDiff <= scannerSensitivity;
+      if (isFast) {
+        isFastTyping = true;
+      } else {
+        isFastTyping = false;
       }
 
-      if (e.key === "Enter") {
-        if (buffer.length >= 3) {
-          e.preventDefault();
-          handleBarcodeScanned(buffer);
-          buffer = "";
+      if (isFastTyping) {
+        e.preventDefault();
+
+        // Anti-pollution cleanup for the first character that might have been typed slowly
+        if (buffer.length === 1 && firstCharLogged) {
+          const activeEl = document.activeElement;
+          if (
+            activeEl instanceof HTMLInputElement ||
+            activeEl instanceof HTMLTextAreaElement
+          ) {
+            const val = activeEl.value;
+            if (val.endsWith(firstCharLogged)) {
+              activeEl.value = val.slice(0, -1);
+              const ev = new Event("input", { bubbles: true });
+              activeEl.dispatchEvent(ev);
+            }
+          }
+          firstCharLogged = "";
         }
-      } else if (e.key.length === 1) {
-        buffer += e.key;
-      }
 
-      lastKeyTime = currentTime;
+        if (e.key === "Enter") {
+          if (buffer.length >= 3) {
+            playScannerBeep(850, 0.08);
+            handleBarcodeScanned(buffer);
+          }
+          buffer = "";
+          isFastTyping = false;
+        } else {
+          buffer += e.key;
+        }
+      } else {
+        // Slow key press
+        if (e.key === "Enter") {
+          if (buffer.length >= 3) {
+            e.preventDefault();
+            playScannerBeep(850, 0.08);
+            handleBarcodeScanned(buffer);
+            buffer = "";
+          }
+        } else {
+          buffer = e.key;
+          firstCharLogged = e.key;
+        }
+      }
     };
 
     window.addEventListener("keydown", handleKeyDown);
@@ -720,7 +765,10 @@ export default function BusinessPosPage() {
         paymentMethod,
         categoryId: selectedCategory,
         subCategoryId: selectedSubCategory || null,
-        receiptUrl: finalReceiptUrl, // TypeScript ya no se quejará aquí
+        receiptUrl: finalReceiptUrl,
+        advisorId: selectedAdvisorId || null,
+        commissionPercentage: selectedAdvisorId ? (commissionPercentage !== "" ? Number(commissionPercentage) : 0) : null,
+        commissionAmount: selectedAdvisorId ? parseFloat(((total * (commissionPercentage !== "" ? Number(commissionPercentage) : 0)) / 100).toFixed(2)) : null,
       });
 
       toast.success("¡Venta completada con éxito!");
@@ -741,6 +789,8 @@ export default function BusinessPosPage() {
       // 5. Limpieza de estados
       setCart([]);
       setReceiptUrl(null);
+      setSelectedAdvisorId("");
+      setCommissionPercentage("");
       setIsCheckoutOpen(false);
       setShowTicket(true);
       loadData();
@@ -1906,6 +1956,68 @@ export default function BusinessPosPage() {
                   label="Voucher de Pago (Opcional)"
                 />
               </div>
+            </div>
+          )}
+
+          {/* ADVISOR SELECTOR */}
+          {advisors.length > 0 && (
+            <div className="space-y-2 border-t border-gray-100 pt-4">
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">
+                Asignar {user?.advisorLabel || "Asesor de venta"}
+              </label>
+              <select
+                value={selectedAdvisorId}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSelectedAdvisorId(val);
+                  if (val) {
+                    const adv = advisors.find((a) => a.id === val);
+                    setCommissionPercentage(adv ? adv.commissionPercentage : 0);
+                  } else {
+                    setCommissionPercentage("");
+                  }
+                }}
+                className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-indigo-500 focus:bg-white transition-all font-semibold outline-none text-sm"
+              >
+                <option value="">-- Sin asesor (Venta directa) --</option>
+                {advisors.filter(a => a.isActive).map(a => (
+                  <option key={a.id} value={a.id}>{a.name}</option>
+                ))}
+              </select>
+
+              {selectedAdvisorId && (
+                <div className="grid grid-cols-2 gap-4 mt-3 bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100/50 animate-fadeIn">
+                  <div>
+                    <label className="block text-[10px] font-black text-indigo-700 uppercase tracking-wider mb-1">
+                      % Comisión de Venta
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        value={commissionPercentage}
+                        onChange={(e) => {
+                          const val = e.target.value === "" ? "" : Number(e.target.value);
+                          setCommissionPercentage(val);
+                        }}
+                        className="w-full pl-4 pr-8 py-2.5 bg-white border border-indigo-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-extrabold text-sm outline-none text-indigo-900"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-indigo-400">%</span>
+                    </div>
+                  </div>
+                  <div className="flex flex-col justify-center">
+                    <span className="block text-[10px] font-black text-indigo-700 uppercase tracking-wider mb-1">
+                      Monto en Soles
+                    </span>
+                    <div className="text-lg font-black text-indigo-600 bg-white border border-indigo-200 px-4 py-2 rounded-xl flex items-center justify-between">
+                      <span className="text-xs font-bold text-indigo-400">Total:</span>
+                      <span>S/ {((total * (Number(commissionPercentage) || 0)) / 100).toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

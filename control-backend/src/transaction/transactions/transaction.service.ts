@@ -98,6 +98,7 @@ export class TransactionService {
     endDate?: string;
     filterUserId?: string;
     branchId?: string;
+    advisorId?: string;
   }) {
     const {
       ownerId,
@@ -108,6 +109,7 @@ export class TransactionService {
       endDate,
       filterUserId,
       branchId,
+      advisorId,
     } = options;
 
     const whereClause: any = {
@@ -126,6 +128,10 @@ export class TransactionService {
 
     if (branchId) {
       whereClause.branchId = branchId;
+    }
+
+    if (advisorId) {
+      whereClause.advisorId = advisorId;
     }
 
     if (workspace === 'BUSINESS') {
@@ -178,6 +184,7 @@ export class TransactionService {
             name: true,
           },
         },
+        advisor: true,
       },
     });
   }

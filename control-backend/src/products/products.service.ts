@@ -140,6 +140,7 @@ export class ProductsService {
   }
 
   async findAll(userId: string) {
+    await this.ensureBranchStocksExist(userId);
     return this.prisma.product.findMany({
       where: { userId },
       include: {
@@ -157,6 +158,7 @@ export class ProductsService {
   }
 
   async findOne(userId: string, id: string) {
+    await this.ensureBranchStocksExist(userId);
     const product = await this.prisma.product.findFirst({
       where: { id, userId },
       include: {
@@ -267,7 +269,7 @@ export class ProductsService {
         }
       }
 
-      // If stock is changing, log adjustment
+      // If stock is changing, log adjustment and update target branch stock
       if (
         updateData.stock !== undefined &&
         updateData.stock !== product.stock
@@ -275,6 +277,52 @@ export class ProductsService {
         const diff = updateData.stock - product.stock;
         const type = diff > 0 ? 'IN' : 'OUT';
         const quantity = Math.abs(diff);
+
+        // Find or create the target branch (Matrix by default or explicit branchId)
+        let targetBranchId = updateData.branchId;
+        
+        let firstBranch = await tx.branch.findFirst({
+          where: { userId },
+          orderBy: { createdAt: 'asc' },
+        });
+        if (!firstBranch) {
+          firstBranch = await tx.branch.create({
+            data: {
+              name: 'Almacén Central',
+              address: 'Principal / Matriz',
+              userId,
+            },
+          });
+        }
+        
+        if (!targetBranchId) {
+          targetBranchId = firstBranch.id;
+        }
+
+        // Find or create BranchStock record for targetBranchId
+        const branchStock = await tx.branchStock.findUnique({
+          where: { productId_branchId: { productId: id, branchId: targetBranchId } },
+        });
+
+        const initialBranchStock = branchStock
+          ? branchStock.stock
+          : (targetBranchId === firstBranch.id ? product.stock : 0);
+        const newBranchStockValue = initialBranchStock + diff;
+
+        if (branchStock) {
+          await tx.branchStock.update({
+            where: { id: branchStock.id },
+            data: { stock: newBranchStockValue },
+          });
+        } else {
+          await tx.branchStock.create({
+            data: {
+              productId: id,
+              branchId: targetBranchId,
+              stock: Math.max(0, newBranchStockValue),
+            },
+          });
+        }
 
         await tx.inventoryMovement.create({
           data: {
@@ -288,7 +336,8 @@ export class ProductsService {
             userId,
             unitCost: product.costPrice,
             totalCost: quantity * product.costPrice,
-            stockResult: parseFloat(updateData.stock),
+            stockResult: newBranchStockValue,
+            branchId: targetBranchId,
           },
         });
       }
@@ -416,11 +465,20 @@ export class ProductsService {
           (product.stock + mainUnitsQty);
       }
 
-      // Find the first branch of the user to allocate stock
-      const firstBranch = await tx.branch.findFirst({
+      // Find or create the first branch of the user to allocate stock
+      let firstBranch = await tx.branch.findFirst({
         where: { userId },
         orderBy: { createdAt: 'asc' },
       });
+      if (!firstBranch) {
+        firstBranch = await tx.branch.create({
+          data: {
+            name: 'Almacén Central',
+            address: 'Principal / Matriz',
+            userId,
+          },
+        });
+      }
 
       // 3. Update Product Stock and CPP
       const updatedProduct = await tx.product.update({
@@ -487,8 +545,17 @@ export class ProductsService {
    * Secure transactional POS checkout flow
    */
   async checkout(ownerId: string, workerId: string, checkoutDto: any) {
-    const { items, paymentMethod, categoryId, subCategoryId, receiptUrl } =
-      checkoutDto;
+    await this.ensureBranchStocksExist(ownerId);
+    const {
+      items,
+      paymentMethod,
+      categoryId,
+      subCategoryId,
+      receiptUrl,
+      advisorId,
+      commissionPercentage,
+      commissionAmount,
+    } = checkoutDto;
 
     if (!items || items.length === 0) {
       throw new BadRequestException('El carrito de compras está vacío.');
@@ -514,6 +581,7 @@ export class ProductsService {
         requiredQty: number;
         presentationName: string;
         salePrice: number;
+        branchStockRecord?: any;
       }> = [];
 
       for (const item of items) {
@@ -600,6 +668,44 @@ export class ProductsService {
         });
       }
 
+      let finalCommPercentage = null;
+      let finalCommAmount = null;
+      const cleanAdvisorId =
+        advisorId &&
+        advisorId !== 'null' &&
+        advisorId !== 'undefined' &&
+        advisorId !== ''
+          ? advisorId
+          : null;
+
+      if (cleanAdvisorId) {
+        if (
+          commissionPercentage !== undefined &&
+          commissionPercentage !== null &&
+          commissionPercentage !== ''
+        ) {
+          finalCommPercentage = parseFloat(String(commissionPercentage));
+        } else {
+          const adv = await tx.advisor.findUnique({
+            where: { id: cleanAdvisorId },
+          });
+          if (adv) {
+            finalCommPercentage = adv.commissionPercentage;
+          }
+        }
+        if (
+          commissionAmount !== undefined &&
+          commissionAmount !== null &&
+          commissionAmount !== ''
+        ) {
+          finalCommAmount = parseFloat(String(commissionAmount));
+        } else if (finalCommPercentage !== null) {
+          finalCommAmount = parseFloat(
+            ((totalAmount * finalCommPercentage) / 100).toFixed(2),
+          );
+        }
+      }
+
       // 1. Create Financial Transaction (Income)
       const transaction = await tx.transaction.create({
         data: {
@@ -619,13 +725,22 @@ export class ProductsService {
           cashShiftId: activeShift.id,
           isPosSale: true,
           branchId: activeShift.branchId || null,
+          advisorId: cleanAdvisorId,
+          commissionPercentage: finalCommPercentage,
+          commissionAmount: finalCommAmount,
         },
       });
 
       // 2. Process stock adjustments and movements
       for (const proc of itemsToProcess) {
-        const { product, item, mainUnitsQty, requiredQty, presentationName, branchStockRecord } =
-          proc;
+        const {
+          product,
+          item,
+          mainUnitsQty,
+          requiredQty,
+          presentationName,
+          branchStockRecord,
+        } = proc;
 
         // Subtract stock from branch-specific stock
         if (activeShift.branchId) {
@@ -669,7 +784,9 @@ export class ProductsService {
             unitCost: product.costPrice, // CPP unit cost at sale
             totalCost: mainUnitsQty * product.costPrice,
             stockResult: activeShift.branchId
-              ? (branchStockRecord ? branchStockRecord.stock - mainUnitsQty : -mainUnitsQty)
+              ? branchStockRecord
+                ? branchStockRecord.stock - mainUnitsQty
+                : -mainUnitsQty
               : updatedProduct.stock,
             documentId: transaction.id,
             branchId: activeShift.branchId || null,
@@ -765,7 +882,10 @@ export class ProductsService {
     let expense = 0;
 
     for (const t of transactions) {
-      const amt = t.amountSoles !== null && t.amountSoles !== undefined ? t.amountSoles : t.amount;
+      const amt =
+        t.amountSoles !== null && t.amountSoles !== undefined
+          ? t.amountSoles
+          : t.amount;
       if (t.type === 'INCOME') {
         income += amt;
       } else {
@@ -775,7 +895,6 @@ export class ProductsService {
 
     return income - expense;
   }
-
 
   async createPurchaseOrder(userId: string, body: any) {
     const {
@@ -897,6 +1016,11 @@ export class ProductsService {
 
       // 4. Update Stock & Movements if received immediately
       if (receiveImmediately) {
+        const firstBranch = await tx.branch.findFirst({
+          where: { userId },
+          orderBy: { createdAt: 'asc' },
+        });
+
         for (const item of items) {
           const prod = dbProducts.find((p) => p.id === item.productId);
           if (prod) {
@@ -924,6 +1048,32 @@ export class ProductsService {
               },
             });
 
+            // Update or create BranchStock for the first branch
+            if (firstBranch) {
+              const bStock = await tx.branchStock.findUnique({
+                where: {
+                  productId_branchId: {
+                    productId: prod.id,
+                    branchId: firstBranch.id,
+                  },
+                },
+              });
+              if (bStock) {
+                await tx.branchStock.update({
+                  where: { id: bStock.id },
+                  data: { stock: { increment: mainUnitsQty } },
+                });
+              } else {
+                await tx.branchStock.create({
+                  data: {
+                    productId: prod.id,
+                    branchId: firstBranch.id,
+                    stock: mainUnitsQty,
+                  },
+                });
+              }
+            }
+
             // Log inventory movement (populated with Kardex fields)
             await tx.inventoryMovement.create({
               data: {
@@ -939,6 +1089,7 @@ export class ProductsService {
                 totalCost: mainUnitsQty * itemCostPricePerBaseUnit,
                 stockResult: updatedProduct.stock,
                 documentId: purchaseOrder.id,
+                branchId: firstBranch ? firstBranch.id : null,
               },
             });
           }
@@ -1477,7 +1628,14 @@ export class ProductsService {
    * Update / Edit a purchase order (reverting stock if RECEIVED, changing items, then re-applying if RECEIVED)
    */
   async updatePurchaseOrder(userId: string, id: string, body: any) {
-    const { items, totalCost, paymentMethod, categoryId, subCategoryId, receiptUrl } = body;
+    const {
+      items,
+      totalCost,
+      paymentMethod,
+      categoryId,
+      subCategoryId,
+      receiptUrl,
+    } = body;
 
     const order = await this.prisma.purchaseOrder.findFirst({
       where: { id, userId },
@@ -1487,6 +1645,10 @@ export class ProductsService {
 
     return this.prisma.$transaction(async (tx) => {
       const isReceived = order.status === 'RECEIVED';
+      const firstBranch = await tx.branch.findFirst({
+        where: { userId },
+        orderBy: { createdAt: 'asc' },
+      });
 
       if (isReceived) {
         // Revert stock from old items
@@ -1519,6 +1681,24 @@ export class ProductsService {
               },
             });
 
+            // Decrement branch stock for the first branch
+            if (firstBranch) {
+              const bStock = await tx.branchStock.findUnique({
+                where: {
+                  productId_branchId: {
+                    productId: item.productId,
+                    branchId: firstBranch.id,
+                  },
+                },
+              });
+              if (bStock) {
+                await tx.branchStock.update({
+                  where: { id: bStock.id },
+                  data: { stock: { decrement: mainUnitsQty } },
+                });
+              }
+            }
+
             await tx.inventoryMovement.create({
               data: {
                 productId: item.productId,
@@ -1533,6 +1713,7 @@ export class ProductsService {
                 totalCost: mainUnitsQty * itemCostPricePerBaseUnit,
                 stockResult: updatedProduct.stock,
                 documentId: order.id,
+                branchId: firstBranch ? firstBranch.id : null,
               },
             });
           }
@@ -1601,6 +1782,32 @@ export class ProductsService {
               },
             });
 
+            // Increment branch stock for the first branch
+            if (firstBranch) {
+              const bStock = await tx.branchStock.findUnique({
+                where: {
+                  productId_branchId: {
+                    productId: item.productId,
+                    branchId: firstBranch.id,
+                  },
+                },
+              });
+              if (bStock) {
+                await tx.branchStock.update({
+                  where: { id: bStock.id },
+                  data: { stock: { increment: mainUnitsQty } },
+                });
+              } else {
+                await tx.branchStock.create({
+                  data: {
+                    productId: item.productId,
+                    branchId: firstBranch.id,
+                    stock: mainUnitsQty,
+                  },
+                });
+              }
+            }
+
             await tx.inventoryMovement.create({
               data: {
                 productId: item.productId,
@@ -1615,6 +1822,7 @@ export class ProductsService {
                 totalCost: mainUnitsQty * itemCostPricePerBaseUnit,
                 stockResult: updatedProduct.stock,
                 documentId: order.id,
+                branchId: firstBranch ? firstBranch.id : null,
               },
             });
           }
@@ -1765,5 +1973,50 @@ export class ProductsService {
     return this.prisma.family.delete({
       where: { id },
     });
+  }
+
+  private async ensureBranchStocksExist(userId: string) {
+    const firstBranch = await this.prisma.branch.findFirst({
+      where: { userId },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (!firstBranch) return;
+
+    const products = await this.prisma.product.findMany({
+      where: { userId },
+      include: {
+        branchStocks: true,
+      },
+    });
+
+    const toCreate = [];
+    for (const prod of products) {
+      const hasFirstBranch = prod.branchStocks.some(
+        (bs) => bs.branchId === firstBranch.id,
+      );
+      if (!hasFirstBranch) {
+        const otherStockSum = prod.branchStocks.reduce(
+          (sum, bs) => sum + bs.stock,
+          0,
+        );
+        const firstBranchStockVal = Math.max(0, prod.stock - otherStockSum);
+
+        toCreate.push({
+          productId: prod.id,
+          branchId: firstBranch.id,
+          stock: firstBranchStockVal,
+        });
+      }
+    }
+
+    if (toCreate.length > 0) {
+      await this.prisma.$transaction(
+        toCreate.map((item) =>
+          this.prisma.branchStock.create({
+            data: item,
+          }),
+        ),
+      );
+    }
   }
 }
