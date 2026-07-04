@@ -96,7 +96,6 @@ export class CashShiftService {
             workspace: 'BUSINESS',
             branchId: branchId || null,
             cashShiftId: shift.id,
-            isPosSale: false,
             userId: workerId,
           },
         });
@@ -122,19 +121,29 @@ export class CashShiftService {
       );
     }
 
-    const sales = await this.prisma.transaction.aggregate({
+    const sales = await this.prisma.sale.aggregate({
       where: {
         cashShiftId: activeShift.id,
-        isPosSale: true,
-        status: 'PAID',
       },
       _sum: {
         amount: true,
       },
     });
 
-    const totalSales = sales._sum.amount || 0;
-    const finalBalance = activeShift.initialBalance + totalSales;
+    const commissionsList = await this.prisma.commission.findMany({
+      where: {
+        sale: { cashShiftId: activeShift.id }
+      }
+    });
+
+    const grossSales = sales._sum.amount || 0;
+    const totalSales = grossSales;
+    const totalAdditionalCommissions = commissionsList
+      .filter((c) => c.isAdditional)
+      .reduce((sum, c) => sum + c.amount, 0);
+
+    const treasuryClosingAmount = activeShift.initialBalance + totalSales - totalAdditionalCommissions;
+    const finalBalance = activeShift.initialBalance + totalSales - totalAdditionalCommissions;
 
     return this.prisma.$transaction(async (tx) => {
       const closedShift = await tx.cashShift.update({
@@ -182,18 +191,17 @@ export class CashShiftService {
           data: {
             name: 'Cierre de Caja',
             type: 'INCOME',
-            amount: finalBalance,
+            amount: parseFloat(treasuryClosingAmount.toFixed(2)),
             categoryId: categoryIdToUse,
             subCategoryId: subCategoryIdToUse,
             date: new Date(),
             status: 'PAID',
             currency: 'PEN',
             paymentMethod: 'CASH',
-            description: `Cierre de Caja - ID: ${closedShift.id.substring(0, 8)}... (Fondo Inicial: S/ ${activeShift.initialBalance.toFixed(2)} + Ventas: S/ ${totalSales.toFixed(2)})`,
+            description: `Cierre de Caja - ID: ${closedShift.id.substring(0, 8)}... (Fondo Inicial: S/ ${activeShift.initialBalance.toFixed(2)} + Ventas (Neto comisiones): S/ ${(totalSales - totalCommissions).toFixed(2)})`,
             workspace: 'BUSINESS',
             branchId: activeShift.branchId,
             cashShiftId: closedShift.id,
-            isPosSale: false,
             userId: workerId,
           },
         });
@@ -220,20 +228,21 @@ export class CashShiftService {
 
     if (!shift) return null;
 
-    const sales = await this.prisma.transaction.aggregate({
+    const sales = await this.prisma.sale.aggregate({
       where: {
         cashShiftId: shift.id,
-        isPosSale: true,
-        status: 'PAID',
       },
       _sum: {
         amount: true,
       },
     });
 
+    const grossSales = sales._sum.amount || 0;
+    const netSales = grossSales;
+
     return {
       ...shift,
-      currentSales: sales._sum.amount || 0,
+      currentSales: netSales,
     };
   }
 
@@ -328,7 +337,7 @@ export class CashShiftService {
     };
   }
 
-  async getShiftDetails(id: string, ownerId: string, workerId?: string) {
+  async getShiftDetails(id: string, ownerId: string, workerId?: string, userRole?: string) {
     const shift = await this.prisma.cashShift.findFirst({
       where: {
         id,
@@ -355,18 +364,38 @@ export class CashShiftService {
       );
     }
 
-    const sales = await this.prisma.transaction.findMany({
+    const sales = await this.prisma.sale.findMany({
       where: {
         cashShiftId: id,
-        isPosSale: true,
-        status: 'PAID',
       },
       orderBy: { date: 'asc' },
     });
 
+    let totalSales = 0;
+    for (const sale of sales) {
+      totalSales += sale.amount;
+    }
+
+    const commissionsList = await this.prisma.commission.findMany({
+      where: { sale: { cashShiftId: id } }
+    });
+    
+    const totalCommissions = commissionsList.reduce((sum, c) => sum + c.amount, 0);
+    const totalAdditionalCommissions = commissionsList
+      .filter((c) => c.isAdditional)
+      .reduce((sum, c) => sum + c.amount, 0);
+
+    const showFinancials = userRole === 'ADMIN' || !workerId;
+
     return {
       shift,
       sales,
+      ...(showFinancials ? {
+        totalSales: parseFloat(totalSales.toFixed(2)),
+        totalCommissions: parseFloat(totalCommissions.toFixed(2)),
+        netAmount: parseFloat((totalSales - totalAdditionalCommissions).toFixed(2)),
+        netEarnings: parseFloat((totalSales - totalAdditionalCommissions).toFixed(2)),
+      } : {}),
     };
   }
 }

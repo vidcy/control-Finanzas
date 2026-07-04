@@ -160,3 +160,12 @@ export const deleteWorkerRequest = async (id: string) => {
   }
 };
 
+export const queryDocumentRequest = async (type: string, number: string) => {
+  try {
+    const res = await API.get(`/users/api/document/${type}/${number}`);
+    return res.data;
+  } catch (error: any) {
+    throw new Error(error?.response?.data?.message || "No se pudo obtener información del documento");
+  }
+};
+

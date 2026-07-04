@@ -5,11 +5,14 @@ import { PrismaService } from 'src/prisma/prisma.service';
 export class AdvisorsService {
   constructor(private prisma: PrismaService) {}
 
-  async create(ownerId: string, data: { name: string; commissionPercentage: number; isActive?: boolean }) {
+  async create(ownerId: string, data: { name: string; commissionPercentage?: number; commissionType?: string; commissionValue?: number; isActive?: boolean; commissionModelId?: string }) {
     return this.prisma.advisor.create({
       data: {
         name: data.name,
-        commissionPercentage: data.commissionPercentage,
+        commissionPercentage: data.commissionPercentage ?? 0.0,
+        commissionType: data.commissionType ?? 'PERCENT',
+        commissionValue: data.commissionValue ?? 0.0,
+        commissionModelId: data.commissionModelId || null,
         isActive: data.isActive ?? true,
         userId: ownerId,
       },
@@ -22,11 +25,14 @@ export class AdvisorsService {
         userId: ownerId,
         ...(isActiveOnly ? { isActive: true } : {}),
       },
+      include: {
+        commissionModel: true,
+      },
       orderBy: { name: 'asc' },
     });
   }
 
-  async update(ownerId: string, id: string, data: Partial<{ name: string; commissionPercentage: number; isActive: boolean }>) {
+  async update(ownerId: string, id: string, data: Partial<{ name: string; commissionPercentage: number; commissionType: string; commissionValue: number; isActive: boolean; commissionModelId: string }>) {
     const advisor = await this.prisma.advisor.findFirst({
       where: { id, userId: ownerId },
     });
@@ -35,7 +41,10 @@ export class AdvisorsService {
     }
     return this.prisma.advisor.update({
       where: { id },
-      data,
+      data: {
+        ...data,
+        commissionModelId: data.commissionModelId === '' ? null : data.commissionModelId,
+      },
     });
   }
 
@@ -54,42 +63,140 @@ export class AdvisorsService {
   async getCommissionsReport(ownerId: string, params: { advisorId?: string; startDate?: string; endDate?: string }) {
     const { advisorId, startDate, endDate } = params;
 
-    const whereClause: any = {
-      workspace: 'BUSINESS',
-      isPosSale: true,
-      status: 'PAID',
-      advisorId: advisorId ? advisorId : { not: null },
-      OR: [
-        { userId: ownerId },
-        { user: { parentId: ownerId } },
-      ],
+    const baseFilter: any = {
+      sale: {
+        workspace: 'BUSINESS',
+      }
     };
 
     if (startDate || endDate) {
-      whereClause.date = {};
+      baseFilter.sale.date = {};
       if (startDate) {
-        whereClause.date.gte = new Date(startDate);
+        baseFilter.sale.date.gte = new Date(startDate);
       }
       if (endDate) {
-        whereClause.date.lte = new Date(endDate);
+        baseFilter.sale.date.lte = new Date(endDate);
       }
     }
 
-    const transactions = await this.prisma.transaction.findMany({
-      where: whereClause,
+    if (advisorId) {
+      baseFilter.advisorId = advisorId;
+      baseFilter.advisor = {
+        OR: [
+          { userId: ownerId },
+          { user: { parentId: ownerId } },
+        ]
+      };
+    } else {
+      baseFilter.advisor = {
+        OR: [
+          { userId: ownerId },
+          { user: { parentId: ownerId } },
+        ]
+      };
+    }
+
+    const commissions = await this.prisma.commission.findMany({
+      where: baseFilter,
       include: {
         advisor: true,
-        user: {
-          select: {
-            id: true,
-            name: true,
-            lastName: true,
-          },
+        sale: {
+          include: {
+            cashShift: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                    lastName: true,
+                  }
+                },
+                branch: true,
+              }
+            },
+            items: {
+              include: {
+                product: true,
+              }
+            },
+          }
         },
       },
-      orderBy: { date: 'desc' },
+      orderBy: { createdAt: 'desc' },
     });
 
-    return transactions;
+    const mapped: any[] = commissions.map(comm => {
+      const sale = comm.sale;
+      const desc = sale ? sale.items.map(i => `${i.quantity}x ${i.name}`).join(', ') : 'Venta';
+      
+      const items = sale ? sale.items.map(item => {
+        const unitCost = item.product?.costPrice || 0;
+        return {
+          id: item.id,
+          name: item.name,
+          quantity: item.quantity,
+          price: item.price,
+          unitCost: unitCost,
+          totalCost: unitCost * item.quantity,
+          totalSale: item.price * item.quantity,
+          commissionAmount: item.commissionAmount || 0,
+        };
+      }) : [];
+
+      const totalCost = items.reduce((acc, item) => acc + item.totalCost, 0);
+      const totalSale = items.reduce((acc, item) => acc + item.totalSale, 0);
+
+      return {
+        id: comm.id,
+        advisorId: comm.advisorId,
+        advisor: comm.advisor,
+        amount: sale ? sale.amount : 0, // This is the total sale amount
+        commissionAmount: comm.amount,
+        commissionStatus: comm.status,
+        description: `Venta en POS (${comm.advisor.name}): ${desc}`,
+        date: sale ? sale.date : comm.createdAt,
+        items,
+        totalCost,
+        totalSale,
+        cashShift: sale?.cashShift ? {
+          id: sale.cashShift.id,
+          openedAt: sale.cashShift.openedAt,
+          closedAt: sale.cashShift.closedAt,
+          user: sale.cashShift.user,
+          branch: sale.cashShift.branch,
+        } : null,
+        cashShiftId: sale?.cashShiftId || null,
+        saleId: sale?.id || null,
+      };
+    });
+
+    return mapped;
+  }
+
+  async updateCommissionStatus(ownerId: string, id: string, status: any) {
+    const comm = await this.prisma.commission.findFirst({
+      where: {
+        id,
+        advisor: {
+          OR: [
+            { userId: ownerId },
+            { user: { parentId: ownerId } },
+          ]
+        }
+      },
+    });
+
+    if (!comm) {
+      throw new NotFoundException('Comisión no encontrada');
+    }
+
+    await this.prisma.commission.update({
+      where: { id },
+      data: {
+        status: status,
+      },
+    });
+
+    return { success: true, status };
   }
 }

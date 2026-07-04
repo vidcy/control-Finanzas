@@ -19,7 +19,7 @@ export class AdvisorsController {
   constructor(private readonly advisorsService: AdvisorsService) {}
 
   @Post()
-  create(@Req() req, @Body() data: { name: string; commissionPercentage: number; isActive?: boolean }) {
+  create(@Req() req, @Body() data: { name: string; commissionPercentage?: number; commissionType?: string; commissionValue?: number; isActive?: boolean; commissionModelId?: string }) {
     const ownerId = req.user.parentId || req.user.id;
     return this.advisorsService.create(ownerId, data);
   }
@@ -46,10 +46,20 @@ export class AdvisorsController {
   update(
     @Req() req,
     @Param('id') id: string,
-    @Body() data: Partial<{ name: string; commissionPercentage: number; isActive: boolean }>,
+    @Body() data: Partial<{ name: string; commissionPercentage: number; commissionType: string; commissionValue: number; isActive: boolean; commissionModelId: string }>,
   ) {
     const ownerId = req.user.parentId || req.user.id;
     return this.advisorsService.update(ownerId, id, data);
+  }
+
+  @Patch('commissions/:id/status')
+  updateStatus(
+    @Req() req,
+    @Param('id') id: string,
+    @Body() body: { status: string },
+  ) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.advisorsService.updateCommissionStatus(ownerId, id, body.status);
   }
 
   @Delete(':id')

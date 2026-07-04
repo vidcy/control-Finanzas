@@ -16,6 +16,8 @@ import {
   Mail,
   ShieldCheck,
   Activity,
+  Receipt,
+  Zap,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import {
@@ -37,6 +39,7 @@ type User = {
   profiles: string[];
   blockedProfiles: string[];
   parentId?: string | null;
+  hasElectronicBilling?: boolean;
 };
 
 export default function UserPage() {
@@ -68,6 +71,7 @@ export default function UserPage() {
 
   const [isWorker, setIsWorker] = useState(false);
   const [parentId, setParentId] = useState("");
+  const [hasElectronicBilling, setHasElectronicBilling] = useState(false);
 
   const SUB_MODULES = [
     { key: "BUSINESS_DASHBOARD", name: "Dashboard de Negocio" },
@@ -79,6 +83,8 @@ export default function UserPage() {
     { key: "BUSINESS_REPORTS", name: "Reportes" },
     { key: "BUSINESS_HISTORY", name: "Historial de Ventas" },
     { key: "BUSINESS_CATEGORIES", name: "Categorías" },
+    { key: "BUSINESS_WORKERS", name: "Personal / Roles / Comisiones" },
+    { key: "BUSINESS_BRANCHES", name: "Sedes / Locales" },
   ];
 
   const handleOpenCreate = () => {
@@ -107,6 +113,7 @@ export default function UserPage() {
     });
     setIsWorker(!!user.parentId);
     setParentId(user.parentId || "");
+    setHasElectronicBilling(user.hasElectronicBilling || false);
     setIsEditOpen(true);
   };
 
@@ -154,6 +161,7 @@ export default function UserPage() {
         role: formData.role,
         profiles: formData.profiles,
         parentId: isWorker ? parentId : null,
+        hasElectronicBilling,
       };
       if (formData.password && formData.password.trim() !== "") {
         payload.password = formData.password;
@@ -204,6 +212,7 @@ export default function UserPage() {
         profiles: Array.isArray(u.profiles) ? u.profiles : [],
         blockedProfiles: Array.isArray(u.blockedProfiles) ? u.blockedProfiles : [],
         parentId: u.parentId || null,
+        hasElectronicBilling: u.hasElectronicBilling || false,
       }));
       setUsers(formattedUsers);
     } catch (error: unknown) {
@@ -361,31 +370,7 @@ export default function UserPage() {
                                   }
                                 }}
                                 className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500 cursor-pointer"
-                              /> Activo
-                            </label>
-                            <label className="flex items-center gap-2 text-xs font-bold text-rose-600">
-                              <input
-                                type="checkbox"
-                                checked={user.blockedProfiles.includes("PERSONAL")}
-                                onChange={async (e) => {
-                                  const newBlocked = e.target.checked
-                                    ? [...user.blockedProfiles, "PERSONAL"]
-                                    : user.blockedProfiles.filter((p) => p !== "PERSONAL");
-                                  try {
-                                    // Si se bloquea, también lo quitamos de profiles activos
-                                    let newProfiles = [...user.profiles];
-                                    if (e.target.checked) {
-                                      newProfiles = newProfiles.filter(p => p !== "PERSONAL");
-                                    }
-                                    await updateUserRequest(user.id, { blockedProfiles: newBlocked, profiles: newProfiles });
-                                    toast.success("Bloqueo actualizado");
-                                    await fetchUsers();
-                                  } catch (err: any) {
-                                    toast.error(err.message || "Error al actualizar bloqueo");
-                                  }
-                                }}
-                                className="w-4 h-4 text-rose-600 border-gray-300 rounded focus:ring-rose-500 cursor-pointer"
-                              /> Bloqueado
+                              /> Habilitado
                             </label>
                           </div>
                         )}
@@ -435,33 +420,37 @@ export default function UserPage() {
                                   }
                                 }}
                                 className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500 cursor-pointer"
-                              /> Activo
-                            </label>
-                            <label className="flex items-center gap-2 text-xs font-bold text-rose-600">
-                              <input
-                                type="checkbox"
-                                checked={user.blockedProfiles.includes("BUSINESS")}
-                                onChange={async (e) => {
-                                  const newBlocked = e.target.checked
-                                    ? [...user.blockedProfiles, "BUSINESS"]
-                                    : user.blockedProfiles.filter((p) => p !== "BUSINESS");
-                                  try {
-                                    // Si se bloquea, también lo quitamos de profiles activos
-                                    let newProfiles = [...user.profiles];
-                                    if (e.target.checked) {
-                                      newProfiles = newProfiles.filter(p => p !== "BUSINESS");
-                                    }
-                                    await updateUserRequest(user.id, { blockedProfiles: newBlocked, profiles: newProfiles });
-                                    toast.success("Bloqueo actualizado");
-                                    await fetchUsers();
-                                  } catch (err: any) {
-                                    toast.error(err.message || "Error al actualizar bloqueo");
-                                  }
-                                }}
-                                className="w-4 h-4 text-rose-600 border-gray-300 rounded focus:ring-rose-500 cursor-pointer"
-                              /> Bloqueado
+                              /> Habilitado
                             </label>
                           </div>
+                        )}
+                      </td>
+                      <td className="p-6">
+                        {/* Toggle Facturación Electrónica (solo para dueños de negocio) */}
+                        {!user.parentId ? (
+                          <button
+                            onClick={async () => {
+                              const newVal = !user.hasElectronicBilling;
+                              try {
+                                await updateUserRequest(user.id, { hasElectronicBilling: newVal });
+                                toast.success(newVal ? "Facturación electrónica habilitada" : "Facturación electrónica deshabilitada");
+                                await fetchUsers();
+                              } catch (err: any) {
+                                toast.error(err.message || "Error al actualizar");
+                              }
+                            }}
+                            className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-widest px-3 py-2 rounded-xl transition-all shadow-sm ${
+                              user.hasElectronicBilling
+                                ? "bg-emerald-500 text-white shadow-emerald-100 hover:brightness-110"
+                                : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                            }`}
+                            title={user.hasElectronicBilling ? "Deshabilitar facturación electrónica" : "Habilitar facturación electrónica"}
+                          >
+                            <Receipt className="w-3.5 h-3.5" />
+                            {user.hasElectronicBilling ? "Activa" : "Sin FE"}
+                          </button>
+                        ) : (
+                          <span className="text-[10px] text-gray-300 font-bold">Heredada</span>
                         )}
                       </td>
                       <td className="p-6">
@@ -592,28 +581,7 @@ export default function UserPage() {
                                 }
                               }}
                               className="w-3.5 h-3.5 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                            /> Activo
-                          </label>
-                          <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-rose-500">
-                            <input
-                              type="checkbox"
-                              checked={user.blockedProfiles.includes("PERSONAL")}
-                              onChange={async (e) => {
-                                const newBlocked = e.target.checked
-                                  ? [...user.blockedProfiles, "PERSONAL"]
-                                  : user.blockedProfiles.filter((p) => p !== "PERSONAL");
-                                try {
-                                  let newProfiles = [...user.profiles];
-                                  if (e.target.checked) newProfiles = newProfiles.filter(p => p !== "PERSONAL");
-                                  await updateUserRequest(user.id, { blockedProfiles: newBlocked, profiles: newProfiles });
-                                  toast.success("Bloqueo actualizado");
-                                  await fetchUsers();
-                                } catch (err: any) {
-                                  toast.error(err.message || "Error");
-                                }
-                              }}
-                              className="w-3.5 h-3.5 text-rose-600 border-gray-300 rounded focus:ring-rose-500"
-                            /> Bloqueado
+                            /> Habilitado
                           </label>
                         </div>
                       </div>
@@ -642,28 +610,7 @@ export default function UserPage() {
                                 }
                               }}
                               className="w-3.5 h-3.5 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                            /> Activo
-                          </label>
-                          <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-rose-500">
-                            <input
-                              type="checkbox"
-                              checked={user.blockedProfiles.includes("BUSINESS")}
-                              onChange={async (e) => {
-                                const newBlocked = e.target.checked
-                                  ? [...user.blockedProfiles, "BUSINESS"]
-                                  : user.blockedProfiles.filter((p) => p !== "BUSINESS");
-                                try {
-                                  let newProfiles = [...user.profiles];
-                                  if (e.target.checked) newProfiles = newProfiles.filter(p => p !== "BUSINESS");
-                                  await updateUserRequest(user.id, { blockedProfiles: newBlocked, profiles: newProfiles });
-                                  toast.success("Bloqueo actualizado");
-                                  await fetchUsers();
-                                } catch (err: any) {
-                                  toast.error(err.message || "Error");
-                                }
-                              }}
-                              className="w-3.5 h-3.5 text-rose-600 border-gray-300 rounded focus:ring-rose-500"
-                            /> Bloqueado
+                            /> Habilitado
                           </label>
                         </div>
                       </div>
@@ -852,40 +799,78 @@ export default function UserPage() {
                 </div>
               ) : (
                 /* MÓDULOS DE ACCESO TRADICIONAL */
-                <div className="space-y-3 pt-4 border-t border-purple-100/50">
-                  <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">
-                    Módulos de Acceso Habilitados
-                  </label>
-                  <div className="flex gap-8 pl-1">
-                    <label className="flex items-center gap-2 cursor-pointer font-bold text-sm text-gray-700">
-                      <input
-                        type="checkbox"
-                        checked={formData.profiles.includes("PERSONAL")}
-                        onChange={(e) => {
-                          const updated = e.target.checked
-                            ? [...formData.profiles, "PERSONAL"]
-                            : formData.profiles.filter(p => p !== "PERSONAL");
-                          setFormData({ ...formData, profiles: updated });
-                        }}
-                        className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                      />
-                      Personal
+                <div className="space-y-6 pt-4 border-t border-purple-100/50">
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">
+                      Módulos de Acceso Habilitados
                     </label>
-                    <label className="flex items-center gap-2 cursor-pointer font-bold text-sm text-gray-700">
-                      <input
-                        type="checkbox"
-                        checked={formData.profiles.includes("BUSINESS")}
-                        onChange={(e) => {
-                          const updated = e.target.checked
-                            ? [...formData.profiles, "BUSINESS"]
-                            : formData.profiles.filter(p => p !== "BUSINESS");
-                          setFormData({ ...formData, profiles: updated });
-                        }}
-                        className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                      />
-                      Negocios
-                    </label>
+                    <div className="flex gap-8 pl-1">
+                      <label className="flex items-center gap-2 cursor-pointer font-bold text-sm text-gray-700">
+                        <input
+                          type="checkbox"
+                          checked={formData.profiles.includes("PERSONAL")}
+                          onChange={(e) => {
+                            const updated = e.target.checked
+                              ? [...formData.profiles, "PERSONAL"]
+                              : formData.profiles.filter(p => p !== "PERSONAL");
+                            setFormData({ ...formData, profiles: updated });
+                          }}
+                          className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                        />
+                        Personal
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer font-bold text-sm text-gray-700">
+                        <input
+                          type="checkbox"
+                          checked={formData.profiles.includes("BUSINESS")}
+                          onChange={(e) => {
+                            let updated = e.target.checked
+                              ? [...formData.profiles, "BUSINESS"]
+                              : formData.profiles.filter(p => p !== "BUSINESS");
+                            
+                            // If checked, also activate all business submodules by default except branches
+                            if (e.target.checked) {
+                              const subs = SUB_MODULES.map(m => m.key).filter(k => k !== "BUSINESS_BRANCHES");
+                              updated = Array.from(new Set([...updated, ...subs]));
+                            } else {
+                              // If unchecked, remove all submodules
+                              const subKeys = SUB_MODULES.map(m => m.key);
+                              updated = updated.filter(p => !subKeys.includes(p));
+                            }
+                            setFormData({ ...formData, profiles: updated });
+                          }}
+                          className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                        />
+                        Negocios
+                      </label>
+                    </div>
                   </div>
+
+                  {formData.profiles.includes("BUSINESS") && (
+                    <div className="space-y-3 pt-4 border-t border-purple-100/50 animate-fadeIn">
+                      <label className="text-[10px] font-black text-purple-600 uppercase tracking-widest ml-1">
+                        Submódulos de Negocio Habilitados
+                      </label>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-1">
+                        {SUB_MODULES.map((mod) => (
+                          <label key={mod.key} className="flex items-center gap-2 cursor-pointer font-bold text-sm text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={formData.profiles.includes(mod.key)}
+                              onChange={(e) => {
+                                const updated = e.target.checked
+                                  ? [...formData.profiles, mod.key]
+                                  : formData.profiles.filter(p => p !== mod.key);
+                                setFormData({ ...formData, profiles: updated });
+                              }}
+                              className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                            />
+                            {mod.name}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1001,6 +986,38 @@ export default function UserPage() {
                 </div>
               </div>
 
+              {/* FACTURACIÓN ELECTRÓNICA */}
+              {!isWorker && (
+                <div className="space-y-3 pt-4 border-t border-gray-100">
+                  <div className="flex items-center justify-between p-4 bg-emerald-50/60 rounded-2xl border border-emerald-100">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-emerald-500 rounded-xl shadow">
+                        <Receipt className="w-4 h-4 text-white" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-black text-gray-800">Facturación Electrónica (SUNAT)</p>
+                        <p className="text-xs text-gray-500 font-medium">Permite emitir Boletas y Facturas desde el POS</p>
+                      </div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="sr-only peer"
+                        checked={hasElectronicBilling}
+                        onChange={(e) => setHasElectronicBilling(e.target.checked)}
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                    </label>
+                  </div>
+                  {hasElectronicBilling && (
+                    <p className="text-[11px] text-emerald-700 font-semibold bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-2.5 flex items-center gap-2">
+                      <Zap className="w-3.5 h-3.5 flex-shrink-0" />
+                      El usuario configurará sus credenciales NubeFacT desde su panel de negocio.
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* TIPO DE ACCESO (TRABAJADOR VS REGULAR) */}
               <div className="space-y-3 pt-4 border-t border-gray-100">
                 <label className="flex items-center gap-2 cursor-pointer font-bold text-sm text-gray-700">
@@ -1070,40 +1087,78 @@ export default function UserPage() {
                 </div>
               ) : (
                 /* MÓDULOS DE ACCESO TRADICIONAL */
-                <div className="space-y-3 pt-4 border-t border-gray-100">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
-                    Módulos de Acceso Habilitados
-                  </label>
-                  <div className="flex gap-8 pl-1">
-                    <label className="flex items-center gap-2 cursor-pointer font-bold text-sm text-gray-700">
-                      <input
-                        type="checkbox"
-                        checked={formData.profiles.includes("PERSONAL")}
-                        onChange={(e) => {
-                          const updated = e.target.checked
-                            ? [...formData.profiles, "PERSONAL"]
-                            : formData.profiles.filter(p => p !== "PERSONAL");
-                          setFormData({ ...formData, profiles: updated });
-                        }}
-                        className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                      />
-                      Personal
+                <div className="space-y-6 pt-4 border-t border-gray-100">
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                      Módulos de Acceso Habilitados
                     </label>
-                    <label className="flex items-center gap-2 cursor-pointer font-bold text-sm text-gray-700">
-                      <input
-                        type="checkbox"
-                        checked={formData.profiles.includes("BUSINESS")}
-                        onChange={(e) => {
-                          const updated = e.target.checked
-                            ? [...formData.profiles, "BUSINESS"]
-                            : formData.profiles.filter(p => p !== "BUSINESS");
-                          setFormData({ ...formData, profiles: updated });
-                        }}
-                        className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                      />
-                      Negocios
-                    </label>
+                    <div className="flex gap-8 pl-1">
+                      <label className="flex items-center gap-2 cursor-pointer font-bold text-sm text-gray-700">
+                        <input
+                          type="checkbox"
+                          checked={formData.profiles.includes("PERSONAL")}
+                          onChange={(e) => {
+                            const updated = e.target.checked
+                              ? [...formData.profiles, "PERSONAL"]
+                              : formData.profiles.filter(p => p !== "PERSONAL");
+                            setFormData({ ...formData, profiles: updated });
+                          }}
+                          className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                        />
+                        Personal
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer font-bold text-sm text-gray-700">
+                        <input
+                          type="checkbox"
+                          checked={formData.profiles.includes("BUSINESS")}
+                          onChange={(e) => {
+                            let updated = e.target.checked
+                              ? [...formData.profiles, "BUSINESS"]
+                              : formData.profiles.filter(p => p !== "BUSINESS");
+                            
+                            // If checked, also activate all business submodules by default except branches
+                            if (e.target.checked) {
+                              const subs = SUB_MODULES.map(m => m.key).filter(k => k !== "BUSINESS_BRANCHES");
+                              updated = Array.from(new Set([...updated, ...subs]));
+                            } else {
+                              // If unchecked, remove all submodules
+                              const subKeys = SUB_MODULES.map(m => m.key);
+                              updated = updated.filter(p => !subKeys.includes(p));
+                            }
+                            setFormData({ ...formData, profiles: updated });
+                          }}
+                          className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                        />
+                        Negocios
+                      </label>
+                    </div>
                   </div>
+
+                  {formData.profiles.includes("BUSINESS") && (
+                    <div className="space-y-3 pt-4 border-t border-gray-100 animate-fadeIn">
+                      <label className="text-[10px] font-black text-purple-600 uppercase tracking-widest ml-1">
+                        Submódulos de Negocio Habilitados
+                      </label>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-1">
+                        {SUB_MODULES.map((mod) => (
+                          <label key={mod.key} className="flex items-center gap-2 cursor-pointer font-bold text-sm text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={formData.profiles.includes(mod.key)}
+                              onChange={(e) => {
+                                const updated = e.target.checked
+                                  ? [...formData.profiles, mod.key]
+                                  : formData.profiles.filter(p => p !== mod.key);
+                                setFormData({ ...formData, profiles: updated });
+                              }}
+                              className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                            />
+                            {mod.name}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

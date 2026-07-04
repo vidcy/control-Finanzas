@@ -82,6 +82,8 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
   const [businessRubro, setBusinessRubro] = useState(user?.businessRubro || "");
   const [businessLogo, setBusinessLogo] = useState<string | File>(user?.businessLogo || "");
   const [businessBanner, setBusinessBanner] = useState<string | File>(user?.businessBanner || "");
+  const [nubefactUrl, setNubefactUrl] = useState(user?.nubefactUrl || "");
+  const [nubefactToken, setNubefactToken] = useState(user?.nubefactToken || "");
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
   // Temporary states for sub-modal staging
@@ -115,6 +117,8 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       setBusinessRubro(user.businessRubro || "");
       setBusinessLogo(user.businessLogo || "");
       setBusinessBanner(user.businessBanner || "");
+      setNubefactUrl(user.nubefactUrl || "");
+      setNubefactToken(user.nubefactToken || "");
     }
   }, [isProfileModalOpen, user]);
 
@@ -151,6 +155,8 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
         businessRubro: businessRubro || null,
         businessLogo: finalLogoUrl || null,
         businessBanner: finalBannerUrl || null,
+        nubefactUrl: nubefactUrl || null,
+        nubefactToken: nubefactToken || null,
       });
 
       const updatedUser = { ...user, ...res };
@@ -221,30 +227,32 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     setIsMobileMenuOpen(false);
 
-    if (user?.parentId) {
-      if (activeWorkspace !== "BUSINESS") {
-        setActiveWorkspace("BUSINESS");
-      }
-      return;
-    }
-
     const path = location.pathname;
     const profiles = user?.profiles || [];
     let targetWorkspace: "PERSONAL" | "BUSINESS" | null = null;
     if (path.startsWith("/business-")) {
       targetWorkspace = "BUSINESS";
+    } else if (path === "/categories") {
+      targetWorkspace = activeWorkspace || "PERSONAL";
     } else if (["/dashboard", "/income", "/expenses", "/pending", "/users"].some(p => path === p || path.startsWith(p + "/"))) {
       targetWorkspace = "PERSONAL";
     }
 
+    if (user?.parentId && !targetWorkspace) {
+      if (path !== "/workspace-selection") {
+        targetWorkspace = "BUSINESS";
+      }
+    }
+
     if (targetWorkspace) {
-      if (user?.blockedProfiles?.includes(targetWorkspace)) {
+      if (!profiles.includes(targetWorkspace)) {
         toast.error("El módulo fue deshabilitado, comuníquese con soporte-think@ccoplex.com o al 912509111", { duration: 5000 });
-        if (profiles.length === 1) {
-          const single = profiles[0] as WorkspaceType;
+        const availableWorkspaces = profiles.filter(p => p === "PERSONAL" || p === "BUSINESS") as WorkspaceType[];
+        if (availableWorkspaces.length === 1) {
+          const single = availableWorkspaces[0];
           setActiveWorkspace(single);
           navigate(single === "BUSINESS" ? "/business-dashboard" : "/dashboard");
-        } else if (profiles.length > 1) {
+        } else if (availableWorkspaces.length > 1) {
           navigate("/workspace-selection");
         } else {
           logout();
@@ -252,19 +260,50 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
         return;
       }
 
-      if (!profiles.includes(targetWorkspace)) {
-        // Acceso denegado: Redirigir
-        toast.error("No tienes acceso a este módulo");
-        if (profiles.length === 1) {
-          const single = profiles[0] as WorkspaceType;
-          setActiveWorkspace(single);
-          navigate(single === "BUSINESS" ? "/business-dashboard" : "/dashboard");
-        } else if (profiles.length > 1) {
-          navigate("/workspace-selection");
-        } else {
-          logout();
+      // Check business sub-module access
+      if (targetWorkspace === "BUSINESS") {
+        let requiredSubmodule: string | null = null;
+        if (path.startsWith("/business-dashboard")) requiredSubmodule = "BUSINESS_DASHBOARD";
+        else if (path.startsWith("/business-pos")) requiredSubmodule = "BUSINESS_POS";
+        else if (path.startsWith("/business-cash-register")) requiredSubmodule = "BUSINESS_CASH_REGISTER";
+        else if (path.startsWith("/business-inventory") || path.startsWith("/business-kardex")) requiredSubmodule = "BUSINESS_INVENTORY";
+        else if (path.startsWith("/business-finance")) requiredSubmodule = "BUSINESS_FINANCE";
+        else if (path.startsWith("/business-pending")) requiredSubmodule = "BUSINESS_PENDING";
+        else if (path.startsWith("/business-reports")) requiredSubmodule = "BUSINESS_REPORTS";
+        else if (path.startsWith("/business-history")) requiredSubmodule = "BUSINESS_HISTORY";
+        else if (path.startsWith("/categories")) requiredSubmodule = "BUSINESS_CATEGORIES";
+        else if (path.startsWith("/business-branches")) requiredSubmodule = "BUSINESS_BRANCHES";
+        else if (path.startsWith("/business-workers") || path.startsWith("/business-advisors") || path.startsWith("/business-commissions")) requiredSubmodule = "BUSINESS_WORKERS";
+
+        if (requiredSubmodule && !profiles.includes(requiredSubmodule)) {
+          toast.error("No tienes acceso a este submódulo");
+          // Redirect to first available business submodule
+          const firstSub = [
+            "BUSINESS_DASHBOARD", "BUSINESS_POS", "BUSINESS_CASH_REGISTER", "BUSINESS_INVENTORY",
+            "BUSINESS_FINANCE", "BUSINESS_PENDING", "BUSINESS_REPORTS", "BUSINESS_HISTORY",
+            "BUSINESS_CATEGORIES", "BUSINESS_WORKERS", "BUSINESS_BRANCHES"
+          ].find(sub => profiles.includes(sub));
+
+          if (firstSub) {
+            const subPaths: Record<string, string> = {
+              BUSINESS_DASHBOARD: "/business-dashboard",
+              BUSINESS_POS: "/business-pos",
+              BUSINESS_CASH_REGISTER: "/business-cash-register",
+              BUSINESS_INVENTORY: "/business-inventory",
+              BUSINESS_FINANCE: "/business-finance",
+              BUSINESS_PENDING: "/business-pending",
+              BUSINESS_REPORTS: "/business-reports",
+              BUSINESS_HISTORY: "/business-history",
+              BUSINESS_CATEGORIES: "/categories",
+              BUSINESS_WORKERS: "/business-workers",
+              BUSINESS_BRANCHES: "/business-branches",
+            };
+            navigate(subPaths[firstSub]);
+          } else {
+            navigate("/workspace-selection");
+          }
+          return;
         }
-        return;
       }
 
       if (activeWorkspace !== targetWorkspace) {
@@ -447,7 +486,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
             profile: "BUSINESS_WORKERS",
           },
           {
-            name: `${user?.advisorLabel || "Asesor de venta"}es`,
+            name: user?.agentRolePlural || "Asesores",
             path: "/business-advisors",
             icon: Users,
             color: "from-indigo-500 to-blue-600",
@@ -466,14 +505,10 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
   ];
 
   const activeMenu = activeWorkspace === "BUSINESS"
-    ? (user?.parentId
-      // Workers: only show items their profiles allow
-      ? businessMenu.filter(item => {
+    ? businessMenu.filter(item => {
         const key = (item as any).profile;
         return key ? user?.profiles?.includes(key) : false;
       })
-      // Owners: show all items already included in businessMenu (branches/workers already conditional)
-      : businessMenu)
     : menu;
 
   const handleLogout = () => {
@@ -938,6 +973,58 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                   onChange={(e) => setBusinessRubro(e.target.value)}
                 />
               </div>
+
+              {/* FACTURACIÓN ELECTRÓNICA - Solo si está habilitada */}
+              {user?.hasElectronicBilling && (
+                <div className="md:col-span-2 bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-5 space-y-4">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="p-2 bg-emerald-500 rounded-xl shadow">
+                      <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-black text-emerald-900">Facturación Electrónica – NubeFacT</h4>
+                      <p className="text-xs text-emerald-700 font-medium">Configura tus credenciales para emitir comprobantes SUNAT</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4">
+                    <div>
+                      <label className="block text-xs font-black text-emerald-800 uppercase tracking-widest mb-1.5">
+                        URL de API NubeFacT
+                      </label>
+                      <input
+                        type="url"
+                        placeholder="https://app.nubefact.com/api/v1/..."
+                        className="w-full px-4 py-2.5 border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold text-gray-700 bg-white"
+                        value={nubefactUrl}
+                        onChange={(e) => setNubefactUrl(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-black text-emerald-800 uppercase tracking-widest mb-1.5">
+                        Token de API NubeFacT
+                      </label>
+                      <input
+                        type="password"
+                        placeholder="Tu token secreto de NubeFacT"
+                        autoComplete="new-password"
+                        className="w-full px-4 py-2.5 border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold text-gray-700 bg-white"
+                        value={nubefactToken}
+                        onChange={(e) => setNubefactToken(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  {nubefactUrl && nubefactToken && (
+                    <p className="text-[11px] text-emerald-700 font-semibold bg-white/70 border border-emerald-100 rounded-lg px-3 py-2 flex items-center gap-1.5">
+                      ✅ Credenciales configuradas. Podrás emitir Boletas y Facturas desde el POS.
+                    </p>
+                  )}
+                  {(!nubefactUrl || !nubefactToken) && (
+                    <p className="text-[11px] text-amber-700 font-semibold bg-amber-50/70 border border-amber-200 rounded-lg px-3 py-2 flex items-center gap-1.5">
+                      ⚠️ Completa la URL y el Token para activar la emisión electrónica.
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div className="border-t border-gray-100 pt-6 md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* LOGO GESTION */}

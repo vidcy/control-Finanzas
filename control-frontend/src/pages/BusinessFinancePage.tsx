@@ -260,9 +260,19 @@ export default function BusinessFinancePage() {
     }));
 
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+
+    // Auto-calculate column widths
+    worksheet["!cols"] = Object.keys(dataToExport[0] || {}).map(key => {
+      const maxLen = Math.max(
+        key.length,
+        ...dataToExport.map(row => String((row as any)[key] ?? "").length)
+      );
+      return { wch: Math.min(maxLen + 2, 40) };
+    });
+
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Movimientos");
-    XLSX.writeFile(workbook, "Movimientos_Tesoreria.xlsx");
+    XLSX.writeFile(workbook, `Movimientos_Tesoreria_${format(new Date(), "yyyyMMdd")}.xlsx`);
     toast.success("Movimientos exportados a Excel");
   };
 
@@ -275,83 +285,164 @@ export default function BusinessFinancePage() {
     const doc = new jsPDF("l", "mm", "a4"); // Landscape orientation
     const businessName = "Control Finanzas";
 
+    // Header Banner
+    doc.setFillColor(79, 70, 229); // Indigo-600
+    doc.rect(0, 0, 297, 24, "F");
+    
+    doc.setTextColor(255, 255, 255);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(16);
-    doc.text(`REGISTRO DE TESORERÍA - ${businessName.toUpperCase()}`, 14, 20);
-
+    doc.setFontSize(14);
+    doc.text(`REGISTRO DE TESORERÍA - ${businessName.toUpperCase()}`, 14, 10);
+    
+    doc.setFontSize(8.5);
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(100);
-    doc.text(`Fecha de exportación: ${new Date().toLocaleDateString()}`, 14, 26);
+    
+    const branchLabel = filterBranch ? (branches.find(b => b.id === filterBranch)?.name || "Sede") : "Todas";
+    const categoryLabel = filterCategory ? (categories.find(c => c.id === filterCategory)?.name || "Categoría") : "Todas";
+    const typeLabel = filterType === "ALL" ? "Todos" : filterType === "INCOME" ? "Ingresos" : "Egresos";
+    const filterText = `Sede: ${branchLabel} | Categoría: ${categoryLabel} | Tipo: ${typeLabel}`;
+    
+    doc.text(`Filtros: ${filterText} | Rango: ${dateFrom || "Inicio"} al ${dateTo || "Hoy"}`, 14, 16);
+    doc.text(`Generado: ${format(new Date(), "dd/MM/yyyy HH:mm")}`, 14, 21);
 
-    let y = 35;
-    doc.setFillColor(79, 70, 229); // indigo-600
-    doc.rect(14, y, 268, 8, "F");
+    // Summary Box
+    doc.setFillColor(243, 244, 246);
+    doc.roundedRect(14, 28, 269, 14, 2, 2, "F");
+    
+    // Calculate total income and expense of filtered items
+    const totals = filteredTransactions.reduce((acc, t) => {
+      const amt = t.currency === "USD" ? t.amount * (t.exchangeRate || 1) : t.amount;
+      if (t.type === "INCOME" && t.status === "PAID") acc.income += amt;
+      if (t.type === "EXPENSE" && t.status === "PAID") acc.expense += amt;
+      return acc;
+    }, { income: 0, expense: 0 });
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    doc.setTextColor(255);
-    doc.text("Fecha", 16, y + 5);
-    doc.text("Concepto", 40, y + 5);
-    doc.text("Sede", 95, y + 5);
-    doc.text("Categoría", 125, y + 5);
-    doc.text("Método", 165, y + 5);
-    doc.text("Tipo", 190, y + 5);
-    doc.text("Monto Orig.", 212, y + 5);
-    doc.text("Total (S/)", 238, y + 5);
-    doc.text("Estado", 262, y + 5);
-
-    doc.setTextColor(0);
-    doc.setFont("helvetica", "normal");
+    doc.setTextColor(55, 65, 81);
     doc.setFontSize(8);
+    doc.setFont("helvetica", "bold");
+    
+    doc.text("INGRESOS (S/) *", 18, 33);
+    doc.setFontSize(11);
+    doc.setTextColor(16, 185, 129); // green-500
+    doc.text(`+S/ ${totals.income.toLocaleString("es-PE", { minimumFractionDigits: 2 })}`, 18, 39);
 
-    filteredTransactions.forEach((t) => {
-      y += 8;
+    doc.setTextColor(55, 65, 81);
+    doc.setFontSize(8);
+    doc.text("EGRESOS (S/) *", 90, 33);
+    doc.setFontSize(11);
+    doc.setTextColor(239, 68, 68); // red-500
+    doc.text(`-S/ ${totals.expense.toLocaleString("es-PE", { minimumFractionDigits: 2 })}`, 90, 39);
+
+    doc.setTextColor(55, 65, 81);
+    doc.setFontSize(8);
+    doc.text("SALDO NETO (S/)", 160, 33);
+    doc.setFontSize(11);
+    const balance = totals.income - totals.expense;
+    doc.setTextColor(balance >= 0 ? 79 : 220, balance >= 0 ? 70 : 38, balance >= 0 ? 229 : 38);
+    doc.text(`S/ ${balance.toLocaleString("es-PE", { minimumFractionDigits: 2 })}`, 160, 39);
+
+    doc.setTextColor(156, 163, 175);
+    doc.setFontSize(7);
+    doc.text("* Solo transacciones finalizadas", 225, 39);
+
+    // Draw Table Header
+    const startY = 48;
+    doc.setFillColor(79, 70, 229);
+    doc.rect(14, startY, 269, 9, "F");
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "bold");
+    doc.text("Fecha", 16, startY + 6);
+    doc.text("Concepto", 38, startY + 6);
+    doc.text("Sede", 95, startY + 6);
+    doc.text("Categoría", 130, startY + 6);
+    doc.text("Método", 170, startY + 6);
+    doc.text("Tipo", 195, startY + 6);
+    doc.text("Monto Orig.", 217, startY + 6);
+    doc.text("Total (S/)", 242, startY + 6);
+    doc.text("Estado", 267, startY + 6);
+
+    let y = startY + 9;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+
+    filteredTransactions.forEach((t, idx) => {
       if (y > 185) {
         doc.addPage();
         y = 20;
         doc.setFillColor(79, 70, 229);
-        doc.rect(14, y, 268, 8, "F");
+        doc.rect(14, y, 269, 9, "F");
         doc.setFont("helvetica", "bold");
-        doc.setFontSize(9);
-        doc.setTextColor(255);
-        doc.text("Fecha", 16, y + 5);
-        doc.text("Concepto", 40, y + 5);
-        doc.text("Sede", 95, y + 5);
-        doc.text("Categoría", 125, y + 5);
-        doc.text("Método", 165, y + 5);
-        doc.text("Tipo", 190, y + 5);
-        doc.text("Monto Orig.", 212, y + 5);
-        doc.text("Total (S/)", 238, y + 5);
-        doc.text("Estado", 262, y + 5);
-
-        doc.setTextColor(0);
-        doc.setFont("helvetica", "normal");
         doc.setFontSize(8);
-        y += 8;
+        doc.setTextColor(255, 255, 255);
+        doc.text("Fecha", 16, y + 6);
+        doc.text("Concepto", 38, y + 6);
+        doc.text("Sede", 95, y + 6);
+        doc.text("Categoría", 130, y + 6);
+        doc.text("Método", 170, y + 6);
+        doc.text("Tipo", 195, y + 6);
+        doc.text("Monto Orig.", 217, y + 6);
+        doc.text("Total (S/)", 242, y + 6);
+        doc.text("Estado", 267, y + 6);
+
+        y += 9;
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7.5);
+      }
+
+      // Zebra striping
+      if (idx % 2 === 0) {
+        doc.setFillColor(249, 250, 251);
+        doc.rect(14, y, 269, 7.5, "F");
       }
 
       const totalSoles = t.currency === "USD" ? t.amount * (t.exchangeRate || 1) : t.amount;
 
+      doc.setTextColor(55, 65, 81);
       doc.text(format(new Date(t.date), "yyyy-MM-dd"), 16, y + 5);
       
       const concepto = t.name || t.description || "Movimiento";
-      doc.text(concepto.substring(0, 32), 40, y + 5);
+      doc.text(concepto.substring(0, 32), 38, y + 5);
       
       const branchName = t.branch?.name || "Sede Central";
       doc.text(branchName.substring(0, 18), 95, y + 5);
       
       const cat = t.category?.name || "Sin Categoría";
-      doc.text(cat.substring(0, 22), 125, y + 5);
+      doc.text(cat.substring(0, 22), 130, y + 5);
       
-      doc.text(t.paymentMethod || "CASH", 165, y + 5);
-      doc.text(t.type === "INCOME" ? "Ingreso" : "Egreso", 190, y + 5);
-      doc.text(`${t.currency || "PEN"} ${t.amount.toFixed(2)}`, 212, y + 5);
-      doc.text(`S/ ${totalSoles.toFixed(2)}`, 238, y + 5);
-      doc.text(t.status === "CANCELLED" ? "Anulado" : t.status === "PENDING" ? "Pendiente" : "Finalizado", 262, y + 5);
+      doc.text(t.paymentMethod || "CASH", 170, y + 5);
+      
+      doc.setFont("helvetica", "bold");
+      if (t.type === "INCOME") {
+        doc.setTextColor(16, 124, 65);
+        doc.text("Ingreso", 195, y + 5);
+      } else {
+        doc.setTextColor(220, 38, 38);
+        doc.text("Egreso", 195, y + 5);
+      }
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(55, 65, 81);
+
+      doc.text(`${t.currency || "PEN"} ${t.amount.toFixed(2)}`, 217, y + 5);
+      doc.text(`S/ ${totalSoles.toFixed(2)}`, 242, y + 5);
+      
+      const statusText = t.status === "CANCELLED" ? "Anulado" : t.status === "PENDING" ? "Pendiente" : "Finalizado";
+      doc.text(statusText, 267, y + 5);
+
+      y += 7.5;
     });
 
-    doc.save("Reporte_Tesoreria.pdf");
+    // Footer page numbering
+    const totalPages = doc.getNumberOfPages();
+    for (let i = 1; i <= totalPages; i++) {
+      doc.setPage(i);
+      doc.setFontSize(7);
+      doc.setTextColor(156, 163, 175);
+      doc.text(`Think ERP Finanzas – Registro de Tesorería – Pág. ${i} de ${totalPages}`, 14, 202);
+    }
+
+    doc.save(`Reporte_Tesoreria_${format(new Date(), "yyyyMMdd_HHmm")}.pdf`);
     toast.success("Reporte de tesorería exportado a PDF");
   };
 

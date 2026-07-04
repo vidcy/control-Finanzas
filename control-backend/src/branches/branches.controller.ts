@@ -53,4 +53,10 @@ export class BranchesController {
     const ownerId = req.user.parentId || req.user.id;
     return this.branchesService.transferStock(ownerId, body);
   }
+
+  @Post('adjust')
+  adjustStock(@Req() req, @Body() body: any) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.branchesService.adjustBranchStock(ownerId, body);
+  }
 }

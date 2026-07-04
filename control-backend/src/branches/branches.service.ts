@@ -252,4 +252,99 @@ export class BranchesService {
       };
     });
   }
+
+  async adjustBranchStock(
+    userId: string,
+    data: {
+      productId: string;
+      branchId: string;
+      stock: number;
+    },
+  ) {
+    const { productId, branchId, stock } = data;
+
+    if (stock < 0) {
+      throw new BadRequestException('El stock no puede ser negativo');
+    }
+
+    const product = await this.prisma.product.findFirst({
+      where: { id: productId, userId },
+    });
+    if (!product) {
+      throw new NotFoundException('Producto no encontrado');
+    }
+
+    const branch = await this.prisma.branch.findFirst({
+      where: { id: branchId, userId },
+    });
+    if (!branch) {
+      throw new NotFoundException('La sede no existe');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      let bStock = await tx.branchStock.findUnique({
+        where: { productId_branchId: { productId, branchId } },
+      });
+
+      const oldStock = bStock ? bStock.stock : 0;
+      const diff = stock - oldStock;
+
+      if (diff === 0) {
+        return {
+          success: true,
+          message: 'No hay cambios en el stock de esta sede',
+          newStock: stock,
+        };
+      }
+
+      const type = diff > 0 ? 'IN' : 'OUT';
+      const quantity = Math.abs(diff);
+
+      if (bStock) {
+        await tx.branchStock.update({
+          where: { id: bStock.id },
+          data: { stock },
+        });
+      } else {
+        await tx.branchStock.create({
+          data: { productId, branchId, stock },
+        });
+      }
+
+      // Calculate new global stock
+      const otherBranchStocks = await tx.branchStock.findMany({
+        where: { productId, NOT: { branchId } },
+      });
+      const otherStocksSum = otherBranchStocks.reduce((sum, bs) => sum + bs.stock, 0);
+      const newGlobalStock = otherStocksSum + stock;
+
+      await tx.product.update({
+        where: { id: productId },
+        data: { stock: newGlobalStock },
+      });
+
+      // Log movement in InventoryMovement
+      await tx.inventoryMovement.create({
+        data: {
+          productId,
+          quantity,
+          type,
+          reason: `AJUSTE_SEDE: ${branch.name}`,
+          unitCost: product.costPrice,
+          totalCost: product.costPrice * quantity,
+          stockResult: stock,
+          userId,
+          branchId,
+        },
+      });
+
+      return {
+        success: true,
+        message: `El stock en la sede "${branch.name}" se actualizó de ${oldStock} a ${stock}`,
+        newStock: stock,
+        globalStock: newGlobalStock,
+      };
+    });
+  }
 }
+

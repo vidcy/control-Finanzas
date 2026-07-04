@@ -29,6 +29,9 @@ export interface Product {
   createdAt?: string;
   updatedAt?: string;
   branchStocks?: any[];
+  commissionType?: string;
+  commissionValue?: number;
+  priceWithAgent?: number;
 }
 
 export interface InventoryMovement {
@@ -101,12 +104,20 @@ export const checkoutCartRequest = async (data: {
     name?: string;
   }>;
   paymentMethod: string;
-  categoryId: string;
-  subCategoryId?: string | null;
+  categoryId?: string;
+  subCategoryId?: string;
+  cashShiftId: string;
   receiptUrl?: string | null;
-  advisorId?: string | null;
-  commissionPercentage?: number | null;
-  commissionAmount?: number | null;
+  advisorId?: string;
+  commissionType?: string;
+  commissionValue?: number;
+  commissionAmount?: number;
+  billingType?: string;
+  clientDocumentType?: string;
+  clientDocumentNumber?: string;
+  clientDenomination?: string;
+  clientAddress?: string;
+  clientEmail?: string;
 }) => {
   const res = await API.post("/products/checkout", data);
   return res.data;

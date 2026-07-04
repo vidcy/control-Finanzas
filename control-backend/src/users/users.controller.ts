@@ -169,6 +169,12 @@ export class UsersController {
         businessRubro: parent?.businessRubro,
         businessLogo: parent?.businessLogo,
         businessBanner: parent?.businessBanner,
+        agentRoleSingular: parent?.agentRoleSingular,
+        agentRolePlural: parent?.agentRolePlural,
+        defaultCommissionModel: parent?.defaultCommissionModel,
+        hasElectronicBilling: parent?.hasElectronicBilling,
+        nubefactUrl: parent?.nubefactUrl,
+        nubefactToken: parent?.nubefactToken,
       };
     }
     return user;
@@ -238,5 +244,37 @@ export class UsersController {
   @Patch(':id/inactive')
   inactiveUserRequest(@Param('id') id: string) {
     return this.usersService.inactiveUserRequest(id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('api/document/:type/:number')
+  async queryDocument(@Param('type') type: string, @Param('number') number: string) {
+    try {
+      let url = '';
+      if (type.toUpperCase() === 'DNI') {
+        url = `https://api.apis.net.pe/v1/dni?numero=${number}`;
+      } else if (type.toUpperCase() === 'RUC') {
+        url = `https://api.apis.net.pe/v1/ruc?numero=${number}`;
+      } else {
+        throw new BadRequestException('Tipo de documento no soportado para consulta automática');
+      }
+
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error('No se pudo obtener información del documento');
+      }
+      
+      const data: any = await response.json();
+      
+      return {
+        success: true,
+        nombre: data.nombre || data.razonSocial,
+        direccion: data.direccion || '',
+        data
+      };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
   }
 }

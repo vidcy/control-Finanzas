@@ -251,7 +251,8 @@ export default function BusinessKardexPage() {
         await checkoutCartRequest({
           items: [{ id: p.id, quantity: 4, salePrice: p.salePrice, name: p.name }],
           paymentMethod: "CASH",
-          categoryId: incCatId
+          categoryId: incCatId,
+          cashShiftId: "NONE"
         });
 
         // Stock update adjustment

@@ -73,6 +73,9 @@ model User {
   businessRubro    String?
   businessLogo     String?
   businessBanner   String?
+  hasElectronicBilling Boolean @default(false)
+  nubefactUrl          String?
+  nubefactToken        String?
 
   resetToken       String?
   resetTokenExpiry DateTime?
@@ -93,8 +96,13 @@ model User {
   branches        Branch[]       @relation("OwnerBranches")
   brands          Brand[]
   families        Family[]
+  sales           Sale[]
   advisorLabel    String         @default("Asesor de venta")
+  agentRoleSingular String       @default("Asesor de venta")
+  agentRolePlural   String       @default("Asesores")
+  defaultCommissionModel String  @default("PERCENTAGE")
   advisors        Advisor[]      @relation("UserAdvisors")
+  commissionModels CommissionModel[]
 }
 
 // =========================
@@ -206,14 +214,106 @@ model Transaction {
   cashShiftId     String?
   cashShift       CashShift?     @relation("CashShiftTransactions", fields: [cashShiftId], references: [id], onDelete: SetNull)
 
-  advisorId       String?
-  advisor         Advisor?       @relation(fields: [advisorId], references: [id], onDelete: SetNull)
-  commissionPercentage Float?
-  commissionAmount     Float?
-
   // ⏱ CONTROL
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// =========================
+// 🛒 VENTAS DEL POS (NUEVO)
+// =========================
+model Sale {
+  id              String         @id @default(uuid())
+  
+  // 👤 USUARIO Y SUCURSAL
+  userId          String
+  user            User           @relation(fields: [userId], references: [id])
+  branchId        String?
+  branch          Branch?        @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  workspace       String         @default("PERSONAL")
+
+  // 📅 FECHA Y CAJA
+  date            DateTime       @default(now())
+  cashShiftId     String?
+  cashShift       CashShift?     @relation("CashShiftSales", fields: [cashShiftId], references: [id], onDelete: SetNull)
+
+  // 💳 PAGO Y MONTO
+  paymentMethod   PaymentMethod
+  amount          Float
+  currency        Currency       @default(PEN)
+  exchangeRate    Float?
+  amountSoles     Float?
+
+  // 🧑‍💼 COMISIONES
+  advisorId       String?
+  advisor         Advisor?       @relation(fields: [advisorId], references: [id], onDelete: SetNull)
+  
+  // 📄 FACTURACIÓN ELECTRÓNICA
+  billingType          String    // "TICKET_VENTA" | "BOLETA" | "FACTURA" | "NOTA_CREDITO" | "NOTA_DEBITO"
+  billingStatus        String?   // "PENDING" | "SUCCESS" | "ERROR"
+  billingNumber        Int?
+  billingSerie         String?
+  billingError         String?   @db.Text
+  billingPdfUrl        String?   @db.Text
+  billingXmlUrl        String?   @db.Text
+  billingCdrUrl        String?   @db.Text
+  clientDocumentType   String?   
+  clientDocumentNumber String?
+  clientDenomination   String?
+  clientAddress        String?
+  clientEmail          String?
+
+  // 📦 ITEMS
+  items           SaleItem[]
+  commissions     Commission[]
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+}
+
+model SaleItem {
+  id              String         @id @default(uuid())
+  saleId          String
+  sale            Sale           @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId       String?
+  product         Product?       @relation(fields: [productId], references: [id], onDelete: SetNull)
+  name            String         
+  quantity        Float
+  price           Float
+  commissionType  String?
+  commissionValue Float?
+  commissionAmount Float?
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+}
+
+// =========================
+// 🧑‍💼 COMISIONES (NUEVO)
+// =========================
+enum CommissionStatus {
+  PENDING
+  PAID
+  CANCELLED
+}
+
+model Commission {
+  id              String           @id @default(uuid())
+  advisorId       String
+  advisor         Advisor          @relation(fields: [advisorId], references: [id], onDelete: Cascade)
+  
+  saleId          String?
+  sale            Sale?            @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  
+  amount          Float
+  status          CommissionStatus @default(PENDING)
+  isAdditional    Boolean          @default(false)
+  
+  // Si fue pagada, enlace a la transacción de tesorería
+  transactionId   String?          @unique
+  
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 }
 
 // =========================
@@ -246,6 +346,10 @@ model Product {
   familyId    String?
   family      Family?  @relation(fields: [familyId], references: [id], onDelete: SetNull)
   branchStocks BranchStock[]
+  priceWithAgent Float?
+  commissionType String         @default("PERCENT") // SPLIT, PERCENT, FIXED
+  commissionValue Float         @default(0.0)
+  saleItems      SaleItem[]
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -275,6 +379,7 @@ model CashShift {
   branch          Branch?     @relation(fields: [branchId], references: [id], onDelete: SetNull)
 
   transactions    Transaction[] @relation("CashShiftTransactions")
+  sales           Sale[]        @relation("CashShiftSales")
 }
 
 // =========================
@@ -395,6 +500,7 @@ model Branch {
   workers      User[]        @relation("BranchWorkers")
   transactions Transaction[]
   movements    InventoryMovement[]
+  sales        Sale[]
 }
 
 model BranchStock {
@@ -431,15 +537,50 @@ model Family {
 }
 
 model Advisor {
-  id                   String        @id @default(uuid())
+  id                   String            @id @default(uuid())
   name                 String
-  commissionPercentage Float         @default(0.0)
-  isActive             Boolean       @default(true)
+  commissionPercentage Float             @default(0.0)
+  commissionType       String            @default("PERCENT")
+  commissionValue      Float             @default(0.0)
+  isActive             Boolean           @default(true)
   userId               String
-  user                 User          @relation("UserAdvisors", fields: [userId], references: [id], onDelete: Cascade)
-  transactions         Transaction[]
-  createdAt            DateTime      @default(now())
-  updatedAt            DateTime      @updatedAt
+  user                 User              @relation("UserAdvisors", fields: [userId], references: [id], onDelete: Cascade)
+  
+  commissionModelId    String?
+  commissionModel      CommissionModel?  @relation(fields: [commissionModelId], references: [id], onDelete: SetNull)
+
+
+  sales                Sale[]
+  commissions          Commission[]
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+}
+
+
+model CommissionModel {
+  id              String   @id @default(uuid())
+  name            String
+  type            String   // PERCENT, FIXED, SPLIT
+  value           Float    @default(0.0)
+  
+  applyTo         String   @default("SALE") // SALE, PROFIT
+  minCommission   Float    @default(0.0)
+  maxCommission   Float?
+  allowDiscounts  Boolean  @default(true)
+  allowManualEdit Boolean  @default(true)
+  isAdditional    Boolean  @default(false)
+  
+  categoryIds     Json?
+  brandIds        Json?
+  productIds      Json?
+  
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  advisors        Advisor[]
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 

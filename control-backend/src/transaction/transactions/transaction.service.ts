@@ -93,7 +93,7 @@ export class TransactionService {
     ownerId: string;
     workerId?: string;
     workspace: string;
-    isPosSale?: boolean | 'all';
+
     startDate?: string;
     endDate?: string;
     filterUserId?: string;
@@ -104,7 +104,7 @@ export class TransactionService {
       ownerId,
       workerId,
       workspace,
-      isPosSale,
+
       startDate,
       endDate,
       filterUserId,
@@ -120,11 +120,7 @@ export class TransactionService {
     };
 
     // Exclude individual POS sales by default unless specifically requested or set to 'all'
-    if (isPosSale === 'all') {
-      // do not filter by isPosSale
-    } else {
-      whereClause.isPosSale = isPosSale !== undefined ? isPosSale : false;
-    }
+
 
     if (branchId) {
       whereClause.branchId = branchId;
@@ -184,7 +180,6 @@ export class TransactionService {
             name: true,
           },
         },
-        advisor: true,
       },
     });
   }
@@ -206,7 +201,6 @@ export class TransactionService {
       where: {
         OR: [{ userId: ownerId }, { user: { parentId: ownerId } }],
         workspace,
-        isPosSale: false, // Exclude individual POS sales!
         status: TransactionStatus.PAID,
       },
       select: {

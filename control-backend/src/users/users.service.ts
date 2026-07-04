@@ -131,6 +131,12 @@ export class UsersService {
         businessBanner: true,
         parentId: true,
         advisorLabel: true,
+        agentRoleSingular: true,
+        agentRolePlural: true,
+        defaultCommissionModel: true,
+        hasElectronicBilling: true,
+        nubefactUrl: true,
+        nubefactToken: true,
       },
     });
   }
@@ -147,6 +153,11 @@ export class UsersService {
       'businessLogo',
       'businessBanner',
       'advisorLabel',
+      'agentRoleSingular',
+      'agentRolePlural',
+      'defaultCommissionModel',
+      'nubefactUrl',
+      'nubefactToken',
     ];
     const updateData: any = {};
     for (const key of allowedFields) {
@@ -238,6 +249,13 @@ export class UsersService {
         businessRubro: true,
         businessLogo: true,
         businessBanner: true,
+        advisorLabel: true,
+        agentRoleSingular: true,
+        agentRolePlural: true,
+        defaultCommissionModel: true,
+        hasElectronicBilling: true,
+        nubefactUrl: true,
+        nubefactToken: true,
       },
     });
   }

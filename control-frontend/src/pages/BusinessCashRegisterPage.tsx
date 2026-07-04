@@ -178,108 +178,167 @@ export default function BusinessCashRegisterPage() {
   }, [filterBranchId, filterWorkerId, filterStartDate, filterEndDate]);
 
   const exportHistoryExcel = async () => {
-    if (history.length === 0) {
-      toast.error("No hay historial de turnos para exportar");
-      return;
+    const exportToast = toast.loading("Preparando exportación completa...");
+    try {
+      // Fetch ALL filtered data, bypassing pagination
+      const allRes = await getCashShiftHistoryRequest({
+        page: 1,
+        limit: 100000,
+        branchId: filterBranchId || undefined,
+        workerId: filterWorkerId || undefined,
+        startDate: filterStartDate ? `${filterStartDate}T00:00:00.000Z` : undefined,
+        endDate: filterEndDate ? `${filterEndDate}T23:59:59.999Z` : undefined,
+      });
+      const allShifts = allRes.items || [];
+      if (allShifts.length === 0) {
+        toast.dismiss(exportToast);
+        toast.error("No hay historial de turnos para exportar");
+        return;
+      }
+      const XLSX = await import("xlsx");
+      const dataToExport = allShifts.map((shift: any) => ({
+        "Apertura": format(new Date(shift.openedAt), "yyyy-MM-dd HH:mm"),
+        "Cierre": shift.closedAt ? format(new Date(shift.closedAt), "yyyy-MM-dd HH:mm") : "Abierta",
+        "Sede": shift.branch?.name || "Matriz",
+        "Vendedor": shift.user ? `${shift.user.name} ${shift.user.lastName || ""}`.trim() : "N/A",
+        "Monto Inicial (S/)": shift.initialBalance,
+        "Ventas (S/)": shift.totalSales || 0,
+        "Monto Final (S/)": shift.finalBalance || 0,
+      }));
+      const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+      // Auto-fit column widths
+      worksheet["!cols"] = Object.keys(dataToExport[0] || {}).map((key) => ({
+        wch: Math.min(Math.max(key.length, ...dataToExport.map((r: any) => String(r[key] ?? "").length)) + 2, 40),
+      }));
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Historial Turnos");
+      XLSX.writeFile(workbook, `Historial_Turnos_Caja_${format(new Date(), "yyyyMMdd")}.xlsx`);
+      toast.dismiss(exportToast);
+      toast.success(`${allShifts.length} turnos exportados a Excel`);
+    } catch {
+      toast.dismiss(exportToast);
+      toast.error("Error al exportar historial");
     }
-    const XLSX = await import("xlsx");
-    const dataToExport = history.map(shift => ({
-      "Apertura": format(new Date(shift.openedAt), "yyyy-MM-dd HH:mm"),
-      "Cierre": shift.closedAt ? format(new Date(shift.closedAt), "yyyy-MM-dd HH:mm") : "Abierta",
-      "Sede": shift.branch?.name || "Matriz",
-      "Vendedor": shift.user ? `${shift.user.name} ${shift.user.lastName || ""}`.trim() : "N/A",
-      "Monto Inicial (S/)": shift.initialBalance,
-      "Ventas (S/)": shift.totalSales || 0,
-      "Monto Final (S/)": shift.finalBalance || 0
-    }));
-
-    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Historial Turnos");
-    XLSX.writeFile(workbook, "Historial_Turnos_Caja.xlsx");
-    toast.success("Historial de turnos exportado a Excel");
   };
 
   const exportHistoryPdf = async () => {
-    if (history.length === 0) {
-      toast.error("No hay historial de turnos para exportar");
-      return;
-    }
-    const { jsPDF } = await import("jspdf");
-    const doc = new jsPDF("p", "mm", "a4");
-    const businessName = user?.businessName || "Control Finanzas";
+    const exportToast = toast.loading("Generando PDF completo...");
+    try {
+      // Fetch ALL filtered data, bypassing pagination
+      const allRes = await getCashShiftHistoryRequest({
+        page: 1,
+        limit: 100000,
+        branchId: filterBranchId || undefined,
+        workerId: filterWorkerId || undefined,
+        startDate: filterStartDate ? `${filterStartDate}T00:00:00.000Z` : undefined,
+        endDate: filterEndDate ? `${filterEndDate}T23:59:59.999Z` : undefined,
+      });
+      const allShifts = allRes.items || [];
+      if (allShifts.length === 0) {
+        toast.dismiss(exportToast);
+        toast.error("No hay historial de turnos para exportar");
+        return;
+      }
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(16);
-    doc.text(`HISTORIAL DE TURNOS DE CAJA - ${businessName.toUpperCase()}`, 14, 20);
+      const { jsPDF } = await import("jspdf");
+      const doc = new jsPDF("p", "mm", "a4");
+      const businessName = user?.businessName || "Control Finanzas";
 
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(100);
-    doc.text(`Fecha de exportación: ${new Date().toLocaleDateString()}`, 14, 26);
+      // Header banner
+      doc.setFillColor(49, 46, 129);
+      doc.rect(0, 0, 210, 28, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(14);
+      doc.text(`HISTORIAL DE CIERRES DE CAJA`, 14, 11);
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "normal");
+      doc.text(businessName.toUpperCase(), 14, 17);
 
-    let y = 35;
-    doc.setFillColor(79, 70, 229);
-    doc.rect(14, y, 182, 8, "F");
+      // Active filters summary
+      const filterParts = [];
+      if (filterBranchId) filterParts.push(`Sede: ${branches.find(b => b.id === filterBranchId)?.name || filterBranchId}`);
+      if (filterWorkerId) filterParts.push(`Vendedor: ${workers.find(w => w.id === filterWorkerId)?.name || filterWorkerId}`);
+      if (filterStartDate) filterParts.push(`Desde: ${filterStartDate}`);
+      if (filterEndDate) filterParts.push(`Hasta: ${filterEndDate}`);
+      doc.text(`Filtros: ${filterParts.length > 0 ? filterParts.join(" | ") : "Ninguno"}  |  Exportado: ${format(new Date(), "dd/MM/yyyy HH:mm")}`, 14, 23);
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    doc.setTextColor(255);
-    doc.text("Apertura", 16, y + 5);
-    doc.text("Cierre", 48, y + 5);
-    doc.text("Sede", 80, y + 5);
-    doc.text("Vendedor", 105, y + 5);
-    doc.text("M. Inicial", 135, y + 5);
-    doc.text("Ventas", 155, y + 5);
-    doc.text("M. Final", 175, y + 5);
-
-    doc.setTextColor(0);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
-
-    history.forEach((shift) => {
-      y += 8;
-      if (y > 275) {
-        doc.addPage();
-        y = 20;
+      const drawHeader = (startY: number) => {
         doc.setFillColor(79, 70, 229);
-        doc.rect(14, y, 182, 8, "F");
+        doc.rect(14, startY, 182, 8, "F");
         doc.setFont("helvetica", "bold");
-        doc.setFontSize(9);
-        doc.setTextColor(255);
-        doc.text("Apertura", 16, y + 5);
-        doc.text("Cierre", 48, y + 5);
-        doc.text("Sede", 80, y + 5);
-        doc.text("Vendedor", 105, y + 5);
-        doc.text("M. Inicial", 135, y + 5);
-        doc.text("Ventas", 155, y + 5);
-        doc.text("M. Final", 175, y + 5);
-
+        doc.setFontSize(8);
+        doc.setTextColor(255, 255, 255);
+        doc.text("Apertura", 16, startY + 5.5);
+        doc.text("Cierre", 48, startY + 5.5);
+        doc.text("Sede", 80, startY + 5.5);
+        doc.text("Vendedor", 107, startY + 5.5);
+        doc.text("M. Inicial", 136, startY + 5.5);
+        doc.text("Ventas", 157, startY + 5.5);
+        doc.text("M. Final", 178, startY + 5.5);
         doc.setTextColor(0);
         doc.setFont("helvetica", "normal");
         doc.setFontSize(8);
+      };
+
+      let y = 36;
+      drawHeader(y);
+      y += 8;
+
+      allShifts.forEach((shift: any, idx: number) => {
+        if (y > 275) {
+          doc.addPage();
+          y = 15;
+          drawHeader(y);
+          y += 8;
+        }
+        if (idx % 2 === 0) {
+          doc.setFillColor(249, 250, 251);
+          doc.rect(14, y, 182, 8, "F");
+        }
+        doc.setDrawColor(230, 230, 230);
+        doc.line(14, y + 8, 196, y + 8);
+
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(55, 65, 81);
+        doc.text(format(new Date(shift.openedAt), "dd/MM HH:mm"), 16, y + 5.5);
+        doc.text(shift.closedAt ? format(new Date(shift.closedAt), "dd/MM HH:mm") : "Abierta", 48, y + 5.5);
+
+        // Wrapped branch name
+        const branchLines = doc.splitTextToSize(shift.branch?.name || "Matriz", 24);
+        doc.text(branchLines[0], 80, y + 5.5);
+
+        const seller = shift.user ? `${shift.user.name} ${shift.user.lastName || ""}`.trim() : "N/A";
+        const sellerLines = doc.splitTextToSize(seller, 26);
+        doc.text(sellerLines[0], 107, y + 5.5);
+
+        doc.text(`S/ ${(shift.initialBalance || 0).toFixed(2)}`, 136, y + 5.5);
+        doc.text(`S/ ${(shift.totalSales || 0).toFixed(2)}`, 157, y + 5.5);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(5, 150, 105);
+        doc.text(`S/ ${(shift.finalBalance || 0).toFixed(2)}`, 178, y + 5.5);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(55, 65, 81);
         y += 8;
+      });
+
+      // Page numbers
+      const totalPages = doc.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        doc.setFontSize(7);
+        doc.setTextColor(148, 163, 184);
+        doc.text("Control Finanzas ERP — Reporte de Cierres de Caja", 14, 291);
+        doc.text(`Página ${i} de ${totalPages}`, 185, 291);
       }
 
-      const opened = format(new Date(shift.openedAt), "dd/MM HH:mm");
-      const closed = shift.closedAt ? format(new Date(shift.closedAt), "dd/MM HH:mm") : "Abierta";
-      const branchName = (shift.branch?.name || "Matriz").substring(0, 12);
-      const seller = shift.user ? `${shift.user.name} ${shift.user.lastName || ""}`.substring(0, 15).trim() : "N/A";
-      const initBal = shift.initialBalance || 0;
-      const salesVal = shift.totalSales || 0;
-      const finalBal = shift.finalBalance || 0;
-
-      doc.text(opened, 16, y + 5);
-      doc.text(closed, 48, y + 5);
-      doc.text(branchName, 80, y + 5);
-      doc.text(seller, 105, y + 5);
-      doc.text(`S/ ${initBal.toFixed(2)}`, 135, y + 5);
-      doc.text(`S/ ${salesVal.toFixed(2)}`, 155, y + 5);
-      doc.text(`S/ ${finalBal.toFixed(2)}`, 175, y + 5);
-    });
-
-    doc.save("Historial_Cierres_Caja.pdf");
-    toast.success("Historial exportado a PDF");
+      doc.save(`Historial_Cierres_Caja_${format(new Date(), "yyyyMMdd")}.pdf`);
+      toast.dismiss(exportToast);
+      toast.success(`${allShifts.length} turnos exportados a PDF`);
+    } catch {
+      toast.dismiss(exportToast);
+      toast.error("Error al generar PDF del historial");
+    }
   };
 
   const exportShiftDetailsExcel = async () => {
@@ -311,61 +370,88 @@ export default function BusinessCashRegisterPage() {
     const doc = new jsPDF("p", "mm", "a4");
     const businessName = user?.businessName || "Control Finanzas";
 
+    // Header
+    doc.setFillColor(49, 46, 129);
+    doc.rect(0, 0, 210, 36, "F");
+    doc.setTextColor(255, 255, 255);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(14);
-    doc.text(`DETALLE DE VENTAS - CAJA ${shiftDetails.shift.branch?.name || "MATRIZ"} (${businessName.toUpperCase()})`, 14, 20);
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(100);
-    doc.text(`Vendedor: ${shiftDetails.shift.user ? `${shiftDetails.shift.user.name} ${shiftDetails.shift.user.lastName || ""}` : "N/A"}`, 14, 26);
-    doc.text(`Apertura: ${format(new Date(shiftDetails.shift.openedAt), "dd/MM/yyyy HH:mm:ss")}`, 14, 31);
-    doc.text(`Cierre: ${shiftDetails.shift.closedAt ? format(new Date(shiftDetails.shift.closedAt), "dd/MM/yyyy HH:mm:ss") : "Abierta"}`, 14, 36);
-
-    let y = 45;
-    doc.setFillColor(79, 70, 229);
-    doc.rect(14, y, 182, 8, "F");
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    doc.setTextColor(255);
-    doc.text("Hora", 16, y + 5);
-    doc.text("Descripción / Productos", 45, y + 5);
-    doc.text("Método", 145, y + 5);
-    doc.text("Monto", 165, y + 5);
-
-    doc.setTextColor(0);
-    doc.setFont("helvetica", "normal");
+    doc.setFontSize(13);
+    doc.text(`DETALLE DE VENTAS — CAJA ${(shiftDetails.shift.branch?.name || "MATRIZ").toUpperCase()}`, 14, 10);
     doc.setFontSize(8);
+    doc.setFont("helvetica", "normal");
+    doc.text(businessName, 14, 17);
+    doc.text(`Vendedor: ${shiftDetails.shift.user ? `${shiftDetails.shift.user.name} ${shiftDetails.shift.user.lastName || ""}` : "N/A"}`, 14, 22);
+    doc.text(`Apertura: ${format(new Date(shiftDetails.shift.openedAt), "dd/MM/yyyy HH:mm:ss")}  |  Cierre: ${shiftDetails.shift.closedAt ? format(new Date(shiftDetails.shift.closedAt), "dd/MM/yyyy HH:mm:ss") : "Abierta"}`, 14, 27);
+    doc.text(`Total Ventas: S/ ${(shiftDetails.totalSales || shiftDetails.shift.totalSales || 0).toFixed(2)}  |  Comisiones: S/ ${(shiftDetails.totalCommissions || 0).toFixed(2)}  |  Neto: S/ ${(shiftDetails.netEarnings || 0).toFixed(2)}  |  Monto Final: S/ ${(shiftDetails.shift.finalBalance || 0).toFixed(2)}`, 14, 32);
 
-    shiftDetails.sales.forEach((sale: any) => {
-      y += 8;
-      if (y > 275) {
+    const drawTableHeader = (sy: number) => {
+      doc.setFillColor(79, 70, 229);
+      doc.rect(14, sy, 182, 8, "F");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8.5);
+      doc.setTextColor(255, 255, 255);
+      doc.text("Hora", 16, sy + 5.5);
+      doc.text("Descripción / Productos", 40, sy + 5.5);
+      doc.text("Método", 148, sy + 5.5);
+      doc.text("Monto (S/)", 168, sy + 5.5);
+      doc.setTextColor(0);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+    };
+
+    let y = 44;
+    drawTableHeader(y);
+    y += 8;
+
+    shiftDetails.sales.forEach((sale: any, idx: number) => {
+      const rawDesc = (sale.description || "").replace("Venta en POS: ", "");
+      // Wrap text within the description column width
+      const descLines = doc.splitTextToSize(rawDesc, 105);
+      const rowHeight = Math.max(8, descLines.length * 5);
+
+      if (y + rowHeight > 278) {
         doc.addPage();
-        y = 20;
-        doc.setFillColor(79, 70, 229);
-        doc.rect(14, y, 182, 8, "F");
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(9);
-        doc.setTextColor(255);
-        doc.text("Hora", 16, y + 5);
-        doc.text("Descripción / Productos", 45, y + 5);
-        doc.text("Método", 145, y + 5);
-        doc.text("Monto", 165, y + 5);
-
-        doc.setTextColor(0);
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(8);
+        y = 15;
+        drawTableHeader(y);
         y += 8;
       }
 
-      doc.text(format(new Date(sale.date), "HH:mm:ss"), 16, y + 5);
-      doc.text((sale.description || "").replace("Venta en POS: ", "").substring(0, 45), 45, y + 5);
-      doc.text(sale.paymentMethod || "CASH", 145, y + 5);
-      doc.text(`S/ ${Number(sale.amount).toFixed(2)}`, 165, y + 5);
+      if (idx % 2 === 0) {
+        doc.setFillColor(249, 250, 251);
+        doc.rect(14, y, 182, rowHeight, "F");
+      }
+      doc.setDrawColor(230, 230, 230);
+      doc.line(14, y + rowHeight, 196, y + rowHeight);
+
+      doc.setTextColor(100, 116, 139);
+      doc.text(format(new Date(sale.date), "HH:mm:ss"), 16, y + 5.5);
+
+      doc.setTextColor(30, 41, 59);
+      doc.text(descLines, 40, y + 5.5);
+
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(100, 116, 139);
+      doc.text(sale.paymentMethod || "CASH", 148, y + 5.5);
+
+      doc.setTextColor(5, 150, 105);
+      doc.text(`S/ ${Number(sale.amount).toFixed(2)}`, 168, y + 5.5);
+
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(55, 65, 81);
+      y += rowHeight;
     });
 
-    doc.save(`Detalle_Caja_${shiftDetails.shift.id}.pdf`);
+    // Page numbers
+    const totalPages = doc.getNumberOfPages();
+    for (let i = 1; i <= totalPages; i++) {
+      doc.setPage(i);
+      doc.setFontSize(7);
+      doc.setTextColor(148, 163, 184);
+      doc.text("Control Finanzas ERP — Detalle de Turno de Caja", 14, 291);
+      doc.text(`Página ${i} de ${totalPages}`, 185, 291);
+    }
+
+    doc.save(`Detalle_Caja_${shiftDetails.shift.id.substring(0, 8)}.pdf`);
     toast.success("Detalle de turno exportado a PDF");
   };
 
@@ -534,7 +620,7 @@ export default function BusinessCashRegisterPage() {
                 </select>
               </div>
 
-              {user?.role === "ADMIN" && (
+              {(user?.role === "ADMIN" || !user?.parentId) && (
                 <div className="flex items-center gap-1.5">
                   <span className="text-[10px] font-black uppercase text-gray-400">Vendedor:</span>
                   <select
@@ -910,9 +996,9 @@ export default function BusinessCashRegisterPage() {
                 </span>
               </div>
               <div className="p-3 bg-blue-50 rounded-xl border border-blue-100 text-center">
-                <span className="text-[10px] font-bold text-blue-600 uppercase block mb-1">Total Ventas</span>
+                <span className="text-[10px] font-bold text-blue-600 uppercase block mb-1">Total Ventas (Bruto)</span>
                 <span className="text-base font-black text-blue-700">
-                  S/ {Number(shiftDetails.shift.totalSales || 0).toFixed(2)}
+                  S/ {Number(shiftDetails.totalSales || shiftDetails.shift.totalSales || 0).toFixed(2)}
                 </span>
               </div>
               <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100 text-center">
@@ -923,67 +1009,100 @@ export default function BusinessCashRegisterPage() {
               </div>
             </div>
 
+            {(user?.role === "ADMIN" || !user?.parentId) && (
+              <div className="grid grid-cols-2 gap-3 mt-3 animate-fade-in">
+                <div className="p-3 bg-rose-50 rounded-xl border border-rose-100 text-center">
+                  <span className="text-[10px] font-bold text-rose-600 uppercase block mb-1">
+                    Total Comisiones ({user?.agentRolePlural || "Asesores"})
+                  </span>
+                  <span className="text-base font-black text-rose-700">
+                    S/ {Number(shiftDetails.totalCommissions || 0).toFixed(2)}
+                  </span>
+                </div>
+                <div className="p-3 bg-violet-50 rounded-xl border border-violet-100 text-center">
+                  <span className="text-[10px] font-bold text-violet-600 uppercase block mb-1">
+                    Ganancia Neta
+                  </span>
+                  <span className="text-base font-black text-violet-700">
+                    S/ {Number(shiftDetails.netEarnings || 0).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            )}
+
             {/* Sales Table inside Shift Details */}
-            <div className="space-y-2">
-              <h4 className="text-sm font-bold text-gray-805">Ventas Realizadas</h4>
-              <div className="border border-gray-100 rounded-2xl overflow-hidden max-h-60 overflow-y-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-gray-50 text-gray-500 uppercase font-bold text-[9px] tracking-wider">
-                    <tr>
-                      <th className="px-4 py-2.5">Hora</th>
-                      <th className="px-4 py-2.5">Descripción / Productos</th>
-                      <th className="px-4 py-2.5 text-center">Método</th>
-                      <th className="px-4 py-2.5 text-right">Monto</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {shiftDetails.sales.length === 0 ? (
+            {(user?.role === "ADMIN" || !user?.parentId) ? (
+              <div className="space-y-2">
+                <h4 className="text-sm font-bold text-gray-805">Ventas Realizadas</h4>
+                <div className="border border-gray-100 rounded-2xl overflow-hidden max-h-60 overflow-y-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-gray-50 text-gray-500 uppercase font-bold text-[9px] tracking-wider">
                       <tr>
-                        <td colSpan={4} className="px-4 py-8 text-center text-gray-400 font-medium">
-                          No se registraron ventas durante este turno.
-                        </td>
+                        <th className="px-4 py-2.5">Hora</th>
+                        <th className="px-4 py-2.5">Descripción / Productos</th>
+                        <th className="px-4 py-2.5 text-center">Método</th>
+                        <th className="px-4 py-2.5 text-right">Monto</th>
                       </tr>
-                    ) : (
-                      shiftDetails.sales.map((sale: any) => (
-                        <tr key={sale.id} className="hover:bg-gray-55">
-                          <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">
-                            {format(new Date(sale.date), "HH:mm:ss")}
-                          </td>
-                          <td className="px-4 py-2.5 text-gray-700 font-semibold truncate max-w-[200px]">
-                            {sale.description?.replace("Venta en POS: ", "") || "Venta Manual"}
-                          </td>
-                          <td className="px-4 py-2.5 text-center whitespace-nowrap">
-                            <span className="text-[9px] font-bold bg-gray-105 text-gray-600 px-1.5 py-0.5 rounded">
-                              {sale.paymentMethod}
-                            </span>
-                          </td>
-                          <td className="px-4 py-2.5 text-right font-bold text-emerald-600">
-                            S/ {Number(sale.amount).toFixed(2)}
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {!shiftDetails.sales || shiftDetails.sales.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="px-4 py-8 text-center text-gray-400 font-medium">
+                            No se registraron ventas durante este turno.
                           </td>
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                      ) : (
+                        shiftDetails.sales.map((sale: any) => (
+                          <tr key={sale.id} className="hover:bg-gray-55">
+                            <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">
+                              {format(new Date(sale.date), "HH:mm:ss")}
+                            </td>
+                            <td className="px-4 py-2.5 text-gray-700 font-semibold truncate max-w-[200px]">
+                              {sale.description?.replace("Venta en POS: ", "") || "Venta Manual"}
+                            </td>
+                            <td className="px-4 py-2.5 text-center whitespace-nowrap">
+                              <span className="text-[9px] font-bold bg-gray-105 text-gray-600 px-1.5 py-0.5 rounded">
+                                {sale.paymentMethod}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2.5 text-right font-bold text-emerald-600">
+                              S/ {Number(sale.amount).toFixed(2)}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 text-center">
+                <p className="text-xs text-amber-700 font-semibold">
+                  El desglose detallado de ventas y ganancias está reservado para administradores.
+                </p>
+              </div>
+            )}
 
             <div className="flex justify-between items-center pt-2">
               <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={exportShiftDetailsExcel}
-                  className="px-4 py-2.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5"
-                >
-                  Exportar Excel
-                </button>
-                <button
-                  type="button"
-                  onClick={exportShiftDetailsPdf}
-                  className="px-4 py-2.5 bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5"
-                >
-                  Exportar PDF
-                </button>
+                {(user?.role === "ADMIN" || !user?.parentId) && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={exportShiftDetailsExcel}
+                      className="px-4 py-2.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5"
+                    >
+                      Exportar Excel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={exportShiftDetailsPdf}
+                      className="px-4 py-2.5 bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5"
+                    >
+                      Exportar PDF
+                    </button>
+                  </>
+                )}
               </div>
               <button
                 type="button"

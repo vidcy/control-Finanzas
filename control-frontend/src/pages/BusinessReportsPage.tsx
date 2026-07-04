@@ -13,6 +13,7 @@ import {
   CartesianGrid,
 } from "recharts";
 import { getTransactionsRequest } from "../services/transaction.api";
+import { getSalesRequest } from "../services/sale.api";
 import { getProductsRequest, getInventoryMovementsRequest } from "../services/product.api";
 import { getBranchesRequest } from "../services/branch.api";
 import { getWorkersRequest } from "../services/user.api";
@@ -44,6 +45,7 @@ export default function BusinessReportsPage() {
 
   // Raw Database Data
   const [transactions, setTransactions] = useState<any[]>([]);
+  const [sales, setSales] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [movements, setMovements] = useState<any[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
@@ -95,8 +97,9 @@ export default function BusinessReportsPage() {
   const loadAllData = async () => {
     try {
       setLoading(true);
-      const [txs, prods, movs, branchList, workerList, advisorList] = await Promise.all([
-        getTransactionsRequest({ workspace: "BUSINESS", isPosSale: "all" }),
+      const [txs, salesData, prods, movs, branchList, workerList, advisorList] = await Promise.all([
+        getTransactionsRequest({ workspace: "BUSINESS" }),
+        getSalesRequest({ workspace: "BUSINESS" }),
         getProductsRequest(),
         getInventoryMovementsRequest(),
         getBranchesRequest(),
@@ -104,6 +107,7 @@ export default function BusinessReportsPage() {
         getAdvisorsRequest(),
       ]);
       setTransactions(txs);
+      setSales(salesData);
       setProducts(prods);
       setMovements(movs);
       setBranches(branchList);
@@ -136,10 +140,18 @@ export default function BusinessReportsPage() {
     return true;
   });
 
-  // POS Sales only - only count PAID sales!
-  const filteredSales = filteredTxs.filter(
-    (t: any) => t.type === "INCOME" && t.isPosSale && t.status === "PAID"
-  );
+  // POS Sales only
+  const filteredSales = sales.filter((s: any) => {
+    if (!s.date) return true;
+    const day = typeof s.date === "string" ? s.date.slice(0, 10) : "";
+    if (dateFrom && day < dateFrom) return false;
+    if (dateTo && day > dateTo) return false;
+    if (selectedBranch && s.branchId !== selectedBranch) return false;
+    if (selectedWorker && s.userId !== selectedWorker) return false;
+    if (selectedPaymentMethod && s.paymentMethod !== selectedPaymentMethod) return false;
+    if (selectedAdvisor && s.advisorId !== selectedAdvisor) return false;
+    return true;
+  });
 
 
   // 2. METRICS & CHART COMPUTATIONS
@@ -154,9 +166,7 @@ export default function BusinessReportsPage() {
 
   const netCashFlow = totalIncome - totalExpense;
 
-  // Treasury (inflow, outflow, loan, investment)
   const filteredTreasury = filteredTxs.filter((t: any) => {
-    if (t.isPosSale) return false;
     if (searchTx) {
       const q = searchTx.toLowerCase();
       return (
@@ -449,6 +459,211 @@ export default function BusinessReportsPage() {
     toast.success("Excel de Kardex exportado");
   };
 
+  const exportKardexPdf = async () => {
+    if (filteredMovements.length === 0) {
+      toast.error("No hay movimientos para exportar");
+      return;
+    }
+    try {
+      const { jsPDF } = await import("jspdf");
+      const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+
+      const branchLabel = selectedBranch ? (branches.find((b: any) => b.id === selectedBranch)?.name || "Sede") : "Todas";
+
+      doc.setFillColor(30, 41, 59);
+      doc.rect(0, 0, 297, 26, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(14);
+      doc.text("HISTORIAL DE MOVIMIENTOS KARDEX", 14, 10);
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "normal");
+      doc.text(`Sede: ${branchLabel}  |  Rango: ${dateFrom || "Inicio"} al ${dateTo || "Hoy"}  |  ${filteredMovements.length} movimientos  |  Exportado: ${format(new Date(), "dd/MM/yyyy HH:mm")}`, 14, 17);
+      doc.text(user?.businessName || "", 14, 22);
+
+      const headers = ["Fecha/Hora", "Sede", "Colaborador", "Producto", "SKU", "Tipo", "Cantidad", "Motivo"];
+      const colWidths = [32, 28, 32, 48, 22, 18, 22, 30];
+
+      const drawHeader = (sy: number) => {
+        doc.setFillColor(30, 41, 59);
+        doc.rect(14, sy, 269, 7, "F");
+        doc.setTextColor(255, 255, 255);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(7.5);
+        let cx = 14;
+        headers.forEach((h, i) => { doc.text(h, cx + 2, sy + 5); cx += colWidths[i]; });
+        doc.setTextColor(0); doc.setFont("helvetica", "normal"); doc.setFontSize(7.5);
+      };
+
+      let y = 34;
+      drawHeader(y);
+      y += 7;
+
+      filteredMovements.forEach((m: any, idx: number) => {
+        const prodLines = doc.splitTextToSize(m.product?.name || "—", colWidths[3] - 4);
+        const rowH = Math.max(7, prodLines.length * 4.5);
+
+        if (y + rowH > 195) { doc.addPage(); y = 15; drawHeader(y); y += 7; }
+
+        if (idx % 2 === 0) { doc.setFillColor(248, 250, 252); doc.rect(14, y, 269, rowH, "F"); }
+        doc.setDrawColor(230, 230, 230);
+        doc.line(14, y + rowH, 283, y + rowH);
+
+        let cx = 14;
+        const cells = [
+          format(new Date(m.createdAt), "dd/MM/yy HH:mm"),
+          m.branch?.name || "Central",
+          m.user ? `${m.user.name} ${m.user.lastName || ""}`.trim() : "—",
+          null, // product lines handled below
+          m.product?.sku || "—",
+          m.type === "IN" ? "Entrada" : "Salida",
+          `${m.type === "IN" ? "+" : "-"}${m.quantity} ${m.product?.unit || "uds"}`,
+          m.reason || "—",
+        ];
+
+        cells.forEach((val, i) => {
+          if (val === null) {
+            // Product column with wrapping
+            doc.setTextColor(30, 41, 59);
+            doc.text(prodLines, cx + 2, y + 5);
+          } else {
+            if (i === 5) {
+              doc.setTextColor(m.type === "IN" ? 5 : 190, m.type === "IN" ? 150 : 18, m.type === "IN" ? 105 : 60);
+              doc.setFont("helvetica", "bold");
+            } else if (i === 6) {
+              doc.setTextColor(m.type === "IN" ? 5 : 190, m.type === "IN" ? 150 : 18, m.type === "IN" ? 105 : 60);
+              doc.setFont("helvetica", "bold");
+            } else {
+              doc.setTextColor(55, 65, 81);
+              doc.setFont("helvetica", "normal");
+            }
+            doc.text(String(val), cx + 2, y + 5);
+            doc.setFont("helvetica", "normal"); doc.setTextColor(55, 65, 81);
+          }
+          cx += colWidths[i];
+        });
+        y += rowH;
+      });
+
+      const totalPages = doc.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        doc.setFontSize(7); doc.setTextColor(148, 163, 184);
+        doc.text("Control Finanzas ERP — Movimientos Kardex", 14, 203);
+        doc.text(`Página ${i} de ${totalPages}`, 275, 203);
+      }
+
+      doc.save(`Kardex_Movimientos_${format(new Date(), "yyyyMMdd")}.pdf`);
+      toast.success("PDF de Kardex descargado");
+    } catch (err) {
+      console.error(err);
+      toast.error("Error al generar PDF");
+    }
+  };
+
+  const exportInventoryPdf = async () => {
+    const productsToExport = selectedBranch
+      ? products.filter((p: any) => p.branchStocks?.some((bs: any) => bs.branchId === selectedBranch && bs.stock > 0))
+      : products;
+
+    if (productsToExport.length === 0) {
+      toast.error("No hay productos para exportar");
+      return;
+    }
+    try {
+      const { jsPDF } = await import("jspdf");
+      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+
+      const branchLabel = selectedBranch ? (branches.find((b: any) => b.id === selectedBranch)?.name || "Sede") : "Todas las Sedes";
+      const costVal = productsToExport.reduce((sum: number, p: any) => {
+        const stock = selectedBranch ? (p.branchStocks?.find((bs: any) => bs.branchId === selectedBranch)?.stock ?? p.stock) : p.stock;
+        return sum + p.costPrice * stock;
+      }, 0);
+      const saleVal = productsToExport.reduce((sum: number, p: any) => {
+        const stock = selectedBranch ? (p.branchStocks?.find((bs: any) => bs.branchId === selectedBranch)?.stock ?? p.stock) : p.stock;
+        return sum + p.salePrice * stock;
+      }, 0);
+
+      doc.setFillColor(79, 70, 229);
+      doc.rect(0, 0, 210, 32, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(14);
+      doc.text("VALORIZACIÓN DE INVENTARIO", 14, 11);
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "normal");
+      doc.text(`Sede: ${branchLabel}  |  ${productsToExport.length} productos  |  Exportado: ${format(new Date(), "dd/MM/yyyy HH:mm")}`, 14, 18);
+      doc.text(`Val. Costo: S/ ${costVal.toFixed(2)}  |  Val. Venta: S/ ${saleVal.toFixed(2)}  |  Margen: S/ ${(saleVal - costVal).toFixed(2)}`, 14, 24);
+
+      const drawHeader = (sy: number) => {
+        doc.setFillColor(79, 70, 229);
+        doc.rect(14, sy, 182, 7, "F");
+        doc.setTextColor(255, 255, 255);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(7.5);
+        doc.text("SKU", 16, sy + 5);
+        doc.text("Producto", 38, sy + 5);
+        doc.text("Stock", 108, sy + 5);
+        doc.text("Costo Unit.", 124, sy + 5);
+        doc.text("Val. Costo", 148, sy + 5);
+        doc.text("Precio Vta", 168, sy + 5);
+        doc.text("Val. Venta", 188, sy + 5);
+        doc.setTextColor(0); doc.setFont("helvetica", "normal"); doc.setFontSize(7.5);
+      };
+
+      let y = 40;
+      drawHeader(y);
+      y += 7;
+
+      productsToExport.forEach((p: any, idx: number) => {
+        const stock = selectedBranch ? (p.branchStocks?.find((bs: any) => bs.branchId === selectedBranch)?.stock ?? p.stock) : p.stock;
+        const nameLines = doc.splitTextToSize(p.name || "", 68);
+        const rowH = Math.max(7, nameLines.length * 4.5);
+
+        if (y + rowH > 278) { doc.addPage(); y = 15; drawHeader(y); y += 7; }
+
+        if (idx % 2 === 0) { doc.setFillColor(249, 250, 251); doc.rect(14, y, 182, rowH, "F"); }
+        doc.setDrawColor(230, 230, 230);
+        doc.line(14, y + rowH, 196, y + rowH);
+
+        doc.setTextColor(100, 116, 139);
+        doc.text(p.sku || "—", 16, y + 5);
+        doc.setTextColor(30, 41, 59);
+        doc.setFont("helvetica", "bold");
+        doc.text(nameLines, 38, y + 5);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(55, 65, 81);
+        doc.text(`${stock} ${p.unit || "uds"}`, 108, y + 5);
+        doc.text(`S/ ${(p.costPrice || 0).toFixed(2)}`, 124, y + 5);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(79, 70, 229);
+        doc.text(`S/ ${(p.costPrice * stock).toFixed(2)}`, 148, y + 5);
+        doc.setTextColor(55, 65, 81);
+        doc.setFont("helvetica", "normal");
+        doc.text(`S/ ${(p.salePrice || 0).toFixed(2)}`, 168, y + 5);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(5, 150, 105);
+        doc.text(`S/ ${(p.salePrice * stock).toFixed(2)}`, 188, y + 5);
+        doc.setFont("helvetica", "normal"); doc.setTextColor(55, 65, 81);
+        y += rowH;
+      });
+
+      const totalPages = doc.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        doc.setFontSize(7); doc.setTextColor(148, 163, 184);
+        doc.text("Control Finanzas ERP — Valorización de Stock", 14, 291);
+        doc.text(`Página ${i} de ${totalPages}`, 185, 291);
+      }
+
+      doc.save(`Valorizacion_Stock_${format(new Date(), "yyyyMMdd")}.pdf`);
+      toast.success("PDF de Valorización descargado");
+    } catch (err) {
+      console.error(err);
+      toast.error("Error al generar PDF");
+    }
+  };
+
   // PDF EXPORTS WITH HIGH AESTHETIC VALUE
   const exportSalesPdf = async () => {
     try {
@@ -527,31 +742,61 @@ export default function BusinessReportsPage() {
       doc.setTextColor(51, 65, 85);
       
       filteredSales.forEach((s, idx) => {
-        if (y > 270) {
+        const rawDesc = s.description || "Venta POS";
+        const descLines = doc.splitTextToSize(rawDesc, colWidths[3] - 4);
+        const rowH = Math.max(6.5, descLines.length * 4.5);
+
+        if (y + rowH > 270) {
           doc.addPage();
           y = 15;
+          doc.setFillColor(49, 46, 129);
+          doc.rect(14, y, 182, 7, "F");
+          doc.setTextColor(255, 255, 255);
+          doc.setFontSize(8);
+          let hx = 14;
+          headers.forEach((h, i) => { doc.text(h, hx + 2, y + 5); hx += colWidths[i]; });
+          doc.setFont("helvetica", "normal");
+          doc.setTextColor(51, 65, 85);
+          doc.setFontSize(7);
+          y += 7;
         }
+
         if (idx % 2 === 0) {
           doc.setFillColor(248, 250, 252);
-          doc.rect(14, y, 182, 6.5, "F");
+          doc.rect(14, y, 182, rowH, "F");
         }
+        doc.setDrawColor(230, 230, 230);
+        doc.line(14, y + rowH, 196, y + rowH);
+
         doc.setFontSize(7);
-        
         let tx = 14;
         const row = [
           format(new Date(s.date), "dd/MM/yyyy HH:mm"),
           s.branch?.name || "Sede Central",
           s.user ? `${s.user.name} ${s.user.lastName || ""}` : "—",
-          s.description || "Venta POS",
+          null, // description - handled separately
           s.paymentMethod || "CASH",
           `S/ ${s.amount.toFixed(2)}`,
         ];
         
         row.forEach((val, i) => {
-          doc.text(val, tx + 2, y + 4.5);
+          if (val === null) {
+            doc.setTextColor(55, 65, 81);
+            doc.text(descLines, tx + 2, y + 4.5);
+          } else {
+            if (i === 5) {
+              doc.setFont("helvetica", "bold");
+              doc.setTextColor(79, 70, 229);
+            } else {
+              doc.setFont("helvetica", "normal");
+              doc.setTextColor(51, 65, 85);
+            }
+            doc.text(String(val), tx + 2, y + 4.5);
+            doc.setFont("helvetica", "normal"); doc.setTextColor(51, 65, 85);
+          }
           tx += colWidths[i];
         });
-        y += 6.5;
+        y += rowH;
       });
 
       // Page numbers & footer
@@ -651,39 +896,67 @@ export default function BusinessReportsPage() {
       doc.setFont("helvetica", "normal");
       
       filteredTreasury.forEach((t, idx) => {
-        if (y > 270) {
+        const motivo = t.name + (t.description ? ` — ${t.description}` : "");
+        const motivoLines = doc.splitTextToSize(motivo, colWidths[3] - 4);
+        const rowH = Math.max(6.5, motivoLines.length * 4.5);
+
+        if (y + rowH > 270) {
           doc.addPage();
           y = 15;
+          doc.setFillColor(30, 41, 59);
+          doc.rect(14, y, 182, 7, "F");
+          doc.setTextColor(255, 255, 255);
+          doc.setFontSize(8);
+          let hx = 14;
+          headers.forEach((h, i) => { doc.text(h, hx + 2, y + 5); hx += colWidths[i]; });
+          doc.setFont("helvetica", "normal");
+          doc.setTextColor(51, 65, 85);
+          doc.setFontSize(7);
+          y += 7;
         }
+
         if (idx % 2 === 0) {
           doc.setFillColor(248, 250, 252);
-          doc.rect(14, y, 182, 6.5, "F");
+          doc.rect(14, y, 182, rowH, "F");
         }
+        doc.setDrawColor(230, 230, 230);
+        doc.line(14, y + rowH, 196, y + rowH);
+
         doc.setFontSize(7);
-        
         let tx = 14;
-        const row = [
+        const simpleVals = [
           format(new Date(t.date), "dd/MM/yyyy HH:mm"),
           t.branch?.name || "Sede Central",
           t.user ? `${t.user.name} ${t.user.lastName || ""}` : "—",
-          t.name + (t.description ? ` (${t.description})` : ""),
+          null, // motivo wrapped
           t.type === "INCOME" ? "Ingreso" : "Egreso",
           t.paymentMethod || "CASH",
           `S/ ${t.amount.toFixed(2)}`,
         ];
         
-        row.forEach((val, i) => {
-          if (i === 4) {
+        simpleVals.forEach((val, i) => {
+          if (val === null) {
+            doc.setTextColor(51, 65, 85);
+            doc.setFont("helvetica", "normal");
+            doc.text(motivoLines, tx + 2, y + 4.5);
+          } else if (i === 4) {
             doc.setTextColor(t.type === "INCOME" ? 16 : 225, t.type === "INCOME" ? 120 : 29, t.type === "INCOME" ? 87 : 72);
             doc.setFont("helvetica", "bold");
+            doc.text(String(val), tx + 2, y + 4.5);
+            doc.setFont("helvetica", "normal"); doc.setTextColor(51, 65, 85);
+          } else if (i === 6) {
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(t.type === "INCOME" ? 16 : 225, t.type === "INCOME" ? 120 : 29, t.type === "INCOME" ? 87 : 72);
+            doc.text(String(val), tx + 2, y + 4.5);
+            doc.setFont("helvetica", "normal"); doc.setTextColor(51, 65, 85);
           } else {
             doc.setTextColor(51, 65, 85);
             doc.setFont("helvetica", "normal");
+            doc.text(String(val), tx + 2, y + 4.5);
           }
-          doc.text(val, tx + 2, y + 4.5);
           tx += colWidths[i];
         });
-        y += 6.5;
+        y += rowH;
       });
 
       // Page numbers & footer
@@ -1333,12 +1606,18 @@ export default function BusinessReportsPage() {
                     <h3 className="text-base font-bold text-gray-900">Valorización Comercial de Inventarios</h3>
                     <p className="text-xs text-gray-400 mt-0.5">Valor total de tus existencias calculadas al precio de costo y precio de venta comercial.</p>
                   </div>
-                  <div className="flex gap-2">
+                <div className="flex gap-2">
                     <button
                       onClick={exportInventoryExcel}
                       className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 border border-gray-200 text-gray-700 text-xs font-bold rounded-xl shadow-sm hover:bg-emerald-50 hover:border-emerald-200 hover:text-emerald-700 transition-all"
                     >
-                      <FileDown className="w-4 h-4" /> Exportar Valorización Excel
+                      <FileDown className="w-4 h-4" /> Excel
+                    </button>
+                    <button
+                      onClick={exportInventoryPdf}
+                      className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-xs font-bold rounded-xl shadow-sm hover:bg-indigo-700 transition-all"
+                    >
+                      <FileDown className="w-4 h-4" /> PDF
                     </button>
                   </div>
                 </div>
@@ -1423,7 +1702,13 @@ export default function BusinessReportsPage() {
                       onClick={exportKardexExcel}
                       className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 border border-gray-200 text-gray-700 text-xs font-bold rounded-xl shadow-sm hover:bg-emerald-50 hover:border-emerald-200 hover:text-emerald-700 transition-all"
                     >
-                      <FileDown className="w-4 h-4" /> Exportar Excel
+                      <FileDown className="w-4 h-4" /> Excel
+                    </button>
+                    <button
+                      onClick={exportKardexPdf}
+                      className="flex items-center gap-2 px-4 py-2.5 bg-gray-900 text-white text-xs font-bold rounded-xl shadow-sm hover:bg-gray-800 transition-all"
+                    >
+                      <FileDown className="w-4 h-4" /> PDF
                     </button>
                   </div>
                 </div>

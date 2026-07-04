@@ -1,0 +1,73 @@
+
+> control-backend@1.0.0 build
+> nest build
+
+[96msrc/advisors/advisors.service.ts[0m:[93m125[0m:[93m9[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'advisor' does not exist in type 'TransactionInclude<DefaultArgs>'.
+
+[7m125[0m         advisor: true,
+[7m   [0m [91m        ~~~~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m7764[0m:[93m5[0m
+    [7m7764[0m     include?: TransactionInclude<ExtArgs> | null
+    [7m    [0m [96m    ~~~~~~~[0m
+    The expected type comes from property 'include' which is declared here on type '{ select?: TransactionSelect<DefaultArgs>; omit?: TransactionOmit<DefaultArgs>; include?: TransactionInclude<DefaultArgs>; ... 5 more ...; distinct?: TransactionScalarFieldEnum | TransactionScalarFieldEnum[]; }'
+[96msrc/advisors/advisors.service.ts[0m:[93m145[0m:[93m24[0m - [91merror[0m[90m TS2339: [0mProperty 'transactionItems' does not exist on type '{ id: string; name: string; userId: string; createdAt: Date; updatedAt: Date; currency: Currency; branchId: string; description: string; type: TransactionType; ... 15 more ...; cashShiftId: string; }'.
+
+[7m145[0m       const items = tx.transactionItems || [];
+[7m   [0m [91m                       ~~~~~~~~~~~~~~~~[0m
+[96msrc/advisors/advisors.service.ts[0m:[93m151[0m:[93m18[0m - [91merror[0m[90m TS2339: [0mProperty 'advisorId' does not exist on type '{ id: string; name: string; userId: string; createdAt: Date; updatedAt: Date; currency: Currency; branchId: string; description: string; type: TransactionType; ... 15 more ...; cashShiftId: string; }'.
+
+[7m151[0m           if (tx.advisorId === advisorId) {
+[7m   [0m [91m                 ~~~~~~~~~[0m
+[96msrc/advisors/advisors.service.ts[0m:[93m181[0m:[93m60[0m - [91merror[0m[90m TS2339: [0mProperty 'commissionStatus' does not exist on type '{ id: string; name: string; userId: string; createdAt: Date; updatedAt: Date; currency: Currency; branchId: string; description: string; type: TransactionType; ... 15 more ...; cashShiftId: string; }'.
+
+[7m181[0m           const itemStatus = grp[0].commissionStatus || tx.commissionStatus || 'PENDING';
+[7m   [0m [91m                                                           ~~~~~~~~~~~~~~~~[0m
+[96msrc/advisors/advisors.service.ts[0m:[93m219[0m:[93m25[0m - [91merror[0m[90m TS2551: [0mProperty 'transactionItem' does not exist on type 'PrismaService'. Did you mean 'transaction'?
+
+[7m219[0m       await this.prisma.transactionItem.updateMany({
+[7m   [0m [91m                        ~~~~~~~~~~~~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m394[0m:[93m7[0m
+    [7m394[0m   get transaction(): Prisma.TransactionDelegate<ExtArgs, ClientOptions>;
+    [7m   [0m [96m      ~~~~~~~~~~~[0m
+    'transaction' is declared here.
+[96msrc/advisors/advisors.service.ts[0m:[93m233[0m:[93m11[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'commissionStatus' does not exist in type '(Without<TransactionUpdateInput, TransactionUncheckedUpdateInput> & TransactionUncheckedUpdateInput) | (Without<...> & TransactionUpdateInput)'.
+
+[7m233[0m           commissionStatus: status,
+[7m   [0m [91m          ~~~~~~~~~~~~~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m7848[0m:[93m5[0m
+    [7m7848[0m     data: XOR<TransactionUpdateInput, TransactionUncheckedUpdateInput>
+    [7m    [0m [96m    ~~~~[0m
+    The expected type comes from property 'data' which is declared here on type '{ select?: TransactionSelect<DefaultArgs>; omit?: TransactionOmit<DefaultArgs>; include?: TransactionInclude<DefaultArgs>; data: (Without<...> & TransactionUncheckedUpdateInput) | (Without<...> & TransactionUpdateInput); where: TransactionWhereUniqueInput; }'
+[96msrc/advisors/advisors.service.ts[0m:[93m237[0m:[93m25[0m - [91merror[0m[90m TS2551: [0mProperty 'transactionItem' does not exist on type 'PrismaService'. Did you mean 'transaction'?
+
+[7m237[0m       await this.prisma.transactionItem.updateMany({
+[7m   [0m [91m                        ~~~~~~~~~~~~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m394[0m:[93m7[0m
+    [7m394[0m   get transaction(): Prisma.TransactionDelegate<ExtArgs, ClientOptions>;
+    [7m   [0m [96m      ~~~~~~~~~~~[0m
+    'transaction' is declared here.
+[96msrc/advisors/advisors.service.ts[0m:[93m247[0m:[93m11[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'commissionStatus' does not exist in type '(Without<TransactionUpdateInput, TransactionUncheckedUpdateInput> & TransactionUncheckedUpdateInput) | (Without<...> & TransactionUpdateInput)'.
+
+[7m247[0m           commissionStatus: status,
+[7m   [0m [91m          ~~~~~~~~~~~~~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m7848[0m:[93m5[0m
+    [7m7848[0m     data: XOR<TransactionUpdateInput, TransactionUncheckedUpdateInput>
+    [7m    [0m [96m    ~~~~[0m
+    The expected type comes from property 'data' which is declared here on type '{ select?: TransactionSelect<DefaultArgs>; omit?: TransactionOmit<DefaultArgs>; include?: TransactionInclude<DefaultArgs>; data: (Without<...> & TransactionUncheckedUpdateInput) | (Without<...> & TransactionUpdateInput); where: TransactionWhereUniqueInput; }'
+[96msrc/transaction/transactions/transaction.service.ts[0m:[93m187[0m:[93m9[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'advisor' does not exist in type 'TransactionInclude<DefaultArgs>'.
+
+[7m187[0m         advisor: true,
+[7m   [0m [91m        ~~~~~~~[0m
+
+  [96mnode_modules/.prisma/client/index.d.ts[0m:[93m7764[0m:[93m5[0m
+    [7m7764[0m     include?: TransactionInclude<ExtArgs> | null
+    [7m    [0m [96m    ~~~~~~~[0m
+    The expected type comes from property 'include' which is declared here on type '{ select?: TransactionSelect<DefaultArgs>; omit?: TransactionOmit<DefaultArgs>; include?: TransactionInclude<DefaultArgs>; ... 5 more ...; distinct?: TransactionScalarFieldEnum | TransactionScalarFieldEnum[]; }'
+
+Found 9 error(s).
+

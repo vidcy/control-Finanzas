@@ -190,7 +190,6 @@ export class PendingTransactionService {
           where: {
             OR: [{ userId: ownerId }, { user: { parentId: ownerId } }],
             workspace: existing.workspace,
-            isPosSale: false,
             status: 'PAID',
           },
           select: {

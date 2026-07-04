@@ -2,16 +2,21 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FilesService } from '../files/files.service';
+import { CommissionEngine } from './commission-engine';
+import { NubefactService } from '../nubefact/nubefact.service';
 
 @Injectable()
 export class ProductsService {
+  private readonly logger = new Logger(ProductsService.name);
   constructor(
     private prisma: PrismaService,
     private filesService: FilesService,
-  ) {}
+    private nubefactService: NubefactService,
+  ) { }
 
   async create(userId: string, data: any) {
     const { presentations, unit, ...productData } = data;
@@ -21,6 +26,8 @@ export class ProductsService {
     const minStock = parseFloat(productData.minStock || 5);
     const costPrice = parseFloat(productData.costPrice || 0);
     const salePrice = parseFloat(productData.salePrice || 0);
+    const priceWithAgent = productData.priceWithAgent !== undefined && productData.priceWithAgent !== null ? parseFloat(productData.priceWithAgent) : null;
+    const commissionValue = parseFloat(productData.commissionValue || 0);
 
     // Validate presentations
     const presentationsList = presentations || [];
@@ -65,6 +72,9 @@ export class ProductsService {
           minStock,
           costPrice,
           salePrice,
+          priceWithAgent,
+          commissionValue,
+          commissionType: productData.commissionType || 'PERCENT',
           unit: unit || 'UNIDAD',
           userId,
         },
@@ -191,6 +201,10 @@ export class ProductsService {
       updateData.costPrice = parseFloat(updateData.costPrice);
     if (updateData.salePrice !== undefined)
       updateData.salePrice = parseFloat(updateData.salePrice);
+    if (updateData.priceWithAgent !== undefined)
+      updateData.priceWithAgent = updateData.priceWithAgent !== null ? parseFloat(updateData.priceWithAgent) : null;
+    if (updateData.commissionValue !== undefined)
+      updateData.commissionValue = parseFloat(updateData.commissionValue || 0);
     if (unit !== undefined) updateData.unit = unit;
 
     if (updateData.brandId !== undefined) {
@@ -280,7 +294,7 @@ export class ProductsService {
 
         // Find or create the target branch (Matrix by default or explicit branchId)
         let targetBranchId = updateData.branchId;
-        
+
         let firstBranch = await tx.branch.findFirst({
           where: { userId },
           orderBy: { createdAt: 'asc' },
@@ -294,7 +308,7 @@ export class ProductsService {
             },
           });
         }
-        
+
         if (!targetBranchId) {
           targetBranchId = firstBranch.id;
         }
@@ -555,6 +569,13 @@ export class ProductsService {
       advisorId,
       commissionPercentage,
       commissionAmount,
+      // --- Facturación electrónica ---
+      billingType,
+      clientDocumentType,
+      clientDocumentNumber,
+      clientDenomination,
+      clientAddress,
+      clientEmail,
     } = checkoutDto;
 
     if (!items || items.length === 0) {
@@ -573,6 +594,8 @@ export class ProductsService {
       }
 
       let totalAmount = 0;
+      let totalCommission = 0;
+      let isCommissionAdditional = false;
       const salesDetails: string[] = [];
       const itemsToProcess: Array<{
         product: any;
@@ -581,17 +604,103 @@ export class ProductsService {
         requiredQty: number;
         presentationName: string;
         salePrice: number;
+        commissionAccrued: number;
+        advisorId: string | null;
         branchStockRecord?: any;
       }> = [];
 
       for (const item of items) {
+        let cleanItemAdvisorId =
+          item.advisorId &&
+            item.advisorId !== 'null' &&
+            item.advisorId !== 'undefined' &&
+            item.advisorId !== ''
+            ? item.advisorId
+            : null;
+
+        if (!cleanItemAdvisorId && advisorId && advisorId !== 'null' && advisorId !== 'undefined' && advisorId !== '') {
+          cleanItemAdvisorId = advisorId;
+        }
+
         if (item.isCustom) {
           const qty = parseFloat(item.quantity);
           const price = parseFloat(item.salePrice);
-          totalAmount += qty * price;
+          let customCommission = 0;
+          let customChargedPrice = price;
+
+          if (cleanItemAdvisorId) {
+            const adv = await tx.advisor.findUnique({
+              where: { id: cleanItemAdvisorId },
+              include: { commissionModel: true },
+            });
+            if (adv) {
+              let activeType = 'PERCENT';
+              let activeVal = 0;
+              let applyTo = 'SALE';
+              let minComm = 0.0;
+              let maxComm: number | null = null;
+              let isAdditional = false;
+
+              if (adv.commissionModel) {
+                const model = adv.commissionModel;
+                activeType = model.type;
+                activeVal = model.value;
+                applyTo = model.applyTo || 'SALE';
+                minComm = model.minCommission ?? 0.0;
+                maxComm = model.maxCommission ?? null;
+                isAdditional = model.isAdditional === true;
+              } else {
+                activeType = adv.commissionType || 'PERCENT';
+                activeVal = adv.commissionValue || 0;
+              }
+
+              if (item.commissionType) {
+                activeType = item.commissionType;
+              }
+              if (item.commissionValue !== undefined && item.commissionValue !== null) {
+                activeVal = parseFloat(item.commissionValue);
+              }
+
+              const engineResult = CommissionEngine.calculate({
+                type: activeType,
+                value: activeVal,
+                applyTo,
+                isAdditional: isAdditional || activeType === 'SPLIT',
+                basePrice: price,
+                costPrice: 0,
+                minCommission: minComm,
+                maxCommission: maxComm,
+              });
+
+              if (isAdditional || activeType === 'SPLIT') {
+                customChargedPrice = engineResult.chargedPriceUnit;
+                customCommission = engineResult.commissionUnit * qty;
+                if (activeType === 'SPLIT') {
+                  isCommissionAdditional = true;
+                }
+              } else {
+                customCommission = engineResult.commissionUnit * qty;
+              }
+            }
+          }
+
+          totalAmount += qty * customChargedPrice;
+          totalCommission += customCommission;
+
           salesDetails.push(
-            `${qty}x ${item.name} (Libre) (S/ ${price.toFixed(2)} c/u)`,
+            `${qty}x ${item.name} (Libre) (S/ ${customChargedPrice.toFixed(2)} c/u)`,
           );
+          itemsToProcess.push({
+            product: null,
+            item,
+            mainUnitsQty: 0,
+            requiredQty: qty,
+            presentationName: 'UNIDAD',
+            salePrice: customChargedPrice,
+            commissionAccrued: customCommission,
+            advisorId: cleanItemAdvisorId,
+            branchStockRecord: null,
+          });
           continue;
         }
 
@@ -607,10 +716,7 @@ export class ProductsService {
 
         let equivalence = 1;
         let presentationName = product.unit;
-        let salePrice =
-          item.salePrice !== undefined && item.salePrice !== null
-            ? Number(item.salePrice)
-            : product.salePrice;
+        let baseSalePrice = product.salePrice;
 
         if (item.presentationId) {
           const pres = product.presentations.find(
@@ -623,10 +729,7 @@ export class ProductsService {
           }
           equivalence = pres.equivalence;
           presentationName = pres.name;
-          salePrice =
-            item.salePrice !== undefined && item.salePrice !== null
-              ? Number(item.salePrice)
-              : pres.price;
+          baseSalePrice = pres.price;
         }
 
         const requiredQty = parseFloat(item.quantity);
@@ -652,9 +755,116 @@ export class ProductsService {
           );
         }
 
-        totalAmount += requiredQty * salePrice;
+        // Calculate commission and price charged based on advisor configuration
+        let lineCommission = 0;
+        let chargedPrice = baseSalePrice;
+
+        if (cleanItemAdvisorId) {
+          const adv = await tx.advisor.findUnique({
+            where: { id: cleanItemAdvisorId },
+            include: { commissionModel: true },
+          });
+          if (adv) {
+            let isEligible = true;
+            if (adv.commissionModel) {
+              const model = adv.commissionModel;
+              if (model.categoryIds && Array.isArray(model.categoryIds) && model.categoryIds.length > 0) {
+                if (!product.familyId || !model.categoryIds.includes(product.familyId)) {
+                  isEligible = false;
+                }
+              }
+              if (model.brandIds && Array.isArray(model.brandIds) && model.brandIds.length > 0) {
+                if (!product.brandId || !model.brandIds.includes(product.brandId)) {
+                  isEligible = false;
+                }
+              }
+              if (model.productIds && Array.isArray(model.productIds) && model.productIds.length > 0) {
+                if (!model.productIds.includes(product.id)) {
+                  isEligible = false;
+                }
+              }
+            }
+
+            if (!isEligible) {
+              if (item.salePrice !== undefined && item.salePrice !== null) {
+                chargedPrice = parseFloat(item.salePrice);
+              }
+              lineCommission = 0;
+            } else {
+              let activeType = 'PERCENT';
+              let activeVal = 0;
+              let applyTo = 'SALE';
+              let minComm = 0.0;
+              let maxComm: number | null = null;
+              let isAdditional = false;
+
+              if (adv.commissionModel) {
+                const model = adv.commissionModel;
+                activeType = model.type;
+                activeVal = model.value;
+                applyTo = model.applyTo || 'SALE';
+                minComm = model.minCommission ?? 0.0;
+                maxComm = model.maxCommission ?? null;
+                isAdditional = model.isAdditional === true;
+              } else {
+                activeType = adv.commissionType || 'PERCENT';
+                activeVal = adv.commissionValue || 0;
+              }
+
+              if (item.commissionType) {
+                activeType = item.commissionType;
+              }
+              if (item.commissionValue !== undefined && item.commissionValue !== null) {
+                activeVal = parseFloat(item.commissionValue);
+              }
+
+              // Compute using the new Engine
+              const engineResult = CommissionEngine.calculate({
+                type: activeType,
+                value: activeVal,
+                applyTo,
+                isAdditional: isAdditional || activeType === 'SPLIT',
+                basePrice: baseSalePrice,
+                costPrice: product.costPrice || 0,
+                minCommission: minComm,
+                maxCommission: maxComm,
+              });
+
+              if (isAdditional || activeType === 'SPLIT') {
+                isCommissionAdditional = true;
+              }
+
+              // Apply customer price override if manual override is present
+              if (item.salePrice !== undefined && item.salePrice !== null) {
+                chargedPrice = parseFloat(item.salePrice);
+                // Re-calculate commission for additional types if manual override overrides client price
+                if (isAdditional || activeType === 'SPLIT') {
+                  if (activeType === 'SPLIT' || activeType === 'FIXED_PER_UNIT' || activeType === 'FIXED') {
+                    lineCommission = Math.max(0, chargedPrice - baseSalePrice) * requiredQty;
+                  } else {
+                    lineCommission = engineResult.commissionUnit * requiredQty;
+                  }
+                } else {
+                  lineCommission = engineResult.commissionUnit * requiredQty;
+                }
+              } else {
+                chargedPrice = engineResult.chargedPriceUnit;
+                lineCommission = engineResult.commissionUnit * requiredQty;
+              }
+            }
+          }
+        } else {
+          if (item.salePrice !== undefined && item.salePrice !== null) {
+            chargedPrice = parseFloat(item.salePrice);
+          }
+        }
+
+
+        totalAmount += requiredQty * chargedPrice;
+        totalCommission += lineCommission;
+
         salesDetails.push(
-          `${requiredQty}x ${product.name} [${presentationName}] (S/ ${salePrice.toFixed(2)} c/u)`,
+          `${requiredQty}x ${product.name} [${presentationName}] (S/ ${chargedPrice.toFixed(2)} c/u)`,
         );
 
         itemsToProcess.push({
@@ -663,75 +873,70 @@ export class ProductsService {
           mainUnitsQty,
           requiredQty,
           presentationName,
-          salePrice,
+          salePrice: chargedPrice,
+          commissionAccrued: lineCommission,
+          advisorId: cleanItemAdvisorId,
           branchStockRecord,
         });
       }
 
-      let finalCommPercentage = null;
-      let finalCommAmount = null;
-      const cleanAdvisorId =
-        advisorId &&
-        advisorId !== 'null' &&
-        advisorId !== 'undefined' &&
-        advisorId !== ''
-          ? advisorId
-          : null;
-
-      if (cleanAdvisorId) {
-        if (
-          commissionPercentage !== undefined &&
-          commissionPercentage !== null &&
-          commissionPercentage !== ''
-        ) {
-          finalCommPercentage = parseFloat(String(commissionPercentage));
-        } else {
-          const adv = await tx.advisor.findUnique({
-            where: { id: cleanAdvisorId },
-          });
-          if (adv) {
-            finalCommPercentage = adv.commissionPercentage;
-          }
-        }
-        if (
-          commissionAmount !== undefined &&
-          commissionAmount !== null &&
-          commissionAmount !== ''
-        ) {
-          finalCommAmount = parseFloat(String(commissionAmount));
-        } else if (finalCommPercentage !== null) {
-          finalCommAmount = parseFloat(
-            ((totalAmount * finalCommPercentage) / 100).toFixed(2),
-          );
+      let resolvedAdvisorId = advisorId && advisorId !== 'null' && advisorId !== 'undefined' && advisorId !== '' ? advisorId : null;
+      if (!resolvedAdvisorId) {
+        const firstWithAdvisor = itemsToProcess.find(i => i.advisorId);
+        if (firstWithAdvisor) {
+          resolvedAdvisorId = firstWithAdvisor.advisorId;
         }
       }
 
-      // 1. Create Financial Transaction (Income)
-      const transaction = await tx.transaction.create({
+      let finalCommPercentage = null;
+      if (resolvedAdvisorId) {
+        const mainAdv = await tx.advisor.findUnique({
+          where: { id: resolvedAdvisorId },
+        });
+        if (mainAdv) {
+          finalCommPercentage = mainAdv.commissionPercentage;
+        }
+      }
+
+      // 1. Create Sale Record
+      // Determinar el estado inicial de facturación
+      const hasBilling = billingType === 'BOLETA' || billingType === 'FACTURA';
+
+      const sale = await tx.sale.create({
         data: {
-          name: 'Venta en Caja',
-          type: 'INCOME',
-          amount: parseFloat(totalAmount.toFixed(2)),
-          categoryId,
-          subCategoryId: subCategoryId || null,
-          date: new Date(),
-          status: 'PAID',
-          currency: 'PEN',
-          paymentMethod,
-          description: `Venta en POS: ${salesDetails.join(', ')}`,
-          workspace: 'BUSINESS',
-          receiptUrl: receiptUrl || null,
           userId: workerId,
-          cashShiftId: activeShift.id,
-          isPosSale: true,
           branchId: activeShift.branchId || null,
-          advisorId: cleanAdvisorId,
-          commissionPercentage: finalCommPercentage,
-          commissionAmount: finalCommAmount,
+          workspace: 'BUSINESS',
+          date: new Date(),
+          cashShiftId: activeShift.id,
+          paymentMethod,
+          amount: parseFloat(totalAmount.toFixed(2)),
+          currency: 'PEN',
+          advisorId: resolvedAdvisorId,
+          billingType: billingType || 'TICKET_VENTA',
+          billingStatus: hasBilling ? 'PENDING' : null,
+          clientDocumentType: clientDocumentType || null,
+          clientDocumentNumber: clientDocumentNumber || null,
+          clientDenomination: clientDenomination || null,
+          clientAddress: clientAddress || null,
+          clientEmail: clientEmail || null,
         },
       });
 
-      // 2. Process stock adjustments and movements
+      // Registrar Comisión consolidada si hay asesor
+      if (resolvedAdvisorId && totalCommission > 0) {
+        await tx.commission.create({
+          data: {
+            advisorId: resolvedAdvisorId,
+            saleId: sale.id,
+            amount: parseFloat(totalCommission.toFixed(2)),
+            status: 'PENDING',
+            isAdditional: isCommissionAdditional,
+          },
+        });
+      }
+
+      // 2. Process stock adjustments and movements, and create TransactionItems
       for (const proc of itemsToProcess) {
         const {
           product,
@@ -740,7 +945,28 @@ export class ProductsService {
           requiredQty,
           presentationName,
           branchStockRecord,
+          salePrice,
+          commissionAccrued,
+          advisorId: itemAdvisorId,
         } = proc;
+
+        // Save SaleItem
+        await tx.saleItem.create({
+          data: {
+            saleId: sale.id,
+            productId: product ? product.id : null,
+            name: product ? product.name : item.name,
+            quantity: requiredQty,
+            price: salePrice,
+            commissionType: finalCommPercentage ? 'PERCENT' : null,
+            commissionValue: finalCommPercentage || null,
+            commissionAmount: commissionAccrued,
+          },
+        });
+
+        if (item.isCustom) {
+          continue;
+        }
 
         // Subtract stock from branch-specific stock
         if (activeShift.branchId) {
@@ -788,17 +1014,55 @@ export class ProductsService {
                 ? branchStockRecord.stock - mainUnitsQty
                 : -mainUnitsQty
               : updatedProduct.stock,
-            documentId: transaction.id,
+            documentId: sale.id,
             branchId: activeShift.branchId || null,
           },
         });
       }
 
       return {
-        transactionId: transaction.id,
+        saleId: sale.id,
         amount: totalAmount,
         details: salesDetails,
       };
+    }).then(async (result) => {
+      // ✅ FACTURACIÓN ELECTRÓNICA: Se ejecuta FUERA de la transacción DB
+      // Así, si NubeFacT falla, la venta ya quedó guardada y no se revierte.
+      if (billingType === 'BOLETA' || billingType === 'FACTURA') {
+        try {
+          const billingResult = await this.nubefactService.sendInvoice(result.saleId);
+          if (billingResult.success) {
+            await this.prisma.sale.update({
+              where: { id: result.saleId },
+              data: {
+                billingStatus: 'SUCCESS',
+                billingNumber: billingResult.number,
+                billingSerie: billingResult.serie,
+                billingPdfUrl: billingResult.pdfUrl,
+                billingXmlUrl: billingResult.xmlUrl,
+                billingCdrUrl: billingResult.cdrUrl,
+              },
+            });
+            return { ...result, billing: { success: true, pdfUrl: billingResult.pdfUrl, serie: billingResult.serie, number: billingResult.number } };
+          } else {
+            await this.prisma.sale.update({
+              where: { id: result.saleId },
+              data: {
+                billingStatus: 'ERROR',
+                billingError: billingResult.error || 'Error desconocido en NubeFacT',
+              },
+            });
+            return { ...result, billing: { success: false, error: billingResult.error } };
+          }
+        } catch (error: any) {
+          await this.prisma.sale.update({
+            where: { id: result.saleId },
+            data: { billingStatus: 'ERROR', billingError: error.message },
+          });
+          return { ...result, billing: { success: false, error: error.message } };
+        }
+      }
+      return result;
     });
   }
 
@@ -1329,9 +1593,9 @@ export class ProductsService {
             date: new Date(),
             description: existingPendingTx.description
               ? existingPendingTx.description.replace(
-                  'Estado: Pendiente de Pago.',
-                  'Estado: Pagado. En Tránsito (Pedido).',
-                )
+                'Estado: Pendiente de Pago.',
+                'Estado: Pagado. En Tránsito (Pedido).',
+              )
               : `Pedido de Compra. ID: ${order.id}. Estado: Pagado. En Tránsito (Pedido).`,
           },
         });

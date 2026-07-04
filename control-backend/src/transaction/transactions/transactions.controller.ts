@@ -6,21 +6,29 @@ import { UpdateTransactionDto } from './update-transaction.dto';
 import { MarkAsPendingDto } from './mark-transaction.dto';
 import { AuthGuard } from '@nestjs/passport';
 import { UseGuards } from '@nestjs/common';
+import { NubefactService } from '../../nubefact/nubefact.service';
+import { PrismaService } from '../../prisma/prisma.service';
 
 @Controller('transactions')
 export class TransactionController {
-  constructor(private readonly transactionService: TransactionService) {}
+  constructor(
+    private readonly transactionService: TransactionService,
+    private readonly nubefactService: NubefactService,
+    private readonly prisma: PrismaService,
+  ) { }
+
   @UseGuards(AuthGuard('jwt'))
   @Post()
   createTransaction(@Req() req, @Body() dto: CreateTransactionDto) {
     return this.transactionService.createTransaction(req.user.id, dto);
   }
+
   @UseGuards(AuthGuard('jwt'))
   @Get()
   listTransactions(
     @Req() req,
     @Query('workspace') workspace?: string,
-    @Query('isPosSale') isPosSale?: string,
+
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('userId') filterUserId?: string,
@@ -33,14 +41,6 @@ export class TransactionController {
       ownerId,
       workerId,
       workspace: workspace || 'PERSONAL',
-      isPosSale:
-        isPosSale === 'true'
-          ? true
-          : isPosSale === 'false'
-            ? false
-            : isPosSale === 'all'
-              ? 'all'
-              : undefined,
       startDate,
       endDate,
       filterUserId,
@@ -48,6 +48,7 @@ export class TransactionController {
       advisorId,
     });
   }
+
   @UseGuards(AuthGuard('jwt'))
   @Get(':id')
   getTransactionDetails(@Req() req, @Param('id') id: string) {
@@ -63,6 +64,7 @@ export class TransactionController {
   ) {
     return this.transactionService.updateTransaction(id, dto);
   }
+
   @UseGuards(AuthGuard('jwt'))
   @Delete(':id')
   deleteTransaction(@Req() req, @Param('id') id: string) {
@@ -78,4 +80,6 @@ export class TransactionController {
   ) {
     return this.transactionService.markTransactionAsPending(id, dto);
   }
+
 }
+

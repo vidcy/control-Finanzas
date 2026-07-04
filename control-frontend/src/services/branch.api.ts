@@ -66,3 +66,16 @@ export const transferStockRequest = async (data: {
     throw new Error(error?.response?.data?.message || "Error al transferir inventario");
   }
 };
+
+export const adjustBranchStockRequest = async (data: {
+  productId: string;
+  branchId: string;
+  stock: number;
+}) => {
+  try {
+    const res = await API.post("/branches/adjust", data);
+    return res.data;
+  } catch (error: any) {
+    throw new Error(error?.response?.data?.message || "Error al ajustar inventario de sede");
+  }
+};

@@ -22,6 +22,8 @@ import { InventoryMovementsModule } from './inventory-movements/inventory-moveme
 import { AuditModule } from './audit/audit.module';
 import { BranchesModule } from './branches/branches.module';
 import { AdvisorsModule } from './advisors/advisors.module';
+import { CommissionModelsModule } from './commission-models/commission-models.module';
+import { SalesModule } from './sales/sales.module';
 
 @Module({
   imports: [
@@ -42,6 +44,8 @@ import { AdvisorsModule } from './advisors/advisors.module';
     AuditModule,
     BranchesModule,
     AdvisorsModule,
+    CommissionModelsModule,
+    SalesModule,
     ConfigModule.forRoot({
       isGlobal: true,
     }),

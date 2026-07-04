@@ -197,6 +197,154 @@ export default function ExpensesPage() {
     toast.success("Excel exportado");
   };
 
+  const handlePdfExport = async () => {
+    if (filtered.length === 0) {
+      toast.error("No hay egresos para exportar");
+      return;
+    }
+    const exportToast = toast.loading("Generando PDF...");
+    try {
+      const { jsPDF } = await import("jspdf");
+      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+
+      // Header banner (rose/red tone for expenses)
+      doc.setFillColor(190, 18, 60);
+      doc.rect(0, 0, 210, 32, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(15);
+      doc.text("REPORTE DE EGRESOS", 14, 11);
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "normal");
+      doc.text(`Filtros: ${dateFrom ? `Desde ${dateFrom}` : ""} ${dateTo ? `Hasta ${dateTo}` : ""} ${searchTerm ? `| Búsqueda: "${searchTerm}"` : ""}`.trim() || "Sin filtros", 14, 18);
+      doc.text(`Fecha de Impresión: ${new Date().toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}`, 14, 24);
+
+      // KPI summary box
+      const totalAmt = filtered.reduce((s, e) => s + (e.amount || 0), 0);
+      const paidCount = filtered.filter(e => e.status === "PAID").length;
+      const pendingCount = filtered.filter(e => e.status === "PENDING").length;
+
+      doc.setFillColor(254, 242, 242);
+      doc.roundedRect(14, 38, 182, 20, 2, 2, "F");
+      doc.setTextColor(30, 41, 59);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.5);
+      doc.text("TOTAL EGRESOS", 20, 45);
+      doc.setFontSize(11);
+      doc.setTextColor(190, 18, 60);
+      doc.text(`S/ ${totalAmt.toFixed(2)}`, 20, 53);
+
+      doc.setTextColor(30, 41, 59);
+      doc.setFontSize(7.5);
+      doc.text("PAGADOS", 85, 45);
+      doc.setFontSize(11);
+      doc.setTextColor(5, 150, 105);
+      doc.text(`${paidCount}`, 85, 53);
+
+      doc.setTextColor(30, 41, 59);
+      doc.setFontSize(7.5);
+      doc.text("PENDIENTES", 140, 45);
+      doc.setFontSize(11);
+      doc.setTextColor(245, 158, 11);
+      doc.text(`${pendingCount}`, 140, 53);
+
+      // Table header drawer
+      const headers = ["Fecha", "Categoría", "Descripción / Destino", "Método", "Estado", "Monto (S/)"];
+      const colWidths = [25, 30, 58, 22, 18, 25];
+      const drawTblHeader = (sy: number) => {
+        doc.setFillColor(190, 18, 60);
+        doc.rect(14, sy, 182, 7, "F");
+        doc.setTextColor(255, 255, 255);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(7.5);
+        let cx = 14;
+        headers.forEach((h, i) => {
+          doc.text(h, cx + 2, sy + 5);
+          cx += colWidths[i];
+        });
+        doc.setTextColor(0);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7.5);
+      };
+
+      let y = 64;
+      drawTblHeader(y);
+      y += 7;
+
+      filtered.forEach((e, idx) => {
+        const descText = `${e.name || ""}${e.description ? ` — ${e.description}` : ""}`;
+        const descLines = doc.splitTextToSize(descText, colWidths[2] - 4);
+        const rowH = Math.max(7, descLines.length * 4.5);
+
+        if (y + rowH > 278) {
+          doc.addPage();
+          y = 15;
+          drawTblHeader(y);
+          y += 7;
+        }
+
+        if (idx % 2 === 0) {
+          doc.setFillColor(254, 242, 242);
+          doc.rect(14, y, 182, rowH, "F");
+        }
+        doc.setDrawColor(230, 230, 230);
+        doc.line(14, y + rowH, 196, y + rowH);
+
+        let cx = 14;
+        // Fecha
+        doc.setTextColor(100, 116, 139);
+        doc.text(e.date ? e.date.slice(0, 10) : "", cx + 2, y + 5);
+        cx += colWidths[0];
+        // Categoria
+        doc.setTextColor(30, 41, 59);
+        doc.text(doc.splitTextToSize(e.category || "", colWidths[1] - 4)[0], cx + 2, y + 5);
+        cx += colWidths[1];
+        // Descripcion
+        doc.setTextColor(55, 65, 81);
+        doc.text(descLines, cx + 2, y + 5);
+        cx += colWidths[2];
+        // Metodo
+        doc.text(e.paymentMethod || "—", cx + 2, y + 5);
+        cx += colWidths[3];
+        // Estado
+        if (e.status === "PAID") {
+          doc.setTextColor(5, 150, 105);
+          doc.text("Pagado", cx + 2, y + 5);
+        } else {
+          doc.setTextColor(245, 158, 11);
+          doc.text("Pendiente", cx + 2, y + 5);
+        }
+        cx += colWidths[4];
+        // Monto
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(190, 18, 60);
+        doc.text(`S/ ${(e.amount || 0).toFixed(2)}`, cx + 2, y + 5);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(55, 65, 81);
+
+        y += rowH;
+      });
+
+      // Footer with page numbers
+      const totalPages = doc.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        doc.setFontSize(7);
+        doc.setTextColor(148, 163, 184);
+        doc.text("Control Finanzas ERP — Reporte de Egresos", 14, 291);
+        doc.text(`Página ${i} de ${totalPages}`, 185, 291);
+      }
+
+      doc.save(`Egresos_${new Date().toISOString().slice(0, 10)}.pdf`);
+      toast.dismiss(exportToast);
+      toast.success("PDF de egresos exportado");
+    } catch (err) {
+      console.error(err);
+      toast.dismiss(exportToast);
+      toast.error("Error al generar PDF");
+    }
+  };
+
   // 🔥 Separa por tipo (INCOME/EXPENSE) si es necesario
   const expense = filtered;
 
@@ -543,6 +691,12 @@ export default function ExpensesPage() {
               className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-3 rounded-2xl font-bold text-sm shadow-sm hover:bg-rose-50 hover:border-rose-200 hover:text-rose-700 transition-all"
             >
               <FileDown className="w-4 h-4" /> Excel
+            </button>
+            <button
+              onClick={handlePdfExport}
+              className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-3 rounded-2xl font-bold text-sm shadow-sm hover:bg-rose-50 hover:border-rose-200 hover:text-rose-700 transition-all"
+            >
+              <FileText className="w-4 h-4" /> PDF
             </button>
             <button
               onClick={handleOpenCreate}

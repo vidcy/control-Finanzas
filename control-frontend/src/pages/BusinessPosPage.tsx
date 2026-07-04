@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { motion } from "framer-motion";
 import Appshell from "../components/layout/Appshell";
 import { useAuth } from "../auth/AuthContext";
 import {
@@ -11,10 +12,13 @@ import { getActiveCashShiftRequest } from "../services/cash-shift.api";
 import { getAdvisorsRequest } from "../services/advisor.api";
 import type { Advisor } from "../services/advisor.api";
 import {
-  getTransactionsRequest,
-  updateTransactionRequest,
-  deleteTransactionRequest,
-} from "../services/transaction.api";
+  getSalesRequest,
+  retrySaleBillingRequest,
+  issueSaleCreditNoteRequest,
+  issueSaleDebitNoteRequest,
+  deleteSaleRequest,
+} from "../services/sale.api";
+import { queryDocumentRequest } from "../services/user.api";
 import ReceiptUploader, {
   getReceiptAbsoluteUrl,
   uploadReceiptFile,
@@ -36,10 +40,15 @@ import {
   X,
   Package,
   FileText,
-  Edit2,
-  Trash2,
   Loader2,
   Camera,
+  FileCode,
+  FileCheck,
+  RefreshCw,
+  MinusCircle,
+  PlusCircle,
+  Trash2,
+  Edit,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
@@ -57,7 +66,6 @@ const loadHtml5Qrcode = (): Promise<any> => {
   });
 };
 import Modal from "../components/ui/Modal";
-import ConfirmModal from "../components/ui/ConfirmModal";
 import { format } from "date-fns";
 
 const parseDescription = (desc: string) => {
@@ -111,7 +119,73 @@ interface CartItem extends Product {
   presentationId?: string;
   isCustom?: boolean;
   originalSalePrice: number;
+  advisorId?: string;
+  commissionType?: string;
+  commissionValue?: number;
+  allowManualEdit?: boolean;
 }
+
+interface FrontendEngineInput {
+  type: string;
+  value: number;
+  applyTo?: string;
+  isAdditional: boolean;
+  basePrice: number;
+  costPrice: number;
+  minCommission?: number;
+  maxCommission?: number | null;
+}
+
+const calculateFrontendCommission = (input: FrontendEngineInput) => {
+  let normalizedType = input.type;
+  const value = input.value;
+
+  if (normalizedType === 'PERCENT') {
+    if (input.applyTo === 'PROFIT') {
+      normalizedType = 'PERCENT_OF_MARGIN';
+    } else {
+      normalizedType = 'PERCENT_OF_SALE';
+    }
+  } else if (normalizedType === 'FIXED' || normalizedType === 'SPLIT') {
+    normalizedType = 'FIXED_PER_UNIT';
+  }
+
+  let commissionUnit = 0;
+  switch (normalizedType) {
+    case 'FIXED_PER_UNIT':
+      commissionUnit = value;
+      break;
+    case 'PERCENT_OF_MARGIN':
+      const profit = Math.max(0, input.basePrice - input.costPrice);
+      const marginFactor = value > 1 ? value / 100 : value;
+      commissionUnit = profit * marginFactor;
+      break;
+    case 'PERCENT_OF_SALE':
+      const saleFactor = value > 1 ? value / 100 : value;
+      commissionUnit = input.basePrice * saleFactor;
+      break;
+    default:
+      commissionUnit = 0;
+  }
+
+  const minComm = input.minCommission ?? 0;
+  if (commissionUnit < minComm) {
+    commissionUnit = minComm;
+  }
+  if (input.maxCommission !== undefined && input.maxCommission !== null && commissionUnit > input.maxCommission) {
+    commissionUnit = input.maxCommission;
+  }
+
+  let chargedPriceUnit = input.basePrice;
+  if (input.isAdditional || input.type === 'SPLIT') {
+    chargedPriceUnit = input.basePrice + commissionUnit;
+  }
+
+  return {
+    commissionUnit,
+    chargedPriceUnit
+  };
+};
 
 export default function BusinessPosPage() {
   const { user } = useAuth();
@@ -170,6 +244,132 @@ export default function BusinessPosPage() {
   const [selectedAdvisorId, setSelectedAdvisorId] = useState<string>("");
   const [commissionPercentage, setCommissionPercentage] = useState<number | "">("");
 
+  // Facturación electrónica
+  const [billingType, setBillingType] = useState<"TICKET_VENTA" | "BOLETA" | "FACTURA">("TICKET_VENTA");
+  const [clientDocumentType, setClientDocumentType] = useState("1"); // 1=DNI, 6=RUC
+  const [clientDocumentNumber, setClientDocumentNumber] = useState("");
+  const [clientDenomination, setClientDenomination] = useState("");
+  const [clientAddress, setClientAddress] = useState("");
+  const [clientEmail, setClientEmail] = useState("");
+
+  // Reniec/SUNAT lookup state
+  const [isQueryingDocument, setIsQueryingDocument] = useState(false);
+
+  // Notes Modal state
+  const [selectedSaleForNote, setSelectedSaleForNote] = useState<any>(null);
+  const [noteType, setNoteType] = useState<"CREDIT" | "DEBIT" | null>(null);
+  const [noteReasonCode, setNoteReasonCode] = useState<number>(1);
+  const [noteReasonText, setNoteReasonText] = useState<string>("");
+  const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
+  const [isSubmittingNote, setIsSubmittingNote] = useState(false);
+
+  const handleQueryDocument = async () => {
+    if (!clientDocumentNumber.trim()) {
+      toast.error("Por favor, ingresa el número de documento");
+      return;
+    }
+    const len = clientDocumentNumber.trim().length;
+    if (len !== 8 && len !== 11) {
+      toast.error("El DNI debe tener 8 dígitos y el RUC 11 dígitos");
+      return;
+    }
+    const type = len === 8 ? "DNI" : "RUC";
+    setIsQueryingDocument(true);
+    const loadingToast = toast.loading(`Consultando ${type} en SUNAT/Reniec...`);
+    try {
+      const data = await queryDocumentRequest(type, clientDocumentNumber.trim());
+      toast.dismiss(loadingToast);
+      if (data.success) {
+        setClientDenomination(data.nombre || "");
+        if (data.direccion) {
+          setClientAddress(data.direccion);
+        }
+        setClientDocumentType(type === "DNI" ? "1" : "6");
+        toast.success("Documento encontrado con éxito");
+      } else {
+        toast.error("No se encontraron resultados para el documento");
+      }
+    } catch (err: any) {
+      toast.dismiss(loadingToast);
+      toast.error(err.message || "Error al consultar documento");
+    } finally {
+      setIsQueryingDocument(false);
+    }
+  };
+
+  const applyAdvisorToCart = (advId: string, currentCart?: any[]) => {
+    const targetCart = currentCart || cart;
+    const adv = advId ? advisors.find(a => a.id === advId) : null;
+    
+    const newCart = targetCart.map((item) => {
+      if (item.isCustom) return item;
+      const pres = item.presentationId
+        ? item.presentations?.find((p: any) => p.id === item.presentationId)
+        : null;
+      const basePrice = pres ? pres.price : item.originalSalePrice;
+
+      if (!adv) {
+        return {
+          ...item,
+          advisorId: undefined,
+          salePrice: basePrice,
+          commissionType: undefined,
+          commissionValue: undefined,
+          allowManualEdit: true,
+        };
+      }
+
+      let newPrice = basePrice;
+      let comType = undefined;
+      let comVal = undefined;
+      let allowManual = true;
+      let isAdditional = false;
+      let minComm = 0;
+      let maxComm = null;
+      let applyTo = "SALE";
+
+      if (adv.commissionModel) {
+        comType = adv.commissionModel.type;
+        comVal = adv.commissionModel.value;
+        allowManual = adv.commissionModel.allowManualEdit;
+        isAdditional = adv.commissionModel.isAdditional === true || adv.commissionModel.type === "SPLIT";
+        minComm = adv.commissionModel.minCommission || 0;
+        maxComm = adv.commissionModel.maxCommission ?? null;
+        applyTo = adv.commissionModel.applyTo || "SALE";
+      } else {
+        comType = adv.commissionType || "PERCENT";
+        comVal = adv.commissionValue || 0;
+        allowManual = true;
+        if (comType === "SPLIT") {
+          isAdditional = true;
+        }
+      }
+
+      const result = calculateFrontendCommission({
+        type: comType || "PERCENT",
+        value: comVal || 0,
+        applyTo,
+        isAdditional,
+        basePrice,
+        costPrice: item.costPrice || 0,
+        minCommission: minComm,
+        maxCommission: maxComm,
+      });
+      newPrice = result.chargedPriceUnit;
+
+      return {
+        ...item,
+        advisorId: adv.id,
+        salePrice: newPrice,
+        commissionType: comType,
+        commissionValue: comVal,
+        allowManualEdit: allowManual,
+      };
+    });
+
+    setCart(newCart);
+  };
+
   // Venta Libre Modal
   const [isCustomSaleOpen, setIsCustomSaleOpen] = useState(false);
   const [customSaleData, setCustomSaleData] = useState({
@@ -198,25 +398,13 @@ export default function BusinessPosPage() {
     return today;
   });
 
-  // Editar Venta POS
-  const [editSale, setEditSale] = useState<any>(null);
-  const [editAmount, setEditAmount] = useState(0);
-  const [editDesc, setEditDesc] = useState("");
-  const [editPayment, setEditPayment] = useState("CASH");
-  const [editReceiptUrl, setEditReceiptUrl] = useState<string | File | null>(
-    null,
-  );
 
-  // Modal confirm delete states
-  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
-  const [saleIdToDelete, setSaleIdToDelete] = useState<string | null>(null);
 
   const loadSales = async () => {
     setLoadingSales(true);
     try {
-      const data = await getTransactionsRequest({
+      const data = await getSalesRequest({
         workspace: "BUSINESS",
-        isPosSale: true,
         startDate: salesStartDate ? `${salesStartDate}T00:00:00.000Z` : undefined,
         endDate: salesEndDate ? `${salesEndDate}T23:59:59.999Z` : undefined,
         userId: user?.role === "USER" ? user.id : undefined,
@@ -274,114 +462,127 @@ export default function BusinessPosPage() {
     const doc = new jsPDF("p", "mm", "a4");
     const businessName = user?.businessName || "Control Finanzas";
 
+    // Header banner
+    doc.setFillColor(49, 46, 129);
+    doc.rect(0, 0, 210, 32, "F");
+    doc.setTextColor(255, 255, 255);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(16);
-    doc.text(`REGISTRO DE VENTAS POS - ${businessName.toUpperCase()}`, 14, 20);
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(100);
-    doc.text(`Fecha de exportación: ${new Date().toLocaleDateString()}`, 14, 26);
-
-    let y = 35;
-    doc.setFillColor(79, 70, 229);
-    doc.rect(14, y, 182, 8, "F");
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    doc.setTextColor(255);
-    doc.text("Fecha/Hora", 16, y + 5);
-    doc.text("Vendedor", 50, y + 5);
-    doc.text("Detalle de Venta", 90, y + 5);
-    doc.text("Método", 155, y + 5);
-    doc.text("Total", 175, y + 5);
-
-    doc.setTextColor(0);
-    doc.setFont("helvetica", "normal");
+    doc.setFontSize(14);
+    doc.text("REGISTRO DE VENTAS POS", 14, 11);
     doc.setFontSize(8);
+    doc.setFont("helvetica", "normal");
+    doc.text(businessName, 14, 17);
+    doc.text(`Rango: ${salesStartDate || "Inicio"} al ${salesEndDate || "Hoy"}  |  Total: ${sales.length} ventas  |  Exportado: ${format(new Date(), "dd/MM/yyyy HH:mm")}`, 14, 22);
+    const totalAmount = sales.reduce((sum: number, s: any) => sum + (s.amountSoles || s.amount || 0), 0);
+    doc.text(`Monto Total Recaudado: S/ ${totalAmount.toFixed(2)}`, 14, 27);
 
-    sales.forEach((sale) => {
-      y += 8;
-      if (y > 275) {
+    const drawHeader = (startY: number) => {
+      doc.setFillColor(79, 70, 229);
+      doc.rect(14, startY, 182, 8, "F");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.setTextColor(255, 255, 255);
+      doc.text("Fecha/Hora", 16, startY + 5.5);
+      doc.text("Vendedor", 50, startY + 5.5);
+      doc.text("Detalle de Venta", 88, startY + 5.5);
+      doc.text("Método", 156, startY + 5.5);
+      doc.text("Total (S/)", 174, startY + 5.5);
+      doc.setTextColor(0);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+    };
+
+    let y = 40;
+    drawHeader(y);
+    y += 8;
+
+    sales.forEach((sale: any, idx: number) => {
+      const rawDesc = (sale.description || "").replace("Venta en POS: ", "");
+      const descLines = doc.splitTextToSize(rawDesc, 64); // 64mm column width
+      const rowHeight = Math.max(8, descLines.length * 4.5);
+
+      if (y + rowHeight > 278) {
         doc.addPage();
-        y = 20;
-        doc.setFillColor(79, 70, 229);
-        doc.rect(14, y, 182, 8, "F");
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(9);
-        doc.setTextColor(255);
-        doc.text("Fecha/Hora", 16, y + 5);
-        doc.text("Vendedor", 50, y + 5);
-        doc.text("Detalle de Venta", 90, y + 5);
-        doc.text("Método", 155, y + 5);
-        doc.text("Total", 175, y + 5);
-
-        doc.setTextColor(0);
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(8);
+        y = 15;
+        drawHeader(y);
         y += 8;
       }
 
-      const fecha = format(new Date(sale.date), "dd/MM HH:mm");
-      const vendedor = sale.user ? `${sale.user.name} ${sale.user.lastName || ""}`.substring(0, 18).trim() : "N/A";
-      const desc = (sale.description || "").replace("Venta en POS: ", "").substring(0, 30);
+      if (idx % 2 === 0) {
+        doc.setFillColor(249, 250, 251);
+        doc.rect(14, y, 182, rowHeight, "F");
+      }
+      doc.setDrawColor(230, 230, 230);
+      doc.line(14, y + rowHeight, 196, y + rowHeight);
+
+      const fecha = format(new Date(sale.date), "dd/MM/yy HH:mm");
+      const vendedor = sale.user ? `${sale.user.name} ${sale.user.lastName || ""}`.trim() : "N/A";
       const total = sale.amountSoles || sale.amount || 0;
 
-      doc.text(fecha, 16, y + 5);
-      doc.text(vendedor, 50, y + 5);
-      doc.text(desc, 90, y + 5);
-      doc.text(sale.paymentMethod || "CASH", 155, y + 5);
-      doc.text(`S/ ${total.toFixed(2)}`, 175, y + 5);
+      doc.setTextColor(100, 116, 139);
+      doc.text(fecha, 16, y + 5.5);
+
+      const vendedorLines = doc.splitTextToSize(vendedor, 36);
+      doc.setTextColor(30, 41, 59);
+      doc.text(vendedorLines[0], 50, y + 5.5);
+
+      doc.setTextColor(55, 65, 81);
+      doc.text(descLines, 88, y + 5.5);
+
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(100, 116, 139);
+      doc.text(sale.paymentMethod || "CASH", 156, y + 5.5);
+
+      doc.setTextColor(5, 150, 105);
+      doc.text(`S/ ${total.toFixed(2)}`, 174, y + 5.5);
+
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(55, 65, 81);
+      y += rowHeight;
     });
 
-    doc.save("Ventas_POS.pdf");
+    // Page numbers and footer
+    const totalPages = doc.getNumberOfPages();
+    for (let i = 1; i <= totalPages; i++) {
+      doc.setPage(i);
+      doc.setFontSize(7);
+      doc.setTextColor(148, 163, 184);
+      doc.text("Control Finanzas ERP — Registro de Ventas POS", 14, 291);
+      doc.text(`Página ${i} de ${totalPages}`, 185, 291);
+    }
+
+    doc.save(`Ventas_POS_${format(new Date(), "yyyyMMdd")}.pdf`);
     toast.success("Ventas exportadas a PDF");
   };
 
-  const handleSaveEdit = async () => {
-    if (!editSale) return;
+  const handleSubmitNote = async () => {
+    if (!selectedSaleForNote) return;
+    if (noteReasonCode <= 0) {
+      toast.error("Por favor, selecciona un motivo válido");
+      return;
+    }
+    setIsSubmittingNote(true);
+    const loadingToast = toast.loading(`Generando Nota de ${noteType === "CREDIT" ? "Crédito" : "Débito"}...`);
     try {
-      let finalReceiptUrl = editReceiptUrl;
-      if (editReceiptUrl instanceof File) {
-        const uploadToast = toast.loading("Subiendo comprobante...");
-        try {
-          finalReceiptUrl = await uploadReceiptFile(editReceiptUrl);
-          toast.dismiss(uploadToast);
-        } catch (error: any) {
-          toast.dismiss(uploadToast);
-          toast.error(error.message || "Error al subir el comprobante");
-          return;
-        }
+      const payload = {
+        reasonCode: noteReasonCode,
+        reasonText: noteReasonText.trim() || undefined
+      };
+      if (noteType === "CREDIT") {
+        await issueSaleCreditNoteRequest(selectedSaleForNote.id, payload);
+      } else {
+        await issueSaleDebitNoteRequest(selectedSaleForNote.id, payload);
       }
-
-      await updateTransactionRequest(editSale.id, {
-        categoryId: editSale.categoryId,
-        subCategoryId: editSale.subCategoryId || null,
-        amount: editAmount,
-        date: new Date(editSale.date),
-        currency: editSale.currency,
-        paymentMethod: editPayment,
-        description: editDesc,
-        name: editSale.name,
-        receiptUrl: finalReceiptUrl as string | null,
-      });
-      toast.success("Venta actualizada correctamente");
-      setEditSale(null);
-      loadSales();
+      toast.dismiss(loadingToast);
+      toast.success(`Nota de ${noteType === "CREDIT" ? "Crédito" : "Débito"} emitida con éxito`);
+      setIsNoteModalOpen(false);
+      setSelectedSaleForNote(null);
       loadData();
     } catch (err: any) {
-      toast.error(err.message || "Error al actualizar la venta");
-    }
-  };
-
-  const handleDeleteSale = async (id: string) => {
-    try {
-      await deleteTransactionRequest(id);
-      toast.success("Venta eliminada correctamente");
-      loadSales();
-      loadData();
-    } catch {
-      toast.error("Error al eliminar la venta");
+      toast.dismiss(loadingToast);
+      toast.error(err.message || "Error al emitir la nota");
+    } finally {
+      setIsSubmittingNote(false);
     }
   };
 
@@ -394,8 +595,98 @@ export default function BusinessPosPage() {
       date: new Date(sale.date),
       txId: sale.id,
       receiptUrl: sale.receiptUrl,
+      billingType: sale.billingType,
+      billingStatus: sale.billingStatus,
+      billingSerie: sale.billingSerie,
+      billingNumber: sale.billingNumber,
+      billingPdfUrl: sale.billingPdfUrl,
+      clientDocumentType: sale.clientDocumentType,
+      clientDocumentNumber: sale.clientDocumentNumber,
+      clientDenomination: sale.clientDenomination,
+      clientAddress: sale.clientAddress,
     });
     setShowTicket(true);
+  };
+
+  const handleDeleteSale = async (sale: any) => {
+    const confirm = window.confirm(
+      "¿Estás seguro de que deseas eliminar esta venta? Esto restablecerá el stock de los productos y cancelará las comisiones asociadas de forma permanente."
+    );
+    if (!confirm) return;
+
+    try {
+      await deleteSaleRequest(sale.id);
+      toast.success("Venta eliminada con éxito y stock restablecido");
+      loadSales();
+      loadData();
+    } catch (error: any) {
+      toast.error(error.message || "Error al eliminar la venta");
+    }
+  };
+
+  const handleEditSale = async (sale: any) => {
+    const confirm = window.confirm(
+      "¿Deseas editar esta venta? Los productos se cargarán en el carrito actual para que puedas modificarlos, y se eliminará la venta anterior restableciendo su stock."
+    );
+    if (!confirm) return;
+
+    try {
+      await deleteSaleRequest(sale.id);
+      setCart([]);
+
+      const newCartItems: CartItem[] = [];
+      for (const item of sale.items || []) {
+        if (item.productId) {
+          const prod = products.find((p) => p.id === item.productId);
+          if (prod) {
+            const matchingPres = prod.presentations?.find((p) => p.price === item.price);
+            newCartItems.push({
+              ...prod,
+              quantity: item.quantity,
+              salePrice: item.price,
+              originalSalePrice: prod.salePrice,
+              presentationId: matchingPres?.id || undefined,
+              isCustom: false,
+            });
+            continue;
+          }
+        }
+        newCartItems.push({
+          id: item.productId || `custom-${Date.now()}-${Math.random()}`,
+          name: item.name,
+          salePrice: item.price,
+          originalSalePrice: item.price,
+          quantity: item.quantity,
+          isCustom: true,
+          code: "",
+          stock: 99999,
+          unit: "UNIDAD",
+          presentations: [],
+        } as any);
+      }
+
+      setCart(newCartItems);
+      setPaymentMethod(sale.paymentMethod || "CASH");
+      setSelectedAdvisorId(sale.advisorId || "");
+
+      if (sale.billingType === "BOLETA" || sale.billingType === "FACTURA") {
+        setBillingType(sale.billingType);
+        setClientDocumentType(sale.clientDocumentType || "DNI");
+        setClientDocumentNumber(sale.clientDocumentNumber || "");
+        setClientDenomination(sale.clientDenomination || "");
+        setClientAddress(sale.clientAddress || "");
+        setClientEmail(sale.clientEmail || "");
+      } else {
+        setBillingType("TICKET_VENTA");
+      }
+
+      setIsSalesListOpen(false);
+      toast.success("Venta cargada en el carrito. Modifica lo que necesites y procesa el pago.");
+      loadData();
+      loadSales();
+    } catch (error: any) {
+      toast.error(error.message || "Error al editar la venta");
+    }
   };
 
   const loadData = async () => {
@@ -467,16 +758,22 @@ export default function BusinessPosPage() {
         toast.error("Stock máximo alcanzado en esta sede");
         return;
       }
-      setCart(
-        cart.map((item, idx) =>
-          idx === existingIndex ? { ...item, quantity: newQty } : item,
-        ),
+      const updatedCart = cart.map((item, idx) =>
+        idx === existingIndex ? { ...item, quantity: newQty } : item,
       );
+      if (selectedAdvisorId) {
+        applyAdvisorToCart(selectedAdvisorId, updatedCart);
+      } else {
+        setCart(updatedCart);
+      }
     } else {
-      setCart([
-        ...cart,
-        { ...product, quantity: 1, originalSalePrice: product.salePrice },
-      ]);
+      const newItem = { ...product, quantity: 1, originalSalePrice: product.salePrice };
+      const updatedCart = [...cart, newItem];
+      if (selectedAdvisorId) {
+        applyAdvisorToCart(selectedAdvisorId, updatedCart);
+      } else {
+        setCart(updatedCart);
+      }
     }
   };
 
@@ -764,14 +1061,36 @@ export default function BusinessPosPage() {
         })),
         paymentMethod,
         categoryId: selectedCategory,
-        subCategoryId: selectedSubCategory || null,
+        subCategoryId: selectedSubCategory || undefined,
         receiptUrl: finalReceiptUrl,
-        advisorId: selectedAdvisorId || null,
-        commissionPercentage: selectedAdvisorId ? (commissionPercentage !== "" ? Number(commissionPercentage) : 0) : null,
-        commissionAmount: selectedAdvisorId ? parseFloat(((total * (commissionPercentage !== "" ? Number(commissionPercentage) : 0)) / 100).toFixed(2)) : null,
+        cashShiftId: activeShift.id,
+        advisorId: selectedAdvisorId || undefined,
+        commissionType: selectedAdvisorId ? advisors.find(a => a.id === selectedAdvisorId)?.commissionType || undefined : undefined,
+        commissionAmount: selectedAdvisorId ? parseFloat(((total * (commissionPercentage !== "" ? Number(commissionPercentage) : 0)) / 100).toFixed(2)) : undefined,
+        billingType,
+        clientDocumentType: (billingType === 'BOLETA' || billingType === 'FACTURA') ? clientDocumentType : undefined,
+        clientDocumentNumber: (billingType === 'BOLETA' || billingType === 'FACTURA') ? clientDocumentNumber : undefined,
+        clientDenomination: (billingType === 'BOLETA' || billingType === 'FACTURA') ? clientDenomination : undefined,
+        clientAddress: (billingType === 'BOLETA' || billingType === 'FACTURA') ? clientAddress : undefined,
+        clientEmail: (billingType === 'BOLETA' || billingType === 'FACTURA') ? clientEmail : undefined,
       });
 
-      toast.success("¡Venta completada con éxito!");
+      // Mostrar resultado de facturación si aplica
+      if (txResult?.billing) {
+        if (txResult.billing.success) {
+          toast.success(
+            `✅ Comprobante ${txResult.billing.serie}-${txResult.billing.number} emitido con éxito`,
+            { duration: 5000 }
+          );
+        } else {
+          toast(
+            `⚠️ Venta guardada, pero el comprobante electrónico falló: ${txResult.billing.error}. Puedes reintentarlo desde el historial.`,
+            { duration: 8000, icon: '⚠️' }
+          );
+        }
+      } else {
+        toast.success("¡Venta completada con éxito!");
+      }
 
       // 4. Actualización del estado para el ticket
       const changeDue = parsedPaid - total;
@@ -784,13 +1103,28 @@ export default function BusinessPosPage() {
         receiptUrl: finalReceiptUrl,
         amountPaid: parsedPaid,
         changeDue: changeDue > 0 ? changeDue : 0,
+        billingType,
+        billingStatus: txResult?.billing?.success ? 'SUCCESS' : (billingType === 'TICKET_VENTA' ? null : 'ERROR'),
+        billingSerie: txResult?.billing?.serie,
+        billingNumber: txResult?.billing?.number,
+        billingPdfUrl: txResult?.billing?.pdfUrl,
+        clientDocumentType: (billingType === 'BOLETA' || billingType === 'FACTURA') ? clientDocumentType : undefined,
+        clientDocumentNumber: (billingType === 'BOLETA' || billingType === 'FACTURA') ? clientDocumentNumber : undefined,
+        clientDenomination: (billingType === 'BOLETA' || billingType === 'FACTURA') ? clientDenomination : undefined,
+        clientAddress: (billingType === 'BOLETA' || billingType === 'FACTURA') ? clientAddress : undefined,
       });
 
       // 5. Limpieza de estados
       setCart([]);
       setReceiptUrl(null);
       setSelectedAdvisorId("");
-      setCommissionPercentage("");
+      setAmountPaid("");
+      setBillingType("TICKET_VENTA");
+      setClientDocumentType("1");
+      setClientDocumentNumber("");
+      setClientDenomination("");
+      setClientAddress("");
+      setClientEmail("");
       setIsCheckoutOpen(false);
       setShowTicket(true);
       loadData();
@@ -996,8 +1330,16 @@ export default function BusinessPosPage() {
                   Giro: {user.businessRubro}
                 </div>
               )}
-              <div style={{ fontSize: "10px", color: "#666", marginTop: "4px" }}>
-                Ticket de Venta
+              <div style={{ fontSize: "10px", color: "#333", marginTop: "4px", fontWeight: "bold" }}>
+                {lastSale.billingType === "BOLETA"
+                  ? "BOLETA DE VENTA ELECTRÓNICA"
+                  : lastSale.billingType === "FACTURA"
+                  ? "FACTURA ELECTRÓNICA"
+                  : lastSale.billingType === "NOTA_CREDITO"
+                  ? "NOTA DE CRÉDITO ELECTRÓNICA"
+                  : lastSale.billingType === "NOTA_DEBITO"
+                  ? "NOTA DE DÉBITO ELECTRÓNICA"
+                  : "TICKET DE VENTA"}
               </div>
               <div
                 style={{ borderBottom: "1px dashed #ccc", margin: "8px 0" }}
@@ -1019,9 +1361,21 @@ export default function BusinessPosPage() {
                   fontSize: "10px",
                 }}
               >
-                <span>Ticket #:</span>
-                <span>{lastSale.txId?.slice(0, 8).toUpperCase()}</span>
+                <span>{lastSale.billingType && lastSale.billingType !== "TICKET_VENTA" ? "Comprobante:" : "Ticket #:"}</span>
+                <span>
+                  {lastSale.billingSerie && lastSale.billingNumber
+                    ? `${lastSale.billingSerie}-${lastSale.billingNumber}`
+                    : lastSale.txId?.slice(0, 8).toUpperCase()}
+                </span>
               </div>
+              {lastSale.clientDocumentNumber && (
+                <div style={{ fontSize: "9px", color: "#555", marginTop: "4px", textAlign: "left", lineHeight: "1.2" }}>
+                  <div style={{ borderBottom: "1px dashed #ccc", margin: "4px 0" }}></div>
+                  <div><strong>Cliente:</strong> {lastSale.clientDenomination}</div>
+                  <div><strong>{lastSale.clientDocumentType === "6" ? "RUC" : "DNI"}:</strong> {lastSale.clientDocumentNumber}</div>
+                  {lastSale.clientAddress && <div><strong>Dirección:</strong> {lastSale.clientAddress}</div>}
+                </div>
+              )}
               <div
                 style={{
                   display: "flex",
@@ -1071,6 +1425,11 @@ export default function BusinessPosPage() {
                   >
                     <span style={{ flex: 1, paddingRight: "8px" }}>
                       {item.quantity}x {item.name} [{presName}]
+                      {item.advisorId && item.salePrice > (item.originalSalePrice || 0) && (
+                        <div style={{ fontSize: "8px", color: "#666", fontWeight: "bold" }}>
+                          (S/ {(item.originalSalePrice || 0).toFixed(2)} + S/ {(item.salePrice - (item.originalSalePrice || 0)).toFixed(2)} Com. de {advisors.find(a => a.id === item.advisorId)?.name})
+                        </div>
+                      )}
                     </span>
                     <span>
                       {item.salePrice > 0
@@ -1707,8 +2066,16 @@ export default function BusinessPosPage() {
                     Giro: {user.businessRubro}
                   </div>
                 )}
-                <div className="text-[10px] text-gray-500 mt-1">
-                  Ticket de Venta
+                <div className="text-[10px] text-gray-800 mt-1 font-bold">
+                  {lastSale.billingType === "BOLETA"
+                    ? "BOLETA DE VENTA ELECTRÓNICA"
+                    : lastSale.billingType === "FACTURA"
+                    ? "FACTURA ELECTRÓNICA"
+                    : lastSale.billingType === "NOTA_CREDITO"
+                    ? "NOTA DE CRÉDITO ELECTRÓNICA"
+                    : lastSale.billingType === "NOTA_DEBITO"
+                    ? "NOTA DE DÉBITO ELECTRÓNICA"
+                    : "TICKET DE VENTA"}
                 </div>
                 <div className="border-b border-dashed border-gray-300 my-3"></div>
                 <div className="flex justify-between text-[10px] mb-1">
@@ -1716,9 +2083,20 @@ export default function BusinessPosPage() {
                   <span>{format(lastSale.date, "dd/MM/yyyy HH:mm")}</span>
                 </div>
                 <div className="flex justify-between text-[10px] mb-1">
-                  <span>Ticket #:</span>
-                  <span>{lastSale.txId.slice(0, 8).toUpperCase()}</span>
+                  <span>{lastSale.billingType && lastSale.billingType !== "TICKET_VENTA" ? "Comprobante:" : "Ticket #:"}</span>
+                  <span>
+                    {lastSale.billingSerie && lastSale.billingNumber
+                      ? `${lastSale.billingSerie}-${lastSale.billingNumber}`
+                      : lastSale.txId.slice(0, 8).toUpperCase()}
+                  </span>
                 </div>
+                {lastSale.clientDocumentNumber && (
+                  <div className="text-[9px] text-gray-600 mt-2 text-left leading-normal border-t border-dashed border-gray-300 pt-2">
+                    <div><strong>Cliente:</strong> {lastSale.clientDenomination}</div>
+                    <div><strong>{lastSale.clientDocumentType === "6" ? "RUC" : "DNI"}:</strong> {lastSale.clientDocumentNumber}</div>
+                    {lastSale.clientAddress && <div><strong>Dirección:</strong> {lastSale.clientAddress}</div>}
+                  </div>
+                )}
                 <div className="flex justify-between text-[10px]">
                   <span>Pago:</span>
                   <span>
@@ -1976,6 +2354,7 @@ export default function BusinessPosPage() {
                   } else {
                     setCommissionPercentage("");
                   }
+                  applyAdvisorToCart(val);
                 }}
                 className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-indigo-500 focus:bg-white transition-all font-semibold outline-none text-sm"
               >
@@ -1985,37 +2364,198 @@ export default function BusinessPosPage() {
                 ))}
               </select>
 
-              {selectedAdvisorId && (
-                <div className="grid grid-cols-2 gap-4 mt-3 bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100/50 animate-fadeIn">
+              {selectedAdvisorId && (() => {
+                const adv = advisors.find(a => a.id === selectedAdvisorId);
+                const isManualAllowed = adv?.commissionModel ? adv.commissionModel.allowManualEdit : true;
+
+                const totalCartCommission = cart.reduce((sum, item) => {
+                  if (!item.advisorId) return sum;
+                  const pres = item.presentationId
+                    ? item.presentations?.find((p: any) => p.id === item.presentationId)
+                    : null;
+                  const basePrice = pres ? pres.price : item.originalSalePrice;
+
+                  let calcVal = 0;
+                  if (item.commissionType === "SPLIT") {
+                    calcVal = Math.max(0, item.salePrice - basePrice);
+                  } else if (item.commissionType === "FIXED") {
+                    calcVal = item.commissionValue || 0;
+                  } else {
+                    calcVal = ((item.commissionValue || 0) / 100) * item.salePrice;
+                  }
+                  return sum + (calcVal * item.quantity);
+                }, 0);
+
+                if (!isManualAllowed) {
+                  return (
+                    <div className="mt-3 bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100/50 animate-fadeIn space-y-2 text-left">
+                      <div className="flex justify-between items-center text-xs font-bold text-indigo-800">
+                        <span>Modelo:</span>
+                        <span className="font-extrabold text-indigo-950">{adv?.commissionModel?.name}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-xs font-bold text-indigo-800">
+                        <span>Comisión Acumulada:</span>
+                        <span className="text-sm font-black text-indigo-600">S/ {totalCartCommission.toFixed(2)}</span>
+                      </div>
+                      <span className="text-[9px] text-indigo-400 font-bold block text-center">
+                        (Edición manual deshabilitada por el modelo de comisión)
+                      </span>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="grid grid-cols-2 gap-4 mt-3 bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100/50 animate-fadeIn text-left">
+                    <div>
+                      <label className="block text-[10px] font-black text-indigo-700 uppercase tracking-wider mb-1">
+                        % Comisión de Venta
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.1"
+                          value={commissionPercentage}
+                          onChange={(e) => {
+                            const val = e.target.value === "" ? "" : Number(e.target.value);
+                            setCommissionPercentage(val);
+                            // Update cart items commissionValue if they want to override manually
+                            const updatedCart = cart.map(item => ({
+                              ...item,
+                              commissionType: "PERCENT",
+                              commissionValue: val === "" ? 0 : val
+                            }));
+                            setCart(updatedCart);
+                          }}
+                          className="w-full pl-4 pr-8 py-2.5 bg-white border border-indigo-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-extrabold text-sm outline-none text-indigo-900"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-indigo-400">%</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-col justify-center">
+                      <span className="block text-[10px] font-black text-indigo-700 uppercase tracking-wider mb-1">
+                        Monto en Soles
+                      </span>
+                      <div className="text-lg font-black text-indigo-600 bg-white border border-indigo-200 px-4 py-2 rounded-xl flex items-center justify-between">
+                        <span className="text-xs font-bold text-indigo-400">Total:</span>
+                        <span>S/ {totalCartCommission.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* FACTURACIÓN ELECTRÓNICA - solo si el negocio lo tiene habilitado */}
+          {user?.hasElectronicBilling && (
+            <div className="space-y-4 pt-4 border-t border-gray-100">
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">Tipo de Comprobante</label>
+              <div className="grid grid-cols-3 gap-2">
+                {([
+                  { id: "TICKET_VENTA", label: "Ticket de Venta" },
+                  { id: "BOLETA", label: "Boleta" },
+                  { id: "FACTURA", label: "Factura" },
+                ] as const).map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => {
+                      setBillingType(opt.id);
+                      setClientDocumentType(opt.id === "FACTURA" ? "6" : "1");
+                    }}
+                    className={`py-2.5 px-3 rounded-xl border text-xs font-black uppercase transition-all ${
+                      billingType === opt.id
+                        ? "bg-emerald-600 text-white border-emerald-600 shadow-md"
+                        : "bg-white text-gray-500 border-gray-200 hover:border-emerald-300"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+
+              {(billingType === "BOLETA" || billingType === "FACTURA") && (
+                <div className="space-y-3 bg-emerald-50/60 border border-emerald-100 rounded-2xl p-4 animate-fadeIn">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-black text-emerald-800 uppercase tracking-widest mb-1">Tipo Doc.</label>
+                      <select
+                        value={clientDocumentType}
+                        onChange={(e) => setClientDocumentType(e.target.value)}
+                        disabled={billingType === "FACTURA"}
+                        className="w-full px-3 py-2 border border-emerald-200 rounded-xl text-xs font-bold bg-white outline-none focus:ring-2 focus:ring-emerald-400 disabled:opacity-60"
+                      >
+                        <option value="1">DNI</option>
+                        <option value="6">RUC</option>
+                        <option value="-">Varios</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-emerald-800 uppercase tracking-widest mb-1">
+                        {billingType === "FACTURA" ? "RUC *" : "Número Doc."}
+                      </label>
+                      <div className="flex gap-1.5">
+                        <input
+                          type="text"
+                          placeholder={clientDocumentType === "6" ? "11 dígitos" : "8 dígitos"}
+                          maxLength={clientDocumentType === "6" ? 11 : 8}
+                          value={clientDocumentNumber}
+                          onChange={(e) => setClientDocumentNumber(e.target.value.replace(/\D/g, ""))}
+                          className="flex-1 min-w-0 px-3 py-2 border border-emerald-200 rounded-xl text-xs font-bold bg-white outline-none focus:ring-2 focus:ring-emerald-400"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleQueryDocument}
+                          disabled={isQueryingDocument || (clientDocumentNumber.length !== 8 && clientDocumentNumber.length !== 11)}
+                          className="px-3 py-2 bg-emerald-600 hover:bg-emerald-750 disabled:bg-gray-200 disabled:text-gray-400 disabled:opacity-70 text-white rounded-xl flex items-center justify-center transition-all active:scale-95 shadow-sm"
+                          title="Buscar en Reniec/SUNAT"
+                        >
+                          <Search className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                   <div>
-                    <label className="block text-[10px] font-black text-indigo-700 uppercase tracking-wider mb-1">
-                      % Comisión de Venta
+                    <label className="block text-[10px] font-black text-emerald-800 uppercase tracking-widest mb-1">
+                      {billingType === "FACTURA" ? "Razón Social *" : "Nombre del Cliente"}
                     </label>
-                    <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Nombre o Razón Social"
+                      value={clientDenomination}
+                      onChange={(e) => setClientDenomination(e.target.value)}
+                      className="w-full px-3 py-2 border border-emerald-200 rounded-xl text-xs font-bold bg-white outline-none focus:ring-2 focus:ring-emerald-400"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-black text-emerald-800 uppercase tracking-widest mb-1">Dirección (Opc.)</label>
                       <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="0.1"
-                        value={commissionPercentage}
-                        onChange={(e) => {
-                          const val = e.target.value === "" ? "" : Number(e.target.value);
-                          setCommissionPercentage(val);
-                        }}
-                        className="w-full pl-4 pr-8 py-2.5 bg-white border border-indigo-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-extrabold text-sm outline-none text-indigo-900"
+                        type="text"
+                        placeholder="Av. Los Árboles 123"
+                        value={clientAddress}
+                        onChange={(e) => setClientAddress(e.target.value)}
+                        className="w-full px-3 py-2 border border-emerald-200 rounded-xl text-xs font-bold bg-white outline-none focus:ring-2 focus:ring-emerald-400"
                       />
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-indigo-400">%</span>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-emerald-800 uppercase tracking-widest mb-1">Correo (Opc.)</label>
+                      <input
+                        type="email"
+                        placeholder="cliente@email.com"
+                        value={clientEmail}
+                        onChange={(e) => setClientEmail(e.target.value)}
+                        className="w-full px-3 py-2 border border-emerald-200 rounded-xl text-xs font-bold bg-white outline-none focus:ring-2 focus:ring-emerald-400"
+                      />
                     </div>
                   </div>
-                  <div className="flex flex-col justify-center">
-                    <span className="block text-[10px] font-black text-indigo-700 uppercase tracking-wider mb-1">
-                      Monto en Soles
-                    </span>
-                    <div className="text-lg font-black text-indigo-600 bg-white border border-indigo-200 px-4 py-2 rounded-xl flex items-center justify-between">
-                      <span className="text-xs font-bold text-indigo-400">Total:</span>
-                      <span>S/ {((total * (Number(commissionPercentage) || 0)) / 100).toFixed(2)}</span>
-                    </div>
-                  </div>
+                  {billingType === "BOLETA" && total >= 700 && !clientDocumentNumber && (
+                    <p className="text-[11px] text-amber-700 font-semibold bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                      ⚠️ Por montos ≥ S/. 700 SUNAT exige identificar al cliente con DNI.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -2123,7 +2663,7 @@ export default function BusinessPosPage() {
             ) : (
               <>
                 <div className="overflow-x-auto max-h-[50vh] custom-scrollbar">
-                <table className="w-full text-sm">
+                  <table className="w-full text-sm">
                   <thead className="bg-gray-50 text-gray-500 uppercase text-[10px] font-bold tracking-wider">
                     <tr>
                       <th className="px-4 py-3 text-left">Fecha/Hora</th>
@@ -2133,6 +2673,7 @@ export default function BusinessPosPage() {
                       </th>
                       <th className="px-4 py-3 text-center">Método</th>
                       <th className="px-4 py-3 text-right">Monto</th>
+                      {user?.hasElectronicBilling && <th className="px-4 py-3 text-left">Comprobante SUNAT</th>}
                       <th className="px-4 py-3 text-center">Acciones</th>
                     </tr>
                   </thead>
@@ -2177,11 +2718,88 @@ export default function BusinessPosPage() {
                               sale.paymentMethod}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-right">
-                          <span className="font-black text-emerald-600 text-xs">
-                            S/ {Number(sale.amount).toFixed(2)}
-                          </span>
+                        <td className="px-4 py-3 text-right font-black text-emerald-600 text-xs">
+                          S/ {Number(sale.amount).toFixed(2)}
                         </td>
+                        {user?.hasElectronicBilling && (
+                          <td className="px-4 py-3 text-xs">
+                            {sale.billingType === "TICKET_VENTA" ? (
+                              <span className="text-gray-400 font-bold">Ticket de Venta</span>
+                            ) : (
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-extrabold text-gray-800">
+                                    {sale.billingType === "BOLETA" ? "Boleta" : sale.billingType === "FACTURA" ? "Factura" : sale.billingType === "NOTA_CREDITO" ? "N. Crédito" : "N. Débito"}
+                                  </span>
+                                  {sale.billingSerie && sale.billingNumber && (
+                                    <span className="font-mono text-gray-500 font-semibold bg-gray-100 px-1.5 py-0.5 rounded">
+                                      {sale.billingSerie}-{sale.billingNumber}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  {sale.billingStatus === "SUCCESS" && (
+                                    <>
+                                      <span className="text-[9px] bg-emerald-50 text-emerald-700 font-black border border-emerald-200 px-1.5 py-0.5 rounded uppercase">
+                                        Aceptado
+                                      </span>
+                                      {sale.billingPdfUrl && (
+                                        <a href={sale.billingPdfUrl} target="_blank" rel="noreferrer" className="text-indigo-650 hover:text-indigo-850" title="Ver PDF">
+                                          <FileText className="w-3.5 h-3.5" />
+                                        </a>
+                                      )}
+                                      {sale.billingXmlUrl && (
+                                        <a href={sale.billingXmlUrl} target="_blank" rel="noreferrer" className="text-amber-650 hover:text-amber-850" title="Ver XML">
+                                          <FileCode className="w-3.5 h-3.5" />
+                                        </a>
+                                      )}
+                                      {sale.billingCdrUrl && (
+                                        <a href={sale.billingCdrUrl} target="_blank" rel="noreferrer" className="text-teal-650 hover:text-teal-850" title="Ver CDR">
+                                          <FileCheck className="w-3.5 h-3.5" />
+                                        </a>
+                                      )}
+                                    </>
+                                  )}
+                                  {sale.billingStatus === "ERROR" && (
+                                    <div className="flex flex-col gap-1">
+                                      <div className="flex items-center gap-1">
+                                        <span className="text-[9px] bg-red-50 text-red-700 font-black border border-red-200 px-1.5 py-0.5 rounded uppercase" title={sale.billingError}>
+                                          Error SUNAT
+                                        </span>
+                                        <button
+                                          onClick={async () => {
+                                            const loading = toast.loading("Reintentando envío a SUNAT...");
+                                            try {
+                                              await retrySaleBillingRequest(sale.id);
+                                              toast.dismiss(loading);
+                                              toast.success("Envío completado");
+                                              loadData();
+                                            } catch (err: any) {
+                                              toast.dismiss(loading);
+                                              toast.error(err.message || "Error al reintentar");
+                                            }
+                                          }}
+                                          className="p-0.5 bg-gray-50 hover:bg-gray-150 border border-gray-200 rounded text-gray-650 hover:text-gray-950 transition-colors animate-pulse"
+                                          title="Reintentar Facturación"
+                                        >
+                                          <RefreshCw className="w-3 h-3" />
+                                        </button>
+                                      </div>
+                                      <p className="text-[9px] text-red-500 font-medium max-w-[150px] truncate" title={sale.billingError}>
+                                        {sale.billingError}
+                                      </p>
+                                    </div>
+                                  )}
+                                  {sale.billingStatus === "PENDING" && (
+                                    <span className="text-[9px] bg-amber-50 text-amber-700 font-black border border-amber-200 px-1.5 py-0.5 rounded uppercase">
+                                      Enviando...
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </td>
+                        )}
                         <td className="px-4 py-3">
                           <div className="flex items-center justify-center gap-1.5">
                             <button
@@ -2191,29 +2809,54 @@ export default function BusinessPosPage() {
                             >
                               <Printer className="w-3.5 h-3.5" />
                             </button>
-                            <button
-                              onClick={() => {
-                                setEditSale(sale);
-                                setEditAmount(sale.amount);
-                                setEditDesc(sale.description || "");
-                                setEditPayment(sale.paymentMethod);
-                                setEditReceiptUrl(sale.receiptUrl || null);
-                              }}
-                              className="p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
-                              title="Editar Monto/Método"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => {
-                                setSaleIdToDelete(sale.id);
-                                setIsDeleteConfirmOpen(true);
-                              }}
-                              className="p-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors"
-                              title="Eliminar registro"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            {user?.hasElectronicBilling && sale.billingStatus === "SUCCESS" && (sale.billingType === "BOLETA" || sale.billingType === "FACTURA") && (
+                              <>
+                                <button
+                                  onClick={() => {
+                                    setSelectedSaleForNote(sale);
+                                    setNoteType("CREDIT");
+                                    setNoteReasonCode(1);
+                                    setNoteReasonText("");
+                                    setIsNoteModalOpen(true);
+                                  }}
+                                  className="p-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-lg transition-colors"
+                                  title="Emitir Nota de Crédito (Anular/Descontar)"
+                                >
+                                  <MinusCircle className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setSelectedSaleForNote(sale);
+                                    setNoteType("DEBIT");
+                                    setNoteReasonCode(1);
+                                    setNoteReasonText("");
+                                    setIsNoteModalOpen(true);
+                                  }}
+                                  className="p-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg transition-colors"
+                                  title="Emitir Nota de Débito (Aumento de valor)"
+                                >
+                                  <PlusCircle className="w-3.5 h-3.5" />
+                                </button>
+                              </>
+                            )}
+                            {(sale.billingType === "TICKET_VENTA" || !sale.billingStatus || sale.billingStatus === "ERROR") && (
+                              <>
+                                <button
+                                  onClick={() => handleEditSale(sale)}
+                                  className="p-1.5 bg-amber-50 text-amber-705 hover:bg-amber-100 rounded-lg transition-colors"
+                                  title="Editar Venta (Cargar al Carrito)"
+                                >
+                                  <Edit className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteSale(sale)}
+                                  className="p-1.5 bg-red-50 text-red-650 hover:bg-red-100 rounded-lg transition-colors"
+                                  title="Eliminar / Anular Venta"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -2244,104 +2887,7 @@ export default function BusinessPosPage() {
         </div>
       </Modal>
 
-      {/* MODAL: EDITAR VENTA POS */}
-      <Modal
-        isOpen={!!editSale}
-        onClose={() => setEditSale(null)}
-        title="✏️ Editar Venta Registrada"
-      >
-        {editSale && (
-          <div className="space-y-4">
-            <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl text-xs text-amber-700 font-medium">
-              ⚠ Recuerda: Esto modificará el registro contable de la caja. El
-              stock de inventario no se revertirá automáticamente.
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
-                Monto Total de Venta (S/)
-              </label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={editAmount}
-                onChange={(e) => setEditAmount(Number(e.target.value))}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-semibold"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
-                Método de Pago
-              </label>
-              <select
-                value={editPayment}
-                onChange={(e) => setEditPayment(e.target.value)}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-semibold bg-white"
-              >
-                <option value="CASH">Efectivo</option>
-                <option value="YAPE">Yape</option>
-                <option value="PLIN">Plin</option>
-                <option value="CARD">Tarjeta</option>
-                <option value="TRANSFER">Transferencia</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
-                Descripción / Nota
-              </label>
-              <textarea
-                rows={3}
-                value={editDesc}
-                onChange={(e) => setEditDesc(e.target.value)}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none resize-none text-sm font-medium"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
-                Comprobante de Pago (Yape/Plin/Boucher)
-              </label>
-              <ReceiptUploader
-                currentImageUrl={editReceiptUrl}
-                onUploadSuccess={(url) => setEditReceiptUrl(url)}
-                onClear={() => setEditReceiptUrl(null)}
-                label="Subir voucher/comprobante"
-              />
-            </div>
-            <div className="flex gap-3 justify-end pt-2">
-              <button
-                onClick={() => setEditSale(null)}
-                className="px-5 py-2.5 bg-gray-100 text-gray-700 font-bold rounded-xl text-xs hover:bg-gray-200 transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleSaveEdit}
-                className="px-5 py-2.5 bg-indigo-600 text-white font-bold rounded-xl text-xs hover:bg-indigo-700 shadow-sm transition-all"
-              >
-                Guardar cambios
-              </button>
-            </div>
-          </div>
-        )}
-      </Modal>
 
-      <ConfirmModal
-        isOpen={isDeleteConfirmOpen}
-        onClose={() => {
-          setIsDeleteConfirmOpen(false);
-          setSaleIdToDelete(null);
-        }}
-        onConfirm={() => {
-          if (saleIdToDelete) {
-            handleDeleteSale(saleIdToDelete);
-          }
-        }}
-        title="¿Eliminar registro de venta?"
-        message="¿Estás seguro de que deseas eliminar este registro de venta? El stock de los productos afectados se restaurará automáticamente en el inventario."
-        confirmText="Eliminar Venta"
-        cancelText="Cancelar"
-        variant="danger"
-      />
 
       {/* MODAL: Cámara Escáner */}
       <Modal
@@ -2369,6 +2915,107 @@ export default function BusinessPosPage() {
             </button>
           </div>
         </div>
+      </Modal>
+
+      {/* MODAL: Emitir Nota de Crédito / Débito */}
+      <Modal
+        isOpen={isNoteModalOpen}
+        onClose={() => {
+          if (!isSubmittingNote) {
+            setIsNoteModalOpen(false);
+            setSelectedSaleForNote(null);
+          }
+        }}
+        title={`Emitir Nota de ${noteType === "CREDIT" ? "Crédito" : "Débito"}`}
+      >
+        {selectedSaleForNote && (
+          <div className="space-y-4">
+            <div className="p-4 bg-gray-50 rounded-2xl border border-gray-150 text-xs space-y-2">
+              <p className="font-extrabold text-gray-800">
+                Documento de Referencia:{" "}
+                <span className="font-mono bg-white px-2 py-0.5 border border-gray-200 rounded">
+                  {selectedSaleForNote.billingSerie}-{selectedSaleForNote.billingNumber}
+                </span>
+              </p>
+              <p className="font-semibold text-gray-600">
+                Cliente: <span className="text-gray-950 font-bold">{selectedSaleForNote.description?.split(" - ")[1] || "Cliente general"}</span>
+              </p>
+              <p className="font-semibold text-gray-655">
+                Monto Original: <span className="text-emerald-600 font-extrabold">S/ {Number(selectedSaleForNote.amount).toFixed(2)}</span>
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1.5">
+                Motivo / Código de Operación
+              </label>
+              <select
+                value={noteReasonCode}
+                onChange={(e) => setNoteReasonCode(Number(e.target.value))}
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-xs font-bold bg-white outline-none focus:ring-2 focus:ring-indigo-400"
+              >
+                {noteType === "CREDIT" ? (
+                  <>
+                    <option value="1">1 - Anulación de la operación</option>
+                    <option value="2">2 - Anulación por error en el RUC</option>
+                    <option value="3">3 - Corrección por error en la descripción</option>
+                    <option value="4">4 - Descuento global</option>
+                    <option value="5">5 - Descuento por ítem</option>
+                    <option value="6">6 - Devolución total</option>
+                    <option value="7">7 - Devolución por ítem</option>
+                    <option value="8">8 - Bonificación</option>
+                    <option value="9">9 - Disminución en el valor</option>
+                    <option value="10">10 - Otros conceptos</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="1">1 - Intereses por mora</option>
+                    <option value="2">2 - Aumento en el valor</option>
+                    <option value="3">3 - Penalidades / otros conceptos</option>
+                  </>
+                )}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1.5">
+                Sustento / Comentarios (Obligatorio)
+              </label>
+              <textarea
+                placeholder="Indique detalladamente la razón de emisión..."
+                rows={3}
+                value={noteReasonText}
+                onChange={(e) => setNoteReasonText(e.target.value)}
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-xs font-bold bg-white outline-none focus:ring-2 focus:ring-indigo-400"
+              />
+            </div>
+
+            <div className="flex gap-2 justify-end pt-2">
+              <button
+                type="button"
+                disabled={isSubmittingNote}
+                onClick={() => {
+                  setIsNoteModalOpen(false);
+                  setSelectedSaleForNote(null);
+                }}
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 font-bold text-xs"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isSubmittingNote || !noteReasonText.trim()}
+                onClick={handleSubmitNote}
+                className={`px-4 py-2 text-white rounded-xl font-black text-xs shadow-sm transition-all flex items-center gap-1.5 ${
+                  noteType === "CREDIT" ? "bg-rose-600 hover:bg-rose-700" : "bg-blue-600 hover:bg-blue-700"
+                } disabled:opacity-50`}
+              >
+                {isSubmittingNote && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>Emitir Nota</span>
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
       {/* MODAL: Ajustar Precio Ítem */}
       <Modal
@@ -2600,7 +3247,7 @@ export default function BusinessPosPage() {
       )}
 
       {/* PANEL FLOTANTE: CONFIGURACIÓN LECTOR CÓDIGO DE BARRAS FÍSICO */}
-      <div className="fixed bottom-6 right-6 z-[999] no-print">
+      <motion.div drag dragMomentum={false} className="fixed bottom-6 right-6 z-[999] no-print">
         {/* Floating Trigger Button */}
         <button
           type="button"
@@ -2615,7 +3262,7 @@ export default function BusinessPosPage() {
 
         {/* Floating Config Card */}
         {isScannerConfigOpen && (
-          <div className="absolute bottom-16 right-0 w-80 bg-white/95 backdrop-blur-md rounded-3xl border border-gray-150 p-5 shadow-2xl space-y-4 animate-in fade-in slide-in-from-bottom-5 duration-200">
+          <div className="absolute bottom-16 right-0 w-80 bg-white/95 backdrop-blur-md rounded-3xl border border-gray-150 p-5 shadow-2xl space-y-4 animate-in fade-in slide-in-from-bottom-5 duration-200" onPointerDown={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-gray-100 pb-2">
               <h4 className="font-extrabold text-sm text-gray-800 flex items-center gap-1.5">
                 <span>Lector Físico (Teclado)</span>
@@ -2690,7 +3337,7 @@ export default function BusinessPosPage() {
             </div>
           </div>
         )}
-      </div>
+      </motion.div>
     </Appshell>
   );
 }

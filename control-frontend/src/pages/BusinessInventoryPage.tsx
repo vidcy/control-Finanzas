@@ -54,9 +54,19 @@ import {
   createFamilyRequest,
   deleteFamilyRequest,
 } from "../services/product.api";
-import type { Product, Presentation, LowStockAnalysisItem, PurchaseOrder } from "../services/product.api";
+import type {
+  Product,
+  Presentation,
+  LowStockAnalysisItem,
+  PurchaseOrder,
+} from "../services/product.api";
 import { listCategoriesRequest } from "../services/category.api";
 import { getTransactionsRequest } from "../services/transaction.api";
+import {
+  transferStockRequest,
+  adjustBranchStockRequest,
+  getBranchesRequest,
+} from "../services/branch.api";
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
 import ConfirmModal from "../components/ui/ConfirmModal";
@@ -67,6 +77,7 @@ import {
   ProductImageUploader,
   uploadProductImageFile,
 } from "../components/ui/ImageUploader";
+import { format } from "date-fns";
 
 // Helper dynamically loading CDN scripts to bypass React 19 dependency conflict issues
 const loadHtml5Qrcode = (): Promise<any> => {
@@ -76,7 +87,8 @@ const loadHtml5Qrcode = (): Promise<any> => {
       return;
     }
     const script = document.createElement("script");
-    script.src = "https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js";
+    script.src =
+      "https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js";
     script.onload = () => resolve((window as any).Html5Qrcode);
     script.onerror = (err) => reject(err);
     document.body.appendChild(script);
@@ -90,7 +102,8 @@ const loadQrCodeGenerator = (): Promise<any> => {
       return;
     }
     const script = document.createElement("script");
-    script.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.1/qrcode.min.js";
+    script.src =
+      "https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.1/qrcode.min.js";
     script.onload = () => resolve((window as any).QRCode);
     script.onerror = (err) => reject(err);
     document.body.appendChild(script);
@@ -132,17 +145,19 @@ export function formatStock(
 
 export const playScannerBeep = (freq = 800, duration = 0.08) => {
   try {
-    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const audioCtx = new (
+      window.AudioContext || (window as any).webkitAudioContext
+    )();
     const oscillator = audioCtx.createOscillator();
     const gainNode = audioCtx.createGain();
-    
+
     oscillator.connect(gainNode);
     gainNode.connect(audioCtx.destination);
-    
+
     oscillator.type = "sine";
     oscillator.frequency.value = freq;
     gainNode.gain.setValueAtTime(0.04, audioCtx.currentTime);
-    
+
     oscillator.start();
     oscillator.stop(audioCtx.currentTime + duration);
   } catch (err) {
@@ -157,14 +172,16 @@ const CURATED_COLORS = [
   { name: "Matte Black", value: "#1F2937" },
   { name: "Amber", value: "#F59E0B" },
   { name: "Violet", value: "#7C3AED" },
-  { name: "Slate", value: "#64748B" }
+  { name: "Slate", value: "#64748B" },
 ];
 
 export default function BusinessInventoryPage() {
   const { user } = useAuth();
-  
+
   // Navigation Tabs
-  const [activeTab, setActiveTab] = useState<"products" | "planner" | "labels">("products");
+  const [activeTab, setActiveTab] = useState<"products" | "planner" | "labels">(
+    "products",
+  );
 
   // Branch context — only used when BUSINESS_BRANCHES is enabled
   // const hasBranches = user?.profiles?.includes("BUSINESS_BRANCHES");
@@ -185,8 +202,24 @@ export default function BusinessInventoryPage() {
   const [isRestockModalOpen, setIsRestockModalOpen] = useState(false);
   const [restockProduct, setRestockProduct] = useState<Product | null>(null);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
-  const [productIdToDelete, setProductIdToDelete] = useState<string | null>(null);
+  const [productIdToDelete, setProductIdToDelete] = useState<string | null>(
+    null,
+  );
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+
+  // Stock Management Modal (Branch Adjustments & Transfers)
+  const [isStockMgmtModalOpen, setIsStockMgmtModalOpen] = useState(false);
+  const [selectedStockMgmtProduct, setSelectedStockMgmtProduct] =
+    useState<Product | null>(null);
+  const [stockMgmtTab, setStockMgmtTab] = useState<"adjust" | "transfer">(
+    "adjust",
+  );
+  const [mgmtAdjustBranchId, setMgmtAdjustBranchId] = useState("");
+  const [mgmtAdjustStockVal, setMgmtAdjustStockVal] = useState<number | "">("");
+  const [mgmtTransferFromBranchId, setMgmtTransferFromBranchId] = useState("");
+  const [mgmtTransferToBranchId, setMgmtTransferToBranchId] = useState("");
+  const [mgmtTransferQty, setMgmtTransferQty] = useState<number | "">("");
+  const [mgmtIsSubmitting, setMgmtIsSubmitting] = useState(false);
 
   // Generic Confirm Modal States
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -200,7 +233,9 @@ export default function BusinessInventoryPage() {
   });
 
   // Subtab for purchase orders: pending | transit | received
-  const [ordersSubTab, setOrdersSubTab] = useState<"pending" | "transit" | "received">("pending");
+  const [ordersSubTab, setOrdersSubTab] = useState<
+    "pending" | "transit" | "received"
+  >("pending");
 
   // Pagination states
   const [productPage, setProductPage] = useState(1);
@@ -232,6 +267,9 @@ export default function BusinessInventoryPage() {
     presentations: [] as Presentation[],
     brandId: "",
     familyId: "",
+    commissionType: "PERCENT",
+    commissionValue: 0,
+    priceWithAgent: 0,
   });
 
   const [brands, setBrands] = useState<any[]>([]);
@@ -312,20 +350,32 @@ export default function BusinessInventoryPage() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   });
-  const [customQuantities, setCustomQuantities] = useState<Record<string, number>>({});
+  const [customQuantities, setCustomQuantities] = useState<
+    Record<string, number>
+  >({});
   const [customCosts, setCustomCosts] = useState<Record<string, number>>({});
-  const [selectedPresentations, setSelectedPresentations] = useState<Record<string, string>>({});
+  const [selectedPresentations, setSelectedPresentations] = useState<
+    Record<string, string>
+  >({});
   const [isCreatingFromPlanner, setIsCreatingFromPlanner] = useState(false);
   const [customPlannerQty, setCustomPlannerQty] = useState(1);
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const ordersFiltered = useMemo(() => {
-    const statusToFilter = ordersSubTab === "pending" ? "PENDING" : ordersSubTab === "transit" ? "PAID" : "RECEIVED";
-    return purchaseOrders.filter(o => o.status === statusToFilter);
+    const statusToFilter =
+      ordersSubTab === "pending"
+        ? "PENDING"
+        : ordersSubTab === "transit"
+          ? "PAID"
+          : "RECEIVED";
+    return purchaseOrders.filter((o) => o.status === statusToFilter);
   }, [purchaseOrders, ordersSubTab]);
 
   const paginatedOrders = useMemo(() => {
-    return ordersFiltered.slice((orderPage - 1) * orderPageSize, orderPage * orderPageSize);
+    return ordersFiltered.slice(
+      (orderPage - 1) * orderPageSize,
+      orderPage * orderPageSize,
+    );
   }, [ordersFiltered, orderPage, orderPageSize]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [isBulkPurchaseModalOpen, setIsBulkPurchaseModalOpen] = useState(false);
@@ -337,10 +387,12 @@ export default function BusinessInventoryPage() {
     receiveImmediately: false,
   });
 
-  const [singlePurchaseItem, setSinglePurchaseItem] = useState<LowStockAnalysisItem | null>(null);
+  const [singlePurchaseItem, setSinglePurchaseItem] =
+    useState<LowStockAnalysisItem | null>(null);
   const [bulkPurchaseFile, setBulkPurchaseFile] = useState<File | null>(null);
   const [isEditOrderModalOpen, setIsEditOrderModalOpen] = useState(false);
-  const [editingPurchaseOrder, setEditingPurchaseOrder] = useState<PurchaseOrder | null>(null);
+  const [editingPurchaseOrder, setEditingPurchaseOrder] =
+    useState<PurchaseOrder | null>(null);
   const [editOrderData, setEditOrderData] = useState<{
     categoryId: string;
     subCategoryId: string;
@@ -367,31 +419,30 @@ export default function BusinessInventoryPage() {
   const [editOrderFile, setEditOrderFile] = useState<File | null>(null);
   const [editOrderSearch, setEditOrderSearch] = useState("");
 
-
   // ── Add-to-planner: search existing inventory products ──
   const [isAddProductToOrderOpen, setIsAddProductToOrderOpen] = useState(false);
   const [addProductSearch, setAddProductSearch] = useState("");
   // Extra manually-added planner items (from existing inventory or newly created)
-  const [extraPlannerItems, setExtraPlannerItems] = useState<Array<{
-    id: string;
-    name: string;
-    sku?: string;
-    unit: string;
-    costPrice: number;
-    salePrice: number;
-    stock: number;
-    minStock: number;
-    soldQty: number;
-    deficit: number;
-    imageUrl?: string;
-    presentations?: any[];
-    brandId?: string;
-    familyId?: string;
-    isNew?: boolean; // true = not yet in DB, will be created on purchase
-    pendingOrderQty?: number;
-  }>>([]);
-
-
+  const [extraPlannerItems, setExtraPlannerItems] = useState<
+    Array<{
+      id: string;
+      name: string;
+      sku?: string;
+      unit: string;
+      costPrice: number;
+      salePrice: number;
+      stock: number;
+      minStock: number;
+      soldQty: number;
+      deficit: number;
+      imageUrl?: string;
+      presentations?: any[];
+      brandId?: string;
+      familyId?: string;
+      isNew?: boolean; // true = not yet in DB, will be created on purchase
+      pendingOrderQty?: number;
+    }>
+  >([]);
 
   // ── Pay order modal (for PENDING orders) ──
   const [isPayOrderModalOpen, setIsPayOrderModalOpen] = useState(false);
@@ -403,17 +454,33 @@ export default function BusinessInventoryPage() {
     paymentMethod: "CASH",
   });
   const [payOrderFile, setPayOrderFile] = useState<File | null>(null);
-  const [treasuryLiquidity, setTreasuryLiquidity] = useState<number | null>(null);
+  const [treasuryLiquidity, setTreasuryLiquidity] = useState<number | null>(
+    null,
+  );
 
   const fetchTreasuryLiquidity = async () => {
     try {
       const txs = await getTransactionsRequest({ workspace: "BUSINESS" });
       const income = txs
         .filter((t: any) => t.type === "INCOME" && t.status === "PAID")
-        .reduce((acc: number, t: any) => acc + (t.currency === "USD" ? t.amount * (t.exchangeRate || 1) : t.amount), 0);
+        .reduce(
+          (acc: number, t: any) =>
+            acc +
+            (t.currency === "USD"
+              ? t.amount * (t.exchangeRate || 1)
+              : t.amount),
+          0,
+        );
       const expense = txs
         .filter((t: any) => t.type === "EXPENSE" && t.status === "PAID")
-        .reduce((acc: number, t: any) => acc + (t.currency === "USD" ? t.amount * (t.exchangeRate || 1) : t.amount), 0);
+        .reduce(
+          (acc: number, t: any) =>
+            acc +
+            (t.currency === "USD"
+              ? t.amount * (t.exchangeRate || 1)
+              : t.amount),
+          0,
+        );
       setTreasuryLiquidity(income - expense);
     } catch (error) {
       console.error("Error al obtener liquidez de tesorería", error);
@@ -424,7 +491,9 @@ export default function BusinessInventoryPage() {
   const [ticketProductId, setTicketProductId] = useState("");
   const [codeType, setCodeType] = useState<"qr" | "barcode">("qr");
   const [ticketQuantity, setTicketQuantity] = useState(12);
-  const [ticketBusinessName, setTicketBusinessName] = useState(user?.businessName || "Think");
+  const [ticketBusinessName, setTicketBusinessName] = useState(
+    user?.businessName || "Think",
+  );
   const [labelSearchTerm, setLabelSearchTerm] = useState("");
   const [labelFilterBrandId, setLabelFilterBrandId] = useState("");
   const [labelFilterFamilyId, setLabelFilterFamilyId] = useState("");
@@ -436,9 +505,15 @@ export default function BusinessInventoryPage() {
       const customCode = String((p as any).customCode || "").toLowerCase();
       const search = labelSearchTerm.toLowerCase();
 
-      const matchesSearch = !labelSearchTerm || name.includes(search) || sku.includes(search) || customCode.includes(search);
-      const matchesBrand = !labelFilterBrandId || p.brandId === labelFilterBrandId;
-      const matchesFamily = !labelFilterFamilyId || p.familyId === labelFilterFamilyId;
+      const matchesSearch =
+        !labelSearchTerm ||
+        name.includes(search) ||
+        sku.includes(search) ||
+        customCode.includes(search);
+      const matchesBrand =
+        !labelFilterBrandId || p.brandId === labelFilterBrandId;
+      const matchesFamily =
+        !labelFilterFamilyId || p.familyId === labelFilterFamilyId;
 
       return matchesSearch && matchesBrand && matchesFamily;
     });
@@ -462,10 +537,13 @@ export default function BusinessInventoryPage() {
   }, [scannerEnabled]);
 
   useEffect(() => {
-    localStorage.setItem("barcodeScannerSensitivity", String(scannerSensitivity));
+    localStorage.setItem(
+      "barcodeScannerSensitivity",
+      String(scannerSensitivity),
+    );
   }, [scannerSensitivity]);
 
-    // Keyboard/USB Scanner listener
+  // Keyboard/USB Scanner listener
   useEffect(() => {
     if (!scannerEnabled) return;
 
@@ -515,12 +593,15 @@ export default function BusinessInventoryPage() {
           if (buffer.length >= 3) {
             playScannerBeep(850, 0.08);
             setScanTestResult(buffer);
-            
+
             const cleanCode = buffer.trim().toLowerCase();
             const match = products.find((p) => {
               const matchesSku = p.sku && p.sku.toLowerCase() === cleanCode;
-              const matchesCodeRaw = p.customCode && String(p.customCode) === cleanCode;
-              const matchesCodePadded = p.customCode && String(p.customCode).padStart(4, "0") === cleanCode;
+              const matchesCodeRaw =
+                p.customCode && String(p.customCode) === cleanCode;
+              const matchesCodePadded =
+                p.customCode &&
+                String(p.customCode).padStart(4, "0") === cleanCode;
               return matchesSku || matchesCodeRaw || matchesCodePadded;
             });
 
@@ -528,7 +609,9 @@ export default function BusinessInventoryPage() {
               handleOpenModal(match);
               toast.success(`Producto encontrado: ${match.name}`);
             } else {
-              toast.error(`Código escaneado: "${buffer}", pero no coincide con ningún producto.`);
+              toast.error(
+                `Código escaneado: "${buffer}", pero no coincide con ningún producto.`,
+              );
             }
           }
           buffer = "";
@@ -543,12 +626,15 @@ export default function BusinessInventoryPage() {
             e.preventDefault();
             playScannerBeep(850, 0.08);
             setScanTestResult(buffer);
-            
+
             const cleanCode = buffer.trim().toLowerCase();
             const match = products.find((p) => {
               const matchesSku = p.sku && p.sku.toLowerCase() === cleanCode;
-              const matchesCodeRaw = p.customCode && String(p.customCode) === cleanCode;
-              const matchesCodePadded = p.customCode && String(p.customCode).padStart(4, "0") === cleanCode;
+              const matchesCodeRaw =
+                p.customCode && String(p.customCode) === cleanCode;
+              const matchesCodePadded =
+                p.customCode &&
+                String(p.customCode).padStart(4, "0") === cleanCode;
               return matchesSku || matchesCodeRaw || matchesCodePadded;
             });
 
@@ -556,7 +642,9 @@ export default function BusinessInventoryPage() {
               handleOpenModal(match);
               toast.success(`Producto encontrado: ${match.name}`);
             } else {
-              toast.error(`Código escaneado: "${buffer}", pero no coincide con ningún producto.`);
+              toast.error(
+                `Código escaneado: "${buffer}", pero no coincide con ningún producto.`,
+              );
             }
             buffer = "";
           }
@@ -575,26 +663,30 @@ export default function BusinessInventoryPage() {
 
   // Premium metrics computations
   const totalProducts = products.length;
-  const criticalStockCount = products.filter(p => {
+  const criticalStockCount = products.filter((p) => {
     const displayStock = activeBranchId
-      ? (p.branchStocks?.find((bs: any) => bs.branchId === activeBranchId)?.stock ?? 0)
+      ? (p.branchStocks?.find((bs: any) => bs.branchId === activeBranchId)
+          ?.stock ?? 0)
       : p.stock;
     return displayStock <= p.minStock;
   }).length;
   const totalInventoryCost = products.reduce((acc, p) => {
     const displayStock = activeBranchId
-      ? (p.branchStocks?.find((bs: any) => bs.branchId === activeBranchId)?.stock ?? 0)
+      ? (p.branchStocks?.find((bs: any) => bs.branchId === activeBranchId)
+          ?.stock ?? 0)
       : p.stock;
-    return acc + (displayStock * p.costPrice);
+    return acc + displayStock * p.costPrice;
   }, 0);
   const totalInventorySale = products.reduce((acc, p) => {
     const displayStock = activeBranchId
-      ? (p.branchStocks?.find((bs: any) => bs.branchId === activeBranchId)?.stock ?? 0)
+      ? (p.branchStocks?.find((bs: any) => bs.branchId === activeBranchId)
+          ?.stock ?? 0)
       : p.stock;
-    return acc + (displayStock * p.salePrice);
+    return acc + displayStock * p.salePrice;
   }, 0);
   const potentialProfit = totalInventorySale - totalInventoryCost;
-  const expectedProfitMargin = totalInventorySale > 0 ? (potentialProfit / totalInventorySale) * 100 : 0;
+  const expectedProfitMargin =
+    totalInventorySale > 0 ? (potentialProfit / totalInventorySale) * 100 : 0;
 
   const loadData = async () => {
     try {
@@ -608,7 +700,6 @@ export default function BusinessInventoryPage() {
       await fetchBrandsAndFamilies();
       // Load branches if multi-branch module is enabled
       try {
-        const { getBranchesRequest } = await import("../services/branch.api");
         const branchData = await getBranchesRequest();
         setBranches(branchData);
       } catch {
@@ -628,7 +719,7 @@ export default function BusinessInventoryPage() {
       const [year, month] = plannerMonth.split("-").map(Number);
       const start = new Date(year, month - 1, 1).toISOString();
       const end = new Date(year, month, 0, 23, 59, 59, 999).toISOString();
-      
+
       const [data, orders] = await Promise.all([
         getLowStockAnalysisRequest(start, end),
         getPurchaseOrdersRequest(),
@@ -637,11 +728,15 @@ export default function BusinessInventoryPage() {
       // Calculate pending quantity for each product
       const pendingQuantities: Record<string, number> = {};
       orders
-        .filter((order) => order.status === "PENDING" || order.status === "PAID")
+        .filter(
+          (order) => order.status === "PENDING" || order.status === "PAID",
+        )
         .forEach((order) => {
           order.items.forEach((item) => {
-            const pendingQtyInBaseUnits = item.quantity * (item.equivalence || 1.0);
-            pendingQuantities[item.productId] = (pendingQuantities[item.productId] || 0) + pendingQtyInBaseUnits;
+            const pendingQtyInBaseUnits =
+              item.quantity * (item.equivalence || 1.0);
+            pendingQuantities[item.productId] =
+              (pendingQuantities[item.productId] || 0) + pendingQtyInBaseUnits;
           });
         });
 
@@ -659,8 +754,14 @@ export default function BusinessInventoryPage() {
       const costs: Record<string, number> = {};
       enrichedData.forEach((item) => {
         const defaultQty = item.deficit > 0 ? item.deficit : 1;
-        qtys[item.id] = customQuantities[item.id] !== undefined ? customQuantities[item.id] : defaultQty;
-        costs[item.id] = customCosts[item.id] !== undefined ? customCosts[item.id] : item.costPrice;
+        qtys[item.id] =
+          customQuantities[item.id] !== undefined
+            ? customQuantities[item.id]
+            : defaultQty;
+        costs[item.id] =
+          customCosts[item.id] !== undefined
+            ? customCosts[item.id]
+            : item.costPrice;
       });
       setCustomQuantities((prev) => ({ ...qtys, ...prev }));
       setCustomCosts((prev) => ({ ...costs, ...prev }));
@@ -698,7 +799,8 @@ export default function BusinessInventoryPage() {
     if (activeTab === "labels" && ticketProductId) {
       const prod = products.find((p) => p.id === ticketProductId);
       if (prod) {
-        const codeText = prod.sku || String(prod.customCode || 0).padStart(4, "0");
+        const codeText =
+          prod.sku || String(prod.customCode || 0).padStart(4, "0");
         if (codeType === "qr") {
           loadQrCodeGenerator().then((QRCodeObj) => {
             setTimeout(() => {
@@ -710,8 +812,8 @@ export default function BusinessInventoryPage() {
                     margin: 1,
                     color: {
                       dark: "#000000",
-                      light: "#ffffff"
-                    }
+                      light: "#ffffff",
+                    },
                   });
                 } catch (err) {
                   console.error("QRCode rendering error", err);
@@ -721,7 +823,9 @@ export default function BusinessInventoryPage() {
           });
         } else {
           setTimeout(() => {
-            const canvases = document.querySelectorAll(".barcode-preview-canvas");
+            const canvases = document.querySelectorAll(
+              ".barcode-preview-canvas",
+            );
             canvases.forEach((canvas) => {
               try {
                 JsBarcode(canvas, codeText, {
@@ -730,7 +834,7 @@ export default function BusinessInventoryPage() {
                   height: 35,
                   displayValue: true,
                   fontSize: 8,
-                  margin: 2
+                  margin: 2,
                 });
               } catch (err) {
                 console.error("Barcode rendering error", err);
@@ -748,22 +852,24 @@ export default function BusinessInventoryPage() {
     if (isScannerOpen) {
       loadHtml5Qrcode().then((Html5Qrcode) => {
         html5QrcodeScanner = new Html5Qrcode("scanner-reader");
-        html5QrcodeScanner.start(
-          { facingMode: "environment" },
-          { fps: 15, qrbox: { width: 250, height: 130 } },
-          (decodedText: string) => {
-            handleBarcodeScanned(decodedText);
-            html5QrcodeScanner.stop().then(() => {
-              setIsScannerOpen(false);
-            });
-          },
-          () => {
-            // Keep scan silent
-          }
-        ).catch(() => {
-          toast.error("No se pudo iniciar la cámara");
-          setIsScannerOpen(false);
-        });
+        html5QrcodeScanner
+          .start(
+            { facingMode: "environment" },
+            { fps: 15, qrbox: { width: 250, height: 130 } },
+            (decodedText: string) => {
+              handleBarcodeScanned(decodedText);
+              html5QrcodeScanner.stop().then(() => {
+                setIsScannerOpen(false);
+              });
+            },
+            () => {
+              // Keep scan silent
+            },
+          )
+          .catch(() => {
+            toast.error("No se pudo iniciar la cámara");
+            setIsScannerOpen(false);
+          });
       });
     }
     return () => {
@@ -779,7 +885,8 @@ export default function BusinessInventoryPage() {
     const match = products.find((p) => {
       const matchesSku = p.sku && p.sku.toLowerCase() === cleanCode;
       const matchesCodeRaw = p.customCode && String(p.customCode) === cleanCode;
-      const matchesCodePadded = p.customCode && String(p.customCode).padStart(4, "0") === cleanCode;
+      const matchesCodePadded =
+        p.customCode && String(p.customCode).padStart(4, "0") === cleanCode;
       return matchesSku || matchesCodeRaw || matchesCodePadded;
     });
 
@@ -804,13 +911,18 @@ export default function BusinessInventoryPage() {
         presentations: [],
         brandId: "",
         familyId: "",
+        commissionType: "PERCENT",
+        commissionValue: 0,
+        priceWithAgent: 0,
       });
       setIsModalOpen(true);
-      toast("Código nuevo. Rellene los datos para registrarlo.", { icon: "ℹ️" });
+      toast("Código nuevo. Rellene los datos para registrarlo.", {
+        icon: "ℹ️",
+      });
     }
   };
 
-  const handleOpenModal = (product?: Product) => {
+  const handleOpenModal = (product?: Product | any) => {
     if (product) {
       setEditingProduct(product);
       setFormData({
@@ -828,6 +940,9 @@ export default function BusinessInventoryPage() {
         presentations: product.presentations || [],
         brandId: product.brandId || "",
         familyId: product.familyId || "",
+        commissionType: product.commissionType || "PERCENT",
+        commissionValue: product.commissionValue || 0,
+        priceWithAgent: product.priceWithAgent || 0,
       });
     } else {
       setEditingProduct(null);
@@ -846,12 +961,15 @@ export default function BusinessInventoryPage() {
         presentations: [],
         brandId: "",
         familyId: "",
+        commissionType: "PERCENT",
+        commissionValue: 0,
+        priceWithAgent: 0,
       });
     }
     setIsModalOpen(true);
   };
 
-  const handleClone = (product: Product) => {
+  const handleClone = (product: Product | any) => {
     setEditingProduct(null); // Clear editing to create a new product entry
     setFormData({
       name: product.name,
@@ -868,9 +986,156 @@ export default function BusinessInventoryPage() {
       presentations: product.presentations || [],
       brandId: product.brandId || "",
       familyId: product.familyId || "",
+      commissionType: product.commissionType || "PERCENT",
+      commissionValue: product.commissionValue || 0,
+      priceWithAgent: product.priceWithAgent || 0,
     });
     setIsModalOpen(true);
     toast.success("Modelo clonado. Ingrese o escanee el nuevo código.");
+  };
+
+  const handleOpenStockMgmt = (product: Product) => {
+    setSelectedStockMgmtProduct(product);
+    setStockMgmtTab("adjust");
+    setMgmtAdjustBranchId(branches[0]?.id || "");
+    setMgmtAdjustStockVal("");
+    setMgmtTransferFromBranchId(branches[0]?.id || "");
+    setMgmtTransferToBranchId(branches[1]?.id || "");
+    setMgmtTransferQty("");
+    setIsStockMgmtModalOpen(true);
+  };
+
+  const handleAdjustStockSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (
+      !selectedStockMgmtProduct ||
+      !mgmtAdjustBranchId ||
+      mgmtAdjustStockVal === ""
+    )
+      return;
+
+    try {
+      setMgmtIsSubmitting(true);
+      const res = await adjustBranchStockRequest({
+        productId: selectedStockMgmtProduct.id,
+        branchId: mgmtAdjustBranchId,
+        stock: Number(mgmtAdjustStockVal),
+      });
+      toast.success(res.message || "Stock ajustado con éxito");
+
+      // Update selected product locally
+      const updatedProducts = products.map((p) => {
+        if (p.id === selectedStockMgmtProduct.id) {
+          const updatedBranchStocks =
+            p.branchStocks?.map((bs: any) => {
+              if (bs.branchId === mgmtAdjustBranchId) {
+                return { ...bs, stock: Number(mgmtAdjustStockVal) };
+              }
+              return bs;
+            }) || [];
+          return {
+            ...p,
+            stock: res.globalStock ?? p.stock,
+            branchStocks: updatedBranchStocks,
+          };
+        }
+        return p;
+      });
+      setProducts(updatedProducts);
+
+      // Update currently active product details inside modal
+      setSelectedStockMgmtProduct((prev: any) => {
+        if (!prev) return null;
+        const updatedBranchStocks =
+          prev.branchStocks?.map((bs: any) => {
+            if (bs.branchId === mgmtAdjustBranchId) {
+              return { ...bs, stock: Number(mgmtAdjustStockVal) };
+            }
+            return bs;
+          }) || [];
+        return {
+          ...prev,
+          stock: res.globalStock ?? prev.stock,
+          branchStocks: updatedBranchStocks,
+        };
+      });
+
+      setMgmtAdjustStockVal("");
+      loadData(); // Reload for consistency
+    } catch (err: any) {
+      toast.error(err.message || "Error al ajustar stock");
+    } finally {
+      setMgmtIsSubmitting(false);
+    }
+  };
+
+  const handleTransferStockSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (
+      !selectedStockMgmtProduct ||
+      !mgmtTransferFromBranchId ||
+      !mgmtTransferToBranchId ||
+      !mgmtTransferQty
+    )
+      return;
+
+    if (mgmtTransferFromBranchId === mgmtTransferToBranchId) {
+      toast.error("La sede de origen y destino no pueden ser iguales");
+      return;
+    }
+
+    try {
+      setMgmtIsSubmitting(true);
+      const res = await transferStockRequest({
+        productId: selectedStockMgmtProduct.id,
+        fromBranchId: mgmtTransferFromBranchId,
+        toBranchId: mgmtTransferToBranchId,
+        quantity: Number(mgmtTransferQty),
+      });
+      toast.success(res.message || "Transferencia completada");
+
+      // Update selected product locally
+      const updatedProducts = products.map((p) => {
+        if (p.id === selectedStockMgmtProduct.id) {
+          const updatedBranchStocks =
+            p.branchStocks?.map((bs: any) => {
+              if (bs.branchId === mgmtTransferFromBranchId) {
+                return { ...bs, stock: bs.stock - Number(mgmtTransferQty) };
+              }
+              if (bs.branchId === mgmtTransferToBranchId) {
+                return { ...bs, stock: bs.stock + Number(mgmtTransferQty) };
+              }
+              return bs;
+            }) || [];
+          return { ...p, branchStocks: updatedBranchStocks };
+        }
+        return p;
+      });
+      setProducts(updatedProducts);
+
+      // Update active product details
+      setSelectedStockMgmtProduct((prev: any) => {
+        if (!prev) return null;
+        const updatedBranchStocks =
+          prev.branchStocks?.map((bs: any) => {
+            if (bs.branchId === mgmtTransferFromBranchId) {
+              return { ...bs, stock: bs.stock - Number(mgmtTransferQty) };
+            }
+            if (bs.branchId === mgmtTransferToBranchId) {
+              return { ...bs, stock: bs.stock + Number(mgmtTransferQty) };
+            }
+            return bs;
+          }) || [];
+        return { ...prev, branchStocks: updatedBranchStocks };
+      });
+
+      setMgmtTransferQty("");
+      loadData(); // Reload for consistency
+    } catch (err: any) {
+      toast.error(err.message || "Error al realizar transferencia");
+    } finally {
+      setMgmtIsSubmitting(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -909,11 +1174,17 @@ export default function BusinessInventoryPage() {
           deficit: 0,
           isNew: true,
         };
-        setExtraPlannerItems(prev => [...prev, newItem]);
-        setSelectedItemIds(prev => [...prev, createdProduct.id]);
-        setCustomQuantities(prev => ({ ...prev, [createdProduct.id]: customPlannerQty || 1 }));
-        setCustomCosts(prev => ({ ...prev, [createdProduct.id]: createdProduct.costPrice }));
-        
+        setExtraPlannerItems((prev) => [...prev, newItem]);
+        setSelectedItemIds((prev) => [...prev, createdProduct.id]);
+        setCustomQuantities((prev) => ({
+          ...prev,
+          [createdProduct.id]: customPlannerQty || 1,
+        }));
+        setCustomCosts((prev) => ({
+          ...prev,
+          [createdProduct.id]: createdProduct.costPrice,
+        }));
+
         setIsCreatingFromPlanner(false);
         setCustomPlannerQty(1);
       }
@@ -975,10 +1246,7 @@ export default function BusinessInventoryPage() {
   const handleBulkPurchaseSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     // Build the combined list of all planner rows (deficit items + manually added)
-    const allItems = [
-      ...plannerItems,
-      ...extraPlannerItems,
-    ];
+    const allItems = [...plannerItems, ...extraPlannerItems];
 
     if (!singlePurchaseItem && selectedItemIds.length === 0) {
       toast.error("No has seleccionado ningún producto para comprar");
@@ -992,31 +1260,44 @@ export default function BusinessInventoryPage() {
     const itemsToBuy = singlePurchaseItem
       ? [
           (() => {
-            const presId = selectedPresentations[singlePurchaseItem.id] || "base";
+            const presId =
+              selectedPresentations[singlePurchaseItem.id] || "base";
             const isBase = presId === "base";
-            const pres = isBase ? null : singlePurchaseItem.presentations?.find(p => p.id === presId);
+            const pres = isBase
+              ? null
+              : singlePurchaseItem.presentations?.find((p) => p.id === presId);
             const equivalence = pres ? pres.equivalence : 1.0;
             const presName = pres ? pres.name : null;
             return {
               productId: singlePurchaseItem.id,
-              quantity: customQuantities[singlePurchaseItem.id] ?? (singlePurchaseItem.deficit > 0 ? singlePurchaseItem.deficit : 1),
+              quantity:
+                customQuantities[singlePurchaseItem.id] ??
+                (singlePurchaseItem.deficit > 0
+                  ? singlePurchaseItem.deficit
+                  : 1),
               equivalence,
               presentationId: isBase ? undefined : presId,
               presentationName: presName || undefined,
-              costPrice: customCosts[singlePurchaseItem.id] ?? singlePurchaseItem.costPrice,
+              costPrice:
+                customCosts[singlePurchaseItem.id] ??
+                singlePurchaseItem.costPrice,
             };
-          })()
+          })(),
         ]
       : allItems
-          .filter(item => selectedItemIds.includes(item.id))
-          .map(item => {
+          .filter((item) => selectedItemIds.includes(item.id))
+          .map((item) => {
             const presId = selectedPresentations[item.id] || "base";
             const isBase = presId === "base";
-            const pres = isBase ? null : item.presentations?.find(p => p.id === presId);
+            const pres = isBase
+              ? null
+              : item.presentations?.find((p) => p.id === presId);
             const equivalence = pres ? pres.equivalence : 1.0;
             const presName = pres ? pres.name : null;
-            const qty = customQuantities[item.id] ?? (item.deficit > 0 ? item.deficit : 1);
-            const cost = customCosts[item.id] ?? (item.costPrice * equivalence);
+            const qty =
+              customQuantities[item.id] ??
+              (item.deficit > 0 ? item.deficit : 1);
+            const cost = customCosts[item.id] ?? item.costPrice * equivalence;
             return {
               productId: item.id,
               quantity: qty,
@@ -1027,7 +1308,10 @@ export default function BusinessInventoryPage() {
             };
           });
 
-    const totalCost = itemsToBuy.reduce((sum, item) => sum + (item.quantity * item.costPrice), 0);
+    const totalCost = itemsToBuy.reduce(
+      (sum, item) => sum + item.quantity * item.costPrice,
+      0,
+    );
 
     const submitToast = toast.loading("Registrando compra/pedido...");
     try {
@@ -1050,7 +1334,7 @@ export default function BusinessInventoryPage() {
       toast.success(
         bulkPurchaseData.receiveImmediately
           ? "Compra registrada e ingresada al stock"
-          : "Pedido de compra registrado. Podrás confirmar el pago cuando esté listo."
+          : "Pedido de compra registrado. Podrás confirmar el pago cuando esté listo.",
       );
       setIsBulkPurchaseModalOpen(false);
       // Reset state
@@ -1071,10 +1355,11 @@ export default function BusinessInventoryPage() {
       fetchTreasuryLiquidity();
     } catch (err: any) {
       toast.dismiss(submitToast);
-      toast.error(err?.response?.data?.message || "Error al registrar la compra");
+      toast.error(
+        err?.response?.data?.message || "Error al registrar la compra",
+      );
     }
   };
-
 
   const handleEditOrderSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1084,7 +1369,10 @@ export default function BusinessInventoryPage() {
       return;
     }
 
-    const totalCost = editOrderData.items.reduce((sum, item) => sum + (item.quantity * item.costPrice), 0);
+    const totalCost = editOrderData.items.reduce(
+      (sum, item) => sum + item.quantity * item.costPrice,
+      0,
+    );
     const submitToast = toast.loading("Actualizando pedido/compra...");
     try {
       let finalReceiptUrl = editOrderData.receiptUrl;
@@ -1093,7 +1381,7 @@ export default function BusinessInventoryPage() {
       }
 
       await updatePurchaseOrderRequest(editingPurchaseOrder.id, {
-        items: editOrderData.items.map(item => ({
+        items: editOrderData.items.map((item) => ({
           productId: item.productId,
           quantity: item.quantity,
           equivalence: item.equivalence || 1.0,
@@ -1113,7 +1401,7 @@ export default function BusinessInventoryPage() {
       setIsEditOrderModalOpen(false);
       setEditingPurchaseOrder(null);
       setEditOrderFile(null);
-      
+
       loadData();
       loadPlannerData();
       loadOrders();
@@ -1127,7 +1415,8 @@ export default function BusinessInventoryPage() {
   const handleReceiveOrder = async (orderId: string) => {
     setConfirmConfig({
       title: "Ingresar Pedido a Stock",
-      message: "¿Está seguro de que desea ingresar estos artículos al almacén? Esto incrementará el stock de los productos correspondientes y registrará la compra.",
+      message:
+        "¿Está seguro de que desea ingresar estos artículos al almacén? Esto incrementará el stock de los productos correspondientes y registrará la compra.",
       confirmText: "Pasar a Stock",
       cancelText: "Cancelar",
       variant: "info",
@@ -1143,14 +1432,14 @@ export default function BusinessInventoryPage() {
           fetchTreasuryLiquidity();
         } catch (err: any) {
           toast.dismiss(rxToast);
-          toast.error(err?.response?.data?.message || "Error al ingresar al stock");
+          toast.error(
+            err?.response?.data?.message || "Error al ingresar al stock",
+          );
         }
-      }
+      },
     });
     setIsConfirmOpen(true);
   };
-
-
 
   /**
    * Cancelar pedido: Marca el pedido como CANCELLED y también cancela el registro en Tesorería si existe.
@@ -1161,7 +1450,9 @@ export default function BusinessInventoryPage() {
     try {
       await cancelPurchaseOrderRequest(orderId);
       toast.dismiss(t);
-      toast.success("Pedido cancelado. El registro en Tesorería también fue anulado.");
+      toast.success(
+        "Pedido cancelado. El registro en Tesorería también fue anulado.",
+      );
       loadOrders();
       loadPlannerData();
       loadData();
@@ -1175,7 +1466,8 @@ export default function BusinessInventoryPage() {
   const handleRevertOrder = async (orderId: string) => {
     setConfirmConfig({
       title: "Revertir Ingreso a Stock",
-      message: "¿Está seguro de revertir este pedido y devolverlo a estado Pendiente? Se DESCONTARÁ del almacén la cantidad ingresada. Úselo sólo si cometió un error de carga.",
+      message:
+        "¿Está seguro de revertir este pedido y devolverlo a estado Pendiente? Se DESCONTARÁ del almacén la cantidad ingresada. Úselo sólo si cometió un error de carga.",
       confirmText: "Revertir Ingreso",
       cancelText: "Cancelar",
       variant: "warning",
@@ -1191,9 +1483,11 @@ export default function BusinessInventoryPage() {
           fetchTreasuryLiquidity();
         } catch (err: any) {
           toast.dismiss(rxToast);
-          toast.error(err?.response?.data?.message || "Error al revertir ingreso");
+          toast.error(
+            err?.response?.data?.message || "Error al revertir ingreso",
+          );
         }
-      }
+      },
     });
     setIsConfirmOpen(true);
   };
@@ -1209,14 +1503,19 @@ export default function BusinessInventoryPage() {
     let defaultCatId = categories[0]?.id || "";
     let defaultSubId = "";
 
-    const catNegocioEgreso = categories.find((c: any) =>
-      c.name.toLowerCase().includes("negocio") && c.name.toLowerCase().includes("egreso")
-    ) || categories.find((c: any) => c.name.toLowerCase().includes("egreso"));
+    const catNegocioEgreso =
+      categories.find(
+        (c: any) =>
+          c.name.toLowerCase().includes("negocio") &&
+          c.name.toLowerCase().includes("egreso"),
+      ) || categories.find((c: any) => c.name.toLowerCase().includes("egreso"));
 
     if (catNegocioEgreso) {
       defaultCatId = catNegocioEgreso.id;
-      const subMercaderia = catNegocioEgreso.children?.find((s: any) =>
-        s.name.toLowerCase().includes("mercaderia") || s.name.toLowerCase().includes("mercadería")
+      const subMercaderia = catNegocioEgreso.children?.find(
+        (s: any) =>
+          s.name.toLowerCase().includes("mercaderia") ||
+          s.name.toLowerCase().includes("mercadería"),
       );
       if (subMercaderia) {
         defaultSubId = subMercaderia.id;
@@ -1244,7 +1543,9 @@ export default function BusinessInventoryPage() {
 
     // Double check liquidity
     if (treasuryLiquidity !== null && payingOrderTotal > treasuryLiquidity) {
-      toast.error("No se puede registrar el pago. Fondos insuficientes en Tesorería.");
+      toast.error(
+        "No se puede registrar el pago. Fondos insuficientes en Tesorería.",
+      );
       return;
     }
 
@@ -1262,7 +1563,11 @@ export default function BusinessInventoryPage() {
           receiptUrl: finalReceiptUrl || null,
         });
         toast.dismiss(t);
-        toast.success(withoutReceipt ? "Pago registrado sin comprobante" : "Pago registrado correctamente");
+        toast.success(
+          withoutReceipt
+            ? "Pago registrado sin comprobante"
+            : "Pago registrado correctamente",
+        );
         setIsPayOrderModalOpen(false);
         setPayingOrderId(null);
         setPayOrderFile(null);
@@ -1271,7 +1576,9 @@ export default function BusinessInventoryPage() {
         fetchTreasuryLiquidity();
       } catch (err: any) {
         toast.dismiss(t);
-        toast.error(err?.response?.data?.message || "Error al registrar el pago");
+        toast.error(
+          err?.response?.data?.message || "Error al registrar el pago",
+        );
       }
     };
 
@@ -1279,7 +1586,8 @@ export default function BusinessInventoryPage() {
       // Warn: no receipt attached
       setConfirmConfig({
         title: "Sin comprobante",
-        message: "No subiste comprobante. ¿Deseas de todos modos confirmar el pago?",
+        message:
+          "No subiste comprobante. ¿Deseas de todos modos confirmar el pago?",
         confirmText: "Sí, confirmar pago",
         cancelText: "Cancelar",
         variant: "warning",
@@ -1293,7 +1601,8 @@ export default function BusinessInventoryPage() {
 
   // ── Add existing inventory product to planner ──
   const handleAddExistingProductToPlanner = (product: Product) => {
-    const alreadyIn = plannerItems.some((item) => item.id === product.id) ||
+    const alreadyIn =
+      plannerItems.some((item) => item.id === product.id) ||
       extraPlannerItems.some((item) => item.id === product.id);
     if (alreadyIn) {
       toast.error("Este producto ya está en la lista de compras");
@@ -1305,95 +1614,138 @@ export default function BusinessInventoryPage() {
       deficit: 0,
       isNew: false,
     };
-    setExtraPlannerItems(prev => [...prev, newItem]);
-    setSelectedItemIds(prev => [...prev, product.id]);
-    setCustomQuantities(prev => ({ ...prev, [product.id]: 1 }));
-    setCustomCosts(prev => ({ ...prev, [product.id]: product.costPrice }));
+    setExtraPlannerItems((prev) => [...prev, newItem]);
+    setSelectedItemIds((prev) => [...prev, product.id]);
+    setCustomQuantities((prev) => ({ ...prev, [product.id]: 1 }));
+    setCustomCosts((prev) => ({ ...prev, [product.id]: product.costPrice }));
     setIsAddProductToOrderOpen(false);
     setAddProductSearch("");
     toast.success(`"${product.name}" agregado a la lista de compras`);
   };
 
-
-
   // ── Remove an extra planner item ──
   const handleRemoveExtraPlannerItem = (id: string) => {
-    setExtraPlannerItems(prev => prev.filter(i => i.id !== id));
-    setSelectedItemIds(prev => prev.filter(i => i !== id));
-    setCustomQuantities(prev => { const n = { ...prev }; delete n[id]; return n; });
-    setCustomCosts(prev => { const n = { ...prev }; delete n[id]; return n; });
+    setExtraPlannerItems((prev) => prev.filter((i) => i.id !== id));
+    setSelectedItemIds((prev) => prev.filter((i) => i !== id));
+    setCustomQuantities((prev) => {
+      const n = { ...prev };
+      delete n[id];
+      return n;
+    });
+    setCustomCosts((prev) => {
+      const n = { ...prev };
+      delete n[id];
+      return n;
+    });
   };
 
-  const handlePresentationChange = (productId: string, val: string, baseCost: number, presentations: any[]) => {
-    setSelectedPresentations(prev => ({ ...prev, [productId]: val }));
+  const handlePresentationChange = (
+    productId: string,
+    val: string,
+    baseCost: number,
+    presentations: any[],
+  ) => {
+    setSelectedPresentations((prev) => ({ ...prev, [productId]: val }));
     let equivalence = 1;
     if (val !== "base") {
-      const pres = presentations.find(p => p.id === val);
+      const pres = presentations.find((p) => p.id === val);
       if (pres) {
         equivalence = pres.equivalence;
       }
     }
-    setCustomCosts(prev => ({ ...prev, [productId]: baseCost * equivalence }));
+    setCustomCosts((prev) => ({
+      ...prev,
+      [productId]: baseCost * equivalence,
+    }));
   };
 
   const handleExportExcel = async () => {
     const allItems = [...plannerItems, ...extraPlannerItems];
-    const itemsToExport = selectedItemIds.length > 0
-      ? allItems.filter(item => selectedItemIds.includes(item.id))
-      : allItems;
+    const itemsToExport =
+      selectedItemIds.length > 0
+        ? allItems.filter((item) => selectedItemIds.includes(item.id))
+        : allItems;
 
     if (itemsToExport.length === 0) {
       toast.error("No hay elementos seleccionados para exportar");
       return;
     }
 
-    const dataToExport = itemsToExport.map(item => {
+    const dataToExport = itemsToExport.map((item) => {
       const presId = selectedPresentations[item.id] || "base";
       const isBase = presId === "base";
-      const pres = isBase ? null : item.presentations?.find(p => p.id === presId);
+      const pres = isBase
+        ? null
+        : item.presentations?.find((p) => p.id === presId);
       const equivalence = pres ? pres.equivalence : 1.0;
       const presName = pres ? pres.name : null;
-      const qty = customQuantities[item.id] ?? (item.deficit > 0 ? item.deficit : 1);
-      const cost = customCosts[item.id] ?? (item.costPrice * equivalence);
-      return {
-        "Producto": item.name,
-        "Presentación": presName || item.unit,
+      const qty =
+        customQuantities[item.id] ?? (item.deficit > 0 ? item.deficit : 1);
+      const cost = customCosts[item.id] ?? item.costPrice * equivalence;
+      const row: any = {
+        Producto: item.name,
+        Presentación: presName || item.unit,
         "SKU / Código": item.sku || "Sin SKU",
-        "Stock Actual": `${item.stock} ${item.unit}`,
+        "Stock Total Actual": `${item.stock} ${item.unit}`,
         "Stock Mínimo": `${item.minStock} ${item.unit}`,
         "Vendidos (Mes)": `${item.soldQty} ${item.unit}`,
-        "Déficit": `${item.deficit > 0 ? item.deficit : 0} ${item.unit}`,
+        Déficit: `${item.deficit > 0 ? item.deficit : 0} ${item.unit}`,
         "Costo Unitario (S/)": cost,
         "Cantidad Comprar": qty,
-        "Subtotal Proyectado (S/)": qty * cost
+        "Subtotal Proyectado (S/)": qty * cost,
       };
+
+      // Add a column for each branch stock dynamically
+      branches.forEach((b) => {
+        const bs = (item as any).branchStocks?.find(
+          (bs: any) => bs.branchId === b.id,
+        );
+        row[`Stock: ${b.name}`] = bs
+          ? `${bs.stock} ${item.unit}`
+          : `0 ${item.unit}`;
+      });
+
+      return row;
     });
 
     const totalProyectado = itemsToExport.reduce((acc, item) => {
       const presId = selectedPresentations[item.id] || "base";
       const isBase = presId === "base";
-      const pres = isBase ? null : item.presentations?.find(p => p.id === presId);
+      const pres = isBase
+        ? null
+        : item.presentations?.find((p) => p.id === presId);
       const equivalence = pres ? pres.equivalence : 1.0;
-      const qty = customQuantities[item.id] ?? (item.deficit > 0 ? item.deficit : 1);
-      const cost = customCosts[item.id] ?? (item.costPrice * equivalence);
-      return acc + (qty * cost);
+      const qty =
+        customQuantities[item.id] ?? (item.deficit > 0 ? item.deficit : 1);
+      const cost = customCosts[item.id] ?? item.costPrice * equivalence;
+      return acc + qty * cost;
     }, 0);
 
     dataToExport.push({
-      "Producto": "TOTAL PLANIFICADO",
-      "Presentación": "",
+      Producto: "TOTAL PLANIFICADO",
+      Presentación: "",
       "SKU / Código": "",
-      "Stock Actual": "",
+      "Stock Total Actual": "",
       "Stock Mínimo": "",
       "Vendidos (Mes)": "",
-      "Déficit": "",
+      Déficit: "",
       "Costo Unitario (S/)": null as any,
       "Cantidad Comprar": null as any,
-      "Subtotal Proyectado (S/)": totalProyectado
+      "Subtotal Proyectado (S/)": totalProyectado,
     });
 
     const XLSX = await import("xlsx");
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+
+    // Auto column widths
+    worksheet["!cols"] = Object.keys(dataToExport[0] || {}).map((key) => {
+      const maxLen = Math.max(
+        key.length,
+        ...dataToExport.map((row) => String((row as any)[key] ?? "").length),
+      );
+      return { wch: Math.min(maxLen + 2, 40) };
+    });
+
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Plan de Compras");
     XLSX.writeFile(workbook, `Plan_Compras_${plannerMonth}.xlsx`);
@@ -1402,9 +1754,10 @@ export default function BusinessInventoryPage() {
 
   const handleExportPDF = async () => {
     const allItems = [...plannerItems, ...extraPlannerItems];
-    const itemsToExport = selectedItemIds.length > 0
-      ? allItems.filter(item => selectedItemIds.includes(item.id))
-      : allItems;
+    const itemsToExport =
+      selectedItemIds.length > 0
+        ? allItems.filter((item) => selectedItemIds.includes(item.id))
+        : allItems;
 
     if (itemsToExport.length === 0) {
       toast.error("No hay elementos seleccionados para exportar");
@@ -1412,86 +1765,151 @@ export default function BusinessInventoryPage() {
     }
 
     const { jsPDF } = await import("jspdf");
-    const doc = new jsPDF();
+    const doc = new jsPDF("p", "mm", "a4");
     const businessName = user?.businessName || "Control Finanzas";
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(18);
-    doc.text(`PLAN DE COMPRAS - ${businessName.toUpperCase()}`, 14, 20);
-    
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.setTextColor(100);
-    doc.text(`Periodo analizado: ${plannerMonth}`, 14, 26);
-    doc.text(`Fecha de exportación: ${new Date().toLocaleDateString()}`, 14, 31);
-
-    let y = 42;
+    // Header Banner
     doc.setFillColor(79, 70, 229);
-    doc.rect(14, y, 182, 8, "F");
+    doc.rect(0, 0, 210, 24, "F");
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.text(`PLAN DE COMPRAS - ${businessName.toUpperCase()}`, 14, 11);
+
+    doc.setFontSize(8.5);
+    doc.setFont("helvetica", "normal");
+    doc.text(
+      `Periodo analizado: ${plannerMonth} | Generado: ${format(new Date(), "dd/MM/yyyy HH:mm")}`,
+      14,
+      18,
+    );
+
+    let y = 30;
+    doc.setFillColor(79, 70, 229);
+    doc.rect(14, y, 182, 9, "F");
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9);
-    doc.setTextColor(255);
-    doc.text("Producto", 16, y + 5);
-    doc.text("Stock Act / Min", 85, y + 5);
-    doc.text("Déficit", 120, y + 5);
-    doc.text("Costo U.", 140, y + 5);
-    doc.text("Cant.", 160, y + 5);
-    doc.text("Subtotal", 175, y + 5);
+    doc.setTextColor(255, 255, 255);
+    doc.text("Producto", 16, y + 6);
+    doc.text("Stock Act/Mín", 82, y + 6);
+    doc.text("Déficit", 118, y + 6);
+    doc.text("Costo U.", 138, y + 6);
+    doc.text("Cant.", 158, y + 6);
+    doc.text("Subtotal", 175, y + 6);
 
-    doc.setTextColor(0);
+    doc.setTextColor(55, 65, 81);
     doc.setFont("helvetica", "normal");
-    
+
     let grandTotal = 0;
+    let idx = 0;
     itemsToExport.forEach((item) => {
-      y += 10;
+      y += 11;
       if (y > 270) {
         doc.addPage();
         y = 20;
+        doc.setFillColor(79, 70, 229);
+        doc.rect(14, y, 182, 9, "F");
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9);
+        doc.setTextColor(255, 255, 255);
+        doc.text("Producto", 16, y + 6);
+        doc.text("Stock Act/Mín", 82, y + 6);
+        doc.text("Déficit", 118, y + 6);
+        doc.text("Costo U.", 138, y + 6);
+        doc.text("Cant.", 158, y + 6);
+        doc.text("Subtotal", 175, y + 6);
+        y += 11;
       }
-      
+
       const presId = selectedPresentations[item.id] || "base";
       const isBase = presId === "base";
-      const pres = isBase ? null : item.presentations?.find(p => p.id === presId);
+      const pres = isBase
+        ? null
+        : item.presentations?.find((p) => p.id === presId);
       const equivalence = pres ? pres.equivalence : 1.0;
       const presName = pres ? pres.name : null;
-      const qty = customQuantities[item.id] ?? (item.deficit > 0 ? item.deficit : 1);
-      const cost = customCosts[item.id] ?? (item.costPrice * equivalence);
+      const qty =
+        customQuantities[item.id] ?? (item.deficit > 0 ? item.deficit : 1);
+      const cost = customCosts[item.id] ?? item.costPrice * equivalence;
       const subtotal = qty * cost;
       grandTotal += subtotal;
 
-      doc.setDrawColor(240);
-      doc.line(14, y + 8, 196, y + 8);
+      // Zebra striping
+      if (idx % 2 === 0) {
+        doc.setFillColor(249, 250, 251);
+        doc.rect(14, y - 2, 182, 11, "F");
+      }
 
-      const name = item.name.length > 35 ? item.name.substring(0, 32) + "..." : item.name;
-      doc.setFont("helvetica", "bold");
-      doc.text(name, 16, y + 4);
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8);
-      doc.setTextColor(120);
-      doc.text(`SKU: ${item.sku || "Sin SKU"} | Pres: ${presName || item.unit}`, 16, y + 8);
-      doc.setFontSize(9);
-      doc.setTextColor(0);
+      doc.setDrawColor(240, 240, 240);
+      doc.line(14, y + 9, 196, y + 9);
 
-      doc.text(`${item.stock} / ${item.minStock} ${item.unit}`, 85, y + 5);
-      doc.text(`${item.deficit > 0 ? item.deficit : 0} ${item.unit}`, 120, y + 5);
-      doc.text(`S/ ${cost.toFixed(2)}`, 140, y + 5);
+      const name =
+        item.name.length > 32 ? item.name.substring(0, 30) + "..." : item.name;
       doc.setFont("helvetica", "bold");
-      doc.text(`${qty}`, 160, y + 5);
-      doc.text(`S/ ${subtotal.toFixed(2)}`, 175, y + 5);
+      doc.setFontSize(8.5);
+      doc.setTextColor(31, 41, 55);
+      doc.text(name, 16, y + 3);
+
       doc.setFont("helvetica", "normal");
-      y += 2;
+      doc.setFontSize(7.5);
+      doc.setTextColor(107, 114, 128);
+      const branchDetailsText = ((item as any).branchStocks || [])
+        .map(
+          (bs: any) => `${bs.branch?.name || "Sede"}: ${bs.stock} ${item.unit}`,
+        )
+        .join("  |  ");
+      doc.text(
+        `SKU: ${item.sku || "Sin SKU"} | Pres: ${presName || item.unit} | ${branchDetailsText || "Sin stock"}`,
+        16,
+        y + 7,
+      );
+
+      doc.setFontSize(8.5);
+      doc.setTextColor(55, 65, 81);
+
+      doc.text(`${item.stock} / ${item.minStock} ${item.unit}`, 82, y + 4);
+      doc.text(
+        `${item.deficit > 0 ? item.deficit : 0} ${item.unit}`,
+        118,
+        y + 4,
+      );
+      doc.text(`S/ ${cost.toFixed(2)}`, 138, y + 4);
+      doc.setFont("helvetica", "bold");
+      doc.text(`${qty}`, 158, y + 4);
+      doc.text(`S/ ${subtotal.toFixed(2)}`, 175, y + 4);
+      doc.setFont("helvetica", "normal");
+
+      idx++;
     });
 
-    y += 10;
-    doc.setDrawColor(150);
+    y += 12;
+    if (y > 275) {
+      doc.addPage();
+      y = 20;
+    }
+    doc.setDrawColor(156, 163, 175);
     doc.line(14, y, 196, y);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
+    doc.setFontSize(10);
     doc.text("TOTAL PLANIFICADO:", 110, y + 6);
-    doc.setFontSize(12);
+    doc.setFontSize(11);
     doc.setTextColor(79, 70, 229);
     doc.text(`S/ ${grandTotal.toFixed(2)}`, 165, y + 6);
+
+    // Footer page numbering
+    const totalPages = doc.getNumberOfPages();
+    for (let i = 1; i <= totalPages; i++) {
+      doc.setPage(i);
+      doc.setFontSize(7.5);
+      doc.setTextColor(156, 163, 175);
+      doc.text(
+        `Think ERP Inventario – Plan de Compras – Pág. ${i} de ${totalPages}`,
+        14,
+        287,
+      );
+    }
 
     doc.save(`Plan_Compras_${plannerMonth}.pdf`);
     toast.success("Plan de compras exportado a PDF");
@@ -1499,9 +1917,10 @@ export default function BusinessInventoryPage() {
 
   const handleCopyShoppingList = () => {
     const allItems = [...plannerItems, ...extraPlannerItems];
-    const itemsToExport = selectedItemIds.length > 0
-      ? allItems.filter(item => selectedItemIds.includes(item.id))
-      : allItems;
+    const itemsToExport =
+      selectedItemIds.length > 0
+        ? allItems.filter((item) => selectedItemIds.includes(item.id))
+        : allItems;
 
     if (itemsToExport.length === 0) {
       toast.error("No hay elementos en la lista de compras");
@@ -1515,15 +1934,18 @@ export default function BusinessInventoryPage() {
     itemsToExport.forEach((item) => {
       const presId = selectedPresentations[item.id] || "base";
       const isBase = presId === "base";
-      const pres = isBase ? null : item.presentations?.find(p => p.id === presId);
+      const pres = isBase
+        ? null
+        : item.presentations?.find((p) => p.id === presId);
       const equivalence = pres ? pres.equivalence : 1.0;
       const presName = pres ? pres.name : null;
-      const qty = customQuantities[item.id] ?? (item.deficit > 0 ? item.deficit : 1);
-      const cost = customCosts[item.id] ?? (item.costPrice * equivalence);
+      const qty =
+        customQuantities[item.id] ?? (item.deficit > 0 ? item.deficit : 1);
+      const cost = customCosts[item.id] ?? item.costPrice * equivalence;
       const total = qty * cost;
       grandTotal += total;
       lines.push(
-        `- ${item.name} (${item.sku || "Sin SKU"}) [${presName || item.unit}]: Comprar ${qty} | Costo unitario: S/ ${cost.toFixed(2)} | Subtotal: S/ ${total.toFixed(2)}`
+        `- ${item.name} (${item.sku || "Sin SKU"}) [${presName || item.unit}]: Comprar ${qty} | Costo unitario: S/ ${cost.toFixed(2)} | Subtotal: S/ ${total.toFixed(2)}`,
       );
     });
     lines.push("------------------------------------------");
@@ -1537,8 +1959,10 @@ export default function BusinessInventoryPage() {
     const matchesSearch =
       p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (p.sku && p.sku.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (p.brand && p.brand.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (p.family && p.family.name.toLowerCase().includes(searchTerm.toLowerCase()));
+      (p.brand &&
+        p.brand.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (p.family &&
+        p.family.name.toLowerCase().includes(searchTerm.toLowerCase()));
     const matchesBrand = !filterBrandId || p.brandId === filterBrandId;
     const matchesFamily = !filterFamilyId || p.familyId === filterFamilyId;
     return matchesSearch && matchesBrand && matchesFamily;
@@ -1550,27 +1974,45 @@ export default function BusinessInventoryPage() {
       return;
     }
     const XLSX = await import("xlsx");
-    const dataToExport = filteredProducts.map(p => {
-      const displayStock = activeBranchId
-        ? (p.branchStocks?.find((bs: any) => bs.branchId === activeBranchId)?.stock ?? 0)
-        : p.stock;
-      return {
-        "SKU": p.sku || "",
-        "Nombre": p.name || "",
-        "Familia": p.family?.name || "",
-        "Marca": p.brand?.name || "",
-        "Stock Actual": displayStock,
-        "Unidad": p.unit || "",
+    const dataToExport = filteredProducts.map((p) => {
+      const row: any = {
+        SKU: p.sku || "",
+        Nombre: p.name || "",
+        Familia: p.family?.name || "",
+        Marca: p.brand?.name || "",
+        "Stock Total": p.stock,
+        Unidad: p.unit || "",
         "Costo Compra (S/)": p.costPrice || 0,
         "Precio Venta (S/)": p.salePrice || 0,
-        "Precio Ajustado (S/)": p.adjustedPrice || ""
+        "Precio Ajustado (S/)": p.adjustedPrice || "",
       };
+
+      // Add a column for each branch stock dynamically
+      branches.forEach((b) => {
+        const bs = p.branchStocks?.find((bs: any) => bs.branchId === b.id);
+        row[`Stock: ${b.name}`] = bs ? bs.stock : 0;
+      });
+
+      return row;
     });
 
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+
+    // Auto column widths
+    worksheet["!cols"] = Object.keys(dataToExport[0] || {}).map((key) => {
+      const maxLen = Math.max(
+        key.length,
+        ...dataToExport.map((row) => String((row as any)[key] ?? "").length),
+      );
+      return { wch: Math.min(maxLen + 2, 40) };
+    });
+
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Productos");
-    XLSX.writeFile(workbook, "Inventario_Productos.xlsx");
+    XLSX.writeFile(
+      workbook,
+      `Inventario_Productos_${format(new Date(), "yyyyMMdd")}.xlsx`,
+    );
     toast.success("Productos exportados a Excel");
   };
 
@@ -1583,60 +2025,120 @@ export default function BusinessInventoryPage() {
     const doc = new jsPDF("p", "mm", "a4");
     const businessName = user?.businessName || "Control Finanzas";
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(16);
-    doc.text(`INVENTARIO DE PRODUCTOS - ${businessName.toUpperCase()}`, 14, 20);
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(100);
-    doc.text(`Fecha de exportación: ${new Date().toLocaleDateString()}`, 14, 26);
-
-    let y = 35;
+    // Header Banner
     doc.setFillColor(79, 70, 229);
-    doc.rect(14, y, 182, 8, "F");
+    doc.rect(0, 0, 210, 24, "F");
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.text(`INVENTARIO DE PRODUCTOS - ${businessName.toUpperCase()}`, 14, 11);
+
+    doc.setFontSize(8.5);
+    doc.setFont("helvetica", "normal");
+
+    const brandLabel = filterBrandId
+      ? brands.find((b) => b.id === filterBrandId)?.name || "Marca"
+      : "Todas";
+    const familyLabel = filterFamilyId
+      ? families.find((f) => f.id === filterFamilyId)?.name || "Familia"
+      : "Todas";
+    const searchLabel = searchTerm ? `"${searchTerm}"` : "Ninguno";
+
+    doc.text(
+      `Filtros — Marca: ${brandLabel} | Familia: ${familyLabel} | Búsqueda: ${searchLabel}`,
+      14,
+      17,
+    );
+    doc.text(
+      `Fecha de exportación: ${format(new Date(), "dd/MM/yyyy HH:mm")}`,
+      14,
+      21,
+    );
+
+    let y = 30;
+    doc.setFillColor(79, 70, 229);
+    doc.rect(14, y, 182, 9, "F");
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9);
-    doc.setTextColor(255);
-    doc.text("SKU", 16, y + 5);
-    doc.text("Producto", 45, y + 5);
-    doc.text("Stock", 110, y + 5);
-    doc.text("Costo (S/)", 135, y + 5);
-    doc.text("Precio (S/)", 160, y + 5);
+    doc.setTextColor(255, 255, 255);
+    doc.text("SKU", 16, y + 6);
+    doc.text("Producto", 45, y + 6);
+    doc.text("Stock Total", 110, y + 6);
+    doc.text("Costo (S/)", 135, y + 6);
+    doc.text("Precio (S/)", 160, y + 6);
 
-    doc.setTextColor(0);
+    doc.setTextColor(55, 65, 81);
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
+    doc.setFontSize(8.5);
 
-    filteredProducts.forEach((p) => {
-      y += 8;
-      if (y > 275) {
+    filteredProducts.forEach((p, idx) => {
+      y += 12;
+      if (y > 270) {
         doc.addPage();
         y = 20;
         doc.setFillColor(79, 70, 229);
-        doc.rect(14, y, 182, 8, "F");
+        doc.rect(14, y, 182, 9, "F");
         doc.setFont("helvetica", "bold");
         doc.setFontSize(9);
-        doc.setTextColor(255);
-        doc.text("SKU", 16, y + 5);
-        doc.text("Producto", 45, y + 5);
-        doc.text("Stock", 110, y + 5);
-        doc.text("Costo (S/)", 135, y + 5);
-        doc.text("Precio (S/)", 160, y + 5);
+        doc.setTextColor(255, 255, 255);
+        doc.text("SKU", 16, y + 6);
+        doc.text("Producto", 45, y + 6);
+        doc.text("Stock Total", 110, y + 6);
+        doc.text("Costo (S/)", 135, y + 6);
+        doc.text("Precio (S/)", 160, y + 6);
 
-        doc.setTextColor(0);
+        y += 12;
         doc.setFont("helvetica", "normal");
-        doc.setFontSize(8);
-        y += 8;
+        doc.setFontSize(8.5);
       }
 
-      doc.text(p.sku || "—", 16, y + 5);
-      doc.text((p.name || "").substring(0, 35), 45, y + 5);
-      doc.text(`${p.stock} ${p.unit}`, 110, y + 5);
-      doc.text(`S/ ${(p.costPrice || 0).toFixed(2)}`, 135, y + 5);
-      doc.text(`S/ ${(p.salePrice || 0).toFixed(2)}`, 160, y + 5);
+      // Zebra striping
+      if (idx % 2 === 0) {
+        doc.setFillColor(249, 250, 251);
+        doc.rect(14, y - 2, 182, 11, "F");
+      }
+
+      doc.setDrawColor(240, 240, 240);
+      doc.line(14, y + 9, 196, y + 9);
+
+      // Main product details row
+      doc.setTextColor(31, 41, 55);
+      doc.setFont("helvetica", "bold");
+      doc.text(p.sku || "—", 16, y + 2);
+      doc.text((p.name || "").substring(0, 32), 45, y + 2);
+
+      doc.setFont("helvetica", "normal");
+      doc.text(`${p.stock} ${p.unit}`, 110, y + 2);
+      doc.text(`S/ ${(p.costPrice || 0).toFixed(2)}`, 135, y + 2);
+      doc.text(`S/ ${(p.salePrice || 0).toFixed(2)}`, 160, y + 2);
+
+      // Branch stocks details sub-row
+      doc.setFontSize(7.5);
+      doc.setTextColor(107, 114, 128);
+      const branchDetailsText = (p.branchStocks || [])
+        .map((bs: any) => `${bs.branch?.name || "Sede"}: ${bs.stock} ${p.unit}`)
+        .join("  |  ");
+      doc.text(branchDetailsText || "Sin stock en sedes", 45, y + 6);
+
+      // Reset fonts
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
     });
+
+    // Footer page numbering
+    const totalPages = doc.getNumberOfPages();
+    for (let i = 1; i <= totalPages; i++) {
+      doc.setPage(i);
+      doc.setFontSize(7.5);
+      doc.setTextColor(156, 163, 175);
+      doc.text(
+        `Think ERP Inventario – Reporte de Stock – Pág. ${i} de ${totalPages}`,
+        14,
+        287,
+      );
+    }
 
     doc.save("Inventario_Productos.pdf");
     toast.success("Inventario exportado a PDF");
@@ -1653,8 +2155,9 @@ export default function BusinessInventoryPage() {
       <div className="space-y-6">
         {/* PRINT STYLESHEET */}
         {activeTab === "labels" && (
-          <style dangerouslySetInnerHTML={{
-            __html: `
+          <style
+            dangerouslySetInnerHTML={{
+              __html: `
               @media print {
                 body * {
                   visibility: hidden !important;
@@ -1675,8 +2178,9 @@ export default function BusinessInventoryPage() {
                   display: none !important;
                 }
               }
-            `
-          }} />
+            `,
+            }}
+          />
         )}
 
         {/* HEADER */}
@@ -1687,9 +2191,12 @@ export default function BusinessInventoryPage() {
               <div className="inline-flex items-center justify-center p-3 bg-white/10 backdrop-blur-md rounded-2xl mb-4 border border-white/20 shadow-sm">
                 <Package className="w-8 h-8 text-white" />
               </div>
-              <h1 className="text-4xl font-black tracking-tight">Almacén y Abastecimiento</h1>
+              <h1 className="text-4xl font-black tracking-tight">
+                Almacén y Abastecimiento
+              </h1>
               <p className="text-indigo-100/80 font-medium mt-2 max-w-lg">
-                Gestiona mercancías, controla stock bajo, genera etiquetas con códigos QR y planifica compras de reabastecimiento.
+                Gestiona mercancías, controla stock bajo, genera etiquetas con
+                códigos QR y planifica compras de reabastecimiento.
               </p>
             </div>
             <div className="flex gap-3">
@@ -1716,7 +2223,11 @@ export default function BusinessInventoryPage() {
           {[
             { id: "products", label: "Productos en Stock", icon: Package },
             { id: "planner", label: "Compras", icon: TrendingUp },
-            { id: "labels", label: "Diseñar Tickets / Etiquetas", icon: BarcodeIcon }
+            {
+              id: "labels",
+              label: "Diseñar Tickets / Etiquetas",
+              icon: BarcodeIcon,
+            },
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -1725,7 +2236,9 @@ export default function BusinessInventoryPage() {
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
                 className={`flex items-center gap-2 pb-4 pt-1 px-1 relative text-sm font-black uppercase tracking-wider transition-colors ${
-                  isActive ? "text-indigo-600 font-extrabold" : "text-gray-400 hover:text-gray-600"
+                  isActive
+                    ? "text-indigo-600 font-extrabold"
+                    : "text-gray-400 hover:text-gray-600"
                 }`}
               >
                 <Icon className="w-4 h-4" />
@@ -1762,22 +2275,38 @@ export default function BusinessInventoryPage() {
                       <Package className="w-6 h-6" />
                     </div>
                     <div className="min-w-0">
-                      <span className="text-[10px] font-black uppercase text-gray-400 tracking-wider block">Catálogo</span>
-                      <h4 className="text-xl font-black text-gray-900 mt-0.5 leading-none">{totalProducts}</h4>
-                      <span className="text-[11px] text-gray-500 font-semibold block mt-1">Modelos registrados</span>
+                      <span className="text-[10px] font-black uppercase text-gray-400 tracking-wider block">
+                        Catálogo
+                      </span>
+                      <h4 className="text-xl font-black text-gray-900 mt-0.5 leading-none">
+                        {totalProducts}
+                      </h4>
+                      <span className="text-[11px] text-gray-500 font-semibold block mt-1">
+                        Modelos registrados
+                      </span>
                     </div>
                   </div>
 
                   {/* Metric 2 */}
                   <div className="bg-white rounded-3xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition-shadow flex items-center gap-4 relative overflow-hidden group">
                     <div className="absolute right-[-10px] top-[-10px] w-24 h-24 bg-rose-50/50 rounded-full group-hover:scale-110 transition-transform duration-300 pointer-events-none"></div>
-                    <div className={`p-3 rounded-2xl text-white shadow-md shrink-0 ${criticalStockCount > 0 ? 'bg-gradient-to-br from-rose-500 to-red-600 shadow-rose-100 animate-pulse' : 'bg-gradient-to-br from-gray-400 to-gray-500 shadow-gray-100'}`}>
+                    <div
+                      className={`p-3 rounded-2xl text-white shadow-md shrink-0 ${criticalStockCount > 0 ? "bg-gradient-to-br from-rose-500 to-red-600 shadow-rose-100 animate-pulse" : "bg-gradient-to-br from-gray-400 to-gray-500 shadow-gray-100"}`}
+                    >
                       <AlertTriangle className="w-6 h-6" />
                     </div>
                     <div className="min-w-0">
-                      <span className="text-[10px] font-black uppercase text-gray-400 tracking-wider block">Alertas de Stock</span>
-                      <h4 className={`text-xl font-black mt-0.5 leading-none ${criticalStockCount > 0 ? 'text-rose-600' : 'text-gray-900'}`}>{criticalStockCount}</h4>
-                      <span className="text-[11px] text-gray-500 font-semibold block mt-1">Productos agotándose</span>
+                      <span className="text-[10px] font-black uppercase text-gray-400 tracking-wider block">
+                        Alertas de Stock
+                      </span>
+                      <h4
+                        className={`text-xl font-black mt-0.5 leading-none ${criticalStockCount > 0 ? "text-rose-600" : "text-gray-900"}`}
+                      >
+                        {criticalStockCount}
+                      </h4>
+                      <span className="text-[11px] text-gray-500 font-semibold block mt-1">
+                        Productos agotándose
+                      </span>
                     </div>
                   </div>
 
@@ -1788,11 +2317,19 @@ export default function BusinessInventoryPage() {
                       <DollarSign className="w-6 h-6" />
                     </div>
                     <div className="min-w-0 font-sans">
-                      <span className="text-[10px] font-black uppercase text-gray-400 tracking-wider block">Valor Almacén (Costo)</span>
+                      <span className="text-[10px] font-black uppercase text-gray-400 tracking-wider block">
+                        Valor Almacén (Costo)
+                      </span>
                       <h4 className="text-base font-black text-gray-900 mt-0.5 leading-none font-mono">
-                        S/ {totalInventoryCost.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        S/{" "}
+                        {totalInventoryCost.toLocaleString("es-PE", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
                       </h4>
-                      <span className="text-[11px] text-gray-500 font-semibold block mt-1">Capital invertido</span>
+                      <span className="text-[11px] text-gray-500 font-semibold block mt-1">
+                        Capital invertido
+                      </span>
                     </div>
                   </div>
 
@@ -1803,9 +2340,15 @@ export default function BusinessInventoryPage() {
                       <TrendingUp className="w-6 h-6" />
                     </div>
                     <div className="min-w-0 font-sans">
-                      <span className="text-[10px] font-black uppercase text-gray-400 tracking-wider block">Venta Estimada</span>
+                      <span className="text-[10px] font-black uppercase text-gray-400 tracking-wider block">
+                        Venta Estimada
+                      </span>
                       <h4 className="text-base font-black text-gray-900 mt-0.5 leading-none font-mono">
-                        S/ {totalInventorySale.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        S/{" "}
+                        {totalInventorySale.toLocaleString("es-PE", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
                       </h4>
                       <span className="text-[11px] text-indigo-600 font-black block mt-1">
                         Rentab: {expectedProfitMargin.toFixed(1)}% margen
@@ -1843,8 +2386,10 @@ export default function BusinessInventoryPage() {
                       className="bg-white border border-gray-100 shadow-sm rounded-2xl px-4 py-3.5 text-sm font-bold text-gray-700 outline-none focus:border-indigo-400 min-w-[140px]"
                     >
                       <option value="">Todas las Marcas</option>
-                      {brands.map(b => (
-                        <option key={b.id} value={b.id}>{b.name}</option>
+                      {brands.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name}
+                        </option>
                       ))}
                     </select>
                   )}
@@ -1857,8 +2402,10 @@ export default function BusinessInventoryPage() {
                       className="bg-white border border-gray-100 shadow-sm rounded-2xl px-4 py-3.5 text-sm font-bold text-gray-700 outline-none focus:border-indigo-400 min-w-[140px]"
                     >
                       <option value="">Todas las Familias</option>
-                      {families.map(f => (
-                        <option key={f.id} value={f.id}>{f.name}</option>
+                      {families.map((f) => (
+                        <option key={f.id} value={f.id}>
+                          {f.name}
+                        </option>
                       ))}
                     </select>
                   )}
@@ -1873,7 +2420,8 @@ export default function BusinessInventoryPage() {
                       <option value="">Almacén General (Todos)</option>
                       {branches.map((b, index) => (
                         <option key={b.id} value={b.id}>
-                          {b.name} {index === 0 ? " (Almacén Central / Matriz)" : ""}
+                          {b.name}{" "}
+                          {index === 0 ? " (Almacén Central / Matriz)" : ""}
                         </option>
                       ))}
                     </select>
@@ -1882,7 +2430,11 @@ export default function BusinessInventoryPage() {
                   {/* Clear all filters */}
                   {(filterBrandId || filterFamilyId || activeBranchId) && (
                     <button
-                      onClick={() => { setFilterBrandId(""); setFilterFamilyId(""); setActiveBranchId(""); }}
+                      onClick={() => {
+                        setFilterBrandId("");
+                        setFilterFamilyId("");
+                        setActiveBranchId("");
+                      }}
                       className="px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-bold rounded-2xl transition-all whitespace-nowrap"
                     >
                       Limpiar filtros
@@ -1910,234 +2462,341 @@ export default function BusinessInventoryPage() {
                   <div className="flex flex-wrap gap-2">
                     {activeBranchId && (
                       <span className="px-3 py-1.5 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-xl border border-emerald-100 flex items-center gap-1.5">
-                        Almacén: {branches.find(b => b.id === activeBranchId)?.name} {branches[0]?.id === activeBranchId ? "(Almacén Central / Matriz)" : ""}
-                        <button onClick={() => setActiveBranchId("")} className="text-emerald-400 hover:text-emerald-700 font-black">✕</button>
+                        Almacén:{" "}
+                        {branches.find((b) => b.id === activeBranchId)?.name}{" "}
+                        {branches[0]?.id === activeBranchId
+                          ? "(Almacén Central / Matriz)"
+                          : ""}
+                        <button
+                          onClick={() => setActiveBranchId("")}
+                          className="text-emerald-400 hover:text-emerald-700 font-black"
+                        >
+                          ✕
+                        </button>
                       </span>
                     )}
                     {filterBrandId && (
                       <span className="px-3 py-1.5 bg-blue-50 text-blue-700 text-xs font-bold rounded-xl border border-blue-100 flex items-center gap-1.5">
-                        Marca: {brands.find(b => b.id === filterBrandId)?.name}
-                        <button onClick={() => setFilterBrandId("")} className="text-blue-400 hover:text-blue-700 font-black">✕</button>
+                        Marca:{" "}
+                        {brands.find((b) => b.id === filterBrandId)?.name}
+                        <button
+                          onClick={() => setFilterBrandId("")}
+                          className="text-blue-400 hover:text-blue-700 font-black"
+                        >
+                          ✕
+                        </button>
                       </span>
                     )}
                     {filterFamilyId && (
                       <span className="px-3 py-1.5 bg-purple-50 text-purple-700 text-xs font-bold rounded-xl border border-purple-100 flex items-center gap-1.5">
-                        Familia: {families.find(f => f.id === filterFamilyId)?.name}
-                        <button onClick={() => setFilterFamilyId("")} className="text-purple-400 hover:text-purple-700 font-black">✕</button>
+                        Familia:{" "}
+                        {families.find((f) => f.id === filterFamilyId)?.name}
+                        <button
+                          onClick={() => setFilterFamilyId("")}
+                          className="text-purple-400 hover:text-purple-700 font-black"
+                        >
+                          ✕
+                        </button>
                       </span>
                     )}
                     <span className="px-3 py-1.5 bg-gray-50 text-gray-500 text-xs font-bold rounded-xl border border-gray-100">
-                      {filteredProducts.length} resultado{filteredProducts.length !== 1 ? "s" : ""}
+                      {filteredProducts.length} resultado
+                      {filteredProducts.length !== 1 ? "s" : ""}
                     </span>
                   </div>
                 )}
 
                 {/* PRODUCT GRID */}
                 {(() => {
-                  const paginatedProducts = filteredProducts.slice((productPage - 1) * productPageSize, productPage * productPageSize);
+                  const paginatedProducts = filteredProducts.slice(
+                    (productPage - 1) * productPageSize,
+                    productPage * productPageSize,
+                  );
                   return (
                     <>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                  {loading ? (
-                    Array.from({ length: 8 }).map((_, i) => (
-                      <div
-                        key={i}
-                        className="bg-white rounded-3xl p-4 animate-pulse border border-gray-100 shadow-sm"
-                      >
-                        <div className="w-full h-36 bg-gray-100 rounded-2xl mb-4"></div>
-                        <div className="h-4 bg-gray-100 rounded-xl w-3/4 mb-2"></div>
-                        <div className="h-3 bg-gray-100 rounded-xl w-1/2"></div>
-                      </div>
-                    ))
-                  ) : filteredProducts.length === 0 ? (
-                    <div className="col-span-full text-center py-16 text-gray-400">
-                      <Package className="w-16 h-16 mx-auto mb-4 opacity-30 text-indigo-500" />
-                      <p className="font-extrabold text-lg text-gray-500">
-                        No se encontraron productos. ¡Registra uno nuevo!
-                      </p>
-                    </div>
-                  ) : (
-                    paginatedProducts.map((p) => {
-                      const displayStock = activeBranchId
-                        ? (p.branchStocks?.find((bs: any) => bs.branchId === activeBranchId)?.stock ?? 0)
-                        : p.stock;
-                      return (
-                        <div
-                          key={p.id}
-                          className="bg-white rounded-3xl border border-gray-100 shadow-sm hover:shadow-xl hover:border-indigo-100 transition-all duration-300 group overflow-hidden flex flex-col relative"
-                        >
-                          {/* Product Image */}
-                          <div className="relative w-full h-36 bg-gradient-to-br from-gray-50 to-indigo-50 overflow-hidden">
-                            {p.imageUrl ? (
-                              <img
-                                src={getReceiptAbsoluteUrl(p.imageUrl) || p.imageUrl}
-                                alt={p.name}
-                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).style.display = "none";
-                                }}
-                              />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center">
-                                <Package className="w-12 h-12 text-indigo-100" />
-                              </div>
-                            )}
-                            {/* Stock status badge */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                        {loading ? (
+                          Array.from({ length: 8 }).map((_, i) => (
                             <div
-                              className={`absolute top-3 right-3 px-2.5 py-1 rounded-xl text-[9px] font-black uppercase tracking-wider shadow-sm ${
-                                displayStock <= p.minStock
-                                  ? "bg-rose-500 text-white"
-                                  : "bg-emerald-500 text-white"
-                              }`}
+                              key={i}
+                              className="bg-white rounded-3xl p-4 animate-pulse border border-gray-100 shadow-sm"
                             >
-                              {displayStock <= p.minStock ? "Stock bajo" : "En Stock"}
+                              <div className="w-full h-36 bg-gray-100 rounded-2xl mb-4"></div>
+                              <div className="h-4 bg-gray-100 rounded-xl w-3/4 mb-2"></div>
+                              <div className="h-3 bg-gray-100 rounded-xl w-1/2"></div>
                             </div>
+                          ))
+                        ) : filteredProducts.length === 0 ? (
+                          <div className="col-span-full text-center py-16 text-gray-400">
+                            <Package className="w-16 h-16 mx-auto mb-4 opacity-30 text-indigo-500" />
+                            <p className="font-extrabold text-lg text-gray-500">
+                              No se encontraron productos. ¡Registra uno nuevo!
+                            </p>
                           </div>
-
-                        {/* Card Info */}
-                        <div className="p-5 flex-1 flex flex-col">
-                          <div className="flex-1">
-                            <h3 className="font-black text-gray-900 text-sm leading-tight mb-1 truncate" title={p.name}>
-                              {p.name}
-                            </h3>
-                            <div className="flex items-center gap-1.5 text-[10px] font-mono tracking-tight mb-1.5">
-                              <span className="text-indigo-600 bg-indigo-50 font-black px-1.5 py-0.5 rounded">
-                                Cód: {String((p as any).customCode || 0).padStart(4, "0")}
-                              </span>
-                              {p.sku ? (
-                                <span className="text-gray-400 font-bold">
-                                  • SKU: {p.sku}
-                                </span>
-                              ) : (
-                                <span className="text-gray-300 italic font-medium">
-                                  • Sin SKU
-                                </span>
-                              )}
-                            </div>
-
-                            {/* Brand / Family Badges */}
-                            {(p.brand || p.family) && (
-                              <div className="flex flex-wrap gap-1 mb-2">
-                                {p.brand && (
-                                  <span className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded-lg text-[9px] font-black border border-blue-100/70" title="Marca">
-                                    {p.brand.name}
-                                  </span>
-                                )}
-                                {p.family && (
-                                  <span className="px-2 py-0.5 bg-purple-50 text-purple-600 rounded-lg text-[9px] font-black border border-purple-100/70" title="Familia">
-                                    {p.family.name}
-                                  </span>
-                                )}
-                              </div>
-                            )}
-
-                            <div className="flex flex-wrap gap-1 mb-3">
-                              {p.presentations && p.presentations.length > 0 ? (
-                                p.presentations.slice(0, 3).map((pres) => (
-                                  <span
-                                    key={pres.id}
-                                    className="bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-lg text-[9px] font-black"
-                                    title={`Equivale a ${pres.equivalence} ${p.unit}`}
+                        ) : (
+                          paginatedProducts.map((p) => {
+                            const displayStock = activeBranchId
+                              ? (p.branchStocks?.find(
+                                  (bs: any) => bs.branchId === activeBranchId,
+                                )?.stock ?? 0)
+                              : p.stock;
+                            return (
+                              <div
+                                key={p.id}
+                                className="bg-white rounded-3xl border border-gray-100 shadow-sm hover:shadow-xl hover:border-indigo-100 transition-all duration-300 group overflow-hidden flex flex-col relative"
+                              >
+                                {/* Product Image */}
+                                <div className="relative w-full h-36 bg-gradient-to-br from-gray-50 to-indigo-50 overflow-hidden">
+                                  {p.imageUrl ? (
+                                    <img
+                                      src={
+                                        getReceiptAbsoluteUrl(p.imageUrl) ||
+                                        p.imageUrl
+                                      }
+                                      alt={p.name}
+                                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                      onError={(e) => {
+                                        (
+                                          e.target as HTMLImageElement
+                                        ).style.display = "none";
+                                      }}
+                                    />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center">
+                                      <Package className="w-12 h-12 text-indigo-100" />
+                                    </div>
+                                  )}
+                                  {/* Stock status badge */}
+                                  <div
+                                    className={`absolute top-3 right-3 px-2.5 py-1 rounded-xl text-[9px] font-black uppercase tracking-wider shadow-sm ${
+                                      displayStock <= p.minStock
+                                        ? "bg-rose-500 text-white"
+                                        : "bg-emerald-500 text-white"
+                                    }`}
                                   >
-                                    {pres.name}
-                                  </span>
-                                ))
-                              ) : null}
-                            </div>
+                                    {displayStock <= p.minStock
+                                      ? "Stock bajo"
+                                      : "En Stock"}
+                                  </div>
+                                </div>
 
-                            <div className="bg-slate-50/80 rounded-2xl p-3 mb-4 border border-slate-100">
-                              <div className="text-[9px] text-gray-400 font-extrabold uppercase tracking-widest mb-0.5">
-                                Stock disponible
-                              </div>
-                              <div className="font-black text-gray-900 text-xs flex items-baseline gap-1">
-                                <span className="text-sm font-extrabold">{formatStock(displayStock, p.unit, p.presentations)}</span>
-                              </div>
-                              <div className="text-[9px] text-gray-400 mt-0.5">
-                                ({displayStock} {p.unit} base • min: {p.minStock})
-                              </div>
-                            </div>
+                                {/* Card Info */}
+                                <div className="p-5 flex-1 flex flex-col">
+                                  <div className="flex-1">
+                                    <h3
+                                      className="font-black text-gray-900 text-sm leading-tight mb-1 truncate"
+                                      title={p.name}
+                                    >
+                                      {p.name}
+                                    </h3>
+                                    <div className="flex items-center gap-1.5 text-[10px] font-mono tracking-tight mb-1.5">
+                                      <span className="text-indigo-600 bg-indigo-50 font-black px-1.5 py-0.5 rounded">
+                                        Cód:{" "}
+                                        {String(
+                                          (p as any).customCode || 0,
+                                        ).padStart(4, "0")}
+                                      </span>
+                                      {p.sku ? (
+                                        <span className="text-gray-400 font-bold">
+                                          • SKU: {p.sku}
+                                        </span>
+                                      ) : (
+                                        <span className="text-gray-300 italic font-medium">
+                                          • Sin SKU
+                                        </span>
+                                      )}
+                                    </div>
 
-                            <div className="grid grid-cols-2 gap-4 border-t border-slate-100 pt-3">
-                              <div>
-                                <div className="text-[9px] text-gray-400 font-extrabold uppercase tracking-widest">
-                                  Costo
-                                </div>
-                                <div className="text-sm font-bold text-gray-700">
-                                  S/ {p.costPrice.toFixed(2)}
-                                </div>
-                              </div>
-                              <div>
-                                <div className="text-[9px] text-gray-400 font-extrabold uppercase tracking-widest">
-                                  Venta
-                                </div>
-                                <div className="text-sm font-black text-indigo-600">
-                                  S/ {p.salePrice.toFixed(2)}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
+                                    {/* Brand / Family Badges */}
+                                    {(p.brand || p.family) && (
+                                      <div className="flex flex-wrap gap-1 mb-2">
+                                        {p.brand && (
+                                          <span
+                                            className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded-lg text-[9px] font-black border border-blue-100/70"
+                                            title="Marca"
+                                          >
+                                            {p.brand.name}
+                                          </span>
+                                        )}
+                                        {p.family && (
+                                          <span
+                                            className="px-2 py-0.5 bg-purple-50 text-purple-600 rounded-lg text-[9px] font-black border border-purple-100/70"
+                                            title="Familia"
+                                          >
+                                            {p.family.name}
+                                          </span>
+                                        )}
+                                      </div>
+                                    )}
 
-                          {/* Card Actions */}
-                          <div className="flex gap-1.5 mt-4 pt-3 border-t border-gray-100">
-                            <button
-                              onClick={() => {
-                                setRestockProduct(p);
-                                setRestockData({
-                                  quantity: 1,
-                                  presentationId: p.presentations?.[0]?.id || "",
-                                  totalCost: p.costPrice * (p.presentations?.[0]?.equivalence || 1),
-                                  categoryId: "",
-                                  paymentMethod: "CASH",
-                                });
-                                setIsRestockModalOpen(true);
-                              }}
-                              className="flex-grow py-2 bg-emerald-50 text-emerald-700 rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-emerald-100 transition-colors flex items-center justify-center gap-1"
-                              title="Reponer Stock"
-                            >
-                              <TrendingUp className="w-3.5 h-3.5" /> Comprar
-                            </button>
-                            <button
-                              onClick={() => handleOpenModal(p)}
-                              className="px-3 py-2 bg-indigo-50 text-indigo-700 rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-indigo-100 transition-colors flex items-center justify-center"
-                              title="Editar"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => handleClone(p)}
-                              className="px-3 py-2 bg-slate-50 text-slate-700 rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-slate-100 transition-colors flex items-center justify-center"
-                              title="Clonar Modelo (Mismo Modelo / Nuevo Código)"
-                            >
-                              <Copy className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => {
-                                setProductIdToDelete(p.id);
-                                setIsDeleteConfirmOpen(true);
-                              }}
-                              className="px-2.5 py-2 bg-rose-50 text-rose-600 rounded-xl hover:bg-rose-100 transition-colors flex items-center justify-center"
-                              title="Eliminar"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
+                                    <div className="flex flex-wrap gap-1 mb-3">
+                                      {p.presentations &&
+                                      p.presentations.length > 0
+                                        ? p.presentations
+                                            .slice(0, 3)
+                                            .map((pres) => (
+                                              <span
+                                                key={pres.id}
+                                                className="bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-lg text-[9px] font-black"
+                                                title={`Equivale a ${pres.equivalence} ${p.unit}`}
+                                              >
+                                                {pres.name}
+                                              </span>
+                                            ))
+                                        : null}
+                                    </div>
+
+                                    <div className="bg-slate-50/80 rounded-2xl p-3 mb-4 border border-slate-100 space-y-2">
+                                      <div>
+                                        <div className="text-[9px] text-gray-400 font-extrabold uppercase tracking-widest mb-0.5">
+                                          Stock total disponible
+                                        </div>
+                                        <div className="font-black text-gray-900 text-xs flex items-baseline gap-1">
+                                          <span className="text-sm font-extrabold">
+                                            {formatStock(
+                                              p.stock,
+                                              p.unit,
+                                              p.presentations,
+                                            )}
+                                          </span>
+                                          <span className="text-[10px] text-gray-400 font-medium">
+                                            ({p.stock} base • min: {p.minStock})
+                                          </span>
+                                        </div>
+                                      </div>
+                                      {p.branchStocks &&
+                                        p.branchStocks.length > 0 && (
+                                          <div className="border-t border-slate-200/60 pt-2 space-y-1">
+                                            <div className="text-[8px] text-indigo-500 font-black uppercase tracking-wider">
+                                              Distribución por Sede
+                                            </div>
+                                            <div className="max-h-[75px] overflow-y-auto pr-0.5 space-y-1">
+                                              {p.branchStocks.map((bs: any) => {
+                                                const isSelected =
+                                                  activeBranchId ===
+                                                  bs.branchId;
+                                                return (
+                                                  <div
+                                                    key={bs.id}
+                                                    className={`flex justify-between items-center text-[10px] py-0.5 ${
+                                                      isSelected
+                                                        ? "text-indigo-600 font-black bg-indigo-50 px-1.5 rounded-lg"
+                                                        : "text-gray-600 font-medium px-0.5"
+                                                    }`}
+                                                  >
+                                                    <span
+                                                      className="truncate max-w-[120px]"
+                                                      title={bs.branch?.name}
+                                                    >
+                                                      {bs.branch?.name}
+                                                    </span>
+                                                    <span className="font-bold font-mono">
+                                                      {bs.stock} {p.unit}
+                                                    </span>
+                                                  </div>
+                                                );
+                                              })}
+                                            </div>
+                                          </div>
+                                        )}
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4 border-t border-slate-100 pt-3">
+                                      <div>
+                                        <div className="text-[9px] text-gray-400 font-extrabold uppercase tracking-widest">
+                                          Costo
+                                        </div>
+                                        <div className="text-sm font-bold text-gray-700">
+                                          S/ {p.costPrice.toFixed(2)}
+                                        </div>
+                                      </div>
+                                      <div>
+                                        <div className="text-[9px] text-gray-400 font-extrabold uppercase tracking-widest">
+                                          Venta
+                                        </div>
+                                        <div className="text-sm font-black text-indigo-600">
+                                          S/ {p.salePrice.toFixed(2)}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Card Actions */}
+                                  <div className="flex gap-1.5 mt-4 pt-3 border-t border-gray-100">
+                                    <button
+                                      onClick={() => {
+                                        setRestockProduct(p);
+                                        setRestockData({
+                                          quantity: 1,
+                                          presentationId:
+                                            p.presentations?.[0]?.id || "",
+                                          totalCost:
+                                            p.costPrice *
+                                            (p.presentations?.[0]
+                                              ?.equivalence || 1),
+                                          categoryId: "",
+                                          paymentMethod: "CASH",
+                                        });
+                                        setIsRestockModalOpen(true);
+                                      }}
+                                      className="flex-grow py-2 bg-emerald-50 text-emerald-700 rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-emerald-100 transition-colors flex items-center justify-center gap-1"
+                                      title="Reponer Stock"
+                                    >
+                                      <TrendingUp className="w-3.5 h-3.5" />{" "}
+                                      Comprar
+                                    </button>
+                                    <button
+                                      onClick={() => handleOpenStockMgmt(p)}
+                                      className="px-3 py-2 bg-indigo-55 bg-indigo-50 text-indigo-700 rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-indigo-100 transition-colors flex items-center justify-center gap-1"
+                                      title="Gestionar Stock por Sede"
+                                    >
+                                      <Truck className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      onClick={() => handleOpenModal(p)}
+                                      className="px-3 py-2 bg-slate-50 text-slate-600 rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-slate-100 transition-colors flex items-center justify-center"
+                                      title="Editar"
+                                    >
+                                      <Edit2 className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      onClick={() => handleClone(p)}
+                                      className="px-3 py-2 bg-slate-50 text-slate-600 rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-slate-100 transition-colors flex items-center justify-center"
+                                      title="Clonar Modelo (Mismo Modelo / Nuevo Código)"
+                                    >
+                                      <Copy className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        setProductIdToDelete(p.id);
+                                        setIsDeleteConfirmOpen(true);
+                                      }}
+                                      className="px-2.5 py-2 bg-rose-50 text-rose-600 rounded-xl hover:bg-rose-100 transition-colors flex items-center justify-center"
+                                      title="Eliminar"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
                       </div>
-                    )
-                  })
-                  )}
-                </div>
-                {/* Pagination for products grid */}
-                {!loading && filteredProducts.length > 0 && (
-                  <Pagination
-                    currentPage={productPage}
-                    totalItems={filteredProducts.length}
-                    pageSize={productPageSize}
-                    onPageChange={(p) => setProductPage(p)}
-                    onPageSizeChange={(s) => { setProductPageSize(s); setProductPage(1); }}
-                    className="border-t border-gray-100 pt-4 mt-2"
-                  />
-                )}
+                      {/* Pagination for products grid */}
+                      {!loading && filteredProducts.length > 0 && (
+                        <Pagination
+                          currentPage={productPage}
+                          totalItems={filteredProducts.length}
+                          pageSize={productPageSize}
+                          onPageChange={(p) => setProductPage(p)}
+                          onPageSizeChange={(s) => {
+                            setProductPageSize(s);
+                            setProductPage(1);
+                          }}
+                          className="border-t border-gray-100 pt-4 mt-2"
+                        />
+                      )}
                     </>
                   );
                 })()}
@@ -2150,9 +2809,12 @@ export default function BusinessInventoryPage() {
                   {/* PLANNER CONTROLS */}
                   <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-gray-100 pb-5">
                     <div className="space-y-1">
-                      <h2 className="text-xl font-black text-gray-900">Compras e Historial de Reabastecimiento</h2>
+                      <h2 className="text-xl font-black text-gray-900">
+                        Compras e Historial de Reabastecimiento
+                      </h2>
                       <p className="text-sm text-gray-500 font-medium">
-                        Monitorea productos por debajo del stock mínimo y evalúa el ritmo de ventas mensual para calcular la compra.
+                        Monitorea productos por debajo del stock mínimo y evalúa
+                        el ritmo de ventas mensual para calcular la compra.
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-3">
@@ -2183,6 +2845,9 @@ export default function BusinessInventoryPage() {
                             presentations: [],
                             brandId: "",
                             familyId: "",
+                            commissionType: "PERCENT",
+                            commissionValue: 0,
+                            priceWithAgent: 0,
                           });
                           setIsCreatingFromPlanner(true);
                           setCustomPlannerQty(1);
@@ -2235,13 +2900,22 @@ export default function BusinessInventoryPage() {
                   {plannerLoading ? (
                     <div className="py-20 text-center flex flex-col items-center justify-center gap-3 text-gray-400">
                       <Loader2 className="w-10 h-10 animate-spin text-indigo-600" />
-                      <p className="font-bold text-sm">Calculando análisis de abastecimiento...</p>
+                      <p className="font-bold text-sm">
+                        Calculando análisis de abastecimiento...
+                      </p>
                     </div>
-                  ) : plannerItems.length === 0 && extraPlannerItems.length === 0 ? (
+                  ) : plannerItems.length === 0 &&
+                    extraPlannerItems.length === 0 ? (
                     <div className="py-16 text-center text-gray-400 flex flex-col items-center">
                       <Sparkles className="w-12 h-12 text-emerald-500 mb-3 opacity-60" />
-                      <p className="font-extrabold text-gray-800 text-lg">¡Stock Óptimo!</p>
-                      <p className="text-xs text-gray-500 font-medium mt-1">Ninguno de tus productos se encuentra por debajo del stock mínimo. Usa los botones de arriba para agregar productos a tu compra.</p>
+                      <p className="font-extrabold text-gray-800 text-lg">
+                        ¡Stock Óptimo!
+                      </p>
+                      <p className="text-xs text-gray-500 font-medium mt-1">
+                        Ninguno de tus productos se encuentra por debajo del
+                        stock mínimo. Usa los botones de arriba para agregar
+                        productos a tu compra.
+                      </p>
                     </div>
                   ) : (
                     <div className="space-y-4">
@@ -2249,13 +2923,26 @@ export default function BusinessInventoryPage() {
                         <table className="w-full text-left border-collapse">
                           <thead>
                             <tr className="bg-slate-50 border-b border-gray-100 text-[10px] font-black uppercase tracking-wider text-gray-500">
-                              <th className="py-4 px-4 text-center" style={{ width: "40px" }}>
+                              <th
+                                className="py-4 px-4 text-center"
+                                style={{ width: "40px" }}
+                              >
                                 <input
                                   type="checkbox"
-                                  checked={selectedItemIds.length === (plannerItems.length + extraPlannerItems.length) && (plannerItems.length + extraPlannerItems.length) > 0}
+                                  checked={
+                                    selectedItemIds.length ===
+                                      plannerItems.length +
+                                        extraPlannerItems.length &&
+                                    plannerItems.length +
+                                      extraPlannerItems.length >
+                                      0
+                                  }
                                   onChange={(e) => {
                                     if (e.target.checked) {
-                                      setSelectedItemIds([...plannerItems.map((item) => item.id), ...extraPlannerItems.map(i => i.id)]);
+                                      setSelectedItemIds([
+                                        ...plannerItems.map((item) => item.id),
+                                        ...extraPlannerItems.map((i) => i.id),
+                                      ]);
                                     } else {
                                       setSelectedItemIds([]);
                                     }
@@ -2264,203 +2951,323 @@ export default function BusinessInventoryPage() {
                                 />
                               </th>
                               <th className="py-4 px-5">Producto</th>
-                              <th className="py-4 px-4 text-center">Stock Actual</th>
-                              <th className="py-4 px-4 text-center">Stock Mínimo</th>
-                              <th className="py-4 px-4 text-center text-indigo-600">Vendidos en Mes</th>
+                              <th className="py-4 px-4 text-center">
+                                Stock Actual
+                              </th>
+                              <th className="py-4 px-4 text-center">
+                                Stock Mínimo
+                              </th>
+                              <th className="py-4 px-4 text-center text-indigo-600">
+                                Vendidos en Mes
+                              </th>
                               <th className="py-4 px-4 text-center">Déficit</th>
-                              <th className="py-4 px-4 text-center">Presentación</th>
-                              <th className="py-4 px-4 text-right">Costo Unitario (S/)</th>
-                              <th className="py-4 px-4 text-center" style={{ width: "130px" }}>Comprar Cant.</th>
-                              <th className="py-4 px-4 text-right text-indigo-700">Subtotal Proyectado</th>
-                              <th className="py-4 px-4 text-center">Acciones</th>
+                              <th className="py-4 px-4 text-center">
+                                Presentación
+                              </th>
+                              <th className="py-4 px-4 text-right">
+                                Costo Unitario (S/)
+                              </th>
+                              <th
+                                className="py-4 px-4 text-center"
+                                style={{ width: "130px" }}
+                              >
+                                Comprar Cant.
+                              </th>
+                              <th className="py-4 px-4 text-right text-indigo-700">
+                                Subtotal Proyectado
+                              </th>
+                              <th className="py-4 px-4 text-center">
+                                Acciones
+                              </th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-50 text-sm">
-                            {[...plannerItems, ...extraPlannerItems].map((item) => {
-                              const isExtra = extraPlannerItems.some(e => e.id === item.id);
-                              const buyQty = customQuantities[item.id] ?? item.deficit;
-                              const cost = customCosts[item.id] ?? item.costPrice;
-                              const subtotal = buyQty * cost;
-                              return (
-                                <tr key={item.id} className={`hover:bg-slate-50/60 transition-colors ${isExtra ? 'bg-blue-50/20' : ''}`}>
-                                  <td className="py-3.5 px-4 text-center">
-                                    <input
-                                      type="checkbox"
-                                      checked={selectedItemIds.includes(item.id)}
-                                      onChange={(e) => {
-                                        if (e.target.checked) {
-                                          setSelectedItemIds([...selectedItemIds, item.id]);
-                                        } else {
-                                          setSelectedItemIds(selectedItemIds.filter((id) => id !== item.id));
-                                        }
-                                      }}
-                                      className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 cursor-pointer"
-                                    />
-                                  </td>
-                                  <td className="py-3.5 px-5">
-                                    <div className="flex items-center gap-3">
-                                      {item.imageUrl ? (
-                                        <img
-                                          src={getReceiptAbsoluteUrl(item.imageUrl) || item.imageUrl}
-                                          alt={item.name}
-                                          className="w-10 h-10 object-cover rounded-xl border border-gray-100"
-                                          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                                        />
-                                      ) : (
-                                        <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400">
-                                          <Package className="w-5 h-5" />
-                                        </div>
-                                      )}
-                                      <div>
-                                        <div className="font-extrabold text-gray-900 flex items-center gap-1.5">
-                                          {item.name}
-                                          {isExtra && (
-                                            <span className="text-[9px] bg-blue-100 text-blue-700 font-black px-1.5 py-0.5 rounded-md">
-                                              {(item as any).isNew ? 'NUEVO' : 'AGREGADO'}
-                                            </span>
-                                          )}
-                                        </div>
-                                        <div className="text-[10px] text-gray-400 font-mono font-semibold">{item.sku || 'Sin SKU'}</div>
-                                        {item.pendingOrderQty && item.pendingOrderQty > 0 ? (
-                                          <div className="text-[10px] text-amber-600 font-black mt-0.5 flex items-center gap-1 bg-amber-50 px-1.5 py-0.5 rounded-lg w-max border border-amber-100">
-                                            <span>🚚 {item.pendingOrderQty} {item.unit} en camino</span>
-                                          </div>
-                                        ) : null}
-                                      </div>
-                                    </div>
-                                  </td>
-                                  <td className="py-3.5 px-4 text-center font-bold text-rose-600">
-                                    {item.stock} {item.unit}
-                                  </td>
-                                  <td className="py-3.5 px-4 text-center text-gray-500 font-bold">
-                                    {item.minStock} {item.unit}
-                                  </td>
-                                  <td className="py-3.5 px-4 text-center font-extrabold text-indigo-600 bg-indigo-50/20">
-                                    {item.soldQty} {item.unit}
-                                  </td>
-                                  <td className="py-3.5 px-4 text-center font-bold text-amber-600">
-                                    {item.deficit > 0 ? `${item.deficit} ${item.unit}` : <span className="text-gray-300">—</span>}
-                                  </td>
-                                  <td className="py-3.5 px-4 text-center">
-                                    {item.presentations && item.presentations.length > 0 ? (
-                                      <select
-                                        value={selectedPresentations[item.id] || "base"}
-                                        onChange={(e) => handlePresentationChange(item.id, e.target.value, item.costPrice, item.presentations || [])}
-                                        className="px-2 py-1 border border-gray-200 rounded-lg outline-none text-xs font-bold text-gray-700 bg-white focus:ring-1 focus:ring-indigo-500"
-                                      >
-                                        <option value="base">{item.unit} (Base)</option>
-                                        {item.presentations.map((pres) => (
-                                          <option key={pres.id} value={pres.id}>
-                                            {pres.name} ({pres.equivalence} {item.unit})
-                                          </option>
-                                        ))}
-                                      </select>
-                                    ) : (
-                                      <span className="text-xs text-gray-400 font-bold">{item.unit}</span>
-                                    )}
-                                  </td>
-                                  <td className="py-3.5 px-4 text-right font-medium">
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      step="0.01"
-                                      value={cost}
-                                      onChange={(e) => {
-                                        const val = Number(e.target.value);
-                                        setCustomCosts({ ...customCosts, [item.id]: val });
-                                      }}
-                                      className="w-20 px-2 py-1 border border-gray-200 rounded-lg outline-none text-right focus:ring-1 focus:ring-indigo-500 bg-white text-xs font-bold text-gray-700"
-                                    />
-                                  </td>
-                                  <td className="py-3.5 px-4 text-center">
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      step="any"
-                                      value={buyQty}
-                                      onChange={(e) => {
-                                        const val = Number(e.target.value);
-                                        setCustomQuantities({ ...customQuantities, [item.id]: val });
-                                      }}
-                                      className="w-20 px-2 py-1 border border-gray-200 rounded-lg outline-none text-center focus:ring-1 focus:ring-indigo-500 bg-white text-xs font-bold text-gray-700"
-                                    />
-                                  </td>
-                                  <td className="py-3.5 px-4 text-right font-black text-indigo-700">
-                                    S/ {subtotal.toFixed(2)}
-                                  </td>
-                                  <td className="py-3.5 px-4 text-center">
-                                    <div className="flex items-center justify-center gap-1.5">
-                                      <button
-                                        onClick={() => {
-                                          setSinglePurchaseItem(item as any);
-                                          setBulkPurchaseFile(null);
-                                          
-                                          let defaultCatId = categories[0]?.id || "";
-                                          let defaultSubId = "";
-                                          const catNegocioEgreso = categories.find((c: any) =>
-                                            c.name.toLowerCase().includes("negocio") && c.name.toLowerCase().includes("egreso")
-                                          ) || categories.find((c: any) => c.name.toLowerCase().includes("egreso"));
-                                          if (catNegocioEgreso) {
-                                            defaultCatId = catNegocioEgreso.id;
-                                            const subMercaderia = catNegocioEgreso.children?.find((s: any) =>
-                                              s.name.toLowerCase().includes("mercaderia") || s.name.toLowerCase().includes("mercadería")
+                            {[...plannerItems, ...extraPlannerItems].map(
+                              (item) => {
+                                const isExtra = extraPlannerItems.some(
+                                  (e) => e.id === item.id,
+                                );
+                                const buyQty =
+                                  customQuantities[item.id] ?? item.deficit;
+                                const cost =
+                                  customCosts[item.id] ?? item.costPrice;
+                                const subtotal = buyQty * cost;
+                                return (
+                                  <tr
+                                    key={item.id}
+                                    className={`hover:bg-slate-50/60 transition-colors ${isExtra ? "bg-blue-50/20" : ""}`}
+                                  >
+                                    <td className="py-3.5 px-4 text-center">
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedItemIds.includes(
+                                          item.id,
+                                        )}
+                                        onChange={(e) => {
+                                          if (e.target.checked) {
+                                            setSelectedItemIds([
+                                              ...selectedItemIds,
+                                              item.id,
+                                            ]);
+                                          } else {
+                                            setSelectedItemIds(
+                                              selectedItemIds.filter(
+                                                (id) => id !== item.id,
+                                              ),
                                             );
-                                            if (subMercaderia) {
-                                              defaultSubId = subMercaderia.id;
-                                            } else if (catNegocioEgreso.children?.[0]) {
-                                              defaultSubId = catNegocioEgreso.children[0].id;
-                                            }
                                           }
-
-                                          setBulkPurchaseData({
-                                            categoryId: defaultCatId,
-                                            subCategoryId: defaultSubId,
-                                            paymentMethod: "CASH",
-                                            receiptUrl: "",
-                                            receiveImmediately: false,
-                                          });
-                                          fetchTreasuryLiquidity();
-                                          setIsBulkPurchaseModalOpen(true);
                                         }}
-                                        className="px-2.5 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-bold flex items-center gap-1 transition-colors"
-                                        title="Comprar solo este producto"
-                                      >
-                                        Comprar
-                                      </button>
-                                      {!isExtra && (
-                                        <button
-                                          onClick={() => handleOpenModal(item as any)}
-                                          className="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700"
-                                          title="Editar datos de ficha técnica"
-                                        >
-                                          <Edit2 className="w-3.5 h-3.5" />
-                                        </button>
+                                        className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 cursor-pointer"
+                                      />
+                                    </td>
+                                    <td className="py-3.5 px-5">
+                                      <div className="flex items-center gap-3">
+                                        {item.imageUrl ? (
+                                          <img
+                                            src={
+                                              getReceiptAbsoluteUrl(
+                                                item.imageUrl,
+                                              ) || item.imageUrl
+                                            }
+                                            alt={item.name}
+                                            className="w-10 h-10 object-cover rounded-xl border border-gray-100"
+                                            onError={(e) => {
+                                              (
+                                                e.target as HTMLImageElement
+                                              ).style.display = "none";
+                                            }}
+                                          />
+                                        ) : (
+                                          <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400">
+                                            <Package className="w-5 h-5" />
+                                          </div>
+                                        )}
+                                        <div>
+                                          <div className="font-extrabold text-gray-900 flex items-center gap-1.5">
+                                            {item.name}
+                                            {isExtra && (
+                                              <span className="text-[9px] bg-blue-100 text-blue-700 font-black px-1.5 py-0.5 rounded-md">
+                                                {(item as any).isNew
+                                                  ? "NUEVO"
+                                                  : "AGREGADO"}
+                                              </span>
+                                            )}
+                                          </div>
+                                          <div className="text-[10px] text-gray-400 font-mono font-semibold">
+                                            {item.sku || "Sin SKU"}
+                                          </div>
+                                          {item.pendingOrderQty &&
+                                          item.pendingOrderQty > 0 ? (
+                                            <div className="text-[10px] text-amber-600 font-black mt-0.5 flex items-center gap-1 bg-amber-50 px-1.5 py-0.5 rounded-lg w-max border border-amber-100">
+                                              <span>
+                                                🚚 {item.pendingOrderQty}{" "}
+                                                {item.unit} en camino
+                                              </span>
+                                            </div>
+                                          ) : null}
+                                        </div>
+                                      </div>
+                                    </td>
+                                    <td className="py-3.5 px-4 text-center font-bold text-rose-600">
+                                      {item.stock} {item.unit}
+                                    </td>
+                                    <td className="py-3.5 px-4 text-center text-gray-500 font-bold">
+                                      {item.minStock} {item.unit}
+                                    </td>
+                                    <td className="py-3.5 px-4 text-center font-extrabold text-indigo-600 bg-indigo-50/20">
+                                      {item.soldQty} {item.unit}
+                                    </td>
+                                    <td className="py-3.5 px-4 text-center font-bold text-amber-600">
+                                      {item.deficit > 0 ? (
+                                        `${item.deficit} ${item.unit}`
+                                      ) : (
+                                        <span className="text-gray-300">—</span>
                                       )}
-                                      {isExtra && (
-                                        <button
-                                          onClick={() => handleRemoveExtraPlannerItem(item.id)}
-                                          className="p-1.5 bg-rose-50 hover:bg-rose-100 rounded-lg text-rose-600"
-                                          title="Quitar de la lista de compras"
+                                    </td>
+                                    <td className="py-3.5 px-4 text-center">
+                                      {item.presentations &&
+                                      item.presentations.length > 0 ? (
+                                        <select
+                                          value={
+                                            selectedPresentations[item.id] ||
+                                            "base"
+                                          }
+                                          onChange={(e) =>
+                                            handlePresentationChange(
+                                              item.id,
+                                              e.target.value,
+                                              item.costPrice,
+                                              item.presentations || [],
+                                            )
+                                          }
+                                          className="px-2 py-1 border border-gray-200 rounded-lg outline-none text-xs font-bold text-gray-700 bg-white focus:ring-1 focus:ring-indigo-500"
                                         >
-                                          <X className="w-3.5 h-3.5" />
-                                        </button>
+                                          <option value="base">
+                                            {item.unit} (Base)
+                                          </option>
+                                          {item.presentations.map((pres) => (
+                                            <option
+                                              key={pres.id}
+                                              value={pres.id}
+                                            >
+                                              {pres.name} ({pres.equivalence}{" "}
+                                              {item.unit})
+                                            </option>
+                                          ))}
+                                        </select>
+                                      ) : (
+                                        <span className="text-xs text-gray-400 font-bold">
+                                          {item.unit}
+                                        </span>
                                       )}
-                                    </div>
-                                  </td>
-                                </tr>
-                              );
-                            })}
+                                    </td>
+                                    <td className="py-3.5 px-4 text-right font-medium">
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={cost}
+                                        onChange={(e) => {
+                                          const val = Number(e.target.value);
+                                          setCustomCosts({
+                                            ...customCosts,
+                                            [item.id]: val,
+                                          });
+                                        }}
+                                        className="w-20 px-2 py-1 border border-gray-200 rounded-lg outline-none text-right focus:ring-1 focus:ring-indigo-500 bg-white text-xs font-bold text-gray-700"
+                                      />
+                                    </td>
+                                    <td className="py-3.5 px-4 text-center">
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="any"
+                                        value={buyQty}
+                                        onChange={(e) => {
+                                          const val = Number(e.target.value);
+                                          setCustomQuantities({
+                                            ...customQuantities,
+                                            [item.id]: val,
+                                          });
+                                        }}
+                                        className="w-20 px-2 py-1 border border-gray-200 rounded-lg outline-none text-center focus:ring-1 focus:ring-indigo-500 bg-white text-xs font-bold text-gray-700"
+                                      />
+                                    </td>
+                                    <td className="py-3.5 px-4 text-right font-black text-indigo-700">
+                                      S/ {subtotal.toFixed(2)}
+                                    </td>
+                                    <td className="py-3.5 px-4 text-center">
+                                      <div className="flex items-center justify-center gap-1.5">
+                                        <button
+                                          onClick={() => {
+                                            setSinglePurchaseItem(item as any);
+                                            setBulkPurchaseFile(null);
+
+                                            let defaultCatId =
+                                              categories[0]?.id || "";
+                                            let defaultSubId = "";
+                                            const catNegocioEgreso =
+                                              categories.find(
+                                                (c: any) =>
+                                                  c.name
+                                                    .toLowerCase()
+                                                    .includes("negocio") &&
+                                                  c.name
+                                                    .toLowerCase()
+                                                    .includes("egreso"),
+                                              ) ||
+                                              categories.find((c: any) =>
+                                                c.name
+                                                  .toLowerCase()
+                                                  .includes("egreso"),
+                                              );
+                                            if (catNegocioEgreso) {
+                                              defaultCatId =
+                                                catNegocioEgreso.id;
+                                              const subMercaderia =
+                                                catNegocioEgreso.children?.find(
+                                                  (s: any) =>
+                                                    s.name
+                                                      .toLowerCase()
+                                                      .includes("mercaderia") ||
+                                                    s.name
+                                                      .toLowerCase()
+                                                      .includes("mercadería"),
+                                                );
+                                              if (subMercaderia) {
+                                                defaultSubId = subMercaderia.id;
+                                              } else if (
+                                                catNegocioEgreso.children?.[0]
+                                              ) {
+                                                defaultSubId =
+                                                  catNegocioEgreso.children[0]
+                                                    .id;
+                                              }
+                                            }
+
+                                            setBulkPurchaseData({
+                                              categoryId: defaultCatId,
+                                              subCategoryId: defaultSubId,
+                                              paymentMethod: "CASH",
+                                              receiptUrl: "",
+                                              receiveImmediately: false,
+                                            });
+                                            fetchTreasuryLiquidity();
+                                            setIsBulkPurchaseModalOpen(true);
+                                          }}
+                                          className="px-2.5 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-bold flex items-center gap-1 transition-colors"
+                                          title="Comprar solo este producto"
+                                        >
+                                          Comprar
+                                        </button>
+                                        {!isExtra && (
+                                          <button
+                                            onClick={() =>
+                                              handleOpenModal(item as any)
+                                            }
+                                            className="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700"
+                                            title="Editar datos de ficha técnica"
+                                          >
+                                            <Edit2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        )}
+                                        {isExtra && (
+                                          <button
+                                            onClick={() =>
+                                              handleRemoveExtraPlannerItem(
+                                                item.id,
+                                              )
+                                            }
+                                            className="p-1.5 bg-rose-50 hover:bg-rose-100 rounded-lg text-rose-600"
+                                            title="Quitar de la lista de compras"
+                                          >
+                                            <X className="w-3.5 h-3.5" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              },
+                            )}
                             {/* TOTALS ROW */}
                             <tr className="bg-slate-50/80 font-black border-t-2 border-slate-200">
                               <td className="py-4 px-4 text-center"></td>
-                              <td className="py-4 px-5 text-gray-700">Total Planificado (Todos)</td>
+                              <td className="py-4 px-5 text-gray-700">
+                                Total Planificado (Todos)
+                              </td>
                               <td colSpan={6}></td>
                               <td className="py-4 px-4 text-right text-indigo-900 text-base">
-                                S/ {[...plannerItems, ...extraPlannerItems].reduce((acc, item) => {
-                                  const qty = customQuantities[item.id] ?? item.deficit;
-                                  const cost = customCosts[item.id] ?? item.costPrice;
-                                  return acc + (qty * cost);
-                                }, 0).toFixed(2)}
+                                S/{" "}
+                                {[...plannerItems, ...extraPlannerItems]
+                                  .reduce((acc, item) => {
+                                    const qty =
+                                      customQuantities[item.id] ?? item.deficit;
+                                    const cost =
+                                      customCosts[item.id] ?? item.costPrice;
+                                    return acc + qty * cost;
+                                  }, 0)
+                                  .toFixed(2)}
                               </td>
                               <td></td>
                             </tr>
@@ -2472,16 +3279,32 @@ export default function BusinessInventoryPage() {
                       <div className="flex flex-col sm:flex-row justify-between items-center bg-indigo-50 border border-indigo-100 p-4 rounded-2xl gap-4">
                         <div className="text-xs font-bold text-indigo-900">
                           {selectedItemIds.length === 0 ? (
-                            <span>No has seleccionado productos. Selecciona uno o más para comprar masivamente.</span>
+                            <span>
+                              No has seleccionado productos. Selecciona uno o
+                              más para comprar masivamente.
+                            </span>
                           ) : (
                             <span>
-                              Has seleccionado <span className="text-indigo-600 font-extrabold">{selectedItemIds.length}</span> producto(s). Costo estimado: <span className="text-indigo-600 font-black text-sm">S/ {[...plannerItems, ...extraPlannerItems]
-                                .filter(item => selectedItemIds.includes(item.id))
-                                .reduce((acc, item) => {
-                                  const qty = customQuantities[item.id] ?? item.deficit;
-                                  const cost = customCosts[item.id] ?? item.costPrice;
-                                  return acc + (qty * cost);
-                                }, 0).toFixed(2)}</span>
+                              Has seleccionado{" "}
+                              <span className="text-indigo-600 font-extrabold">
+                                {selectedItemIds.length}
+                              </span>{" "}
+                              producto(s). Costo estimado:{" "}
+                              <span className="text-indigo-600 font-black text-sm">
+                                S/{" "}
+                                {[...plannerItems, ...extraPlannerItems]
+                                  .filter((item) =>
+                                    selectedItemIds.includes(item.id),
+                                  )
+                                  .reduce((acc, item) => {
+                                    const qty =
+                                      customQuantities[item.id] ?? item.deficit;
+                                    const cost =
+                                      customCosts[item.id] ?? item.costPrice;
+                                    return acc + qty * cost;
+                                  }, 0)
+                                  .toFixed(2)}
+                              </span>
                             </span>
                           )}
                         </div>
@@ -2489,19 +3312,32 @@ export default function BusinessInventoryPage() {
                         <button
                           onClick={() => {
                             if (selectedItemIds.length === 0) {
-                              toast.error("Selecciona al menos un producto para comprar.");
+                              toast.error(
+                                "Selecciona al menos un producto para comprar.",
+                              );
                               return;
                             }
                             let defaultCatId = categories[0]?.id || "";
                             let defaultSubId = "";
-                            const catNegocioEgreso = categories.find((c: any) =>
-                              c.name.toLowerCase().includes("negocio") && c.name.toLowerCase().includes("egreso")
-                            ) || categories.find((c: any) => c.name.toLowerCase().includes("egreso"));
+                            const catNegocioEgreso =
+                              categories.find(
+                                (c: any) =>
+                                  c.name.toLowerCase().includes("negocio") &&
+                                  c.name.toLowerCase().includes("egreso"),
+                              ) ||
+                              categories.find((c: any) =>
+                                c.name.toLowerCase().includes("egreso"),
+                              );
                             if (catNegocioEgreso) {
                               defaultCatId = catNegocioEgreso.id;
-                              const subMercaderia = catNegocioEgreso.children?.find((s: any) =>
-                                s.name.toLowerCase().includes("mercaderia") || s.name.toLowerCase().includes("mercadería")
-                              );
+                              const subMercaderia =
+                                catNegocioEgreso.children?.find(
+                                  (s: any) =>
+                                    s.name
+                                      .toLowerCase()
+                                      .includes("mercaderia") ||
+                                    s.name.toLowerCase().includes("mercadería"),
+                                );
                               if (subMercaderia) {
                                 defaultSubId = subMercaderia.id;
                               } else if (catNegocioEgreso.children?.[0]) {
@@ -2535,7 +3371,9 @@ export default function BusinessInventoryPage() {
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-2 border-b border-gray-100">
                     <div className="flex items-center gap-2">
                       <Truck className="w-5 h-5 text-indigo-600" />
-                      <h3 className="text-lg font-black text-gray-900">Control de Pedidos y Compras</h3>
+                      <h3 className="text-lg font-black text-gray-900">
+                        Control de Pedidos y Compras
+                      </h3>
                     </div>
                     {/* Sub-tabs */}
                     <div className="flex bg-slate-100 p-1 rounded-2xl w-full sm:w-auto gap-0.5">
@@ -2545,9 +3383,14 @@ export default function BusinessInventoryPage() {
                         className={`flex-1 sm:flex-initial px-3 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 ${ordersSubTab === "pending" ? "bg-white text-amber-700 shadow-sm" : "text-gray-500 hover:text-gray-900"}`}
                       >
                         Por Pagar
-                        {purchaseOrders.filter(o => o.status === "PENDING").length > 0 && (
+                        {purchaseOrders.filter((o) => o.status === "PENDING")
+                          .length > 0 && (
                           <span className="bg-amber-100 text-amber-800 text-[10px] px-2 py-0.5 rounded-full font-black">
-                            {purchaseOrders.filter(o => o.status === "PENDING").length}
+                            {
+                              purchaseOrders.filter(
+                                (o) => o.status === "PENDING",
+                              ).length
+                            }
                           </span>
                         )}
                       </button>
@@ -2557,9 +3400,13 @@ export default function BusinessInventoryPage() {
                         className={`flex-1 sm:flex-initial px-3 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 ${ordersSubTab === "transit" ? "bg-white text-indigo-700 shadow-sm" : "text-gray-500 hover:text-gray-900"}`}
                       >
                         En Tránsito
-                        {purchaseOrders.filter(o => o.status === "PAID").length > 0 && (
+                        {purchaseOrders.filter((o) => o.status === "PAID")
+                          .length > 0 && (
                           <span className="bg-indigo-100 text-indigo-800 text-[10px] px-2 py-0.5 rounded-full font-black">
-                            {purchaseOrders.filter(o => o.status === "PAID").length}
+                            {
+                              purchaseOrders.filter((o) => o.status === "PAID")
+                                .length
+                            }
                           </span>
                         )}
                       </button>
@@ -2569,15 +3416,20 @@ export default function BusinessInventoryPage() {
                         className={`flex-1 sm:flex-initial px-3 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 ${ordersSubTab === "received" ? "bg-white text-emerald-700 shadow-sm" : "text-gray-500 hover:text-gray-900"}`}
                       >
                         Compras
-                        {purchaseOrders.filter(o => o.status === "RECEIVED").length > 0 && (
+                        {purchaseOrders.filter((o) => o.status === "RECEIVED")
+                          .length > 0 && (
                           <span className="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-black">
-                            {purchaseOrders.filter(o => o.status === "RECEIVED").length}
+                            {
+                              purchaseOrders.filter(
+                                (o) => o.status === "RECEIVED",
+                              ).length
+                            }
                           </span>
                         )}
                       </button>
                     </div>
                   </div>
-                  
+
                   {ordersLoading ? (
                     <div className="py-10 text-center flex flex-col items-center justify-center gap-2 text-gray-400">
                       <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
@@ -2587,18 +3439,30 @@ export default function BusinessInventoryPage() {
                     ordersFiltered.length === 0 ? (
                       <div className="py-12 bg-slate-50 border border-dashed border-gray-200 rounded-3xl text-center text-gray-400 flex flex-col items-center justify-center">
                         <Truck className="w-10 h-10 text-slate-300 mb-2" />
-                        <p className="font-bold text-sm text-gray-700">No hay pedidos pendientes de pago</p>
-                        <p className="text-xs text-gray-500 mt-0.5">Cuando crees un pedido sin comprobante aparecerá aquí.</p>
+                        <p className="font-bold text-sm text-gray-700">
+                          No hay pedidos pendientes de pago
+                        </p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          Cuando crees un pedido sin comprobante aparecerá aquí.
+                        </p>
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {paginatedOrders.map((order) => (
-                          <div key={order.id} className="bg-white border border-amber-100 rounded-3xl p-5 shadow-sm space-y-4 hover:shadow-md transition-shadow">
+                          <div
+                            key={order.id}
+                            className="bg-white border border-amber-100 rounded-3xl p-5 shadow-sm space-y-4 hover:shadow-md transition-shadow"
+                          >
                             <div className="flex justify-between items-start">
                               <div>
-                                <span className="text-[10px] text-gray-400 font-mono font-bold block">ID: {order.id.slice(0, 8).toUpperCase()}</span>
+                                <span className="text-[10px] text-gray-400 font-mono font-bold block">
+                                  ID: {order.id.slice(0, 8).toUpperCase()}
+                                </span>
                                 <span className="text-xs text-gray-500 font-medium block mt-0.5">
-                                  {new Date(order.createdAt).toLocaleString("es-PE", { dateStyle: "short", timeStyle: "short" })}
+                                  {new Date(order.createdAt).toLocaleString(
+                                    "es-PE",
+                                    { dateStyle: "short", timeStyle: "short" },
+                                  )}
                                 </span>
                               </div>
                               <span className="bg-amber-100 text-amber-800 text-xs px-2.5 py-1 rounded-full font-bold flex items-center gap-1">
@@ -2606,20 +3470,39 @@ export default function BusinessInventoryPage() {
                                 Por Pagar
                               </span>
                             </div>
-                            
+
                             {/* List items */}
                             <div className="bg-slate-50 rounded-2xl p-3 text-xs space-y-1.5 max-h-40 overflow-y-auto font-medium text-gray-600">
                               {order.items.map((item) => (
-                                <div key={item.id} className="flex justify-between font-medium">
-                                  <span>• {item.quantity} x {item.product?.name || "Producto"} ({item.presentationName || item.product?.unit || "Unidad"})</span>
-                                  <span className="font-bold text-gray-800">S/ {(item.quantity * item.costPrice).toFixed(2)}</span>
+                                <div
+                                  key={item.id}
+                                  className="flex justify-between font-medium"
+                                >
+                                  <span>
+                                    • {item.quantity} x{" "}
+                                    {item.product?.name || "Producto"} (
+                                    {item.presentationName ||
+                                      item.product?.unit ||
+                                      "Unidad"}
+                                    )
+                                  </span>
+                                  <span className="font-bold text-gray-800">
+                                    S/{" "}
+                                    {(item.quantity * item.costPrice).toFixed(
+                                      2,
+                                    )}
+                                  </span>
                                 </div>
                               ))}
                             </div>
 
                             <div className="flex justify-between items-center text-xs">
-                              <span className="text-gray-500 font-semibold">Total:</span>
-                              <span className="text-base font-black text-amber-700">S/ {order.totalCost.toFixed(2)}</span>
+                              <span className="text-gray-500 font-semibold">
+                                Total:
+                              </span>
+                              <span className="text-base font-black text-amber-700">
+                                S/ {order.totalCost.toFixed(2)}
+                              </span>
                             </div>
 
                             <div className="flex gap-2 pt-2">
@@ -2638,7 +3521,7 @@ export default function BusinessInventoryPage() {
                                     subCategoryId: order.subCategoryId || "",
                                     paymentMethod: order.paymentMethod,
                                     receiptUrl: order.receiptUrl || "",
-                                    items: order.items.map(item => ({
+                                    items: order.items.map((item) => ({
                                       id: item.id,
                                       productId: item.productId,
                                       name: item.product?.name || "Producto",
@@ -2662,21 +3545,27 @@ export default function BusinessInventoryPage() {
                                 onClick={() => {
                                   setConfirmConfig({
                                     title: "Eliminar Pedido Sin Pago",
-                                    message: "Este pedido aún no tiene pago confirmado y NO está registrado en Tesorería. ¿Deseas eliminarlo?",
+                                    message:
+                                      "Este pedido aún no tiene pago confirmado y NO está registrado en Tesorería. ¿Deseas eliminarlo?",
                                     confirmText: "Sí, Eliminar",
                                     cancelText: "No, Mantener",
                                     variant: "danger",
                                     onConfirm: async () => {
                                       try {
-                                        await deletePurchaseOrderRequest(order.id);
+                                        await deletePurchaseOrderRequest(
+                                          order.id,
+                                        );
                                         toast.success("Pedido eliminado");
                                         loadOrders();
                                         loadPlannerData();
                                         fetchTreasuryLiquidity();
                                       } catch (err: any) {
-                                        toast.error(err?.response?.data?.message || "Error al eliminar");
+                                        toast.error(
+                                          err?.response?.data?.message ||
+                                            "Error al eliminar",
+                                        );
                                       }
-                                    }
+                                    },
                                   });
                                   setIsConfirmOpen(true);
                                 }}
@@ -2694,18 +3583,31 @@ export default function BusinessInventoryPage() {
                     ordersFiltered.length === 0 ? (
                       <div className="py-12 bg-slate-50 border border-dashed border-gray-200 rounded-3xl text-center text-gray-400 flex flex-col items-center justify-center">
                         <Truck className="w-10 h-10 text-slate-300 mb-2" />
-                        <p className="font-bold text-sm text-gray-700">No hay pedidos en tránsito</p>
-                        <p className="text-xs text-gray-500 mt-0.5">Los pedidos pagados que aún no han sido recibidos aparecerán aquí.</p>
+                        <p className="font-bold text-sm text-gray-700">
+                          No hay pedidos en tránsito
+                        </p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          Los pedidos pagados que aún no han sido recibidos
+                          aparecerán aquí.
+                        </p>
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {paginatedOrders.map((order) => (
-                          <div key={order.id} className="bg-white border border-indigo-100 rounded-3xl p-5 shadow-sm space-y-4 hover:shadow-md transition-shadow">
+                          <div
+                            key={order.id}
+                            className="bg-white border border-indigo-100 rounded-3xl p-5 shadow-sm space-y-4 hover:shadow-md transition-shadow"
+                          >
                             <div className="flex justify-between items-start">
                               <div>
-                                <span className="text-[10px] text-gray-400 font-mono font-bold block">ID: {order.id.slice(0, 8).toUpperCase()}</span>
+                                <span className="text-[10px] text-gray-400 font-mono font-bold block">
+                                  ID: {order.id.slice(0, 8).toUpperCase()}
+                                </span>
                                 <span className="text-xs text-gray-500 font-medium block mt-0.5">
-                                  {new Date(order.createdAt).toLocaleString("es-PE", { dateStyle: "short", timeStyle: "short" })}
+                                  {new Date(order.createdAt).toLocaleString(
+                                    "es-PE",
+                                    { dateStyle: "short", timeStyle: "short" },
+                                  )}
                                 </span>
                               </div>
                               <span className="bg-indigo-100 text-indigo-800 text-xs px-2.5 py-1 rounded-full font-bold flex items-center gap-1">
@@ -2713,38 +3615,68 @@ export default function BusinessInventoryPage() {
                                 En Tránsito
                               </span>
                             </div>
-                            
+
                             {/* List items */}
                             <div className="bg-slate-50 rounded-2xl p-3 text-xs space-y-1.5 max-h-40 overflow-y-auto font-medium text-gray-600">
                               {order.items.map((item) => (
-                                <div key={item.id} className="flex justify-between font-medium">
-                                  <span>• {item.quantity} x {item.product?.name || "Producto"} ({item.presentationName || item.product?.unit || "Unidad"})</span>
-                                  <span className="font-bold text-gray-800">S/ {(item.quantity * item.costPrice).toFixed(2)}</span>
+                                <div
+                                  key={item.id}
+                                  className="flex justify-between font-medium"
+                                >
+                                  <span>
+                                    • {item.quantity} x{" "}
+                                    {item.product?.name || "Producto"} (
+                                    {item.presentationName ||
+                                      item.product?.unit ||
+                                      "Unidad"}
+                                    )
+                                  </span>
+                                  <span className="font-bold text-gray-800">
+                                    S/{" "}
+                                    {(item.quantity * item.costPrice).toFixed(
+                                      2,
+                                    )}
+                                  </span>
                                 </div>
                               ))}
                             </div>
 
                             <div className="flex justify-between items-center text-xs">
-                              <span className="text-gray-500 font-semibold">Total Costo:</span>
-                              <span className="text-base font-black text-indigo-700">S/ {order.totalCost.toFixed(2)}</span>
+                              <span className="text-gray-500 font-semibold">
+                                Total Costo:
+                              </span>
+                              <span className="text-base font-black text-indigo-700">
+                                S/ {order.totalCost.toFixed(2)}
+                              </span>
                             </div>
 
                             <div className="flex justify-between items-center text-xs">
-                              <span className="text-gray-500 font-semibold">Método Pago:</span>
-                              <span className="font-bold text-gray-800 bg-slate-100 px-2 py-0.5 rounded-lg">{order.paymentMethod}</span>
+                              <span className="text-gray-500 font-semibold">
+                                Método Pago:
+                              </span>
+                              <span className="font-bold text-gray-800 bg-slate-100 px-2 py-0.5 rounded-lg">
+                                {order.paymentMethod}
+                              </span>
                             </div>
 
                             {order.receiptUrl && (
                               <div className="pt-1">
-                                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block mb-1">Comprobante</span>
+                                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block mb-1">
+                                  Comprobante
+                                </span>
                                 <a
-                                  href={getReceiptAbsoluteUrl(order.receiptUrl) || undefined}
+                                  href={
+                                    getReceiptAbsoluteUrl(order.receiptUrl) ||
+                                    undefined
+                                  }
                                   target="_blank"
                                   rel="noreferrer"
                                   className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-gray-200 rounded-xl hover:bg-indigo-50/30 hover:border-indigo-200 transition-colors group cursor-pointer"
                                 >
                                   <FileText className="w-4 h-4 text-indigo-500" />
-                                  <span className="text-xs font-bold text-gray-700 group-hover:text-indigo-700 transition-colors truncate max-w-[120px]">Ver Comprobante</span>
+                                  <span className="text-xs font-bold text-gray-700 group-hover:text-indigo-700 transition-colors truncate max-w-[120px]">
+                                    Ver Comprobante
+                                  </span>
                                   <Eye className="w-3.5 h-3.5 text-indigo-500 ml-auto" />
                                 </a>
                               </div>
@@ -2766,7 +3698,7 @@ export default function BusinessInventoryPage() {
                                     subCategoryId: order.subCategoryId || "",
                                     paymentMethod: order.paymentMethod,
                                     receiptUrl: order.receiptUrl || "",
-                                    items: order.items.map(item => ({
+                                    items: order.items.map((item) => ({
                                       id: item.id,
                                       productId: item.productId,
                                       name: item.product?.name || "Producto",
@@ -2795,7 +3727,8 @@ export default function BusinessInventoryPage() {
                                     confirmText: "Sí, Cancelar Todo",
                                     cancelText: "No, Mantener",
                                     variant: "warning",
-                                    onConfirm: () => handleCancelOrder(order.id),
+                                    onConfirm: () =>
+                                      handleCancelOrder(order.id),
                                   });
                                   setIsConfirmOpen(true);
                                 }}
@@ -2809,127 +3742,171 @@ export default function BusinessInventoryPage() {
                         ))}
                       </div>
                     )
+                  ) : ordersFiltered.length === 0 ? (
+                    <div className="py-12 bg-slate-50 border border-dashed border-gray-200 rounded-3xl text-center text-gray-400 flex flex-col items-center justify-center">
+                      <Truck className="w-10 h-10 text-slate-300 mb-2" />
+                      <p className="font-bold text-sm text-gray-700">
+                        No hay compras ingresadas
+                      </p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Ingresa tus pedidos en tránsito a stock para
+                        visualizarlas aquí.
+                      </p>
+                    </div>
                   ) : (
-
-                    ordersFiltered.length === 0 ? (
-                      <div className="py-12 bg-slate-50 border border-dashed border-gray-200 rounded-3xl text-center text-gray-400 flex flex-col items-center justify-center">
-                        <Truck className="w-10 h-10 text-slate-300 mb-2" />
-                        <p className="font-bold text-sm text-gray-700">No hay compras ingresadas</p>
-                        <p className="text-xs text-gray-500 mt-0.5">Ingresa tus pedidos en tránsito a stock para visualizarlas aquí.</p>
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {paginatedOrders.map((order) => (
-                          <div key={order.id} className="bg-white border border-gray-100 rounded-3xl p-5 shadow-sm space-y-4 hover:shadow-md transition-shadow">
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <span className="text-[10px] text-gray-400 font-mono font-bold block">ID: {order.id.slice(0, 8).toUpperCase()}</span>
-                                <span className="text-xs text-gray-500 font-medium block mt-0.5">
-                                  {new Date(order.createdAt).toLocaleString("es-PE", { dateStyle: "short", timeStyle: "short" })}
-                                </span>
-                              </div>
-                              <span className="bg-emerald-100 text-emerald-800 text-xs px-2.5 py-1 rounded-full font-bold">
-                                Ingresado
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {paginatedOrders.map((order) => (
+                        <div
+                          key={order.id}
+                          className="bg-white border border-gray-100 rounded-3xl p-5 shadow-sm space-y-4 hover:shadow-md transition-shadow"
+                        >
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <span className="text-[10px] text-gray-400 font-mono font-bold block">
+                                ID: {order.id.slice(0, 8).toUpperCase()}
+                              </span>
+                              <span className="text-xs text-gray-500 font-medium block mt-0.5">
+                                {new Date(order.createdAt).toLocaleString(
+                                  "es-PE",
+                                  { dateStyle: "short", timeStyle: "short" },
+                                )}
                               </span>
                             </div>
-                            
-                            {/* List items */}
-                            <div className="bg-slate-50 rounded-2xl p-3 text-xs space-y-1.5 max-h-40 overflow-y-auto font-medium text-gray-600 font-bold">
-                              {order.items.map((item) => (
-                                <div key={item.id} className="flex justify-between font-medium">
-                                  <span>• {item.quantity} x {item.product?.name || "Producto"} ({item.presentationName || item.product?.unit || "Unidad"})</span>
-                                  <span className="font-bold text-gray-800">S/ {(item.quantity * item.costPrice).toFixed(2)}</span>
-                                </div>
-                              ))}
-                            </div>
-
-                            <div className="flex justify-between items-center text-xs">
-                              <span className="text-gray-500 font-semibold">Total Costo:</span>
-                              <span className="text-base font-black text-indigo-700">S/ {order.totalCost.toFixed(2)}</span>
-                            </div>
-
-                            <div className="flex justify-between items-center text-xs">
-                              <span className="text-gray-500 font-semibold">Método Pago:</span>
-                              <span className="font-bold text-gray-800 bg-slate-100 px-2 py-0.5 rounded-lg">{order.paymentMethod}</span>
-                            </div>
-
-                            {order.receiptUrl && (
-                              <div className="pt-1">
-                                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block mb-1">Comprobante</span>
-                                {order.receiptUrl.toLowerCase().endsWith(".pdf") ? (
-                                  <a
-                                    href={getReceiptAbsoluteUrl(order.receiptUrl) || undefined}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-gray-150 rounded-xl hover:bg-indigo-50/30 hover:border-indigo-200 transition-colors group cursor-pointer"
-                                  >
-                                    <FileText className="w-4 h-4 text-rose-500" />
-                                    <span className="text-xs font-bold text-gray-700 group-hover:text-indigo-700 transition-colors truncate max-w-[120px]">
-                                      Comprobante.pdf
-                                    </span>
-                                    <Eye className="w-3.5 h-3.5 text-indigo-500 ml-auto" />
-                                  </a>
-                                ) : (
-                                  <a
-                                    href={getReceiptAbsoluteUrl(order.receiptUrl) || undefined}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="relative block rounded-xl overflow-hidden border border-gray-100 group cursor-pointer max-w-[120px] aspect-[4/3] bg-slate-50"
-                                  >
-                                    <img
-                                      src={getReceiptAbsoluteUrl(order.receiptUrl) || undefined}
-                                      alt="Comprobante"
-                                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-                                    />
-                                    <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                                      <Eye className="w-5 h-5 text-white" />
-                                    </div>
-                                  </a>
-                                )}
-                              </div>
-                            )}
-
-                            <div className="flex gap-2 pt-2">
-                              <button
-                                onClick={() => handleRevertOrder(order.id)}
-                                className="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs py-2.5 rounded-2xl flex items-center justify-center gap-1.5 shadow-sm shadow-amber-50 active:scale-95 transition-all"
-                              >
-                                <RotateCcw className="w-4 h-4" />
-                                Revertir
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setEditingPurchaseOrder(order);
-                                  setEditOrderData({
-                                    categoryId: order.categoryId,
-                                    subCategoryId: order.subCategoryId || "",
-                                    paymentMethod: order.paymentMethod,
-                                    receiptUrl: order.receiptUrl || "",
-                                    items: order.items.map(item => ({
-                                      id: item.id,
-                                      productId: item.productId,
-                                      name: item.product?.name || "Producto",
-                                      quantity: item.quantity,
-                                      costPrice: item.costPrice,
-                                      unit: item.product?.unit || "Unidad",
-                                      equivalence: item.equivalence,
-                                      presentationId: item.presentationId,
-                                      presentationName: item.presentationName,
-                                    })),
-                                  });
-                                  setEditOrderFile(null);
-                                  setIsEditOrderModalOpen(true);
-                                }}
-                                className="px-4 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-2xl active:scale-95 transition-all flex items-center justify-center"
-                                title="Editar Compra"
-                              >
-                                <Edit2 className="w-4 h-4" />
-                              </button>
-                            </div>
+                            <span className="bg-emerald-100 text-emerald-800 text-xs px-2.5 py-1 rounded-full font-bold">
+                              Ingresado
+                            </span>
                           </div>
-                        ))}
-                      </div>
-                    )
+
+                          {/* List items */}
+                          <div className="bg-slate-50 rounded-2xl p-3 text-xs space-y-1.5 max-h-40 overflow-y-auto font-medium text-gray-600 font-bold">
+                            {order.items.map((item) => (
+                              <div
+                                key={item.id}
+                                className="flex justify-between font-medium"
+                              >
+                                <span>
+                                  • {item.quantity} x{" "}
+                                  {item.product?.name || "Producto"} (
+                                  {item.presentationName ||
+                                    item.product?.unit ||
+                                    "Unidad"}
+                                  )
+                                </span>
+                                <span className="font-bold text-gray-800">
+                                  S/{" "}
+                                  {(item.quantity * item.costPrice).toFixed(2)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="text-gray-500 font-semibold">
+                              Total Costo:
+                            </span>
+                            <span className="text-base font-black text-indigo-700">
+                              S/ {order.totalCost.toFixed(2)}
+                            </span>
+                          </div>
+
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="text-gray-500 font-semibold">
+                              Método Pago:
+                            </span>
+                            <span className="font-bold text-gray-800 bg-slate-100 px-2 py-0.5 rounded-lg">
+                              {order.paymentMethod}
+                            </span>
+                          </div>
+
+                          {order.receiptUrl && (
+                            <div className="pt-1">
+                              <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block mb-1">
+                                Comprobante
+                              </span>
+                              {order.receiptUrl
+                                .toLowerCase()
+                                .endsWith(".pdf") ? (
+                                <a
+                                  href={
+                                    getReceiptAbsoluteUrl(order.receiptUrl) ||
+                                    undefined
+                                  }
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-gray-150 rounded-xl hover:bg-indigo-50/30 hover:border-indigo-200 transition-colors group cursor-pointer"
+                                >
+                                  <FileText className="w-4 h-4 text-rose-500" />
+                                  <span className="text-xs font-bold text-gray-700 group-hover:text-indigo-700 transition-colors truncate max-w-[120px]">
+                                    Comprobante.pdf
+                                  </span>
+                                  <Eye className="w-3.5 h-3.5 text-indigo-500 ml-auto" />
+                                </a>
+                              ) : (
+                                <a
+                                  href={
+                                    getReceiptAbsoluteUrl(order.receiptUrl) ||
+                                    undefined
+                                  }
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="relative block rounded-xl overflow-hidden border border-gray-100 group cursor-pointer max-w-[120px] aspect-[4/3] bg-slate-50"
+                                >
+                                  <img
+                                    src={
+                                      getReceiptAbsoluteUrl(order.receiptUrl) ||
+                                      undefined
+                                    }
+                                    alt="Comprobante"
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                                  />
+                                  <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                    <Eye className="w-5 h-5 text-white" />
+                                  </div>
+                                </a>
+                              )}
+                            </div>
+                          )}
+
+                          <div className="flex gap-2 pt-2">
+                            <button
+                              onClick={() => handleRevertOrder(order.id)}
+                              className="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs py-2.5 rounded-2xl flex items-center justify-center gap-1.5 shadow-sm shadow-amber-50 active:scale-95 transition-all"
+                            >
+                              <RotateCcw className="w-4 h-4" />
+                              Revertir
+                            </button>
+                            <button
+                              onClick={() => {
+                                setEditingPurchaseOrder(order);
+                                setEditOrderData({
+                                  categoryId: order.categoryId,
+                                  subCategoryId: order.subCategoryId || "",
+                                  paymentMethod: order.paymentMethod,
+                                  receiptUrl: order.receiptUrl || "",
+                                  items: order.items.map((item) => ({
+                                    id: item.id,
+                                    productId: item.productId,
+                                    name: item.product?.name || "Producto",
+                                    quantity: item.quantity,
+                                    costPrice: item.costPrice,
+                                    unit: item.product?.unit || "Unidad",
+                                    equivalence: item.equivalence,
+                                    presentationId: item.presentationId,
+                                    presentationName: item.presentationName,
+                                  })),
+                                });
+                                setEditOrderFile(null);
+                                setIsEditOrderModalOpen(true);
+                              }}
+                              className="px-4 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-2xl active:scale-95 transition-all flex items-center justify-center"
+                              title="Editar Compra"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   )}
 
                   {!ordersLoading && ordersFiltered.length > 0 && (
@@ -2949,9 +3926,12 @@ export default function BusinessInventoryPage() {
               <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 space-y-6">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-gray-100 pb-5 no-print">
                   <div className="space-y-1">
-                    <h2 className="text-xl font-black text-gray-900">Impresión de Tickets y Código de Barras</h2>
+                    <h2 className="text-xl font-black text-gray-900">
+                      Impresión de Tickets y Código de Barras
+                    </h2>
                     <p className="text-sm text-gray-500 font-medium">
-                      Genera boletines de tickets adhesivos para pegar en tus zapatillas, electrodomésticos u otros artículos.
+                      Genera boletines de tickets adhesivos para pegar en tus
+                      zapatillas, electrodomésticos u otros artículos.
                     </p>
                   </div>
                   <button
@@ -2967,7 +3947,9 @@ export default function BusinessInventoryPage() {
                 {/* FILTERS FOR LABEL GENERATOR */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50 p-5 rounded-2xl border border-gray-100 no-print">
                   <div>
-                    <label className="block text-[10px] font-black uppercase text-gray-550 mb-1.5">Buscar Producto</label>
+                    <label className="block text-[10px] font-black uppercase text-gray-550 mb-1.5">
+                      Buscar Producto
+                    </label>
                     <input
                       type="text"
                       placeholder="Nombre, SKU o Cód..."
@@ -2978,7 +3960,9 @@ export default function BusinessInventoryPage() {
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-black uppercase text-gray-555 mb-1.5">Filtrar por Marca</label>
+                    <label className="block text-[10px] font-black uppercase text-gray-555 mb-1.5">
+                      Filtrar por Marca
+                    </label>
                     <select
                       value={labelFilterBrandId}
                       onChange={(e) => setLabelFilterBrandId(e.target.value)}
@@ -2986,13 +3970,17 @@ export default function BusinessInventoryPage() {
                     >
                       <option value="">Todas las Marcas</option>
                       {brands.map((b) => (
-                        <option key={b.id} value={b.id}>{b.name}</option>
+                        <option key={b.id} value={b.id}>
+                          {b.name}
+                        </option>
                       ))}
                     </select>
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-black uppercase text-gray-555 mb-1.5">Filtrar por Familia</label>
+                    <label className="block text-[10px] font-black uppercase text-gray-555 mb-1.5">
+                      Filtrar por Familia
+                    </label>
                     <select
                       value={labelFilterFamilyId}
                       onChange={(e) => setLabelFilterFamilyId(e.target.value)}
@@ -3000,13 +3988,17 @@ export default function BusinessInventoryPage() {
                     >
                       <option value="">Todas las Familias</option>
                       {families.map((f) => (
-                        <option key={f.id} value={f.id}>{f.name}</option>
+                        <option key={f.id} value={f.id}>
+                          {f.name}
+                        </option>
                       ))}
                     </select>
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-black uppercase text-gray-555 mb-1.5">Producto a Etiquetar</label>
+                    <label className="block text-[10px] font-black uppercase text-gray-555 mb-1.5">
+                      Producto a Etiquetar
+                    </label>
                     <select
                       value={ticketProductId}
                       onChange={(e) => setTicketProductId(e.target.value)}
@@ -3015,7 +4007,10 @@ export default function BusinessInventoryPage() {
                       <option value="">-- Selecciona un Producto --</option>
                       {labelFilteredProducts.map((p) => (
                         <option key={p.id} value={p.id}>
-                          {p.name} ({p.sku || `Cód: ${String((p as any).customCode || 0).padStart(4, "0")}`})
+                          {p.name} (
+                          {p.sku ||
+                            `Cód: ${String((p as any).customCode || 0).padStart(4, "0")}`}
+                          )
                         </option>
                       ))}
                     </select>
@@ -3025,19 +4020,25 @@ export default function BusinessInventoryPage() {
                 {/* FORM CONTROLS */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-slate-50/50 p-5 rounded-2xl border border-gray-100 no-print animate-fade-in">
                   <div>
-                    <label className="block text-xs font-black uppercase text-gray-500 mb-2">Cantidad de Tickets (Copia)</label>
+                    <label className="block text-xs font-black uppercase text-gray-500 mb-2">
+                      Cantidad de Tickets (Copia)
+                    </label>
                     <input
                       type="number"
                       min="1"
                       max="100"
                       value={ticketQuantity}
-                      onChange={(e) => setTicketQuantity(Math.max(1, Number(e.target.value)))}
+                      onChange={(e) =>
+                        setTicketQuantity(Math.max(1, Number(e.target.value)))
+                      }
                       className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-bold text-gray-700 shadow-sm"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-black uppercase text-gray-500 mb-2">Nombre Comercial del Ticket</label>
+                    <label className="block text-xs font-black uppercase text-gray-500 mb-2">
+                      Nombre Comercial del Ticket
+                    </label>
                     <input
                       type="text"
                       value={ticketBusinessName}
@@ -3048,10 +4049,14 @@ export default function BusinessInventoryPage() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-black uppercase text-gray-500 mb-2">Tipo de Código</label>
+                    <label className="block text-xs font-black uppercase text-gray-500 mb-2">
+                      Tipo de Código
+                    </label>
                     <select
                       value={codeType}
-                      onChange={(e) => setCodeType(e.target.value as "qr" | "barcode")}
+                      onChange={(e) =>
+                        setCodeType(e.target.value as "qr" | "barcode")
+                      }
                       className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-bold text-gray-700 shadow-sm"
                     >
                       <option value="qr">Código QR</option>
@@ -3064,37 +4069,49 @@ export default function BusinessInventoryPage() {
                 {!ticketProductId ? (
                   <div className="py-20 text-center text-gray-400 no-print">
                     <BarcodeIcon className="w-16 h-16 mx-auto mb-3 opacity-20 text-indigo-600" />
-                    <p className="font-extrabold">Seleccione un producto para generar la vista previa de etiquetas.</p>
+                    <p className="font-extrabold">
+                      Seleccione un producto para generar la vista previa de
+                      etiquetas.
+                    </p>
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    <h3 className="text-sm font-bold text-gray-500 uppercase tracking-widest no-print">Vista previa de impresión</h3>
-                    <div id="print-area" className="bg-white border border-gray-200 rounded-3xl p-6">
+                    <h3 className="text-sm font-bold text-gray-500 uppercase tracking-widest no-print">
+                      Vista previa de impresión
+                    </h3>
+                    <div
+                      id="print-area"
+                      className="bg-white border border-gray-200 rounded-3xl p-6"
+                    >
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                        {Array.from({ length: ticketQuantity }).map((_, index) => {
-                          const prod = products.find(p => p.id === ticketProductId);
-                          return (
-                            <div
-                              key={index}
-                              className="border-2 border-dashed border-gray-300 bg-white p-3 rounded-2xl flex flex-col justify-between items-center text-center w-full aspect-[4/3] min-h-[140px] shadow-sm select-none"
-                            >
-                              <div className="text-[8px] font-black uppercase text-indigo-600 tracking-wider w-full truncate">
-                                {ticketBusinessName}
+                        {Array.from({ length: ticketQuantity }).map(
+                          (_, index) => {
+                            const prod = products.find(
+                              (p) => p.id === ticketProductId,
+                            );
+                            return (
+                              <div
+                                key={index}
+                                className="border-2 border-dashed border-gray-300 bg-white p-3 rounded-2xl flex flex-col justify-between items-center text-center w-full aspect-[4/3] min-h-[140px] shadow-sm select-none"
+                              >
+                                <div className="text-[8px] font-black uppercase text-indigo-600 tracking-wider w-full truncate">
+                                  {ticketBusinessName}
+                                </div>
+                                <div className="text-[10px] font-extrabold text-gray-900 leading-tight w-full truncate px-1">
+                                  {prod?.name}
+                                </div>
+                                <div className="text-xs font-black text-slate-800 my-0.5">
+                                  S/ {prod?.salePrice.toFixed(2)}
+                                </div>
+                                {codeType === "qr" ? (
+                                  <canvas className="qr-preview-canvas w-16 h-16 my-1"></canvas>
+                                ) : (
+                                  <canvas className="barcode-preview-canvas max-w-full h-10 my-1"></canvas>
+                                )}
                               </div>
-                              <div className="text-[10px] font-extrabold text-gray-900 leading-tight w-full truncate px-1">
-                                {prod?.name}
-                              </div>
-                              <div className="text-xs font-black text-slate-800 my-0.5">
-                                S/ {prod?.salePrice.toFixed(2)}
-                              </div>
-                              {codeType === "qr" ? (
-                                <canvas className="qr-preview-canvas w-16 h-16 my-1"></canvas>
-                              ) : (
-                                <canvas className="barcode-preview-canvas max-w-full h-10 my-1"></canvas>
-                              )}
-                            </div>
-                          );
-                        })}
+                            );
+                          },
+                        )}
                       </div>
                     </div>
                   </div>
@@ -3109,7 +4126,11 @@ export default function BusinessInventoryPage() {
       <Modal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        title={editingProduct ? `Editar Producto: Cód #${String((editingProduct as any).customCode || 0).padStart(4, "0")}` : "Nuevo Producto"}
+        title={
+          editingProduct
+            ? `Editar Producto: Cód #${String((editingProduct as any).customCode || 0).padStart(4, "0")}`
+            : "Nuevo Producto"
+        }
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* IMAGEN DEL PRODUCTO */}
@@ -3140,7 +4161,7 @@ export default function BusinessInventoryPage() {
                   setFormData({ ...formData, name: e.target.value })
                 }
                 className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                placeholder="Ej. Zapatillas Nike Air Max, Licuadora Oster, Smart TV 55&quot;"
+                placeholder='Ej. Zapatillas Nike Air Max, Licuadora Oster, Smart TV 55"'
               />
             </div>
             <div className="md:col-span-2">
@@ -3166,7 +4187,13 @@ export default function BusinessInventoryPage() {
                   type="text"
                   disabled
                   readOnly
-                  value={`Cód: #` + String((editingProduct as any).customCode || 0).padStart(4, "0")}
+                  value={
+                    `Cód: #` +
+                    String((editingProduct as any).customCode || 0).padStart(
+                      4,
+                      "0",
+                    )
+                  }
                   className="w-full px-4 py-2 bg-gray-100 border border-gray-200 rounded-xl text-gray-500 outline-none cursor-not-allowed font-semibold"
                 />
               </div>
@@ -3216,11 +4243,16 @@ export default function BusinessInventoryPage() {
                   <button
                     key={curColor.value}
                     type="button"
-                    onClick={() => setFormData({ ...formData, color: curColor.value })}
+                    onClick={() =>
+                      setFormData({ ...formData, color: curColor.value })
+                    }
                     className="w-8 h-8 rounded-full border-2 transition-all hover:scale-110 flex items-center justify-center cursor-pointer shadow-sm"
                     style={{
                       backgroundColor: curColor.value,
-                      borderColor: formData.color === curColor.value ? "#4F46E5" : "transparent"
+                      borderColor:
+                        formData.color === curColor.value
+                          ? "#4F46E5"
+                          : "transparent",
                     }}
                     title={curColor.name}
                   >
@@ -3232,11 +4264,19 @@ export default function BusinessInventoryPage() {
                 <div className="flex items-center gap-2 border border-gray-200 rounded-xl px-3 py-1 bg-white shadow-sm">
                   <input
                     type="color"
-                    value={formData.color && formData.color.startsWith("#") ? formData.color : "#ffffff"}
-                    onChange={(e) => setFormData({ ...formData, color: e.target.value })}
+                    value={
+                      formData.color && formData.color.startsWith("#")
+                        ? formData.color
+                        : "#ffffff"
+                    }
+                    onChange={(e) =>
+                      setFormData({ ...formData, color: e.target.value })
+                    }
                     className="w-8 h-8 rounded-lg cursor-pointer border border-gray-200 p-0"
                   />
-                  <span className="text-xs font-bold text-gray-600">Personalizado</span>
+                  <span className="text-xs font-bold text-gray-600">
+                    Personalizado
+                  </span>
                 </div>
                 {formData.color && (
                   <button
@@ -3377,7 +4417,10 @@ export default function BusinessInventoryPage() {
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">
-                P. Ajustado (Var) S/ <span className="text-xs text-gray-400 font-normal">(Opcional)</span>
+                P. Ajustado (Var) S/{" "}
+                <span className="text-xs text-gray-400 font-normal">
+                  (Opcional)
+                </span>
               </label>
               <input
                 type="number"
@@ -3393,7 +4436,7 @@ export default function BusinessInventoryPage() {
                 className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                 placeholder="Ej. 11.50"
               />
-              
+
               {/* Margin Shortcuts */}
               {formData.costPrice > 0 && (
                 <div className="flex gap-1.5 mt-1.5">
@@ -3420,28 +4463,126 @@ export default function BusinessInventoryPage() {
               )}
 
               {/* Recommendations/Price Analysis */}
-              {formData.adjustedPrice !== undefined && formData.adjustedPrice > 0 && formData.costPrice > 0 && (() => {
-                const margin = ((formData.adjustedPrice - formData.costPrice) / formData.adjustedPrice) * 100;
-                if (formData.adjustedPrice <= formData.costPrice) {
-                  return (
-                    <p className="mt-1.5 text-xs font-semibold text-red-600 flex items-center gap-1">
-                      ⚠️ Peligro: El precio es menor/igual al costo (S/ {formData.costPrice.toFixed(2)}). ¡Estás perdiendo dinero!
-                    </p>
-                  );
-                } else if (margin < 10) {
-                  return (
-                    <p className="mt-1.5 text-xs font-semibold text-amber-600 flex items-center gap-1">
-                      ⚠️ Margen bajo: El margen es de {margin.toFixed(1)}%. Recomendamos subirlo.
-                    </p>
-                  );
-                } else {
-                  return (
-                    <p className="mt-1.5 text-xs font-semibold text-green-600 flex items-center gap-1">
-                      ✅ Precio viable: Margen saludable del {margin.toFixed(1)}%.
-                    </p>
-                  );
-                }
-              })()}
+              {formData.adjustedPrice !== undefined &&
+                formData.adjustedPrice > 0 &&
+                formData.costPrice > 0 &&
+                (() => {
+                  const margin =
+                    ((formData.adjustedPrice - formData.costPrice) /
+                      formData.adjustedPrice) *
+                    100;
+                  if (formData.adjustedPrice <= formData.costPrice) {
+                    return (
+                      <p className="mt-1.5 text-xs font-semibold text-red-600 flex items-center gap-1">
+                        ⚠️ Peligro: El precio es menor/igual al costo (S/{" "}
+                        {formData.costPrice.toFixed(2)}). ¡Estás perdiendo
+                        dinero!
+                      </p>
+                    );
+                  } else if (margin < 10) {
+                    return (
+                      <p className="mt-1.5 text-xs font-semibold text-amber-600 flex items-center gap-1">
+                        ⚠️ Margen bajo: El margen es de {margin.toFixed(1)}%.
+                        Recomendamos subirlo.
+                      </p>
+                    );
+                  } else {
+                    return (
+                      <p className="mt-1.5 text-xs font-semibold text-green-600 flex items-center gap-1">
+                        ✅ Precio viable: Margen saludable del{" "}
+                        {margin.toFixed(1)}%.
+                      </p>
+                    );
+                  }
+                })()}
+            </div>
+
+            {/* CONFIGURACIÓN DE COMISIONES */}
+            <div className="md:col-span-2 border-t border-gray-100 pt-4">
+              <h3 className="text-sm font-bold text-gray-700 mb-3">
+                Esquema de Comisión de la Venta (
+                {user?.agentRoleSingular || "Agente"})
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+                    Modelo de Comisión
+                  </label>
+                  <select
+                    value={formData.commissionType}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        commissionType: e.target.value,
+                      })
+                    }
+                    className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-semibold"
+                  >
+                    <option value="PERCENT">Porcentaje (%)</option>
+                    <option value="FIXED">Monto Fijo (S/)</option>
+                    <option value="SPLIT">Split de Precio (Aumento)</option>
+                  </select>
+                </div>
+
+                {formData.commissionType !== "SPLIT" ? (
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+                      Valor de Comisión{" "}
+                      {formData.commissionType === "PERCENT" ? "(%)" : "(S/)"}
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formData.commissionValue}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          commissionValue: Number(e.target.value),
+                        })
+                      }
+                      className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-semibold"
+                      placeholder="Ej. 5"
+                    />
+                    {formData.commissionType === "PERCENT" &&
+                      formData.commissionValue === 0 && (
+                        <p className="text-[10px] text-gray-400 mt-1 italic">
+                          Usa la tasa base del{" "}
+                          {user?.agentRoleSingular || "asesor"}
+                        </p>
+                      )}
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+                      Precio con {user?.agentRoleSingular || "Asesor"} S/
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formData.priceWithAgent}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          priceWithAgent: Number(e.target.value),
+                        })
+                      }
+                      className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-semibold"
+                      placeholder="Ej. 15.00"
+                    />
+                    {formData.priceWithAgent > 0 && (
+                      <p className="text-[10px] text-indigo-600 mt-1 font-bold">
+                        Diferencia comisionable: S/{" "}
+                        {(formData.priceWithAgent - formData.salePrice).toFixed(
+                          2,
+                        )}{" "}
+                        por unidad
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* PRESENTATIONS */}
@@ -3788,6 +4929,287 @@ export default function BusinessInventoryPage() {
         </form>
       </Modal>
 
+      {/* MODAL: Gestión de Stock por Sede */}
+      <Modal
+        isOpen={isStockMgmtModalOpen}
+        onClose={() => setIsStockMgmtModalOpen(false)}
+        title="Gestión de Stock por Sede"
+      >
+        <div className="space-y-6">
+          <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-2xl flex gap-4 items-center">
+            {selectedStockMgmtProduct?.imageUrl && (
+              <img
+                src={
+                  getReceiptAbsoluteUrl(selectedStockMgmtProduct.imageUrl) ||
+                  selectedStockMgmtProduct.imageUrl
+                }
+                alt={selectedStockMgmtProduct.name}
+                className="w-14 h-14 object-cover rounded-xl border border-indigo-200"
+                onError={(e) =>
+                  ((e.target as HTMLImageElement).style.display = "none")
+                }
+              />
+            )}
+            <div>
+              <h4 className="font-black text-indigo-900 text-base">
+                {selectedStockMgmtProduct?.name}
+              </h4>
+              <p className="text-xs text-indigo-600 font-bold">
+                Unidad base: {selectedStockMgmtProduct?.unit} • Stock Total:{" "}
+                {selectedStockMgmtProduct?.stock}
+              </p>
+            </div>
+          </div>
+
+          {/* TAB SELECTOR INSIDE MODAL */}
+          <div className="flex border-b border-slate-100 gap-6">
+            <button
+              onClick={() => setStockMgmtTab("adjust")}
+              className={`pb-3 text-xs font-black uppercase tracking-wider transition-colors relative ${
+                stockMgmtTab === "adjust"
+                  ? "text-indigo-600"
+                  : "text-gray-400 hover:text-gray-600"
+              }`}
+            >
+              {stockMgmtTab === "adjust" && (
+                <motion.div
+                  layoutId="modalTabLine"
+                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600"
+                />
+              )}
+              Ajustar Stock
+            </button>
+            <button
+              onClick={() => setStockMgmtTab("transfer")}
+              className={`pb-3 text-xs font-black uppercase tracking-wider transition-colors relative ${
+                stockMgmtTab === "transfer"
+                  ? "text-indigo-600"
+                  : "text-gray-400 hover:text-gray-600"
+              }`}
+            >
+              {stockMgmtTab === "transfer" && (
+                <motion.div
+                  layoutId="modalTabLine"
+                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600"
+                />
+              )}
+              Trasladar Stock
+            </button>
+          </div>
+
+          {/* TAB 1: AJUSTAR STOCK */}
+          {stockMgmtTab === "adjust" && (
+            <form onSubmit={handleAdjustStockSubmit} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2">
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    Sede / Almacén a Ajustar
+                  </label>
+                  <select
+                    required
+                    value={mgmtAdjustBranchId}
+                    onChange={(e) => setMgmtAdjustBranchId(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                  >
+                    <option value="">Seleccione sede...</option>
+                    {branches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    Nuevo Stock Físico (Cantidad Absoluta en{" "}
+                    {selectedStockMgmtProduct?.unit})
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    step="any"
+                    placeholder="Ej. 15"
+                    value={mgmtAdjustStockVal}
+                    onChange={(e) =>
+                      setMgmtAdjustStockVal(
+                        e.target.value === "" ? "" : Number(e.target.value),
+                      )
+                    }
+                    className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
+              </div>
+              <p className="text-[11px] text-gray-500 bg-amber-50 border border-amber-100 p-3 rounded-xl">
+                ⚠️ El stock de esta sede se establecerá <b>exactamente</b> al
+                valor ingresado. Se registrará un movimiento de ajuste en el
+                Kardex y se actualizará automáticamente el stock total de este
+                producto.
+              </p>
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsStockMgmtModalOpen(false)}
+                  className="px-5 py-2.5 bg-gray-100 text-gray-700 font-semibold rounded-xl hover:bg-gray-200 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={
+                    mgmtIsSubmitting ||
+                    !mgmtAdjustBranchId ||
+                    mgmtAdjustStockVal === ""
+                  }
+                  className="px-5 py-2.5 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2"
+                >
+                  {mgmtIsSubmitting ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Check className="w-4 h-4" />
+                  )}{" "}
+                  Guardar Ajuste
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* TAB 2: TRASLADAR STOCK */}
+          {stockMgmtTab === "transfer" && (
+            <form onSubmit={handleTransferStockSubmit} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    Sede Origen
+                  </label>
+                  <select
+                    required
+                    value={mgmtTransferFromBranchId}
+                    onChange={(e) =>
+                      setMgmtTransferFromBranchId(e.target.value)
+                    }
+                    className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                  >
+                    <option value="">Seleccione...</option>
+                    {branches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name} (
+                        {selectedStockMgmtProduct?.branchStocks?.find(
+                          (bs: any) => bs.branchId === b.id,
+                        )?.stock ?? 0}{" "}
+                        uds)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    Sede Destino
+                  </label>
+                  <select
+                    required
+                    value={mgmtTransferToBranchId}
+                    onChange={(e) => setMgmtTransferToBranchId(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                  >
+                    <option value="">Seleccione...</option>
+                    {branches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name} (
+                        {selectedStockMgmtProduct?.branchStocks?.find(
+                          (bs: any) => bs.branchId === b.id,
+                        )?.stock ?? 0}{" "}
+                        uds)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    Cantidad a Trasladar
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="0.1"
+                    step="any"
+                    placeholder="Cantidad de unidades"
+                    value={mgmtTransferQty}
+                    onChange={(e) =>
+                      setMgmtTransferQty(
+                        e.target.value === "" ? "" : Number(e.target.value),
+                      )
+                    }
+                    className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsStockMgmtModalOpen(false)}
+                  className="px-5 py-2.5 bg-gray-100 text-gray-700 font-semibold rounded-xl hover:bg-gray-200 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={
+                    mgmtIsSubmitting ||
+                    !mgmtTransferFromBranchId ||
+                    !mgmtTransferToBranchId ||
+                    !mgmtTransferQty
+                  }
+                  className="px-5 py-2.5 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2"
+                >
+                  {mgmtIsSubmitting ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Truck className="w-4 h-4" />
+                  )}{" "}
+                  Ejecutar Traslado
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* SUMMARY TABLE OF BRANCH STOCKS */}
+          <div className="mt-4 pt-4 border-t border-slate-100">
+            <h5 className="text-xs font-black uppercase text-slate-400 tracking-wider mb-2">
+              Resumen de Inventario en Sedes
+            </h5>
+            <div className="border border-slate-100 rounded-2xl overflow-hidden">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 text-slate-500 font-extrabold uppercase">
+                  <tr>
+                    <th className="px-4 py-2.5">Sede</th>
+                    <th className="px-4 py-2.5 text-right">Stock Actual</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {branches.map((b) => {
+                    const currentVal =
+                      selectedStockMgmtProduct?.branchStocks?.find(
+                        (bs: any) => bs.branchId === b.id,
+                      )?.stock ?? 0;
+                    return (
+                      <tr key={b.id} className="hover:bg-slate-50/50">
+                        <td className="px-4 py-2.5 font-bold text-gray-700">
+                          {b.name}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono font-black text-indigo-600 text-sm">
+                          {currentVal} {selectedStockMgmtProduct?.unit}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </Modal>
+
       {/* BULK PURCHASE MODAL */}
       <Modal
         isOpen={isBulkPurchaseModalOpen}
@@ -3796,57 +5218,76 @@ export default function BusinessInventoryPage() {
           setSinglePurchaseItem(null);
           setBulkPurchaseFile(null);
         }}
-        title={singlePurchaseItem ? "Registrar Compra / Pedido Individual" : "Registrar Compra / Pedido Grupal"}
+        title={
+          singlePurchaseItem
+            ? "Registrar Compra / Pedido Individual"
+            : "Registrar Compra / Pedido Grupal"
+        }
       >
         <form onSubmit={handleBulkPurchaseSubmit} className="space-y-4">
           <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 text-xs space-y-2 text-indigo-950 font-medium">
-            <span className="font-extrabold text-sm block mb-1">Resumen del Pedido</span>
+            <span className="font-extrabold text-sm block mb-1">
+              Resumen del Pedido
+            </span>
             <div className="max-h-32 overflow-y-auto space-y-1 pr-1">
-              {singlePurchaseItem ? (
-                (() => {
-                  const qty = customQuantities[singlePurchaseItem.id] ?? singlePurchaseItem.deficit;
-                  const cost = customCosts[singlePurchaseItem.id] ?? singlePurchaseItem.costPrice;
-                  return (
-                    <div className="flex justify-between">
-                      <span>• {qty} x {singlePurchaseItem.name}</span>
-                      <span className="font-black">S/ {(qty * cost).toFixed(2)}</span>
-                    </div>
-                  );
-                })()
-              ) : (
-                plannerItems
-                  .filter(item => selectedItemIds.includes(item.id))
-                  .map(item => {
-                    const qty = customQuantities[item.id] ?? item.deficit;
-                    const cost = customCosts[item.id] ?? item.costPrice;
+              {singlePurchaseItem
+                ? (() => {
+                    const qty =
+                      customQuantities[singlePurchaseItem.id] ??
+                      singlePurchaseItem.deficit;
+                    const cost =
+                      customCosts[singlePurchaseItem.id] ??
+                      singlePurchaseItem.costPrice;
                     return (
-                      <div key={item.id} className="flex justify-between">
-                        <span>• {qty} x {item.name}</span>
-                        <span className="font-black">S/ {(qty * cost).toFixed(2)}</span>
+                      <div className="flex justify-between">
+                        <span>
+                          • {qty} x {singlePurchaseItem.name}
+                        </span>
+                        <span className="font-black">
+                          S/ {(qty * cost).toFixed(2)}
+                        </span>
                       </div>
                     );
-                  })
-              )}
+                  })()
+                : plannerItems
+                    .filter((item) => selectedItemIds.includes(item.id))
+                    .map((item) => {
+                      const qty = customQuantities[item.id] ?? item.deficit;
+                      const cost = customCosts[item.id] ?? item.costPrice;
+                      return (
+                        <div key={item.id} className="flex justify-between">
+                          <span>
+                            • {qty} x {item.name}
+                          </span>
+                          <span className="font-black">
+                            S/ {(qty * cost).toFixed(2)}
+                          </span>
+                        </div>
+                      );
+                    })}
             </div>
             <div className="border-t border-indigo-200/50 pt-2 flex justify-between font-black text-sm">
               <span>Total Estimado:</span>
               <span>
-                S/ {singlePurchaseItem ? (
-                  (() => {
-                    const qty = customQuantities[singlePurchaseItem.id] ?? singlePurchaseItem.deficit;
-                    const cost = customCosts[singlePurchaseItem.id] ?? singlePurchaseItem.costPrice;
-                    return (qty * cost).toFixed(2);
-                  })()
-                ) : (
-                  plannerItems
-                    .filter(item => selectedItemIds.includes(item.id))
-                    .reduce((sum, item) => {
-                      const qty = customQuantities[item.id] ?? item.deficit;
-                      const cost = customCosts[item.id] ?? item.costPrice;
-                      return sum + (qty * cost);
-                    }, 0)
-                    .toFixed(2)
-                )}
+                S/{" "}
+                {singlePurchaseItem
+                  ? (() => {
+                      const qty =
+                        customQuantities[singlePurchaseItem.id] ??
+                        singlePurchaseItem.deficit;
+                      const cost =
+                        customCosts[singlePurchaseItem.id] ??
+                        singlePurchaseItem.costPrice;
+                      return (qty * cost).toFixed(2);
+                    })()
+                  : plannerItems
+                      .filter((item) => selectedItemIds.includes(item.id))
+                      .reduce((sum, item) => {
+                        const qty = customQuantities[item.id] ?? item.deficit;
+                        const cost = customCosts[item.id] ?? item.costPrice;
+                        return sum + qty * cost;
+                      }, 0)
+                      .toFixed(2)}
               </span>
             </div>
           </div>
@@ -3864,8 +5305,12 @@ export default function BusinessInventoryPage() {
                     <FileText className="w-4 h-4" />
                   </div>
                   <div className="truncate">
-                    <p className="text-xs font-bold text-gray-700 truncate">{bulkPurchaseFile.name}</p>
-                    <p className="text-[10px] text-gray-400 font-medium font-mono">{(bulkPurchaseFile.size / 1024).toFixed(1)} KB</p>
+                    <p className="text-xs font-bold text-gray-700 truncate">
+                      {bulkPurchaseFile.name}
+                    </p>
+                    <p className="text-[10px] text-gray-400 font-medium font-mono">
+                      {(bulkPurchaseFile.size / 1024).toFixed(1)} KB
+                    </p>
                   </div>
                 </div>
                 <button
@@ -3879,8 +5324,12 @@ export default function BusinessInventoryPage() {
             ) : (
               <label className="flex flex-col items-center justify-center p-5 border-2 border-dashed border-gray-200 hover:border-indigo-400 bg-slate-50/50 hover:bg-indigo-50/10 rounded-2xl cursor-pointer transition-all">
                 <FileText className="w-7 h-7 text-indigo-400 mb-1.5" />
-                <span className="text-xs font-bold text-gray-600">Seleccionar Comprobante</span>
-                <span className="text-[9px] text-gray-400 mt-0.5">Formatos aceptados: JPG, PNG, PDF</span>
+                <span className="text-xs font-bold text-gray-600">
+                  Seleccionar Comprobante
+                </span>
+                <span className="text-[9px] text-gray-400 mt-0.5">
+                  Formatos aceptados: JPG, PNG, PDF
+                </span>
                 <input
                   type="file"
                   accept="image/*,application/pdf"
@@ -3924,7 +5373,9 @@ export default function BusinessInventoryPage() {
             </div>
 
             {(() => {
-              const catObj = categories.find((c: any) => c.id === bulkPurchaseData.categoryId);
+              const catObj = categories.find(
+                (c: any) => c.id === bulkPurchaseData.categoryId,
+              );
               const subcats = catObj?.children || [];
               if (subcats.length === 0) return null;
               return (
@@ -3961,7 +5412,10 @@ export default function BusinessInventoryPage() {
               <select
                 value={bulkPurchaseData.paymentMethod}
                 onChange={(e) =>
-                  setBulkPurchaseData({ ...bulkPurchaseData, paymentMethod: e.target.value })
+                  setBulkPurchaseData({
+                    ...bulkPurchaseData,
+                    paymentMethod: e.target.value,
+                  })
                 }
                 className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-indigo-500 bg-white text-xs font-bold text-gray-700"
               >
@@ -3980,33 +5434,44 @@ export default function BusinessInventoryPage() {
               id="receiveImmediately"
               checked={bulkPurchaseData.receiveImmediately}
               onChange={(e) =>
-                setBulkPurchaseData({ ...bulkPurchaseData, receiveImmediately: e.target.checked })
+                setBulkPurchaseData({
+                  ...bulkPurchaseData,
+                  receiveImmediately: e.target.checked,
+                })
               }
               className="w-4.5 h-4.5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 cursor-pointer"
             />
-            <label htmlFor="receiveImmediately" className="text-xs font-bold text-gray-700 cursor-pointer select-none">
+            <label
+              htmlFor="receiveImmediately"
+              className="text-xs font-bold text-gray-700 cursor-pointer select-none"
+            >
               Ingresar directamente al almacén (Stock físico)
             </label>
           </div>
 
           {(() => {
-            const totalCost = singlePurchaseItem ? (
-              (() => {
-                const qty = customQuantities[singlePurchaseItem.id] ?? singlePurchaseItem.deficit;
-                const cost = customCosts[singlePurchaseItem.id] ?? singlePurchaseItem.costPrice;
-                return qty * cost;
-              })()
-            ) : (
-              plannerItems
-                .filter(item => selectedItemIds.includes(item.id))
-                .reduce((sum, item) => {
-                  const qty = customQuantities[item.id] ?? item.deficit;
-                  const cost = customCosts[item.id] ?? item.costPrice;
-                  return sum + (qty * cost);
-                }, 0)
-            );
+            const totalCost = singlePurchaseItem
+              ? (() => {
+                  const qty =
+                    customQuantities[singlePurchaseItem.id] ??
+                    singlePurchaseItem.deficit;
+                  const cost =
+                    customCosts[singlePurchaseItem.id] ??
+                    singlePurchaseItem.costPrice;
+                  return qty * cost;
+                })()
+              : plannerItems
+                  .filter((item) => selectedItemIds.includes(item.id))
+                  .reduce((sum, item) => {
+                    const qty = customQuantities[item.id] ?? item.deficit;
+                    const cost = customCosts[item.id] ?? item.costPrice;
+                    return sum + qty * cost;
+                  }, 0);
 
-            const hasInsufficientLiquidity = bulkPurchaseData.receiveImmediately && treasuryLiquidity !== null && totalCost > treasuryLiquidity;
+            const hasInsufficientLiquidity =
+              bulkPurchaseData.receiveImmediately &&
+              treasuryLiquidity !== null &&
+              totalCost > treasuryLiquidity;
 
             if (!hasInsufficientLiquidity) return null;
 
@@ -4015,9 +5480,16 @@ export default function BusinessInventoryPage() {
                 <div className="flex gap-3">
                   <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
                   <div className="space-y-0.5">
-                    <p className="font-extrabold text-xs text-rose-950">Fondos Insuficientes</p>
+                    <p className="font-extrabold text-xs text-rose-950">
+                      Fondos Insuficientes
+                    </p>
                     <p className="text-[10.5px] text-rose-800 font-medium leading-relaxed">
-                      El costo total (S/ {totalCost.toFixed(2)}) supera la liquidez disponible en caja (S/ {treasuryLiquidity !== null ? treasuryLiquidity.toFixed(2) : "0.00"}).
+                      El costo total (S/ {totalCost.toFixed(2)}) supera la
+                      liquidez disponible en caja (S/{" "}
+                      {treasuryLiquidity !== null
+                        ? treasuryLiquidity.toFixed(2)
+                        : "0.00"}
+                      ).
                     </p>
                   </div>
                 </div>
@@ -4046,22 +5518,28 @@ export default function BusinessInventoryPage() {
             <button
               type="submit"
               disabled={(() => {
-                const totalCost = singlePurchaseItem ? (
-                  (() => {
-                    const qty = customQuantities[singlePurchaseItem.id] ?? singlePurchaseItem.deficit;
-                    const cost = customCosts[singlePurchaseItem.id] ?? singlePurchaseItem.costPrice;
-                    return qty * cost;
-                  })()
-                ) : (
-                  plannerItems
-                    .filter(item => selectedItemIds.includes(item.id))
-                    .reduce((sum, item) => {
-                      const qty = customQuantities[item.id] ?? item.deficit;
-                      const cost = customCosts[item.id] ?? item.costPrice;
-                      return sum + (qty * cost);
-                    }, 0)
+                const totalCost = singlePurchaseItem
+                  ? (() => {
+                      const qty =
+                        customQuantities[singlePurchaseItem.id] ??
+                        singlePurchaseItem.deficit;
+                      const cost =
+                        customCosts[singlePurchaseItem.id] ??
+                        singlePurchaseItem.costPrice;
+                      return qty * cost;
+                    })()
+                  : plannerItems
+                      .filter((item) => selectedItemIds.includes(item.id))
+                      .reduce((sum, item) => {
+                        const qty = customQuantities[item.id] ?? item.deficit;
+                        const cost = customCosts[item.id] ?? item.costPrice;
+                        return sum + qty * cost;
+                      }, 0);
+                return (
+                  bulkPurchaseData.receiveImmediately &&
+                  treasuryLiquidity !== null &&
+                  totalCost > treasuryLiquidity
                 );
-                return bulkPurchaseData.receiveImmediately && treasuryLiquidity !== null && totalCost > treasuryLiquidity;
               })()}
               className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:hover:bg-indigo-600 disabled:cursor-not-allowed text-white font-extrabold text-xs rounded-xl shadow-sm transition-colors"
             >
@@ -4085,17 +5563,28 @@ export default function BusinessInventoryPage() {
         {editingPurchaseOrder && (
           <form onSubmit={handleEditOrderSubmit} className="space-y-4">
             <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 space-y-3">
-              <span className="font-extrabold text-sm text-indigo-950 block">Lista de Artículos</span>
+              <span className="font-extrabold text-sm text-indigo-950 block">
+                Lista de Artículos
+              </span>
               <div className="space-y-3 max-h-56 overflow-y-auto pr-1">
                 {editOrderData.items.map((item, index) => {
                   return (
-                    <div key={item.id || index} className="bg-white p-3 rounded-xl border border-indigo-100/50 space-y-2">
+                    <div
+                      key={item.id || index}
+                      className="bg-white p-3 rounded-xl border border-indigo-100/50 space-y-2"
+                    >
                       <div className="flex justify-between items-center">
-                        <span className="font-extrabold text-xs text-gray-800 truncate block max-w-[170px]">{item.name}</span>
+                        <span className="font-extrabold text-xs text-gray-800 truncate block max-w-[170px]">
+                          {item.name}
+                        </span>
                         <div className="flex items-center gap-2">
                           {(() => {
-                            const prod = products.find(p => p.id === item.productId);
-                            const hasPresentations = prod?.presentations && prod.presentations.length > 0;
+                            const prod = products.find(
+                              (p) => p.id === item.productId,
+                            );
+                            const hasPresentations =
+                              prod?.presentations &&
+                              prod.presentations.length > 0;
                             if (hasPresentations && prod) {
                               return (
                                 <select
@@ -4103,11 +5592,19 @@ export default function BusinessInventoryPage() {
                                   onChange={(e) => {
                                     const val = e.target.value;
                                     const isBase = val === "base";
-                                    const pres = isBase ? null : prod.presentations?.find(p => p.id === val);
-                                    const equivalence = pres ? pres.equivalence : 1.0;
+                                    const pres = isBase
+                                      ? null
+                                      : prod.presentations?.find(
+                                          (p) => p.id === val,
+                                        );
+                                    const equivalence = pres
+                                      ? pres.equivalence
+                                      : 1.0;
                                     const presName = pres ? pres.name : null;
-                                    
-                                    const updatedItems = [...editOrderData.items];
+
+                                    const updatedItems = [
+                                      ...editOrderData.items,
+                                    ];
                                     updatedItems[index] = {
                                       ...updatedItems[index],
                                       presentationId: isBase ? null : val,
@@ -4115,14 +5612,20 @@ export default function BusinessInventoryPage() {
                                       equivalence,
                                       costPrice: prod.costPrice * equivalence,
                                     };
-                                    setEditOrderData({ ...editOrderData, items: updatedItems });
+                                    setEditOrderData({
+                                      ...editOrderData,
+                                      items: updatedItems,
+                                    });
                                   }}
                                   className="px-1.5 py-0.5 border border-gray-200 rounded text-[10px] font-bold text-gray-700 bg-white focus:ring-1 focus:ring-indigo-500"
                                 >
-                                  <option value="base">{item.unit || prod.unit} (Base)</option>
+                                  <option value="base">
+                                    {item.unit || prod.unit} (Base)
+                                  </option>
                                   {prod.presentations?.map((pres) => (
                                     <option key={pres.id} value={pres.id}>
-                                      {pres.name} ({pres.equivalence} {item.unit || prod.unit})
+                                      {pres.name} ({pres.equivalence}{" "}
+                                      {item.unit || prod.unit})
                                     </option>
                                   ))}
                                 </select>
@@ -4138,11 +5641,18 @@ export default function BusinessInventoryPage() {
                             type="button"
                             onClick={() => {
                               if (editOrderData.items.length <= 1) {
-                                toast.error("El pedido debe tener al menos 1 producto. Si deseas cancelarlo por completo, elimínalo desde el menú principal.");
+                                toast.error(
+                                  "El pedido debe tener al menos 1 producto. Si deseas cancelarlo por completo, elimínalo desde el menú principal.",
+                                );
                                 return;
                               }
-                              const updatedItems = editOrderData.items.filter((_, idx) => idx !== index);
-                              setEditOrderData({ ...editOrderData, items: updatedItems });
+                              const updatedItems = editOrderData.items.filter(
+                                (_, idx) => idx !== index,
+                              );
+                              setEditOrderData({
+                                ...editOrderData,
+                                items: updatedItems,
+                              });
                             }}
                             className="p-1 text-gray-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
                             title="Quitar artículo del pedido"
@@ -4153,7 +5663,9 @@ export default function BusinessInventoryPage() {
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <label className="block text-[9px] font-black uppercase text-gray-400 mb-0.5">Cantidad</label>
+                          <label className="block text-[9px] font-black uppercase text-gray-400 mb-0.5">
+                            Cantidad
+                          </label>
                           <input
                             type="number"
                             min="0.01"
@@ -4164,13 +5676,18 @@ export default function BusinessInventoryPage() {
                               const val = Number(e.target.value);
                               const updatedItems = [...editOrderData.items];
                               updatedItems[index].quantity = val;
-                              setEditOrderData({ ...editOrderData, items: updatedItems });
+                              setEditOrderData({
+                                ...editOrderData,
+                                items: updatedItems,
+                              });
                             }}
                             className="w-full px-2 py-1 bg-slate-50 border border-gray-200 rounded-lg text-xs font-bold text-gray-700 outline-none focus:bg-white focus:ring-1 focus:ring-indigo-500"
                           />
                         </div>
                         <div>
-                          <label className="block text-[9px] font-black uppercase text-gray-400 mb-0.5">Costo Unit (S/)</label>
+                          <label className="block text-[9px] font-black uppercase text-gray-400 mb-0.5">
+                            Costo Unit (S/)
+                          </label>
                           <input
                             type="number"
                             min="0"
@@ -4181,14 +5698,18 @@ export default function BusinessInventoryPage() {
                               const val = Number(e.target.value);
                               const updatedItems = [...editOrderData.items];
                               updatedItems[index].costPrice = val;
-                              setEditOrderData({ ...editOrderData, items: updatedItems });
+                              setEditOrderData({
+                                ...editOrderData,
+                                items: updatedItems,
+                              });
                             }}
                             className="w-full px-2 py-1 bg-slate-50 border border-gray-200 rounded-lg text-xs font-bold text-gray-700 outline-none focus:bg-white focus:ring-1 focus:ring-indigo-500"
                           />
                         </div>
                       </div>
                       <div className="flex justify-end text-[10px] font-black text-indigo-600 pt-0.5">
-                        Subtotal: S/ {(item.quantity * item.costPrice).toFixed(2)}
+                        Subtotal: S/{" "}
+                        {(item.quantity * item.costPrice).toFixed(2)}
                       </div>
                     </div>
                   );
@@ -4197,7 +5718,9 @@ export default function BusinessInventoryPage() {
 
               {/* Agregar Producto al Pedido */}
               <div className="bg-white p-3 rounded-xl border border-indigo-100/50 space-y-2 mt-2">
-                <span className="font-bold text-xs text-indigo-950 block">Agregar producto al pedido:</span>
+                <span className="font-bold text-xs text-indigo-950 block">
+                  Agregar producto al pedido:
+                </span>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
                   <input
@@ -4225,14 +5748,16 @@ export default function BusinessInventoryPage() {
                           type="button"
                           onClick={() => {
                             const alreadyIn = editOrderData.items.some(
-                              (item) => item.productId === p.id
+                              (item) => item.productId === p.id,
                             );
                             if (alreadyIn) {
                               toast.error("Este producto ya está en el pedido");
                               return;
                             }
                             const newItem = {
-                              id: "temp-" + Math.random().toString(36).substring(2, 9),
+                              id:
+                                "temp-" +
+                                Math.random().toString(36).substring(2, 9),
                               productId: p.id,
                               name: p.name,
                               quantity: 1,
@@ -4251,8 +5776,12 @@ export default function BusinessInventoryPage() {
                           className="w-full text-left px-3 py-2 text-xs hover:bg-indigo-50 flex justify-between items-center transition-colors"
                         >
                           <div className="truncate pr-2">
-                            <span className="font-bold text-gray-700 block truncate">{p.name}</span>
-                            <span className="text-[10px] text-gray-400 font-mono">{p.sku || "Sin SKU"} • Stock: {p.stock}</span>
+                            <span className="font-bold text-gray-700 block truncate">
+                              {p.name}
+                            </span>
+                            <span className="text-[10px] text-gray-400 font-mono">
+                              {p.sku || "Sin SKU"} • Stock: {p.stock}
+                            </span>
                           </div>
                           <span className="text-[11px] font-black text-indigo-600 shrink-0">
                             S/ {p.costPrice.toFixed(2)}
@@ -4277,7 +5806,13 @@ export default function BusinessInventoryPage() {
               <div className="border-t border-indigo-200/50 pt-2 flex justify-between font-black text-sm text-indigo-950">
                 <span>Total Actualizado:</span>
                 <span>
-                  S/ {editOrderData.items.reduce((sum, item) => sum + (item.quantity * item.costPrice), 0).toFixed(2)}
+                  S/{" "}
+                  {editOrderData.items
+                    .reduce(
+                      (sum, item) => sum + item.quantity * item.costPrice,
+                      0,
+                    )
+                    .toFixed(2)}
                 </span>
               </div>
             </div>
@@ -4295,8 +5830,12 @@ export default function BusinessInventoryPage() {
                       <FileText className="w-4 h-4" />
                     </div>
                     <div className="truncate">
-                      <p className="text-xs font-bold text-gray-700 truncate">{editOrderFile.name}</p>
-                      <p className="text-[10px] text-gray-400 font-medium font-mono">{(editOrderFile.size / 1024).toFixed(1)} KB</p>
+                      <p className="text-xs font-bold text-gray-700 truncate">
+                        {editOrderFile.name}
+                      </p>
+                      <p className="text-[10px] text-gray-400 font-medium font-mono">
+                        {(editOrderFile.size / 1024).toFixed(1)} KB
+                      </p>
                     </div>
                   </div>
                   <button
@@ -4314,9 +5853,14 @@ export default function BusinessInventoryPage() {
                       <Eye className="w-4 h-4" />
                     </div>
                     <div className="truncate">
-                      <p className="text-xs font-bold text-emerald-800 truncate">Comprobante guardado</p>
+                      <p className="text-xs font-bold text-emerald-800 truncate">
+                        Comprobante guardado
+                      </p>
                       <a
-                        href={getReceiptAbsoluteUrl(editOrderData.receiptUrl) || undefined}
+                        href={
+                          getReceiptAbsoluteUrl(editOrderData.receiptUrl) ||
+                          undefined
+                        }
                         target="_blank"
                         rel="noreferrer"
                         className="text-[10px] text-indigo-600 font-bold hover:underline"
@@ -4341,8 +5885,12 @@ export default function BusinessInventoryPage() {
               ) : (
                 <label className="flex flex-col items-center justify-center p-5 border-2 border-dashed border-gray-200 hover:border-indigo-400 bg-slate-50/50 hover:bg-indigo-50/10 rounded-2xl cursor-pointer transition-all">
                   <FileText className="w-7 h-7 text-indigo-400 mb-1.5" />
-                  <span className="text-xs font-bold text-gray-600">Subir Comprobante</span>
-                  <span className="text-[9px] text-gray-400 mt-0.5">JPG, PNG, PDF</span>
+                  <span className="text-xs font-bold text-gray-600">
+                    Subir Comprobante
+                  </span>
+                  <span className="text-[9px] text-gray-400 mt-0.5">
+                    JPG, PNG, PDF
+                  </span>
                   <input
                     type="file"
                     accept="image/*,application/pdf"
@@ -4386,7 +5934,9 @@ export default function BusinessInventoryPage() {
               </div>
 
               {(() => {
-                const catObj = categories.find((c: any) => c.id === editOrderData.categoryId);
+                const catObj = categories.find(
+                  (c: any) => c.id === editOrderData.categoryId,
+                );
                 const subcats = catObj?.children || [];
                 if (subcats.length === 0) return null;
                 return (
@@ -4423,7 +5973,10 @@ export default function BusinessInventoryPage() {
                 <select
                   value={editOrderData.paymentMethod}
                   onChange={(e) =>
-                    setEditOrderData({ ...editOrderData, paymentMethod: e.target.value })
+                    setEditOrderData({
+                      ...editOrderData,
+                      paymentMethod: e.target.value,
+                    })
                   }
                   className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-indigo-500 bg-white text-xs font-bold text-gray-700"
                 >
@@ -4475,7 +6028,7 @@ export default function BusinessInventoryPage() {
                 {brands.length}
               </span>
             </h3>
-            
+
             <div className="flex gap-2">
               <input
                 type="text"
@@ -4495,11 +6048,18 @@ export default function BusinessInventoryPage() {
 
             <div className="max-h-60 overflow-y-auto space-y-1.5 border border-gray-150 rounded-xl p-2 bg-gray-50/50">
               {brands.length === 0 ? (
-                <p className="text-[11px] text-gray-400 italic text-center py-4">No hay marcas creadas</p>
+                <p className="text-[11px] text-gray-400 italic text-center py-4">
+                  No hay marcas creadas
+                </p>
               ) : (
-                brands.map(b => (
-                  <div key={b.id} className="flex items-center justify-between bg-white p-2 rounded-lg border border-gray-100 shadow-sm">
-                    <span className="text-xs font-semibold text-gray-700">{b.name}</span>
+                brands.map((b) => (
+                  <div
+                    key={b.id}
+                    className="flex items-center justify-between bg-white p-2 rounded-lg border border-gray-100 shadow-sm"
+                  >
+                    <span className="text-xs font-semibold text-gray-700">
+                      {b.name}
+                    </span>
                     <button
                       type="button"
                       onClick={() => handleDeleteBrand(b.id)}
@@ -4522,7 +6082,7 @@ export default function BusinessInventoryPage() {
                 {families.length}
               </span>
             </h3>
-            
+
             <div className="flex gap-2">
               <input
                 type="text"
@@ -4542,11 +6102,18 @@ export default function BusinessInventoryPage() {
 
             <div className="max-h-60 overflow-y-auto space-y-1.5 border border-gray-150 rounded-xl p-2 bg-gray-50/50">
               {families.length === 0 ? (
-                <p className="text-[11px] text-gray-400 italic text-center py-4">No hay familias creadas</p>
+                <p className="text-[11px] text-gray-400 italic text-center py-4">
+                  No hay familias creadas
+                </p>
               ) : (
-                families.map(f => (
-                  <div key={f.id} className="flex items-center justify-between bg-white p-2 rounded-lg border border-gray-100 shadow-sm">
-                    <span className="text-xs font-semibold text-gray-700">{f.name}</span>
+                families.map((f) => (
+                  <div
+                    key={f.id}
+                    className="flex items-center justify-between bg-white p-2 rounded-lg border border-gray-100 shadow-sm"
+                  >
+                    <span className="text-xs font-semibold text-gray-700">
+                      {f.name}
+                    </span>
                     <button
                       type="button"
                       onClick={() => handleDeleteFamily(f.id)}
@@ -4581,7 +6148,8 @@ export default function BusinessInventoryPage() {
       >
         <div className="space-y-4">
           <p className="text-xs text-gray-500 font-medium text-center">
-            Apunta la cámara de tu dispositivo hacia el código de barras o código QR.
+            Apunta la cámara de tu dispositivo hacia el código de barras o
+            código QR.
           </p>
           <div
             id="scanner-reader"
@@ -4628,13 +6196,23 @@ export default function BusinessInventoryPage() {
         confirmText={confirmConfig.confirmText}
         cancelText={confirmConfig.cancelText}
         variant={confirmConfig.variant}
-        buttonIcon={confirmConfig.variant === "danger" ? <Trash2 className="w-5 h-5" /> : <Check className="w-5 h-5" />}
+        buttonIcon={
+          confirmConfig.variant === "danger" ? (
+            <Trash2 className="w-5 h-5" />
+          ) : (
+            <Check className="w-5 h-5" />
+          )
+        }
       />
 
       {/* MODAL: Confirmar Pago de Pedido (PENDING → PAID) */}
       <Modal
         isOpen={isPayOrderModalOpen}
-        onClose={() => { setIsPayOrderModalOpen(false); setPayingOrderId(null); setPayOrderFile(null); }}
+        onClose={() => {
+          setIsPayOrderModalOpen(false);
+          setPayingOrderId(null);
+          setPayOrderFile(null);
+        }}
         title="Confirmar Pago del Pedido"
         maxWidth="max-w-md"
       >
@@ -4642,46 +6220,71 @@ export default function BusinessInventoryPage() {
           <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 flex items-center gap-3">
             <CreditCard className="w-6 h-6 text-amber-600 flex-shrink-0" />
             <div>
-              <div className="text-sm font-black text-amber-900">Total a pagar</div>
-              <div className="text-2xl font-black text-amber-700">S/ {payingOrderTotal.toFixed(2)}</div>
+              <div className="text-sm font-black text-amber-900">
+                Total a pagar
+              </div>
+              <div className="text-2xl font-black text-amber-700">
+                S/ {payingOrderTotal.toFixed(2)}
+              </div>
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-black text-gray-700 mb-1.5">Categoría de Egreso *</label>
+            <label className="block text-xs font-black text-gray-700 mb-1.5">
+              Categoría de Egreso *
+            </label>
             <select
               value={payOrderData.categoryId}
               onChange={(e) => {
                 const catId = e.target.value;
-                const catObj = categories.find(c => c.id === catId);
+                const catObj = categories.find((c) => c.id === catId);
                 const firstSub = catObj?.children?.[0]?.id || "";
-                setPayOrderData(prev => ({ ...prev, categoryId: catId, subCategoryId: firstSub }));
+                setPayOrderData((prev) => ({
+                  ...prev,
+                  categoryId: catId,
+                  subCategoryId: firstSub,
+                }));
               }}
               required
               className="w-full px-4 py-3 border border-gray-200 rounded-2xl text-sm font-bold text-gray-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
             >
               <option value="">Seleccionar categoría...</option>
-              {categories.filter(c => c.type === "EXPENSE" || !c.type).map(cat => (
-                <option key={cat.id} value={cat.id}>{cat.name}</option>
-              ))}
+              {categories
+                .filter((c) => c.type === "EXPENSE" || !c.type)
+                .map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.name}
+                  </option>
+                ))}
             </select>
           </div>
 
           {(() => {
-            const selectedCategoryObj = categories.find(c => c.id === payOrderData.categoryId);
+            const selectedCategoryObj = categories.find(
+              (c) => c.id === payOrderData.categoryId,
+            );
             const subcategories = selectedCategoryObj?.children || [];
             if (subcategories.length === 0) return null;
             return (
               <div>
-                <label className="block text-xs font-black text-gray-700 mb-1.5">Subcategoría de Egreso</label>
+                <label className="block text-xs font-black text-gray-700 mb-1.5">
+                  Subcategoría de Egreso
+                </label>
                 <select
                   value={payOrderData.subCategoryId}
-                  onChange={(e) => setPayOrderData(prev => ({ ...prev, subCategoryId: e.target.value }))}
+                  onChange={(e) =>
+                    setPayOrderData((prev) => ({
+                      ...prev,
+                      subCategoryId: e.target.value,
+                    }))
+                  }
                   className="w-full px-4 py-3 border border-gray-200 rounded-2xl text-sm font-bold text-gray-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
                 >
                   <option value="">Seleccionar subcategoría...</option>
                   {subcategories.map((sub: any) => (
-                    <option key={sub.id} value={sub.id}>{sub.name}</option>
+                    <option key={sub.id} value={sub.id}>
+                      {sub.name}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -4689,10 +6292,17 @@ export default function BusinessInventoryPage() {
           })()}
 
           <div>
-            <label className="block text-xs font-black text-gray-700 mb-1.5">Método de Pago</label>
+            <label className="block text-xs font-black text-gray-700 mb-1.5">
+              Método de Pago
+            </label>
             <select
               value={payOrderData.paymentMethod}
-              onChange={(e) => setPayOrderData(prev => ({ ...prev, paymentMethod: e.target.value }))}
+              onChange={(e) =>
+                setPayOrderData((prev) => ({
+                  ...prev,
+                  paymentMethod: e.target.value,
+                }))
+              }
               className="w-full px-4 py-3 border border-gray-200 rounded-2xl text-sm font-bold text-gray-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
             >
               <option value="CASH">Efectivo</option>
@@ -4703,7 +6313,9 @@ export default function BusinessInventoryPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-black text-gray-700 mb-1.5">Comprobante (opcional)</label>
+            <label className="block text-xs font-black text-gray-700 mb-1.5">
+              Comprobante (opcional)
+            </label>
             <input
               type="file"
               accept="image/*,.pdf"
@@ -4719,49 +6331,76 @@ export default function BusinessInventoryPage() {
           </div>
 
           {/* LIQUIDITY WARNING/BLOCK BANNER */}
-          {treasuryLiquidity !== null && payingOrderTotal > treasuryLiquidity && (
-            <div className="bg-red-50 border border-red-200 rounded-2xl p-4 space-y-3">
-              <div className="flex items-start gap-2.5">
-                <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
-                <div>
-                  <h4 className="text-xs font-black text-red-950 uppercase tracking-wider">Fondos Insuficientes</h4>
-                  <p className="text-xs text-red-800 mt-0.5">
-                    El costo del pedido supera la liquidez disponible en Tesorería.
-                  </p>
+          {treasuryLiquidity !== null &&
+            payingOrderTotal > treasuryLiquidity && (
+              <div className="bg-red-50 border border-red-200 rounded-2xl p-4 space-y-3">
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="text-xs font-black text-red-950 uppercase tracking-wider">
+                      Fondos Insuficientes
+                    </h4>
+                    <p className="text-xs text-red-800 mt-0.5">
+                      El costo del pedido supera la liquidez disponible en
+                      Tesorería.
+                    </p>
+                  </div>
+                </div>
+                <div className="text-xs space-y-1 pl-7 text-red-900 font-bold">
+                  <div>
+                    • Costo del pedido:{" "}
+                    <span className="font-extrabold text-gray-900">
+                      S/ {payingOrderTotal.toFixed(2)}
+                    </span>
+                  </div>
+                  <div>
+                    • Saldo en caja:{" "}
+                    <span className="font-extrabold text-emerald-700">
+                      S/ {treasuryLiquidity.toFixed(2)}
+                    </span>
+                  </div>
+                  <div>
+                    • Monto faltante:{" "}
+                    <span className="font-black text-red-600">
+                      S/ {(payingOrderTotal - treasuryLiquidity).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+                <div className="pt-1 pl-7">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      window.location.href = "/business-finance";
+                    }}
+                    className="px-3 py-2 bg-gradient-to-r from-red-600 to-rose-600 text-white rounded-xl text-[10px] font-black transition-all shadow-md hover:scale-[1.02] active:scale-[0.98]"
+                  >
+                    Ir a Tesorería a inyectar fondos
+                  </button>
                 </div>
               </div>
-              <div className="text-xs space-y-1 pl-7 text-red-900 font-bold">
-                <div>• Costo del pedido: <span className="font-extrabold text-gray-900">S/ {payingOrderTotal.toFixed(2)}</span></div>
-                <div>• Saldo en caja: <span className="font-extrabold text-emerald-700">S/ {treasuryLiquidity.toFixed(2)}</span></div>
-                <div>• Monto faltante: <span className="font-black text-red-600">S/ {(payingOrderTotal - treasuryLiquidity).toFixed(2)}</span></div>
-              </div>
-              <div className="pt-1 pl-7">
-                <button
-                  type="button"
-                  onClick={() => {
-                    window.location.href = "/business-finance";
-                  }}
-                  className="px-3 py-2 bg-gradient-to-r from-red-600 to-rose-600 text-white rounded-xl text-[10px] font-black transition-all shadow-md hover:scale-[1.02] active:scale-[0.98]"
-                >
-                  Ir a Tesorería a inyectar fondos
-                </button>
-              </div>
-            </div>
-          )}
+            )}
 
           <div className="flex gap-3 pt-2">
             <button
               type="button"
-              onClick={() => { setIsPayOrderModalOpen(false); setPayingOrderId(null); setPayOrderFile(null); }}
+              onClick={() => {
+                setIsPayOrderModalOpen(false);
+                setPayingOrderId(null);
+                setPayOrderFile(null);
+              }}
               className="flex-1 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl text-sm transition-all"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              disabled={treasuryLiquidity !== null && payingOrderTotal > treasuryLiquidity}
+              disabled={
+                treasuryLiquidity !== null &&
+                payingOrderTotal > treasuryLiquidity
+              }
               className={`flex-1 px-4 py-3 text-white font-extrabold rounded-2xl text-sm flex items-center justify-center gap-2 transition-all ${
-                treasuryLiquidity !== null && payingOrderTotal > treasuryLiquidity
+                treasuryLiquidity !== null &&
+                payingOrderTotal > treasuryLiquidity
                   ? "bg-gray-300 cursor-not-allowed opacity-60"
                   : "bg-indigo-600 hover:bg-indigo-700 active:scale-95 shadow-sm"
               }`}
@@ -4776,13 +6415,17 @@ export default function BusinessInventoryPage() {
       {/* MODAL: Agregar Producto existente a Compras */}
       <Modal
         isOpen={isAddProductToOrderOpen}
-        onClose={() => { setIsAddProductToOrderOpen(false); setAddProductSearch(""); }}
+        onClose={() => {
+          setIsAddProductToOrderOpen(false);
+          setAddProductSearch("");
+        }}
         title="Agregar Producto a Compras"
         maxWidth="max-w-lg"
       >
         <div className="space-y-4">
           <p className="text-sm text-gray-500 font-medium">
-            Busca cualquier producto de tu inventario para incluirlo en la compra, aunque no esté en déficit.
+            Busca cualquier producto de tu inventario para incluirlo en la
+            compra, aunque no esté en déficit.
           </p>
           <div className="relative">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -4798,13 +6441,19 @@ export default function BusinessInventoryPage() {
 
           <div className="space-y-2 max-h-80 overflow-y-auto custom-scrollbar">
             {products
-              .filter(p => {
+              .filter((p) => {
                 const search = addProductSearch.toLowerCase();
                 if (!search) return true;
-                return p.name.toLowerCase().includes(search) || (p.sku || "").toLowerCase().includes(search) || String((p as any).customCode || "").toLowerCase().includes(search);
+                return (
+                  p.name.toLowerCase().includes(search) ||
+                  (p.sku || "").toLowerCase().includes(search) ||
+                  String((p as any).customCode || "")
+                    .toLowerCase()
+                    .includes(search)
+                );
               })
               .slice(0, 20)
-              .map(p => (
+              .map((p) => (
                 <button
                   key={p.id}
                   type="button"
@@ -4812,23 +6461,36 @@ export default function BusinessInventoryPage() {
                   className="w-full flex items-center gap-3 p-3 bg-white border border-gray-100 rounded-2xl hover:bg-indigo-50 hover:border-indigo-200 transition-all text-left group"
                 >
                   {p.imageUrl ? (
-                    <img src={getReceiptAbsoluteUrl(p.imageUrl) || p.imageUrl} alt={p.name} className="w-10 h-10 rounded-xl object-cover border border-gray-100 flex-shrink-0" />
+                    <img
+                      src={getReceiptAbsoluteUrl(p.imageUrl) || p.imageUrl}
+                      alt={p.name}
+                      className="w-10 h-10 rounded-xl object-cover border border-gray-100 flex-shrink-0"
+                    />
                   ) : (
                     <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center flex-shrink-0">
                       <Package className="w-5 h-5 text-slate-400" />
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
-                    <div className="font-extrabold text-gray-900 text-sm truncate group-hover:text-indigo-700">{p.name}</div>
-                    <div className="text-[10px] text-gray-400 font-mono">{p.sku || "Sin SKU"} • Stock: {p.stock} {p.unit}</div>
+                    <div className="font-extrabold text-gray-900 text-sm truncate group-hover:text-indigo-700">
+                      {p.name}
+                    </div>
+                    <div className="text-[10px] text-gray-400 font-mono">
+                      {p.sku || "Sin SKU"} • Stock: {p.stock} {p.unit}
+                    </div>
                   </div>
-                  <div className="text-sm font-black text-indigo-600 flex-shrink-0">S/ {p.costPrice.toFixed(2)}</div>
+                  <div className="text-sm font-black text-indigo-600 flex-shrink-0">
+                    S/ {p.costPrice.toFixed(2)}
+                  </div>
                 </button>
               ))}
-            {products.filter(p => {
+            {products.filter((p) => {
               const search = addProductSearch.toLowerCase();
               if (!search) return true;
-              return p.name.toLowerCase().includes(search) || (p.sku || "").toLowerCase().includes(search);
+              return (
+                p.name.toLowerCase().includes(search) ||
+                (p.sku || "").toLowerCase().includes(search)
+              );
             }).length === 0 && (
               <div className="py-8 text-center text-gray-400">
                 <Package className="w-10 h-10 mx-auto mb-2 opacity-30" />
@@ -4858,6 +6520,9 @@ export default function BusinessInventoryPage() {
                   presentations: [],
                   brandId: "",
                   familyId: "",
+                  commissionType: "PERCENT",
+                  commissionValue: 0,
+                  priceWithAgent: 0,
                 });
                 setIsCreatingFromPlanner(true);
                 setCustomPlannerQty(1);
@@ -4873,14 +6538,16 @@ export default function BusinessInventoryPage() {
       </Modal>
 
       {/* PANEL FLOTANTE: CONFIGURACIÓN LECTOR CÓDIGO DE BARRAS FÍSICO */}
-      <div className="fixed bottom-6 right-6 z-[999] no-print">
+      <motion.div drag dragMomentum={false} className="fixed bottom-6 right-6 z-[999] no-print">
         {/* Floating Trigger Button */}
         <button
           type="button"
           onClick={() => setIsScannerConfigOpen(!isScannerConfigOpen)}
           className={`flex items-center gap-2 px-4 py-3 rounded-full text-white font-bold text-xs shadow-2xl transition-all hover:scale-105 active:scale-95 cursor-pointer ${isScannerConfigOpen ? "bg-red-500" : "bg-indigo-600 hover:bg-indigo-750"}`}
         >
-          <span>{isScannerConfigOpen ? "Cerrar Panel ✖" : "Configurar Lector 🔌"}</span>
+          <span>
+            {isScannerConfigOpen ? "Cerrar Panel ✖" : "Configurar Lector 🔌"}
+          </span>
           {scannerEnabled && !isScannerConfigOpen && (
             <span className="w-2.5 h-2.5 bg-emerald-400 rounded-full animate-ping"></span>
           )}
@@ -4888,12 +6555,14 @@ export default function BusinessInventoryPage() {
 
         {/* Floating Config Card */}
         {isScannerConfigOpen && (
-          <div className="absolute bottom-16 right-0 w-80 bg-white/95 backdrop-blur-md rounded-3xl border border-gray-150 p-5 shadow-2xl space-y-4 animate-in fade-in slide-in-from-bottom-5 duration-200">
+          <div className="absolute bottom-16 right-0 w-80 bg-white/95 backdrop-blur-md rounded-3xl border border-gray-150 p-5 shadow-2xl space-y-4 animate-in fade-in slide-in-from-bottom-5 duration-200" onPointerDown={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-gray-100 pb-2">
               <h4 className="font-extrabold text-sm text-gray-800 flex items-center gap-1.5">
                 <span>Lector Físico (Teclado)</span>
               </h4>
-              <span className={`text-[10px] px-2 py-0.5 rounded-full font-black ${scannerEnabled ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600"}`}>
+              <span
+                className={`text-[10px] px-2 py-0.5 rounded-full font-black ${scannerEnabled ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600"}`}
+              >
                 {scannerEnabled ? "ACTIVO" : "APAGADO"}
               </span>
             </div>
@@ -4901,7 +6570,9 @@ export default function BusinessInventoryPage() {
             <div className="space-y-3.5">
               {/* Toggle Enable */}
               <label className="flex items-center justify-between cursor-pointer">
-                <span className="text-xs font-semibold text-gray-600">Escuchar teclado global</span>
+                <span className="text-xs font-semibold text-gray-600">
+                  Escuchar teclado global
+                </span>
                 <input
                   type="checkbox"
                   checked={scannerEnabled}
@@ -4916,8 +6587,12 @@ export default function BusinessInventoryPage() {
               {/* Sensitivity Slider */}
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-gray-655">Sensibilidad (Max entre teclas)</span>
-                  <span className="text-xs font-black text-indigo-600">{scannerSensitivity}ms</span>
+                  <span className="text-xs font-semibold text-gray-655">
+                    Sensibilidad (Max entre teclas)
+                  </span>
+                  <span className="text-xs font-black text-indigo-600">
+                    {scannerSensitivity}ms
+                  </span>
                 </div>
                 <input
                   type="range"
@@ -4925,17 +6600,22 @@ export default function BusinessInventoryPage() {
                   max="150"
                   step="5"
                   value={scannerSensitivity}
-                  onChange={(e) => setScannerSensitivity(Number(e.target.value))}
+                  onChange={(e) =>
+                    setScannerSensitivity(Number(e.target.value))
+                  }
                   className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
                 />
                 <p className="text-[10px] text-gray-400 leading-tight">
-                  Valores más bajos (ej. 40ms) evitan que la escritura manual sea detectada como escaneo.
+                  Valores más bajos (ej. 40ms) evitan que la escritura manual
+                  sea detectada como escaneo.
                 </p>
               </div>
 
               {/* Scan Test Box */}
               <div className="bg-slate-50 p-3 rounded-2xl border border-gray-100 text-center space-y-1.5">
-                <span className="block text-[10px] font-black uppercase text-gray-450">Prueba de Lectura</span>
+                <span className="block text-[10px] font-black uppercase text-gray-450">
+                  Prueba de Lectura
+                </span>
                 {scanTestResult ? (
                   <div className="space-y-1">
                     <span className="block text-xs font-bold text-gray-800 break-all bg-white px-2 py-1 rounded-lg border border-gray-200 font-mono">
@@ -4947,7 +6627,8 @@ export default function BusinessInventoryPage() {
                   </div>
                 ) : (
                   <span className="block text-[10px] text-gray-450 italic leading-snug">
-                    Escanea un código con el lector físico para probar el pitido y ver el resultado.
+                    Escanea un código con el lector físico para probar el pitido
+                    y ver el resultado.
                   </span>
                 )}
                 {scanTestResult && (
@@ -4963,8 +6644,7 @@ export default function BusinessInventoryPage() {
             </div>
           </div>
         )}
-      </div>
-
+      </motion.div>
     </Appshell>
   );
 }

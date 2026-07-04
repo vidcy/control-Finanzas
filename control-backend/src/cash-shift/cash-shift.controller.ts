@@ -86,6 +86,7 @@ export class CashShiftController {
   async getShiftDetails(@Request() req, @Param('id') id: string) {
     const ownerId = req.user.id;
     const workerId = req.user.workerId;
-    return this.cashShiftService.getShiftDetails(id, ownerId, workerId);
+    const userRole = req.user.role;
+    return this.cashShiftService.getShiftDetails(id, ownerId, workerId, userRole);
   }
 }

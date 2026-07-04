@@ -29,7 +29,7 @@ export const createTransactionRequest = async (data: {
 
 export interface GetTransactionsParams {
   workspace?: string;
-  isPosSale?: boolean | "all" | string;
+
   startDate?: string;
   endDate?: string;
   userId?: string;
@@ -127,3 +127,15 @@ export const getAuditLogsRequest = async () => {
     );
   }
 };
+
+export const retryBillingRequest = async (transactionId: string) => {
+  try {
+    const res = await API.post(`/transactions/${transactionId}/retry-billing`);
+    return res.data;
+  } catch (error: any) {
+    throw new Error(
+      error?.response?.data?.message || "Error al reintentar la emisión del comprobante",
+    );
+  }
+};
+

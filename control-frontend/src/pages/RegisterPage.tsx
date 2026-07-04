@@ -76,11 +76,32 @@ export default function RegisterPage() {
 
     setIsLoading(true);
     try {
+      const finalProfiles = [...selectedProfiles];
+      if (selectedProfiles.includes("BUSINESS")) {
+        const defaultSubs = [
+          "BUSINESS_DASHBOARD",
+          "BUSINESS_POS",
+          "BUSINESS_CASH_REGISTER",
+          "BUSINESS_INVENTORY",
+          "BUSINESS_FINANCE",
+          "BUSINESS_PENDING",
+          "BUSINESS_REPORTS",
+          "BUSINESS_HISTORY",
+          "BUSINESS_CATEGORIES",
+          "BUSINESS_WORKERS"
+        ];
+        defaultSubs.forEach(sub => {
+          if (!finalProfiles.includes(sub as any)) {
+            finalProfiles.push(sub as any);
+          }
+        });
+      }
+
       const res = await register({
         name,
         email,
         password,
-        profiles: selectedProfiles,
+        profiles: finalProfiles,
       });
 
       if (res && res.activationRequired) {
