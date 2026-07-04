@@ -19,8 +19,8 @@ enum Role {
 // 💰 TIPO DE TRANSACCIÓN
 // =========================
 enum TransactionType {
-  INCOME   // dinero que entra
-  EXPENSE  // dinero que sale
+  INCOME // dinero que entra
+  EXPENSE // dinero que sale
 }
 
 // =========================
@@ -38,41 +38,43 @@ enum PaymentMethod {
 // 📊 ESTADO FINANCIERO
 // =========================
 enum TransactionStatus {
-  PENDING   // por cobrar / por pagar
-  PAID      // pagado / cobrado
-  PARTIAL   // pago parcial
+  PENDING // por cobrar / por pagar
+  PAID // pagado / cobrado
+  PARTIAL // pago parcial
   CANCELLED // anulado
 }
+
 // Monedas
 enum Currency {
   PEN
   USD
 }
+
 // =========================
 // 👤 USUARIO
 // =========================
 model User {
-  id        String   @id @default(uuid())
-  name      String
-  lastName  String
-  email     String   @unique
-  password  String
-  role      Role @default(USER)
-  currency  String   @default("PEN")
-  isActive  Boolean  @default(true)
-  profiles  Json?
+  id              String  @id @default(uuid())
+  name            String
+  lastName        String
+  email           String  @unique
+  password        String
+  role            Role    @default(USER)
+  currency        String  @default("PEN")
+  isActive        Boolean @default(true)
+  profiles        Json?
   blockedProfiles Json?
 
   // Campos necesarios para corregir tus 15 errores:
-  parentId        String?
+  parentId String?
 
-  personalAvatar   String?
-  businessName     String?
-  businessRuc      String?
-  businessReason   String?
-  businessRubro    String?
-  businessLogo     String?
-  businessBanner   String?
+  personalAvatar       String?
+  businessName         String?
+  businessRuc          String?
+  businessReason       String?
+  businessRubro        String?
+  businessLogo         String?
+  businessBanner       String?
   hasElectronicBilling Boolean @default(false)
   nubefactUrl          String?
   nubefactToken        String?
@@ -83,55 +85,55 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  categories   Category[]
-  transactions Transaction[]
-  notifications Notification[]
-  products     Product[]
-  cashShifts   CashShift[]
-  purchaseOrders PurchaseOrder[]
+  categories         Category[]
+  transactions       Transaction[]
+  notifications      Notification[]
+  products           Product[]
+  cashShifts         CashShift[]
+  purchaseOrders     PurchaseOrder[]
   inventoryMovements InventoryMovement[]
 
-  branchId        String?
-  branch          Branch?        @relation("BranchWorkers", fields: [branchId], references: [id], onDelete: SetNull)
-  branches        Branch[]       @relation("OwnerBranches")
-  brands          Brand[]
-  families        Family[]
-  sales           Sale[]
-  advisorLabel    String         @default("Asesor de venta")
-  agentRoleSingular String       @default("Asesor de venta")
-  agentRolePlural   String       @default("Asesores")
-  defaultCommissionModel String  @default("PERCENTAGE")
-  advisors        Advisor[]      @relation("UserAdvisors")
-  commissionModels CommissionModel[]
+  branchId               String?
+  branch                 Branch?           @relation("BranchWorkers", fields: [branchId], references: [id], onDelete: SetNull)
+  branches               Branch[]          @relation("OwnerBranches")
+  brands                 Brand[]
+  families               Family[]
+  sales                  Sale[]
+  advisorLabel           String            @default("Asesor de venta")
+  agentRoleSingular      String            @default("Asesor de venta")
+  agentRolePlural        String            @default("Asesores")
+  defaultCommissionModel String            @default("PERCENTAGE")
+  advisors               Advisor[]         @relation("UserAdvisors")
+  commissionModels       CommissionModel[]
 }
 
 // =========================
 // 🔔 NOTIFICACIONES
 // =========================
 model Notification {
-  id          String   @id @default(uuid())
+  id          String  @id @default(uuid())
   title       String
   description String
   link        String
-  read        Boolean  @default(false)
+  read        Boolean @default(false)
 
-  userId      String
-  user        User     @relation(fields: [userId], references: [id])
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
 
-  createdAt   DateTime @default(now())
+  createdAt DateTime @default(now())
 }
 
 // =========================
 // 📂 CATEGORÍAS
 // =========================
 model Category {
-id     String @id @default(uuid())
-  name   String
-  type   TransactionType
-  color  String?
+  id    String          @id @default(uuid())
+  name  String
+  type  TransactionType
+  color String?
 
   userId String
-  user   User @relation(fields: [userId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
 
   // árbol categoría / subcategoría
   parentId String?
@@ -148,19 +150,18 @@ id     String @id @default(uuid())
 // 💰 TRANSACCIONES (NÚCLEO DEL SISTEMA)
 // =========================
 model Transaction {
-
   // 🔑 ID
   id String @id @default(uuid())
 
-  type  TransactionType   // ESTE ES EL CAMPO QUE FALTA EN TU ESQUEMA
+  type TransactionType // ESTE ES EL CAMPO QUE FALTA EN TU ESQUEMA
 
   // 📌 INGRESO / EGRESO
-// 📊 ESTADO (CLAVE PARA TUS 4 MÓDULOS)
+  // 📊 ESTADO (CLAVE PARA TUS 4 MÓDULOS)
   status TransactionStatus @default(PENDING)
 
   // 👤 USUARIO
   userId String
-  user   User @relation(fields: [userId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
 
   // 🟢 CATEGORÍA
   categoryId String
@@ -188,8 +189,8 @@ model Transaction {
   description String?
 
   // 💰 MONTO
-  amount Float
- // 💱 MONEDA
+  amount   Float
+  // 💱 MONEDA
   currency Currency
 
   // 💵 TIPO DE CAMBIO
@@ -199,7 +200,7 @@ model Transaction {
   amountSoles Float?
 
   programmed Boolean @default(false)
-  justified Boolean @default(false)
+  justified  Boolean @default(false)
 
   // 📎 COMPROBANTE/VOUCHER (URL de la imagen/pdf)
   receiptUrl String?
@@ -207,12 +208,12 @@ model Transaction {
   // 🏢 ESPACIO DE TRABAJO (PERSONAL o BUSINESS)
   workspace String @default("PERSONAL")
 
-  branchId        String?
-  branch          Branch?        @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  branchId String?
+  branch   Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
 
-  isPosSale       Boolean        @default(false)
-  cashShiftId     String?
-  cashShift       CashShift?     @relation("CashShiftTransactions", fields: [cashShiftId], references: [id], onDelete: SetNull)
+  isPosSale   Boolean    @default(false)
+  cashShiftId String?
+  cashShift   CashShift? @relation("CashShiftTransactions", fields: [cashShiftId], references: [id], onDelete: SetNull)
 
   // ⏱ CONTROL
   createdAt DateTime @default(now())
@@ -223,69 +224,69 @@ model Transaction {
 // 🛒 VENTAS DEL POS (NUEVO)
 // =========================
 model Sale {
-  id              String         @id @default(uuid())
-  
+  id String @id @default(uuid())
+
   // 👤 USUARIO Y SUCURSAL
-  userId          String
-  user            User           @relation(fields: [userId], references: [id])
-  branchId        String?
-  branch          Branch?        @relation(fields: [branchId], references: [id], onDelete: SetNull)
-  workspace       String         @default("PERSONAL")
+  userId    String
+  user      User    @relation(fields: [userId], references: [id])
+  branchId  String?
+  branch    Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  workspace String  @default("PERSONAL")
 
   // 📅 FECHA Y CAJA
-  date            DateTime       @default(now())
-  cashShiftId     String?
-  cashShift       CashShift?     @relation("CashShiftSales", fields: [cashShiftId], references: [id], onDelete: SetNull)
+  date        DateTime   @default(now())
+  cashShiftId String?
+  cashShift   CashShift? @relation("CashShiftSales", fields: [cashShiftId], references: [id], onDelete: SetNull)
 
   // 💳 PAGO Y MONTO
-  paymentMethod   PaymentMethod
-  amount          Float
-  currency        Currency       @default(PEN)
-  exchangeRate    Float?
-  amountSoles     Float?
+  paymentMethod PaymentMethod
+  amount        Float
+  currency      Currency      @default(PEN)
+  exchangeRate  Float?
+  amountSoles   Float?
 
   // 🧑‍💼 COMISIONES
-  advisorId       String?
-  advisor         Advisor?       @relation(fields: [advisorId], references: [id], onDelete: SetNull)
-  
+  advisorId String?
+  advisor   Advisor? @relation(fields: [advisorId], references: [id], onDelete: SetNull)
+
   // 📄 FACTURACIÓN ELECTRÓNICA
-  billingType          String    // "TICKET_VENTA" | "BOLETA" | "FACTURA" | "NOTA_CREDITO" | "NOTA_DEBITO"
-  billingStatus        String?   // "PENDING" | "SUCCESS" | "ERROR"
+  billingType          String // "TICKET_VENTA" | "BOLETA" | "FACTURA" | "NOTA_CREDITO" | "NOTA_DEBITO"
+  billingStatus        String? // "PENDING" | "SUCCESS" | "ERROR"
   billingNumber        Int?
   billingSerie         String?
-  billingError         String?   @db.Text
-  billingPdfUrl        String?   @db.Text
-  billingXmlUrl        String?   @db.Text
-  billingCdrUrl        String?   @db.Text
-  clientDocumentType   String?   
+  billingError         String? @db.Text
+  billingPdfUrl        String? @db.Text
+  billingXmlUrl        String? @db.Text
+  billingCdrUrl        String? @db.Text
+  clientDocumentType   String?
   clientDocumentNumber String?
   clientDenomination   String?
   clientAddress        String?
   clientEmail          String?
 
   // 📦 ITEMS
-  items           SaleItem[]
-  commissions     Commission[]
+  items       SaleItem[]
+  commissions Commission[]
 
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model SaleItem {
-  id              String         @id @default(uuid())
-  saleId          String
-  sale            Sale           @relation(fields: [saleId], references: [id], onDelete: Cascade)
-  productId       String?
-  product         Product?       @relation(fields: [productId], references: [id], onDelete: SetNull)
-  name            String         
-  quantity        Float
-  price           Float
-  commissionType  String?
-  commissionValue Float?
+  id               String   @id @default(uuid())
+  saleId           String
+  sale             Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId        String?
+  product          Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  name             String
+  quantity         Float
+  price            Float
+  commissionType   String?
+  commissionValue  Float?
   commissionAmount Float?
 
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // =========================
@@ -298,61 +299,61 @@ enum CommissionStatus {
 }
 
 model Commission {
-  id              String           @id @default(uuid())
-  advisorId       String
-  advisor         Advisor          @relation(fields: [advisorId], references: [id], onDelete: Cascade)
-  
-  saleId          String?
-  sale            Sale?            @relation(fields: [saleId], references: [id], onDelete: Cascade)
-  
-  amount          Float
-  status          CommissionStatus @default(PENDING)
-  isAdditional    Boolean          @default(false)
-  
+  id        String  @id @default(uuid())
+  advisorId String
+  advisor   Advisor @relation(fields: [advisorId], references: [id], onDelete: Cascade)
+
+  saleId String?
+  sale   Sale?   @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  amount       Float
+  status       CommissionStatus @default(PENDING)
+  isAdditional Boolean          @default(false)
+
   // Si fue pagada, enlace a la transacción de tesorería
-  transactionId   String?          @unique
-  
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  transactionId String? @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // =========================
 // 📦 PRODUCTOS (INVENTARIO SIMPLE)
 // =========================
 model Product {
-  id          String   @id @default(uuid())
-  name        String
-  description String?
-  sku         String?
-  customCode  Int      @default(0)
-  color       String?  // Color opcional del producto
-  costPrice   Float    // Precio de compra/costo
-  salePrice   Float    // Precio de venta
-  adjustedPrice Float?  // Precio ajustado sugerido/variable
-  stock       Float    @default(0)
-  minStock    Float    @default(5)
- unit        String   @default("UNIDAD") // Unidad de medida principal
-  imageUrl    String?  // Foto/imagen opcional del producto
+  id            String  @id @default(uuid())
+  name          String
+  description   String?
+  sku           String?
+  customCode    Int     @default(0)
+  color         String? // Color opcional del producto
+  costPrice     Float // Precio de compra/costo
+  salePrice     Float // Precio de venta
+  adjustedPrice Float? // Precio ajustado sugerido/variable
+  stock         Float   @default(0)
+  minStock      Float   @default(5)
+  unit          String  @default("UNIDAD") // Unidad de medida principal
+  imageUrl      String? // Foto/imagen opcional del producto
 
-  userId      String
-  user        User     @relation(fields: [userId], references: [id])
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
 
-  presentations Presentation[]
-  movements     InventoryMovement[]
+  presentations      Presentation[]
+  movements          InventoryMovement[]
   purchaseOrderItems PurchaseOrderItem[]
 
-  brandId     String?
-  brand       Brand?   @relation(fields: [brandId], references: [id], onDelete: SetNull)
-  familyId    String?
-  family      Family?  @relation(fields: [familyId], references: [id], onDelete: SetNull)
-  branchStocks BranchStock[]
-  priceWithAgent Float?
-  commissionType String         @default("PERCENT") // SPLIT, PERCENT, FIXED
+  brandId         String?
+  brand           Brand?        @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  familyId        String?
+  family          Family?       @relation(fields: [familyId], references: [id], onDelete: SetNull)
+  branchStocks    BranchStock[]
+  priceWithAgent  Float?
+  commissionType  String        @default("PERCENT") // SPLIT, PERCENT, FIXED
   commissionValue Float         @default(0.0)
-  saleItems      SaleItem[]
+  saleItems       SaleItem[]
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // =========================
@@ -364,37 +365,37 @@ enum ShiftStatus {
 }
 
 model CashShift {
-  id              String      @id @default(uuid())
-  openedAt        DateTime    @default(now())
-  closedAt        DateTime?
-  initialBalance  Float       @default(0)
-  finalBalance    Float?
-  totalSales      Float       @default(0)
-  status          ShiftStatus @default(OPEN)
+  id             String      @id @default(uuid())
+  openedAt       DateTime    @default(now())
+  closedAt       DateTime?
+  initialBalance Float       @default(0)
+  finalBalance   Float?
+  totalSales     Float       @default(0)
+  status         ShiftStatus @default(OPEN)
 
-  userId          String
-  user            User        @relation(fields: [userId], references: [id])
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
 
-  branchId        String?
-  branch          Branch?     @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  branchId String?
+  branch   Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
 
-  transactions    Transaction[] @relation("CashShiftTransactions")
-  sales           Sale[]        @relation("CashShiftSales")
+  transactions Transaction[] @relation("CashShiftTransactions")
+  sales        Sale[]        @relation("CashShiftSales")
 }
 
 // =========================
 // 📝 BITÁCORA DE AUDITORÍA
 // =========================
 model AuditLog {
-  id         String   @id @default(uuid())
-  action     String   // "INSERT", "UPDATE", "DELETE"
-  tableName  String   // Nombre de la tabla afectada
-  recordId   String   // ID del registro afectado
-  oldValues  Json?    // Estado anterior
-  newValues  Json?    // Estado posterior
-  userId     String?  // Quién realizó la acción (opcional)
-  userEmail  String?  // Email del usuario que realizó la acción
-  createdAt  DateTime @default(now())
+  id        String   @id @default(uuid())
+  action    String // "INSERT", "UPDATE", "DELETE"
+  tableName String // Nombre de la tabla afectada
+  recordId  String // ID del registro afectado
+  oldValues Json? // Estado anterior
+  newValues Json? // Estado posterior
+  userId    String? // Quién realizó la acción (opcional)
+  userEmail String? // Email del usuario que realizó la acción
+  createdAt DateTime @default(now())
 }
 
 // =========================
@@ -406,84 +407,84 @@ enum MovementType {
 }
 
 model Presentation {
-  id          String   @id @default(uuid())
-  name        String   // "Saco", "Medio saco", "Kg"
-  equivalence Float    // Cuántas unidades principales equivale (ej. 60, 30, 1)
-  price       Float    // Precio de venta para esta presentación
+  id          String @id @default(uuid())
+  name        String // "Saco", "Medio saco", "Kg"
+  equivalence Float // Cuántas unidades principales equivale (ej. 60, 30, 1)
+  price       Float // Precio de venta para esta presentación
 
-  productId   String
-  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
-  movements   InventoryMovement[]
- createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  movements InventoryMovement[]
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
 }
 
 model InventoryMovement {
-  id              String        @id @default(uuid())
-  productId       String
-  product         Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
-  quantity        Float         // Cantidad en la unidad principal del producto
-  type            MovementType
-  reason          String?       // "SALE", "PURCHASE", "ADJUSTMENT"
+  id        String       @id @default(uuid())
+  productId String
+  product   Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity  Float // Cantidad en la unidad principal del producto
+  type      MovementType
+  reason    String? // "SALE", "PURCHASE", "ADJUSTMENT"
 
-  presentationId  String?
-  presentation    Presentation? @relation(fields: [presentationId], references: [id], onDelete: Restrict)
-  presentationName String?      // Snapshot de la presentación usada (ej: "Saco")
-  presentationQty  Float?       // Snapshot de la cantidad de presentaciones (ej: 2)
+  presentationId   String?
+  presentation     Presentation? @relation(fields: [presentationId], references: [id], onDelete: Restrict)
+  presentationName String? // Snapshot de la presentación usada (ej: "Saco")
+  presentationQty  Float? // Snapshot de la cantidad de presentaciones (ej: 2)
 
   // Kardex fields
-  unitCost        Float         @default(0)
-  totalCost       Float         @default(0)
-  stockResult     Float         @default(0)
-  documentId      String?       // ID of associated Sale (Transaction) or PurchaseOrder
+  unitCost    Float   @default(0)
+  totalCost   Float   @default(0)
+  stockResult Float   @default(0)
+  documentId  String? // ID of associated Sale (Transaction) or PurchaseOrder
 
-  userId          String
-  user            User          @relation(fields: [userId], references: [id])
-  branchId        String?
-  branch          Branch?       @relation(fields: [branchId], references: [id], onDelete: SetNull)
-  createdAt       DateTime      @default(now())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  branchId  String?
+  branch    Branch?  @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
 }
 
 // =========================
 // 🛒 PEDIDOS / COMPRAS (NUEVO)
 // =========================
 enum PurchaseOrderStatus {
-  PENDING    // Pedido creado, pendiente de pago → NO registra en Tesorería
-  PAID       // Pago confirmado con comprobante → registra egreso en Tesorería (en tránsito)
-  RECEIVED   // Mercadería ingresada al almacén → finalizado
-  CANCELLED  // Pedido cancelado → registro en Tesorería anulado si existía
+  PENDING // Pedido creado, pendiente de pago → NO registra en Tesorería
+  PAID // Pago confirmado con comprobante → registra egreso en Tesorería (en tránsito)
+  RECEIVED // Mercadería ingresada al almacén → finalizado
+  CANCELLED // Pedido cancelado → registro en Tesorería anulado si existía
 }
 
 model PurchaseOrder {
-  id            String             @id @default(uuid())
+  id            String              @id @default(uuid())
   totalCost     Float
   status        PurchaseOrderStatus @default(PENDING)
   paymentMethod PaymentMethod
   categoryId    String
   subCategoryId String?
   receiptUrl    String?
-  wasPaid       Boolean            @default(false)
+  wasPaid       Boolean             @default(false)
   userId        String
-  user          User               @relation(fields: [userId], references: [id])
+  user          User                @relation(fields: [userId], references: [id])
   items         PurchaseOrderItem[]
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
 }
 
 model PurchaseOrderItem {
-  id              String         @id @default(uuid())
-  purchaseOrderId String
-  purchaseOrder   PurchaseOrder  @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
-  productId       String
-  product         Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
-  quantity        Float
-  equivalence     Float          @default(1.0)
-  presentationId  String?
+  id               String        @id @default(uuid())
+  purchaseOrderId  String
+  purchaseOrder    PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  productId        String
+  product          Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity         Float
+  equivalence      Float         @default(1.0)
+  presentationId   String?
   presentationName String?
-  costPrice       Float
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  costPrice        Float
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
 }
 
 model Branch {
@@ -497,7 +498,7 @@ model Branch {
 
   stocks       BranchStock[]
   cashShifts   CashShift[]
-  workers      User[]        @relation("BranchWorkers")
+  workers      User[]              @relation("BranchWorkers")
   transactions Transaction[]
   movements    InventoryMovement[]
   sales        Sale[]
@@ -517,70 +518,66 @@ model BranchStock {
 }
 
 model Brand {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   name      String
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   products  Product[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 }
 
 model Family {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   name      String
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   products  Product[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 }
 
 model Advisor {
-  id                   String            @id @default(uuid())
+  id                   String  @id @default(uuid())
   name                 String
-  commissionPercentage Float             @default(0.0)
-  commissionType       String            @default("PERCENT")
-  commissionValue      Float             @default(0.0)
-  isActive             Boolean           @default(true)
+  commissionPercentage Float   @default(0.0)
+  commissionType       String  @default("PERCENT")
+  commissionValue      Float   @default(0.0)
+  isActive             Boolean @default(true)
   userId               String
-  user                 User              @relation("UserAdvisors", fields: [userId], references: [id], onDelete: Cascade)
-  
-  commissionModelId    String?
-  commissionModel      CommissionModel?  @relation(fields: [commissionModelId], references: [id], onDelete: SetNull)
+  user                 User    @relation("UserAdvisors", fields: [userId], references: [id], onDelete: Cascade)
 
+  commissionModelId String?
+  commissionModel   CommissionModel? @relation(fields: [commissionModelId], references: [id], onDelete: SetNull)
 
-  sales                Sale[]
-  commissions          Commission[]
-  createdAt            DateTime          @default(now())
-  updatedAt            DateTime          @updatedAt
+  sales       Sale[]
+  commissions Commission[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
 }
-
 
 model CommissionModel {
-  id              String   @id @default(uuid())
-  name            String
-  type            String   // PERCENT, FIXED, SPLIT
-  value           Float    @default(0.0)
-  
-  applyTo         String   @default("SALE") // SALE, PROFIT
-  minCommission   Float    @default(0.0)
+  id    String @id @default(uuid())
+  name  String
+  type  String // PERCENT, FIXED, SPLIT
+  value Float  @default(0.0)
+
+  applyTo         String  @default("SALE") // SALE, PROFIT
+  minCommission   Float   @default(0.0)
   maxCommission   Float?
-  allowDiscounts  Boolean  @default(true)
-  allowManualEdit Boolean  @default(true)
-  isAdditional    Boolean  @default(false)
-  
-  categoryIds     Json?
-  brandIds        Json?
-  productIds      Json?
-  
-  userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  advisors        Advisor[]
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  allowDiscounts  Boolean @default(true)
+  allowManualEdit Boolean @default(true)
+  isAdditional    Boolean @default(false)
+
+  categoryIds Json?
+  brandIds    Json?
+  productIds  Json?
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  advisors Advisor[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
-
-
