@@ -11,7 +11,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 export class CashShiftService {
   private readonly logger = new Logger(CashShiftService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async handleAutoCloseShifts() {
@@ -198,7 +198,7 @@ export class CashShiftService {
             status: 'PAID',
             currency: 'PEN',
             paymentMethod: 'CASH',
-            description: `Cierre de Caja - ID: ${closedShift.id.substring(0, 8)}... (Fondo Inicial: S/ ${activeShift.initialBalance.toFixed(2)} + Ventas (Neto comisiones): S/ ${(totalSales - totalCommissions).toFixed(2)})`,
+            description: `Cierre de Caja - ID: ${closedShift.id.substring(0, 8)}... (Fondo Inicial: S/ ${activeShift.initialBalance.toFixed(2)} + Ventas (Neto comisiones): S/ ${(totalSales - totalAdditionalCommissions).toFixed(2)})`,
             workspace: 'BUSINESS',
             branchId: activeShift.branchId,
             cashShiftId: closedShift.id,
@@ -379,7 +379,7 @@ export class CashShiftService {
     const commissionsList = await this.prisma.commission.findMany({
       where: { sale: { cashShiftId: id } }
     });
-    
+
     const totalCommissions = commissionsList.reduce((sum, c) => sum + c.amount, 0);
     const totalAdditionalCommissions = commissionsList
       .filter((c) => c.isAdditional)
