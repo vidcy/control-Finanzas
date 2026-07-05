@@ -444,11 +444,13 @@ export class ProductsService {
     const mainUnitsQty = quantity * equivalence;
 
     // Validate liquidity for restock
-    const currentLiquidity = await this.getBusinessLiquidity(userId);
-    if (parseFloat(totalCost) > currentLiquidity) {
-      throw new BadRequestException(
-        `Límite de liquidez superado. No tiene suficiente liquidez en caja para realizar esta reposición. Liquidez disponible: S/ ${currentLiquidity.toFixed(2)}.`,
-      );
+    if (!restockDto.ignoreLiquidity) {
+      const currentLiquidity = await this.getBusinessLiquidity(userId);
+      if (parseFloat(totalCost) > currentLiquidity) {
+        throw new BadRequestException(
+          `Límite de liquidez superado. No tiene suficiente liquidez en caja para realizar esta reposición. Liquidez disponible: S/ ${currentLiquidity.toFixed(2)}.`,
+        );
+      }
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -1126,34 +1128,29 @@ export class ProductsService {
   async getBusinessLiquidity(userId: string, tx?: any): Promise<number> {
     const prisma = tx || this.prisma;
     const ownerId = await this.getOwnerId(userId);
-    const transactions = await prisma.transaction.findMany({
+    const aggregates = await prisma.transaction.groupBy({
+      by: ['type'],
       where: {
         OR: [{ userId: ownerId }, { user: { parentId: ownerId } }],
         workspace: 'BUSINESS',
         isPosSale: false,
         status: 'PAID',
       },
-      select: {
-        type: true,
+      _sum: {
         amountSoles: true,
         amount: true,
-        status: true,
-        description: true,
       },
     });
 
     let income = 0;
     let expense = 0;
 
-    for (const t of transactions) {
-      const amt =
-        t.amountSoles !== null && t.amountSoles !== undefined
-          ? t.amountSoles
-          : t.amount;
-      if (t.type === 'INCOME') {
-        income += amt;
-      } else {
-        expense += amt;
+    for (const group of aggregates) {
+      const sum = group._sum.amountSoles ?? group._sum.amount ?? 0;
+      if (group.type === 'INCOME') {
+        income = sum;
+      } else if (group.type === 'EXPENSE') {
+        expense = sum;
       }
     }
 
@@ -1182,7 +1179,7 @@ export class ProductsService {
     const isPaid = !!receiptUrl || !!confirmPayment || !!receiveImmediately;
 
     // Check liquidity if paid immediately
-    if (isPaid) {
+    if (isPaid && !body.ignoreLiquidity) {
       const currentLiquidity = await this.getBusinessLiquidity(userId);
       if (parseFloat(totalCost) > currentLiquidity) {
         throw new BadRequestException(
@@ -1549,11 +1546,13 @@ export class ProductsService {
     }
 
     // Check liquidity
-    const currentLiquidity = await this.getBusinessLiquidity(userId);
-    if (order.totalCost > currentLiquidity) {
-      throw new BadRequestException(
-        `Límite de liquidez superado. No tiene suficiente liquidez en caja para realizar este pago. Liquidez disponible: S/ ${currentLiquidity.toFixed(2)}.`,
-      );
+    if (!body.ignoreLiquidity) {
+      const currentLiquidity = await this.getBusinessLiquidity(userId);
+      if (order.totalCost > currentLiquidity) {
+        throw new BadRequestException(
+          `Límite de liquidez superado. No tiene suficiente liquidez en caja para realizar este pago. Liquidez disponible: S/ ${currentLiquidity.toFixed(2)}.`,
+        );
+      }
     }
 
     return this.prisma.$transaction(async (tx) => {

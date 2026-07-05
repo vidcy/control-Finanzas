@@ -5,8 +5,9 @@ export const listPendingTransactionsRequest = async (workspace: string = "PERSON
     return res.data;
   } catch (error: any) {
     throw new Error(
-      error?.response?.data?.message ||
-      "Error al listar las transacciones pendientes",
+      error?.response?.data?.error?.message ||
+        error?.response?.data?.message ||
+        "Error al listar las transacciones pendientes",
     );
   }
 };
@@ -29,8 +30,9 @@ export const createPendingTransactionRequest = async (data: {
     return res.data;
   } catch (error: any) {
     throw new Error(
-      error?.response?.data?.message ||
-      "Error al crear la transacción pendiente",
+      error?.response?.data?.error?.message ||
+        error?.response?.data?.message ||
+        "Error al crear la transacción pendiente",
     );
   }
 };
@@ -40,8 +42,9 @@ export const deletePendingTransactionRequest = async (id: string) => {
     return res.data;
   } catch (error: any) {
     throw new Error(
-      error?.response?.data?.message ||
-      "Error al eliminar la transacción pendiente",
+      error?.response?.data?.error?.message ||
+        error?.response?.data?.message ||
+        "Error al eliminar la transacción pendiente",
     );
   }
 };
@@ -66,8 +69,9 @@ export const updatePendingTransactionRequest = async (
     return res.data;
   } catch (error: any) {
     throw new Error(
-      error?.response?.data?.message ||
-      "Error al actualizar la transacción pendiente",
+      error?.response?.data?.error?.message ||
+        error?.response?.data?.message ||
+        "Error al actualizar la transacción pendiente",
     );
   }
 };
@@ -75,7 +79,8 @@ export const updatePendingTransactionRequest = async (
 export const markAsPaidRequest = async (
   id: string,
   data: {
-    status: "PENDING" | "PAID",
+    status: "PENDING" | "PAID";
+    ignoreLiquidity?: boolean;
   },
 ) => {
   try {
@@ -83,7 +88,9 @@ export const markAsPaidRequest = async (
     return res.data;
   } catch (error: any) {
     throw new Error(
-      error?.response?.data?.message || "Error al Mover a cuentas pendientes",
+      error?.response?.data?.error?.message ||
+        error?.response?.data?.message ||
+        "Error al Mover a cuentas pendientes",
     );
   }
 };

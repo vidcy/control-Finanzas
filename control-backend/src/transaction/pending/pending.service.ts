@@ -181,41 +181,43 @@ export class PendingTransactionService {
 
     if (dto.status === 'PAID' && existing.status !== 'PAID') {
       if (existing.type === 'EXPENSE') {
-        const ownerId = await this.prisma.user.findUnique({
-          where: { id: existing.userId },
-          select: { parentId: true },
-        }).then(user => user?.parentId || existing.userId);
+        if (!dto.ignoreLiquidity) {
+          const ownerId = await this.prisma.user.findUnique({
+            where: { id: existing.userId },
+            select: { parentId: true },
+          }).then(user => user?.parentId || existing.userId);
 
-        const txs = await this.prisma.transaction.findMany({
-          where: {
-            OR: [{ userId: ownerId }, { user: { parentId: ownerId } }],
-            workspace: existing.workspace,
-            status: 'PAID',
-          },
-          select: {
-            type: true,
-            amountSoles: true,
-            amount: true,
-          },
-        });
+          const aggregates = await this.prisma.transaction.groupBy({
+            by: ['type'],
+            where: {
+              OR: [{ userId: ownerId }, { user: { parentId: ownerId } }],
+              workspace: existing.workspace,
+              status: 'PAID',
+            },
+            _sum: {
+              amountSoles: true,
+              amount: true,
+            },
+          });
 
-        let income = 0;
-        let expense = 0;
-        for (const t of txs) {
-          const amt = t.amountSoles !== null && t.amountSoles !== undefined ? t.amountSoles : t.amount;
-          if (t.type === 'INCOME') {
-            income += amt;
-          } else {
-            expense += amt;
+          let income = 0;
+          let expense = 0;
+          for (const group of aggregates) {
+            const sum = group._sum.amountSoles ?? group._sum.amount ?? 0;
+            if (group.type === 'INCOME') {
+              income = sum;
+            } else if (group.type === 'EXPENSE') {
+              expense = sum;
+            }
           }
-        }
-        const currentLiquidity = income - expense;
+          const currentLiquidity = income - expense;
 
-        const amtToCheck = existing.amountSoles !== null && existing.amountSoles !== undefined ? existing.amountSoles : existing.amount;
-        if (amtToCheck > currentLiquidity) {
-          throw new BadRequestException(
-            `Límite de liquidez superado. No tiene suficiente liquidez en caja para realizar este pago. Liquidez disponible: S/ ${currentLiquidity.toFixed(2)}.`,
-          );
+          const amtToCheck = existing.amountSoles !== null && existing.amountSoles !== undefined ? existing.amountSoles : existing.amount;
+          if (amtToCheck > currentLiquidity) {
+            throw new BadRequestException(
+              `Límite de liquidez superado. No tiene suficiente liquidez en caja para realizar este pago. Liquidez disponible: S/ ${currentLiquidity.toFixed(2)}.`,
+            );
+          }
         }
       }
     }

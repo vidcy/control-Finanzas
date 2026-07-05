@@ -21,6 +21,7 @@ enum Role {
 enum TransactionType {
   INCOME // dinero que entra
   EXPENSE // dinero que sale
+  TRANSFER // transferencia interna
 }
 
 // =========================
@@ -217,6 +218,9 @@ model Transaction {
   isPosSale   Boolean    @default(false)
   cashShiftId String?
   cashShift   CashShift? @relation("CashShiftTransactions", fields: [cashShiftId], references: [id], onDelete: SetNull)
+
+  originAccount      String?
+  destinationAccount String?
 
   // ⏱ CONTROL
   createdAt DateTime @default(now())

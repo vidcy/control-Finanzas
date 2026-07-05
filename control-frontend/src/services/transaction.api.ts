@@ -16,13 +16,16 @@ export const createTransactionRequest = async (data: {
   description?: string;
   workspace?: string;
   receiptUrl?: string | null;
+  ignoreLiquidity?: boolean;
 }) => {
   try {
     const res = await API.post("/transactions", data);
     return res.data;
   } catch (error: any) {
     throw new Error(
-      error?.response?.data?.message || "Error al crear la transacción",
+      error?.response?.data?.error?.message ||
+        error?.response?.data?.message ||
+        "Error al crear la transacción",
     );
   }
 };
@@ -42,7 +45,9 @@ export const getTransactionsRequest = async (params?: GetTransactionsParams) => 
     return res.data;
   } catch (error: any) {
     throw new Error(
-      error?.response?.data?.message || "Error al obtener las transacciones",
+      error?.response?.data?.error?.message ||
+        error?.response?.data?.message ||
+        "Error al obtener las transacciones",
     );
   }
 };
@@ -53,7 +58,9 @@ export const getTransactionRequestId = async (id: string) => {
     return res.data;
   } catch (error: any) {
     throw new Error(
-      error?.response?.data?.message || "Error al obtener la transacción",
+      error?.response?.data?.error?.message ||
+        error?.response?.data?.message ||
+        "Error al obtener la transacción",
     );
   }
 };
@@ -73,6 +80,7 @@ export const updateTransactionRequest = async (
     description?: string;
     name?: string;
     receiptUrl?: string | null;
+    ignoreLiquidity?: boolean;
   },
 ) => {
   try {
@@ -88,7 +96,9 @@ export const updateTransactionRequest = async (
     return res.data;
   } catch (error: any) {
     throw new Error(
-      error?.response?.data?.message || "Error al actualizar la transacción",
+      error?.response?.data?.error?.message ||
+        error?.response?.data?.message ||
+        "Error al actualizar la transacción",
     );
   }
 };
@@ -99,7 +109,9 @@ export const deleteTransactionRequest = async (id: string) => {
     return res.data;
   } catch (error: any) {
     throw new Error(
-      error?.response?.data?.message || "Error al eliminar la transacción",
+      error?.response?.data?.error?.message ||
+        error?.response?.data?.message ||
+        "Error al eliminar la transacción",
     );
   }
 };
@@ -112,7 +124,9 @@ export const markAsPendingRequest = async (
     return res.data;
   } catch (error: any) {
     throw new Error(
-      error?.response?.data?.message || "Error al Mover a cuentas pendientes",
+      error?.response?.data?.error?.message ||
+        error?.response?.data?.message ||
+        "Error al Mover a cuentas pendientes",
     );
   }
 };

@@ -12,21 +12,25 @@ export class AnalyticsService {
    */
   async getProfitMargin(userId: string) {
     // 1. Transaction-based financial margin
-    const transactions = await this.prisma.transaction.findMany({
+    const aggregates = await this.prisma.transaction.groupBy({
+      by: ['type'],
       where: {
         userId,
         status: 'PAID',
+      },
+      _sum: {
+        amount: true,
       },
     });
 
     let totalIncome = 0;
     let totalExpense = 0;
 
-    for (const tx of transactions) {
-      if (tx.type === 'INCOME') {
-        totalIncome += tx.amount;
-      } else if (tx.type === 'EXPENSE') {
-        totalExpense += tx.amount;
+    for (const group of aggregates) {
+      if (group.type === 'INCOME') {
+        totalIncome = group._sum.amount ?? 0;
+      } else if (group.type === 'EXPENSE') {
+        totalExpense = group._sum.amount ?? 0;
       }
     }
 
@@ -187,13 +191,11 @@ export class AnalyticsService {
   async getAiAdvice(userId: string) {
     const thirtyDaysAgo = subDays(new Date(), 30);
 
-    // Fetch transactions
-    const txs = await this.prisma.transaction.findMany({
+    const totalCount = await this.prisma.transaction.count({
       where: { userId, status: 'PAID' },
-      include: { category: true },
     });
 
-    if (txs.length === 0) {
+    if (totalCount === 0) {
       return [
         {
           type: 'INFO',
@@ -206,8 +208,61 @@ export class AnalyticsService {
       ];
     }
 
-    // Get current balance/liquidity
+    // Get current balance/liquidity via aggregates
+    const aggregates = await this.prisma.transaction.groupBy({
+      by: ['type'],
+      where: { userId, status: 'PAID' },
+      _sum: { amount: true },
+    });
+
     let currentBalance = 0;
+    for (const group of aggregates) {
+      const sum = group._sum.amount ?? 0;
+      if (group.type === 'INCOME') {
+        currentBalance += sum;
+      } else if (group.type === 'EXPENSE') {
+        currentBalance -= sum;
+      }
+    }
+
+    // Calcular y restar ahorros en el Chanchito
+    const savingsIn = await this.prisma.transaction.aggregate({
+      _sum: { amount: true },
+      where: {
+        userId,
+        status: 'PAID',
+        type: 'TRANSFER',
+        destinationAccount: {
+          contains: 'chanchito',
+        },
+      },
+    });
+
+    const savingsOut = await this.prisma.transaction.aggregate({
+      _sum: { amount: true },
+      where: {
+        userId,
+        status: 'PAID',
+        type: 'TRANSFER',
+        originAccount: {
+          contains: 'chanchito',
+        },
+      },
+    });
+
+    const chanchitoBalance = (savingsIn._sum.amount ?? 0) - (savingsOut._sum.amount ?? 0);
+    currentBalance -= chanchitoBalance;
+
+    // Fetch transactions only from the last 30 days
+    const txs = await this.prisma.transaction.findMany({
+      where: {
+        userId,
+        status: 'PAID',
+        date: { gte: thirtyDaysAgo },
+      },
+      include: { category: true },
+    });
+
     let last30DaysExpense = 0;
     let last30DaysIncome = 0;
 
@@ -215,24 +270,18 @@ export class AnalyticsService {
       {};
 
     for (const tx of txs) {
-      const isLast30Days = tx.date >= thirtyDaysAgo;
-
       if (tx.type === 'INCOME') {
-        currentBalance += tx.amount;
-        if (isLast30Days) last30DaysIncome += tx.amount;
+        last30DaysIncome += tx.amount;
       } else {
-        currentBalance -= tx.amount;
-        if (isLast30Days) {
-          last30DaysExpense += tx.amount;
-          const catId = tx.categoryId;
-          if (!categorySpending[catId]) {
-            categorySpending[catId] = {
-              name: tx.category?.name || 'Otros',
-              amount: 0,
-            };
-          }
-          categorySpending[catId].amount += tx.amount;
+        last30DaysExpense += tx.amount;
+        const catId = tx.categoryId;
+        if (!categorySpending[catId]) {
+          categorySpending[catId] = {
+            name: tx.category?.name || 'Otros',
+            amount: 0,
+          };
         }
+        categorySpending[catId].amount += tx.amount;
       }
     }
 

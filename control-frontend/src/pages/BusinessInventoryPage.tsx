@@ -31,6 +31,7 @@ import {
   PackagePlus,
   X,
   CreditCard,
+  AlertCircle,
 } from "lucide-react";
 import {
   getProductsRequest,
@@ -205,6 +206,8 @@ export default function BusinessInventoryPage() {
   const [productIdToDelete, setProductIdToDelete] = useState<string | null>(
     null,
   );
+  const [showLiquidityWarning, setShowLiquidityWarning] = useState(false);
+  const [pendingAction, setPendingAction] = useState<(() => Promise<void>) | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
 
   // Stock Management Modal (Branch Adjustments & Transfers)
@@ -1207,29 +1210,44 @@ export default function BusinessInventoryPage() {
       return;
     }
 
-    try {
-      await restockProductRequest(restockProduct.id, {
-        quantity: restockData.quantity,
-        presentationId: restockData.presentationId || undefined,
-        totalCost: restockData.totalCost,
-        categoryId: restockData.categoryId,
-        paymentMethod: restockData.paymentMethod,
-      });
+    const executeRestock = async (ignoreLiquidity = false) => {
+      try {
+        await restockProductRequest(restockProduct.id, {
+          quantity: restockData.quantity,
+          presentationId: restockData.presentationId || undefined,
+          totalCost: restockData.totalCost,
+          categoryId: restockData.categoryId,
+          paymentMethod: restockData.paymentMethod,
+          ignoreLiquidity,
+        } as any);
 
-      toast.success("Stock repuesto y egreso registrado contablemente");
-      setIsRestockModalOpen(false);
-      setRestockData({
-        quantity: 0,
-        presentationId: "",
-        totalCost: 0,
-        categoryId: "",
-        paymentMethod: "CASH",
-      });
-      loadData();
-      if (activeTab === "planner") loadPlannerData();
-    } catch (error: any) {
-      toast.error(error?.response?.data?.message || "Error al reponer stock");
-    }
+        toast.success("Stock repuesto y egreso registrado contablemente");
+        setIsRestockModalOpen(false);
+        setRestockData({
+          quantity: 0,
+          presentationId: "",
+          totalCost: 0,
+          categoryId: "",
+          paymentMethod: "CASH",
+        });
+        loadData();
+        if (activeTab === "planner") loadPlannerData();
+      } catch (error: any) {
+        const message =
+          error?.response?.data?.error?.message ||
+          error?.response?.data?.message ||
+          error?.message ||
+          "Error al reponer stock";
+        if (message.toLowerCase().includes("liquidez")) {
+          setPendingAction(() => () => executeRestock(true));
+          setShowLiquidityWarning(true);
+        } else {
+          toast.error(message);
+        }
+      }
+    };
+
+    await executeRestock(false);
   };
 
   const handleDelete = async (id: string) => {
@@ -1313,52 +1331,65 @@ export default function BusinessInventoryPage() {
       0,
     );
 
-    const submitToast = toast.loading("Registrando compra/pedido...");
-    try {
-      let finalReceiptUrl = "";
-      if (bulkPurchaseFile) {
-        finalReceiptUrl = await uploadProductImageFile(bulkPurchaseFile);
+    const executeBulkPurchase = async (ignoreLiquidity = false) => {
+      const submitToast = toast.loading("Registrando compra/pedido...");
+      try {
+        let finalReceiptUrl = "";
+        if (bulkPurchaseFile) {
+          finalReceiptUrl = await uploadProductImageFile(bulkPurchaseFile);
+        }
+
+        await createPurchaseOrderRequest({
+          items: itemsToBuy,
+          totalCost,
+          categoryId: bulkPurchaseData.categoryId,
+          subCategoryId: bulkPurchaseData.subCategoryId || null,
+          paymentMethod: bulkPurchaseData.paymentMethod,
+          receiptUrl: finalReceiptUrl || null,
+          receiveImmediately: bulkPurchaseData.receiveImmediately,
+          ignoreLiquidity,
+        } as any);
+
+        toast.dismiss(submitToast);
+        toast.success(
+          bulkPurchaseData.receiveImmediately
+            ? "Compra registrada e ingresada al stock"
+            : "Pedido de compra registrado. Podrás confirmar el pago cuando esté listo.",
+        );
+        setIsBulkPurchaseModalOpen(false);
+        // Reset state
+        setSelectedItemIds([]);
+        setSinglePurchaseItem(null);
+        setBulkPurchaseFile(null);
+        setExtraPlannerItems([]);
+        setBulkPurchaseData({
+          categoryId: "",
+          subCategoryId: "",
+          paymentMethod: "CASH",
+          receiptUrl: "",
+          receiveImmediately: false,
+        });
+        loadData();
+        loadPlannerData();
+        loadOrders();
+        fetchTreasuryLiquidity();
+      } catch (err: any) {
+        toast.dismiss(submitToast);
+        const message =
+          err?.response?.data?.error?.message ||
+          err?.response?.data?.message ||
+          err?.message ||
+          "Error al registrar la compra";
+        if (message.toLowerCase().includes("liquidez")) {
+          setPendingAction(() => () => executeBulkPurchase(true));
+          setShowLiquidityWarning(true);
+        } else {
+          toast.error(message);
+        }
       }
+    };
 
-      await createPurchaseOrderRequest({
-        items: itemsToBuy,
-        totalCost,
-        categoryId: bulkPurchaseData.categoryId,
-        subCategoryId: bulkPurchaseData.subCategoryId || null,
-        paymentMethod: bulkPurchaseData.paymentMethod,
-        receiptUrl: finalReceiptUrl || null,
-        receiveImmediately: bulkPurchaseData.receiveImmediately,
-      });
-
-      toast.dismiss(submitToast);
-      toast.success(
-        bulkPurchaseData.receiveImmediately
-          ? "Compra registrada e ingresada al stock"
-          : "Pedido de compra registrado. Podrás confirmar el pago cuando esté listo.",
-      );
-      setIsBulkPurchaseModalOpen(false);
-      // Reset state
-      setSelectedItemIds([]);
-      setSinglePurchaseItem(null);
-      setBulkPurchaseFile(null);
-      setExtraPlannerItems([]);
-      setBulkPurchaseData({
-        categoryId: "",
-        subCategoryId: "",
-        paymentMethod: "CASH",
-        receiptUrl: "",
-        receiveImmediately: false,
-      });
-      loadData();
-      loadPlannerData();
-      loadOrders();
-      fetchTreasuryLiquidity();
-    } catch (err: any) {
-      toast.dismiss(submitToast);
-      toast.error(
-        err?.response?.data?.message || "Error al registrar la compra",
-      );
-    }
+    await executeBulkPurchase(false);
   };
 
   const handleEditOrderSubmit = async (e: React.FormEvent) => {
@@ -1541,15 +1572,7 @@ export default function BusinessInventoryPage() {
       return;
     }
 
-    // Double check liquidity
-    if (treasuryLiquidity !== null && payingOrderTotal > treasuryLiquidity) {
-      toast.error(
-        "No se puede registrar el pago. Fondos insuficientes en Tesorería.",
-      );
-      return;
-    }
-
-    const confirmPay = async (withoutReceipt: boolean) => {
+    const confirmPay = async (withoutReceipt: boolean, ignoreLiquidity = false) => {
       const t = toast.loading("Registrando pago...");
       try {
         let finalReceiptUrl: string | null = null;
@@ -1561,7 +1584,8 @@ export default function BusinessInventoryPage() {
           subCategoryId: payOrderData.subCategoryId || null,
           paymentMethod: payOrderData.paymentMethod,
           receiptUrl: finalReceiptUrl || null,
-        });
+          ignoreLiquidity,
+        } as any);
         toast.dismiss(t);
         toast.success(
           withoutReceipt
@@ -1576,9 +1600,17 @@ export default function BusinessInventoryPage() {
         fetchTreasuryLiquidity();
       } catch (err: any) {
         toast.dismiss(t);
-        toast.error(
-          err?.response?.data?.message || "Error al registrar el pago",
-        );
+        const message =
+          err?.response?.data?.error?.message ||
+          err?.response?.data?.message ||
+          err?.message ||
+          "Error al registrar el pago";
+        if (message.toLowerCase().includes("liquidez")) {
+          setPendingAction(() => () => confirmPay(withoutReceipt, true));
+          setShowLiquidityWarning(true);
+        } else {
+          toast.error(message);
+        }
       }
     };
 
@@ -6187,6 +6219,23 @@ export default function BusinessInventoryPage() {
         confirmText="Eliminar Producto"
         cancelText="Cancelar"
         variant="danger"
+      />
+
+      <ConfirmModal
+        isOpen={showLiquidityWarning}
+        onClose={() => setShowLiquidityWarning(false)}
+        onConfirm={async () => {
+          setShowLiquidityWarning(false);
+          if (pendingAction) {
+            await pendingAction();
+          }
+        }}
+        title="Saldo Insuficiente"
+        message="No tienes saldo para esto, si das en continuar, tu saldo será negativo y estarás registrando, ¿deseas continuar?"
+        confirmText="Sí, continuar"
+        cancelText="Cancelar"
+        variant="warning"
+        buttonIcon={<AlertCircle className="w-5 h-5" />}
       />
 
       <ConfirmModal

@@ -22,6 +22,12 @@ import {
   RotateCcw,
   Search,
   XCircle,
+  AlertCircle,
+  Tag,
+  ChevronDown,
+  Coins,
+  CheckCircle,
+  Clock,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
@@ -52,6 +58,8 @@ export default function BusinessFinancePage() {
   // Cancel purchase order states
   const [isCancelOrderConfirmOpen, setIsCancelOrderConfirmOpen] = useState(false);
   const [orderToCancel, setOrderToCancel] = useState<{ id: string; txId: string } | null>(null);
+  const [showLiquidityWarning, setShowLiquidityWarning] = useState(false);
+  const [pendingAction, setPendingAction] = useState<(() => Promise<void>) | null>(null);
 
   // Filter States
   const [searchTerm, setSearchTerm] = useState("");
@@ -75,6 +83,8 @@ export default function BusinessFinancePage() {
     currency: "PEN" as "PEN" | "USD",
     exchangeRate: 1,
     branchId: "",
+    justified: false,
+    programmed: false,
   });
 
 
@@ -135,68 +145,83 @@ export default function BusinessFinancePage() {
       return;
     }
 
-    try {
-      let finalReceiptUrl = formData.receiptUrl;
-      if (formData.receiptUrl instanceof File) {
-        const uploadToast = toast.loading("Subiendo comprobante...");
-        try {
-          finalReceiptUrl = await uploadReceiptFile(formData.receiptUrl);
-          toast.dismiss(uploadToast);
-        } catch {
-          toast.dismiss(uploadToast);
-          toast.error("Error al subir el comprobante");
-          return;
+    const executeSubmit = async (ignoreLiquidity = false) => {
+      try {
+        let finalReceiptUrl = formData.receiptUrl;
+        if (formData.receiptUrl instanceof File) {
+          const uploadToast = toast.loading("Subiendo comprobante...");
+          try {
+            finalReceiptUrl = await uploadReceiptFile(formData.receiptUrl);
+            toast.dismiss(uploadToast);
+          } catch {
+            toast.dismiss(uploadToast);
+            toast.error("Error al subir el comprobante");
+            return;
+          }
+        }
+
+        const txPayload = {
+          name:
+            formData.name ||
+            (type === "INCOME" ? "Inyección de Capital" : "Gasto Operativo"),
+          amount: formData.amount,
+          categoryId: formData.categoryId,
+          subCategoryId: formData.subCategoryId || null,
+          paymentMethod: formData.paymentMethod,
+          description: formData.description,
+          receiptUrl: (finalReceiptUrl || null) as any,
+          currency: formData.currency,
+          exchangeRate: formData.currency === "USD" ? formData.exchangeRate : 1,
+          date: editingTransaction ? new Date(editingTransaction.date) : new Date(),
+          branchId: formData.branchId || null,
+          ignoreLiquidity,
+          justified: formData.justified,
+          programmed: formData.programmed,
+        };
+
+        if (editingTransaction) {
+          await updateTransactionRequest(editingTransaction.id, txPayload);
+          toast.success("Operación actualizada con éxito");
+        } else {
+          await createTransactionRequest({
+            ...txPayload,
+            type,
+            status: "PAID",
+            workspace: "BUSINESS",
+            date: txPayload.date.toISOString(),
+          } as any);
+          toast.success("Operación registrada con éxito");
+        }
+
+        setIsModalOpen(false);
+        setEditingTransaction(null);
+        setFormData({
+          name: "",
+          amount: 0,
+          categoryId: "",
+          subCategoryId: "",
+          paymentMethod: "CASH",
+          description: "",
+          receiptUrl: null,
+          currency: "PEN",
+          exchangeRate: 1,
+          branchId: "",
+          justified: false,
+          programmed: false,
+        });
+        loadData();
+      } catch (error: any) {
+        const message = error?.message || (editingTransaction ? "Error al actualizar operación" : "Error al registrar operación");
+        if (message.toLowerCase().includes("liquidez")) {
+          setPendingAction(() => () => executeSubmit(true));
+          setShowLiquidityWarning(true);
+        } else {
+          toast.error(message);
         }
       }
+    };
 
-      const txPayload = {
-        name:
-          formData.name ||
-          (type === "INCOME" ? "Inyección de Capital" : "Gasto Operativo"),
-        amount: formData.amount,
-        categoryId: formData.categoryId,
-        subCategoryId: formData.subCategoryId || null,
-        paymentMethod: formData.paymentMethod,
-        description: formData.description,
-        receiptUrl: (finalReceiptUrl || null) as any,
-        currency: formData.currency,
-        exchangeRate: formData.currency === "USD" ? formData.exchangeRate : 1,
-        date: editingTransaction ? new Date(editingTransaction.date) : new Date(),
-        branchId: formData.branchId || null,
-      };
-
-      if (editingTransaction) {
-        await updateTransactionRequest(editingTransaction.id, txPayload);
-        toast.success("Operación actualizada con éxito");
-      } else {
-        await createTransactionRequest({
-          ...txPayload,
-          type,
-          status: "PAID",
-          workspace: "BUSINESS",
-          date: txPayload.date.toISOString(),
-        } as any);
-        toast.success("Operación registrada con éxito");
-      }
-
-      setIsModalOpen(false);
-      setEditingTransaction(null);
-      setFormData({
-        name: "",
-        amount: 0,
-        categoryId: "",
-        subCategoryId: "",
-        paymentMethod: "CASH",
-        description: "",
-        receiptUrl: null,
-        currency: "PEN",
-        exchangeRate: 1,
-        branchId: "",
-      });
-      loadData();
-    } catch (error) {
-      toast.error(editingTransaction ? "Error al actualizar operación" : "Error al registrar operación");
-    }
+    await executeSubmit(false);
   };
 
   const handleEditClick = (t: any) => {
@@ -213,6 +238,8 @@ export default function BusinessFinancePage() {
       currency: t.currency || "PEN",
       exchangeRate: t.exchangeRate || 1,
       branchId: t.branchId || "",
+      justified: t.justified || false,
+      programmed: t.programmed || false,
     });
     setIsModalOpen(true);
   };
@@ -926,6 +953,8 @@ export default function BusinessFinancePage() {
             currency: "PEN",
             exchangeRate: 1,
             branchId: "",
+            justified: false,
+            programmed: false,
           });
         }}
         title={
@@ -933,187 +962,322 @@ export default function BusinessFinancePage() {
             ? (type === "INCOME" ? "Editar Ingreso de Tesorería" : "Editar Gasto Operativo")
             : (type === "INCOME" ? "Registrar Inyección de Capital" : "Registrar Gasto Operativo")
         }
+        maxWidth="max-w-4xl"
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1">
-              Título del Movimiento
-            </label>
-            <input
-              type="text"
-              value={formData.name}
-              onChange={(e) =>
-                setFormData({ ...formData, name: e.target.value })
-              }
-              className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-              placeholder={
-                type === "INCOME"
-                  ? "Ej. Préstamo Reactiva, Aporte Socio A"
-                  : "Ej. Alquiler Local, Pago Luz, Sueldo Empleado"
-              }
-            />
-          </div>
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Left Column: Classification, Branch, and Switches */}
+            <div className={`p-5 rounded-[2.5rem] border space-y-5 shadow-sm ${
+              type === "INCOME" 
+                ? "bg-emerald-50/20 border-emerald-100/40" 
+                : "bg-rose-50/20 border-rose-100/40"
+            }`}>
+              <div className="flex items-center gap-2 pb-1 border-b border-gray-100/10">
+                <div className={`p-1.5 rounded-xl ${
+                  type === "INCOME" ? "bg-emerald-100 text-emerald-600 animate-pulse" : "bg-rose-100 text-rose-600 animate-pulse"
+                }`}>
+                  <Tag className="w-3.5 h-3.5" />
+                </div>
+                <span className={`text-[10px] font-black uppercase tracking-widest ${
+                  type === "INCOME" ? "text-emerald-900" : "text-rose-900"
+                }`}>
+                  Clasificación & Ubicación
+                </span>
+              </div>
 
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1 font-bold">
-              Sede / Sucursal
-            </label>
-            <select
-              value={formData.branchId || ""}
-              onChange={(e) =>
-                setFormData({ ...formData, branchId: e.target.value })
-              }
-              className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-semibold text-gray-700 cursor-pointer"
-            >
-              <option value="">Sede Central (Matriz)</option>
-              {branches.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Moneda
-              </label>
-              <select
-                value={formData.currency}
-                onChange={(e) => {
-                  const curr = e.target.value as "PEN" | "USD";
-                  setFormData({
-                    ...formData,
-                    currency: curr,
-                    exchangeRate: curr === "PEN" ? 1 : 3.75,
-                  });
-                }}
-                className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm font-semibold text-gray-700 cursor-pointer"
-              >
-                <option value="PEN">PEN</option>
-                <option value="USD">USD</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                T.C.
-              </label>
-              <input
-                type="number"
-                step="0.001"
-                disabled={formData.currency === "PEN"}
-                value={formData.exchangeRate}
-                onChange={(e) =>
-                  setFormData({ ...formData, exchangeRate: Number(e.target.value) })
-                }
-                className={`w-full px-3 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm font-semibold ${
-                  formData.currency === "USD"
-                    ? "bg-blue-50 border-blue-200 text-blue-700 font-bold"
-                    : "bg-gray-50 border-gray-100 text-gray-400"
-                }`}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Importe
-              </label>
-              <input
-                type="number"
-                required
-                min="0.1"
-                step="0.01"
-                value={formData.amount || ""}
-                onChange={(e) =>
-                  setFormData({ ...formData, amount: Number(e.target.value) })
-                }
-                className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Método
-              </label>
-              <select
-                value={formData.paymentMethod}
-                onChange={(e) =>
-                  setFormData({ ...formData, paymentMethod: e.target.value })
-                }
-                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
-              >
-                <option value="CASH">Efectivo</option>
-                <option value="TRANSFER">Transferencia</option>
-                <option value="CARD">Tarjeta</option>
-                <option value="YAPE">Yape/Plin</option>
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1">
-              Categoría
-            </label>
-            <select
-              required
-              value={formData.categoryId}
-              onChange={(e) =>
-                setFormData({ ...formData, categoryId: e.target.value })
-              }
-              className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-            >
-              <option value="">Selecciona una categoría...</option>
-              {filteredCategories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-            {filteredCategories.length === 0 && (
-              <p className="text-xs text-rose-500 mt-1">
-                No tienes categorías de este tipo. Debes crear una primero en el
-                módulo de Categorías.
-              </p>
-            )}
-          </div>
-          {subcategories.length > 0 && (
-              <div className="space-y-1">
-                <label className="text-sm font-semibold text-gray-700">
-                  Subcategoría (Opcional)
+              <div className="space-y-1.5">
+                <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                  Título del Movimiento
                 </label>
-                <select
-                  value={formData.subCategoryId}
+                <input
+                  type="text"
+                  required
+                  value={formData.name}
                   onChange={(e) =>
-                    setFormData({ ...formData, subCategoryId: e.target.value })
+                    setFormData({ ...formData, name: e.target.value })
                   }
-                  className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                >
-                <option value="">Selecciona una subcategoría...</option>
-                {subcategories.map((sub: any) => (
-                  <option key={sub.id} value={sub.id}>
-                    {sub.name}
-                  </option>
-                ))}
-              </select>
+                  className={`w-full px-4 py-3 bg-white border border-gray-100 rounded-2xl outline-none focus:ring-4 transition-all text-sm font-bold text-gray-700 shadow-sm ${
+                    type === "INCOME" ? "focus:ring-emerald-500/10 focus:border-emerald-500" : "focus:ring-rose-500/10 focus:border-rose-500"
+                  }`}
+                  placeholder={
+                    type === "INCOME"
+                      ? "Ej. Préstamo Reactiva, Aporte Socio A"
+                      : "Ej. Alquiler Local, Pago Luz, Sueldo Empleado"
+                  }
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                  Sede / Sucursal
+                </label>
+                <div className="relative">
+                  <select
+                    value={formData.branchId || ""}
+                    onChange={(e) =>
+                      setFormData({ ...formData, branchId: e.target.value })
+                    }
+                    className={`w-full px-4 py-3 bg-white border border-gray-100 rounded-2xl outline-none focus:ring-4 transition-all text-sm font-bold text-gray-700 appearance-none shadow-sm cursor-pointer ${
+                      type === "INCOME" ? "focus:ring-emerald-500/10 focus:border-emerald-500" : "focus:ring-rose-500/10 focus:border-rose-500"
+                    }`}
+                  >
+                    <option value="">Sede Central (Matriz)</option>
+                    {branches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-4 h-4 text-gray-300 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                  Categoría
+                </label>
+                <div className="relative">
+                  <select
+                    required
+                    value={formData.categoryId}
+                    onChange={(e) =>
+                      setFormData({ ...formData, categoryId: e.target.value })
+                    }
+                    className={`w-full px-4 py-3 bg-white border border-gray-100 rounded-2xl outline-none focus:ring-4 transition-all text-sm font-bold text-gray-700 appearance-none shadow-sm cursor-pointer ${
+                      type === "INCOME" ? "focus:ring-emerald-500/10 focus:border-emerald-500" : "focus:ring-rose-500/10 focus:border-rose-500"
+                    }`}
+                  >
+                    <option value="">Selecciona una categoría...</option>
+                    {filteredCategories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-4 h-4 text-gray-300 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
+                {filteredCategories.length === 0 && (
+                  <p className="text-xs text-rose-500 mt-1 font-bold">
+                    No tienes categorías de este tipo. Debes crear una primero en el módulo de Categorías.
+                  </p>
+                )}
+              </div>
+
+              {subcategories.length > 0 && (
+                <div className="space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-300">
+                  <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                    Subcategoría (Opcional)
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={formData.subCategoryId}
+                      onChange={(e) =>
+                        setFormData({ ...formData, subCategoryId: e.target.value })
+                      }
+                      className={`w-full px-4 py-3 bg-white border border-gray-100 rounded-2xl outline-none focus:ring-4 transition-all text-sm font-bold text-gray-700 appearance-none shadow-sm cursor-pointer ${
+                        type === "INCOME" ? "focus:ring-emerald-500/10 focus:border-emerald-500" : "focus:ring-rose-500/10 focus:border-rose-500"
+                      }`}
+                    >
+                      <option value="">Selecciona una subcategoría...</option>
+                      {subcategories.map((sub: any) => (
+                        <option key={sub.id} value={sub.id}>
+                          {sub.name}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-gray-300 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </div>
+                </div>
+              )}
+
+              {/* Flags/Switches Group */}
+              <div className="bg-white/40 p-4 rounded-2xl border border-white/60 space-y-3 shadow-inner">
+                <label className="flex items-center justify-between cursor-pointer group">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle
+                      className={`w-4 h-4 transition-colors ${formData.justified ? "text-emerald-500" : "text-gray-300"}`}
+                    />
+                    <div className="flex flex-col">
+                      <span className={`text-[10px] font-black uppercase tracking-widest ${formData.justified ? "text-emerald-700" : "text-gray-400"}`}>
+                        Gasto Justificado
+                      </span>
+                      <span className="text-[8px] text-gray-400 font-bold uppercase tracking-tight">Tiene sustento o comprobante</span>
+                    </div>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={formData.justified}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          justified: e.target.checked,
+                        })
+                      }
+                    />
+                    <div className="w-9 h-5 bg-gray-200/80 rounded-full peer peer-checked:bg-emerald-500 transition-all after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full shadow-sm"></div>
+                  </div>
+                </label>
+
+                <label className="flex items-center justify-between cursor-pointer group">
+                  <div className="flex items-center gap-2">
+                    <Clock
+                      className={`w-4 h-4 transition-colors ${formData.programmed ? "text-amber-500" : "text-gray-300"}`}
+                    />
+                    <div className="flex flex-col">
+                      <span className={`text-[10px] font-black uppercase tracking-widest ${formData.programmed ? "text-amber-700" : "text-gray-400"}`}>
+                        Gasto Programado
+                      </span>
+                      <span className="text-[8px] text-gray-400 font-bold uppercase tracking-tight">Es un pago programado/futuro</span>
+                    </div>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={formData.programmed}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          programmed: e.target.checked,
+                        })
+                      }
+                    />
+                    <div className="w-9 h-5 bg-gray-200/80 rounded-full peer peer-checked:bg-amber-500 transition-all after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full shadow-sm"></div>
+                  </div>
+                </label>
+              </div>
             </div>
-          )}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1">
-              Descripción (Opcional)
-            </label>
-            <textarea
-              value={formData.description}
-              onChange={(e) =>
-                setFormData({ ...formData, description: e.target.value })
-              }
-              className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
-              rows={3}
-            ></textarea>
+
+            {/* Right Column: Financial Details and Receipt */}
+            <div className="bg-indigo-50/20 p-5 rounded-[2.5rem] border border-indigo-100/40 space-y-5 shadow-sm">
+              <div className="flex items-center gap-2 pb-1 border-b border-gray-100/10">
+                <div className="p-1.5 bg-indigo-100 rounded-xl text-indigo-600">
+                  <Coins className="w-3.5 h-3.5 animate-bounce-slow" />
+                </div>
+                <span className="text-[10px] font-black text-indigo-900 uppercase tracking-widest">
+                  Detalles Financieros
+                </span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                    Moneda
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={formData.currency}
+                      onChange={(e) => {
+                        const curr = e.target.value as "PEN" | "USD";
+                        setFormData({
+                          ...formData,
+                          currency: curr,
+                          exchangeRate: curr === "PEN" ? 1 : 3.75,
+                        });
+                      }}
+                      className="w-full px-3 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-sm font-bold text-gray-700 appearance-none shadow-sm cursor-pointer"
+                    >
+                      <option value="PEN">PEN</option>
+                      <option value="USD">USD</option>
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-gray-300 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                    T.C.
+                  </label>
+                  <input
+                    type="number"
+                    step="0.001"
+                    disabled={formData.currency === "PEN"}
+                    value={formData.exchangeRate}
+                    onChange={(e) =>
+                      setFormData({ ...formData, exchangeRate: Number(e.target.value) })
+                    }
+                    className={`w-full px-3 py-3 border rounded-xl outline-none focus:ring-4 transition-all text-sm font-black shadow-sm ${
+                      formData.currency === "USD"
+                        ? "bg-blue-50 border-blue-200 text-blue-700 focus:ring-blue-500/10 focus:border-blue-500"
+                        : "bg-gray-50 border-gray-100 text-gray-400"
+                    }`}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                    Importe
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="0.1"
+                    step="0.01"
+                    value={formData.amount || ""}
+                    onChange={(e) =>
+                      setFormData({ ...formData, amount: Number(e.target.value) })
+                    }
+                    className={`w-full px-3 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 transition-all text-sm font-black shadow-sm ${
+                      type === "INCOME" ? "focus:ring-emerald-500/10 focus:border-emerald-500" : "focus:ring-rose-500/10 focus:border-rose-500"
+                    }`}
+                  />
+                </div>
+              </div>
+
+              {/* Payment Method Selector Grid */}
+              <div className="space-y-2">
+                <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                  Método de Pago
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {[
+                    { id: "CASH", label: "Efectivo" },
+                    { id: "TRANSFER", label: "Transf." },
+                    { id: "CARD", label: "Tarjeta" },
+                    { id: "YAPE", label: "Yape/Plin" },
+                  ].map((method) => (
+                    <button
+                      key={method.id}
+                      type="button"
+                      onClick={() =>
+                        setFormData({
+                          ...formData,
+                          paymentMethod: method.id as any,
+                        })
+                      }
+                      className={`py-3 rounded-2xl text-[9px] font-black uppercase tracking-tighter border transition-all ${
+                        formData.paymentMethod === method.id 
+                          ? "bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-200/50 scale-[1.03]" 
+                          : "bg-white text-gray-400 border-gray-100 hover:border-indigo-200 hover:text-gray-600"
+                      }`}
+                    >
+                      {method.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                  Descripción (Opcional)
+                </label>
+                <textarea
+                  value={formData.description}
+                  onChange={(e) =>
+                    setFormData({ ...formData, description: e.target.value })
+                  }
+                  className="w-full px-4 py-3 bg-white border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-sm font-semibold text-gray-700 shadow-sm resize-none"
+                  rows={2}
+                  placeholder="Detalles adicionales del movimiento..."
+                ></textarea>
+              </div>
+            </div>
           </div>
-          {/* Comprobante */}
-          <div>
+
+          {/* Comprobante de Pago Uploader */}
+          <div className="bg-gray-50/30 p-5 rounded-[2.5rem] border border-gray-100/60 shadow-sm">
             <ImageUploader
               currentImageUrl={formData.receiptUrl}
               onUploadSuccess={(url) => setFormData({ ...formData, receiptUrl: url })}
@@ -1121,7 +1285,9 @@ export default function BusinessFinancePage() {
               label="Comprobante de Pago / Factura"
             />
           </div>
-          <div className="pt-4 flex justify-end gap-3">
+
+          {/* Action Buttons */}
+          <div className="pt-4 flex justify-end gap-3 border-t border-gray-100">
             <button
               type="button"
               onClick={() => {
@@ -1138,16 +1304,22 @@ export default function BusinessFinancePage() {
                   currency: "PEN",
                   exchangeRate: 1,
                   branchId: "",
+                  justified: false,
+                  programmed: false,
                 });
               }}
-              className="px-5 py-2.5 bg-gray-100 text-gray-700 font-medium rounded-xl hover:bg-gray-200 transition-colors"
+              className="px-6 py-3 bg-slate-50 text-slate-500 font-black uppercase tracking-wider text-xs rounded-xl hover:bg-slate-100 border border-slate-100 transition-all"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={filteredCategories.length === 0}
-              className={`px-5 py-2.5 text-white font-medium rounded-xl transition-all ${type === "INCOME" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-rose-600 hover:bg-rose-700"}`}
+              className={`px-6 py-3 text-white font-black uppercase tracking-wider text-xs rounded-xl transition-all shadow-md ${
+                type === "INCOME" 
+                  ? "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200/50 hover:shadow-lg hover:shadow-emerald-200" 
+                  : "bg-rose-600 hover:bg-rose-700 shadow-rose-200/50 hover:shadow-lg hover:shadow-rose-200"
+              }`}
             >
               {editingTransaction ? "Guardar Cambios" : "Guardar Movimiento"}
             </button>
@@ -1218,6 +1390,23 @@ export default function BusinessFinancePage() {
         confirmText="Sí, Cancelar Compra"
         cancelText="No, Mantener"
         variant="danger"
+      />
+
+      <ConfirmModal
+        isOpen={showLiquidityWarning}
+        onClose={() => setShowLiquidityWarning(false)}
+        onConfirm={async () => {
+          setShowLiquidityWarning(false);
+          if (pendingAction) {
+            await pendingAction();
+          }
+        }}
+        title="Saldo Insuficiente"
+        message="No tienes saldo para esto, si das en continuar, tu saldo será negativo y estarás registrando, ¿deseas continuar?"
+        confirmText="Sí, continuar"
+        cancelText="Cancelar"
+        variant="warning"
+        buttonIcon={<AlertCircle className="w-5 h-5" />}
       />
     </Appshell>
   );

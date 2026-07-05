@@ -174,32 +174,62 @@ export class CategoriesService {
   }
 
   async seedDefaultCategories(userId: string) {
-    // 1️⃣ Evitar duplicados (si ya tiene categorías no cargamos nada)
-    const existing = await this.prisma.category.findFirst({
-      where: { userId },
+    let seededCount = 0;
+
+    // 1️⃣ Seed INCOME & EXPENSE if missing
+    const hasIncomeExpense = await this.prisma.category.findFirst({
+      where: { userId, type: { in: ['INCOME', 'EXPENSE'] } },
     });
 
-    if (existing) return { message: 'ya inicializado' };
+    if (!hasIncomeExpense) {
+      for (const type of ['INCOME', 'EXPENSE'] as const) {
+        for (const category of defaultCategories[type]) {
+          const parent = await this.prisma.category.create({
+            data: {
+              name: category.name,
+              type,
+              color: category.color,
+              userId,
+            },
+          });
 
-    // 2️⃣ recorrer tipos INCOME / EXPENSE
-    for (const type of ['INCOME', 'EXPENSE'] as const) {
-      for (const category of defaultCategories[type]) {
-        // 3️⃣ crear categoría padre
+          for (const sub of category.subcategories) {
+            await this.prisma.category.create({
+              data: {
+                name: sub.name,
+                type,
+                color: category.color,
+                parentId: parent.id,
+                userId,
+              },
+            });
+          }
+        }
+      }
+      seededCount += 2;
+    }
+
+    // 2️⃣ Seed TRANSFER if missing
+    const hasTransfer = await this.prisma.category.findFirst({
+      where: { userId, type: 'TRANSFER' },
+    });
+
+    if (!hasTransfer && defaultCategories.TRANSFER) {
+      for (const category of defaultCategories.TRANSFER) {
         const parent = await this.prisma.category.create({
           data: {
             name: category.name,
-            type,
+            type: 'TRANSFER',
             color: category.color,
             userId,
           },
         });
 
-        // 4️⃣ crear subcategorías hijas
         for (const sub of category.subcategories) {
           await this.prisma.category.create({
             data: {
               name: sub.name,
-              type,
+              type: 'TRANSFER',
               color: category.color,
               parentId: parent.id,
               userId,
@@ -207,8 +237,12 @@ export class CategoriesService {
           });
         }
       }
+      seededCount += 1;
     }
 
-    return { message: 'Estructura inicial cargada correctamente 🚀' };
+    if (seededCount > 0) {
+      return { message: 'Estructura inicial cargada correctamente 🚀' };
+    }
+    return { message: 'ya inicializado' };
   }
 }

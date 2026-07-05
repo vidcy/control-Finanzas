@@ -14,6 +14,7 @@ import {
 export enum TransactionType {
   INCOME = 'INCOME',
   EXPENSE = 'EXPENSE',
+  TRANSFER = 'TRANSFER',
 }
 
 export enum TransactionStatus {
@@ -131,4 +132,16 @@ export class CreateTransactionDto {
   @IsOptional()
   @IsNumber()
   commissionAmount?: number | null;
+
+  @IsOptional()
+  @IsBoolean()
+  ignoreLiquidity?: boolean;
+
+  @IsOptional()
+  @IsString()
+  originAccount?: string;
+
+  @IsOptional()
+  @IsString()
+  destinationAccount?: string;
 }

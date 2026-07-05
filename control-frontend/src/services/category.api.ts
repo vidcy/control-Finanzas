@@ -22,7 +22,7 @@ export const getCategoryByIdRequest = async (id: string) => {
 };
 export const createCategoryRequest = async (data: {
     name: string;
-    type: "INCOME" | "EXPENSE";
+    type: "INCOME" | "EXPENSE" | "TRANSFER";
     color?: string;
 }) => {
     try {
@@ -47,7 +47,7 @@ export const deleteCategoryRequest = async (id: string) => {
 export const createSubcategoryRequest = async (data: {
     name: string;
     parentId: string;
-    type: "INCOME" | "EXPENSE";
+    type: "INCOME" | "EXPENSE" | "TRANSFER";
     color?: string;
 }) => {
     try {
@@ -67,6 +67,17 @@ export const deleteSubcategoryRequest = async (id: string) => {
     } catch (error: any) {
         throw new Error(
             error?.response?.data?.message || "Error al eliminar la subcategoría"
+        );
+    }
+};
+
+export const seedDefaultCategoriesRequest = async () => {
+    try {
+        const res = await API.post("/categories/seed-default");
+        return res.data;
+    } catch (error: any) {
+        throw new Error(
+            error?.response?.data?.message || "Error al sembrar categorías por defecto"
         );
     }
 };

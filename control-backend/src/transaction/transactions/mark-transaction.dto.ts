@@ -36,4 +36,8 @@ export enum PaymentMethod {
 export class MarkAsPendingDto {
   @IsEnum(TransactionStatus)
   status: TransactionStatus;
+
+  @IsOptional()
+  @IsBoolean()
+  ignoreLiquidity?: boolean;
 }

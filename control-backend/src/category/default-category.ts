@@ -357,4 +357,25 @@ export const defaultCategories = {
       ],
     },
   ],
+  TRANSFER: [
+    {
+      name: 'Transferencia a Ahorro',
+      color: 'bg-emerald-600',
+      subcategories: [
+        { name: 'Chanchito' },
+        { name: 'Fondo de Emergencia' },
+        { name: 'Inversión Plazo Fijo' },
+      ],
+    },
+    {
+      name: 'Transferencia entre Cuentas',
+      color: 'bg-indigo-600',
+      subcategories: [
+        { name: 'Efectivo a Banco' },
+        { name: 'Banco a Efectivo' },
+        { name: 'Entre Bancos (BCP a Interbank)' },
+        { name: 'Billetera Digital (Yape/Plin)' },
+      ],
+    },
+  ],
 };

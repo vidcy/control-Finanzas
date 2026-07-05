@@ -33,15 +33,18 @@ export class TransactionService {
 
     // Validate liquidity for EXPENSE type
     const isPaid = dto.status === TransactionStatus.PAID || !dto.status; // defaults to PAID
-    if (dto.type === 'EXPENSE' && isPaid) {
-      const currentLiquidity = await this.getLiquidity(
-        userId,
-        dto.workspace || 'PERSONAL',
-      );
-      if (amountSoles > currentLiquidity) {
-        throw new BadRequestException(
-          `Límite de liquidez superado. No tiene suficiente liquidez en caja para realizar esta operación. Liquidez disponible: S/ ${currentLiquidity.toFixed(2)}.`,
+    if ((dto.type === 'EXPENSE' || dto.type === 'TRANSFER') && isPaid) {
+      if (!dto.ignoreLiquidity) {
+        const workspace = dto.workspace || 'PERSONAL';
+        const currentLiquidity = await this.getLiquidity(
+          userId,
+          workspace,
         );
+        if (amountSoles > currentLiquidity) {
+          throw new BadRequestException(
+            `Límite de liquidez superado. No tiene suficiente liquidez en caja para realizar esta operación. Liquidez disponible: S/ ${currentLiquidity.toFixed(2)}.`,
+          );
+        }
       }
     }
 
@@ -74,6 +77,8 @@ export class TransactionService {
         workspace: dto.workspace || 'PERSONAL',
         receiptUrl: dto.receiptUrl || null,
         branchId: dto.branchId || null,
+        originAccount: dto.originAccount || null,
+        destinationAccount: dto.destinationAccount || null,
       },
     });
   }
@@ -197,34 +202,60 @@ export class TransactionService {
     workspace: string = 'PERSONAL',
   ): Promise<number> {
     const ownerId = await this.getOwnerId(userId);
-    const transactions = await this.prisma.transaction.findMany({
+    const aggregates = await this.prisma.transaction.groupBy({
+      by: ['type'],
       where: {
         OR: [{ userId: ownerId }, { user: { parentId: ownerId } }],
         workspace,
         status: TransactionStatus.PAID,
       },
-      select: {
-        type: true,
+      _sum: {
         amountSoles: true,
         amount: true,
-        status: true,
-        description: true,
       },
     });
 
     let income = 0;
     let expense = 0;
 
-    for (const t of transactions) {
-      const amt = t.amountSoles !== null && t.amountSoles !== undefined ? t.amountSoles : t.amount;
-      if (t.type === 'INCOME') {
-        income += amt;
-      } else {
-        expense += amt;
+    for (const group of aggregates) {
+      const sum = group._sum.amountSoles ?? group._sum.amount ?? 0;
+      if (group.type === 'INCOME') {
+        income = sum;
+      } else if (group.type === 'EXPENSE') {
+        expense = sum;
       }
     }
 
-    return income - expense;
+    // Calcular el balance ahorrado en el Chanchito
+    const savingsIn = await this.prisma.transaction.aggregate({
+      _sum: { amountSoles: true },
+      where: {
+        OR: [{ userId: ownerId }, { user: { parentId: ownerId } }],
+        workspace,
+        status: TransactionStatus.PAID,
+        type: 'TRANSFER',
+        destinationAccount: {
+          contains: 'chanchito',
+        },
+      },
+    });
+
+    const savingsOut = await this.prisma.transaction.aggregate({
+      _sum: { amountSoles: true },
+      where: {
+        OR: [{ userId: ownerId }, { user: { parentId: ownerId } }],
+        workspace,
+        status: TransactionStatus.PAID,
+        type: 'TRANSFER',
+        originAccount: {
+          contains: 'chanchito',
+        },
+      },
+    });
+
+    const chanchitoBalance = (savingsIn._sum.amountSoles ?? 0) - (savingsOut._sum.amountSoles ?? 0);
+    return income - expense - chanchitoBalance;
   }
 
   // =========================================================
@@ -295,14 +326,16 @@ export class TransactionService {
     if (isPaidExpense) diff += newAmount;
 
     if (diff > 0) {
-      const currentLiquidity = await this.getLiquidity(
-        existing.userId,
-        existing.workspace,
-      );
-      if (diff > currentLiquidity) {
-        throw new BadRequestException(
-          `Límite de liquidez superado. No tiene suficiente liquidez en caja para esta modificación. Liquidez disponible: S/ ${currentLiquidity.toFixed(2)}.`,
+      if (!dto.ignoreLiquidity) {
+        const currentLiquidity = await this.getLiquidity(
+          existing.userId,
+          existing.workspace,
         );
+        if (diff > currentLiquidity) {
+          throw new BadRequestException(
+            `Límite de liquidez superado. No tiene suficiente liquidez en caja para esta modificación. Liquidez disponible: S/ ${currentLiquidity.toFixed(2)}.`,
+          );
+        }
       }
     }
 
@@ -338,6 +371,8 @@ export class TransactionService {
         amountSoles,
         ...(dto.receiptUrl !== undefined && { receiptUrl: dto.receiptUrl }),
         ...(dto.branchId !== undefined && { branchId: dto.branchId }),
+        ...(dto.originAccount !== undefined && { originAccount: dto.originAccount }),
+        ...(dto.destinationAccount !== undefined && { destinationAccount: dto.destinationAccount }),
       },
     });
   }
@@ -414,15 +449,17 @@ export class TransactionService {
 
     if (dto.status === 'PAID' && existing.status !== 'PAID') {
       if (existing.type === 'EXPENSE') {
-        const currentLiquidity = await this.getLiquidity(
-          existing.userId,
-          existing.workspace,
-        );
-        const amtToCheck = existing.amountSoles !== null && existing.amountSoles !== undefined ? existing.amountSoles : existing.amount;
-        if (amtToCheck > currentLiquidity) {
-          throw new BadRequestException(
-            `Límite de liquidez superado. No tiene suficiente liquidez en caja para realizar este pago. Liquidez disponible: S/ ${currentLiquidity.toFixed(2)}.`,
+        if (!dto.ignoreLiquidity) {
+          const currentLiquidity = await this.getLiquidity(
+            existing.userId,
+            existing.workspace,
           );
+          const amtToCheck = existing.amountSoles !== null && existing.amountSoles !== undefined ? existing.amountSoles : existing.amount;
+          if (amtToCheck > currentLiquidity) {
+            throw new BadRequestException(
+              `Límite de liquidez superado. No tiene suficiente liquidez en caja para realizar este pago. Liquidez disponible: S/ ${currentLiquidity.toFixed(2)}.`,
+            );
+          }
         }
       }
     }
@@ -464,5 +501,15 @@ export class TransactionService {
     }
 
     return updated;
+  }
+
+  private async isPersonalSavingsCategory(categoryId: string | null, workspace: string): Promise<boolean> {
+    if (!categoryId || workspace !== 'PERSONAL') return false;
+    const category = await this.prisma.category.findUnique({
+      where: { id: categoryId },
+    });
+    if (!category) return false;
+    const name = category.name.toLowerCase();
+    return name.includes('ahorro') || name.includes('saving');
   }
 }

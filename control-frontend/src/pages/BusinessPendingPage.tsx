@@ -29,6 +29,8 @@ export default function BusinessPendingPage() {
   // Modal confirm delete states
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [pendingIdToDelete, setPendingIdToDelete] = useState<string | null>(null);
+  const [showLiquidityWarning, setShowLiquidityWarning] = useState(false);
+  const [pendingAction, setPendingAction] = useState<(() => Promise<void>) | null>(null);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -115,8 +117,8 @@ export default function BusinessPendingPage() {
         exchangeRate: 1,
       });
       loadData();
-    } catch (error) {
-      toast.error(editingPending ? "Error al actualizar cuenta pendiente" : "Error al registrar cuenta pendiente");
+    } catch (error: any) {
+      toast.error(error?.message || (editingPending ? "Error al actualizar cuenta pendiente" : "Error al registrar cuenta pendiente"));
     }
   };
 
@@ -137,13 +139,23 @@ export default function BusinessPendingPage() {
   };
 
   const handleMarkAsPaid = async (id: string) => {
-    try {
-      await markAsPaidRequest(id, { status: "PAID" });
-      toast.success("Cuenta marcada como pagada");
-      loadData();
-    } catch (error) {
-      toast.error("Error al liquidar cuenta");
-    }
+    const executeMark = async (ignoreLiquidity = false) => {
+      try {
+        await markAsPaidRequest(id, { status: "PAID", ignoreLiquidity });
+        toast.success("Cuenta marcada como pagada");
+        loadData();
+      } catch (error: any) {
+        const message = error?.message || "Error al liquidar cuenta";
+        if (message.toLowerCase().includes("liquidez")) {
+          setPendingAction(() => () => executeMark(true));
+          setShowLiquidityWarning(true);
+        } else {
+          toast.error(message);
+        }
+      }
+    };
+
+    await executeMark(false);
   };
 
   const handleDelete = async (id: string) => {
@@ -151,8 +163,8 @@ export default function BusinessPendingPage() {
       await deletePendingTransactionRequest(id);
       toast.success("Registro eliminado");
       loadData();
-    } catch (error) {
-      toast.error("Error al eliminar");
+    } catch (error: any) {
+      toast.error(error?.message || "Error al eliminar");
     }
   };
 
@@ -445,6 +457,23 @@ export default function BusinessPendingPage() {
         confirmText="Eliminar Cuenta"
         cancelText="Cancelar"
         variant="danger"
+      />
+
+      <ConfirmModal
+        isOpen={showLiquidityWarning}
+        onClose={() => setShowLiquidityWarning(false)}
+        onConfirm={async () => {
+          setShowLiquidityWarning(false);
+          if (pendingAction) {
+            await pendingAction();
+          }
+        }}
+        title="Saldo Insuficiente"
+        message="No tienes saldo para esto, si das en continuar, tu saldo será negativo y estarás registrando, ¿deseas continuar?"
+        confirmText="Sí, continuar"
+        cancelText="Cancelar"
+        variant="warning"
+        buttonIcon={<AlertCircle className="w-5 h-5" />}
       />
     </Appshell>
   );

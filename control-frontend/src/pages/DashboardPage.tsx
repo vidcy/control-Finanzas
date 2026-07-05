@@ -32,6 +32,7 @@ import {
   Download,
   X,
   PiggyBank,
+  CreditCard,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { getTransactionsRequest } from "../services/transaction.api";
@@ -216,6 +217,7 @@ export default function DashboardPage() {
     > = {};
 
     activeTx.forEach((t) => {
+      if (t.type === "TRANSFER") return; // Transferencias internas no afectan el flujo mensual de ingresos/gastos
       const isPending = t.status === "PENDING" || t.status === undefined;
       const raw = isPending ? t.dueDate || t.date : t.paidAt || t.date;
       const d = parseSafeDate(raw);
@@ -232,7 +234,7 @@ export default function DashboardPage() {
           (typeof t.category === "string" ? t.category : "Otros Ingresos");
         if (!incMapRaw[cat]) incMapRaw[cat] = Array(12).fill(0);
         incMapRaw[cat][mo] += amount;
-      } else {
+      } else if (t.type === "EXPENSE") {
         mExpense[mo] += amount;
         const cat =
           t.category?.name ??
@@ -268,26 +270,59 @@ export default function DashboardPage() {
   const mBalance = mIncome.map((inc, i) => inc - mExpense[i]);
   const totalIncome = mIncome.reduce((a, b) => a + b, 0);
   const totalExpense = mExpense.reduce((a, b) => a + b, 0);
-  const totalBalance = totalIncome - totalExpense;
   const maxMonthVal = Math.max(...mIncome, ...mExpense, 1);
 
-  // ── Piggy Bank Savings (Chancho) ────────────────────────────────────────────
-  const totalAhorrosPiggy = useMemo(() => {
-    return safeTx
-      .filter(
-        (t) =>
-          t.type === "EXPENSE" &&
-          (t.category?.name?.toLowerCase().includes("ahorro") ||
-            t.category?.name?.toLowerCase().includes("saving"))
-      )
-      .reduce(
-        (acc, t) =>
-          acc +
-          Number(t.amount || 0) *
-            (t.currency === "USD" ? Number(t.exchangeRate || 1) : 1),
-        0
-      );
+  // ── Account Balances Calculation (Mis Cuentas) ──────────────────────────────
+  const accountBalances = useMemo(() => {
+    const balances: Record<string, number> = {
+      "Banco": 0,
+      "Efectivo": 0,
+      "Yape": 0,
+      "Plin": 0,
+      "Chanchito": 0,
+    };
+
+    const getAccountName = (method: string, customAccount?: string | null) => {
+      if (customAccount) return customAccount;
+      switch (method) {
+        case "CASH": return "Efectivo";
+        case "TRANSFER": return "Banco";
+        case "YAPE": return "Yape";
+        case "PLIN": return "Plin";
+        case "CARD": return "Tarjeta";
+        default: return "Efectivo";
+      }
+    };
+
+    safeTx.forEach((t) => {
+      if (t.status !== "PAID") return;
+      const amt = Number(t.amount || 0) * (t.currency === "USD" ? Number(t.exchangeRate || 1) : 1);
+
+      if (t.type === "INCOME") {
+        const dest = getAccountName(t.paymentMethod, t.destinationAccount);
+        if (balances[dest] === undefined) balances[dest] = 0;
+        balances[dest] += amt;
+      } else if (t.type === "EXPENSE") {
+        const orig = getAccountName(t.paymentMethod, t.originAccount);
+        if (balances[orig] === undefined) balances[orig] = 0;
+        balances[orig] -= amt;
+      } else if (t.type === "TRANSFER") {
+        const orig = getAccountName(t.paymentMethod, t.originAccount);
+        const dest = getAccountName(t.paymentMethod, t.destinationAccount);
+
+        if (balances[orig] === undefined) balances[orig] = 0;
+        if (balances[dest] === undefined) balances[dest] = 0;
+
+        balances[orig] -= amt;
+        balances[dest] += amt;
+      }
+    });
+
+    return balances;
   }, [safeTx]);
+
+  const totalAhorrosPiggy = accountBalances["Chanchito"] ?? 0;
+  const totalBalance = totalIncome - totalExpense - totalAhorrosPiggy;
 
   // ── Pending stats ───────────────────────────────────────────────────────────
   const pendingStats = useMemo(() => {
@@ -621,7 +656,7 @@ export default function DashboardPage() {
           {/* ── CHART COLUMN ─────────────────────────────────────────────────── */}
           <div className="xl:col-span-2 flex flex-col gap-5">
             {/* Bar Chart */}
-            <div className="bg-white rounded-3xl border border-gray-100 shadow-[0_20px_60px_rgba(0,0,0,0.04)] overflow-hidden">
+            <div className="bg-white/80 backdrop-blur-md rounded-[2rem] border border-white/60 shadow-[0_30px_70px_rgba(0,0,0,0.02)] overflow-hidden hover:shadow-2xl hover:border-indigo-100/50 transition-all duration-500">
               {/* Chart header */}
               <div className="p-6 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-50">
                 <div className="flex items-center gap-3">
@@ -913,7 +948,7 @@ export default function DashboardPage() {
             {/* ── DESGLOSE ESTRUCTURAL TABLE ──────────────────────────────── */}
             <div
               ref={tableRef} // 👈 Añade esto
-              className="bg-white rounded-3xl border border-gray-100 shadow-[0_20px_60px_rgba(0,0,0,0.04)] overflow-hidden"
+              className="bg-white/80 backdrop-blur-md rounded-[2rem] border border-white/60 shadow-[0_30px_70px_rgba(0,0,0,0.02)] overflow-hidden hover:shadow-2xl hover:border-indigo-100/50 transition-all duration-500"
             >
               <div className="p-5 md:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-50">
                 <div className="flex items-center gap-3">
@@ -1195,6 +1230,78 @@ export default function DashboardPage() {
             className={shouldStackModules ? "xl:col-span-3" : "xl:col-span-1"}
           >
             <div className="flex flex-col gap-5">
+              {/* 💳 MIS CUENTAS & SALDOS */}
+              <div className="bg-white/80 backdrop-blur-md rounded-[2rem] border border-white/60 shadow-[0_30px_70px_rgba(0,0,0,0.02)] p-6 relative overflow-hidden hover:shadow-2xl hover:border-indigo-100/50 transition-all duration-500">
+                <div className="absolute -right-6 -top-6 w-24 h-24 bg-indigo-500/5 rounded-full blur-xl pointer-events-none" />
+                
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl text-white shadow-md shadow-indigo-200/50">
+                      <CreditCard className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-black text-gray-800">
+                        Mis Cuentas & Saldos
+                      </h3>
+                      <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">
+                        Distribución de Patrimonio
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[9px] font-black px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-lg border border-indigo-100">
+                    Soles (S/.)
+                  </span>
+                </div>
+
+                <div className="space-y-3">
+                  {Object.entries(accountBalances).map(([name, balance]) => {
+                    const isNegative = balance < 0;
+                    const totalWealth = Object.values(accountBalances).reduce((a, b) => a + Math.max(0, b), 0) || 1;
+                    const percent = Math.min(100, Math.max(0, (balance / totalWealth) * 100));
+                    
+                    let colorClass = "from-indigo-500 to-purple-500 shadow-indigo-100";
+                    let bgLight = "bg-indigo-50/20";
+                    if (name === "Chanchito") {
+                      colorClass = "from-green-500 to-emerald-600 shadow-green-100";
+                      bgLight = "bg-green-50/20";
+                    } else if (name === "Efectivo") {
+                      colorClass = "from-amber-500 to-orange-500 shadow-amber-100";
+                      bgLight = "bg-amber-50/20";
+                    } else if (name === "Yape") {
+                      colorClass = "from-purple-500 to-indigo-500 shadow-purple-100";
+                      bgLight = "bg-purple-50/20";
+                    } else if (name === "Plin") {
+                      colorClass = "from-teal-500 to-cyan-500 shadow-teal-100";
+                      bgLight = "bg-teal-50/20";
+                    }
+
+                    return (
+                      <div key={name} className={`p-2.5 rounded-xl border border-gray-100/50 ${bgLight} transition-all hover:scale-[1.01]`}>
+                        <div className="flex justify-between items-center mb-1.5">
+                          <span className="text-[11px] font-bold text-gray-700">{name}</span>
+                          <span className={`text-[11px] font-black ${isNegative ? "text-red-500" : "text-gray-800"}`}>
+                            {showValues ? `S/ ${balance.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "••••"}
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-200/50 h-1.5 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full bg-gradient-to-r ${colorClass} rounded-full`}
+                            style={{ width: `${percent}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  <div className="pt-2 mt-2 border-t border-dashed border-gray-150 flex justify-between items-center">
+                    <span className="text-[10px] font-black text-gray-500 uppercase tracking-wider">Patrimonio Total</span>
+                    <span className="text-xs font-black text-indigo-600">
+                      {showValues ? `S/ ${Object.values(accountBalances).reduce((a, b) => a + b, 0).toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "••••"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
               {/* Financial Health Advisor */}
               <div className="min-w-[300px] w-full h-[550px]">
                 <PersonalAIAdvisor 
@@ -1207,7 +1314,7 @@ export default function DashboardPage() {
               {/* Contenedor para Simulador + Acción Rápida */}
               {/* 👇 Si shouldStackModules es true, estos módulos se pondrán DEBAJO de la tabla */}
               <div className={shouldStackModules ? "xl:col-span-2" : ""}>
-                <div className="bg-white rounded-3xl border border-gray-100 shadow-[0_20px_50px_rgba(0,0,0,0.04)] p-5 relative overflow-hidden">
+                <div className="bg-white/80 backdrop-blur-md rounded-[2rem] border border-white/60 shadow-[0_30px_70px_rgba(0,0,0,0.02)] p-6 relative overflow-hidden hover:shadow-2xl hover:border-emerald-100/50 transition-all duration-500">
                   <div className="absolute -left-6 -bottom-6 w-24 h-24 bg-emerald-400/5 rounded-full blur-xl" />
                   <div className="flex items-center gap-3 mb-5">
                     <div className="p-2.5 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl text-white shadow-md shadow-emerald-200/50">
@@ -1322,7 +1429,7 @@ export default function DashboardPage() {
                   )}
                 </div>
                 {/* Urgent Pending Actions */}
-                <div className="bg-white rounded-3xl border border-gray-100 shadow-[0_20px_50px_rgba(0,0,0,0.04)] p-5 relative overflow-hidden">
+                <div className="bg-white/80 backdrop-blur-md rounded-[2rem] border border-white/60 shadow-[0_30px_70px_rgba(0,0,0,0.02)] p-6 relative overflow-hidden hover:shadow-2xl hover:border-rose-100/50 transition-all duration-500">
                   <div className="absolute -right-4 -top-4 w-20 h-20 bg-rose-400/5 rounded-full blur-xl" />
 
                   <div className="flex items-center gap-3 mb-4">
@@ -1542,87 +1649,88 @@ function KPICard({
 }) {
   const colors = {
     emerald: {
-      bg: "bg-white border-emerald-50",
-      glow: "bg-emerald-500/5 group-hover:bg-emerald-500/10",
-      icon: "from-emerald-400 to-emerald-600 shadow-emerald-200",
-      label: "text-emerald-600/70",
-      val: "text-gray-900",
-      sub: "bg-emerald-50 text-emerald-700",
+      bg: "bg-white/90 border-emerald-100/60 hover:border-emerald-300/80 hover:shadow-emerald-100/40",
+      glow: "from-emerald-400/20 to-teal-400/5 group-hover:scale-125",
+      icon: "from-emerald-500 to-teal-600 shadow-emerald-200/80 border border-emerald-400/20",
+      label: "text-emerald-800/70",
+      val: "text-slate-900",
+      sub: "bg-emerald-50/70 text-emerald-700 border border-emerald-100/50",
     },
     rose: {
-      bg: "bg-white border-rose-50",
-      glow: "bg-rose-500/5 group-hover:bg-rose-500/10",
-      icon: "from-rose-400 to-rose-600 shadow-rose-200",
-      label: "text-rose-600/70",
-      val: "text-gray-900",
-      sub: "bg-rose-50 text-rose-700",
+      bg: "bg-white/90 border-rose-100/60 hover:border-rose-300/80 hover:shadow-rose-100/40",
+      glow: "from-rose-400/20 to-pink-400/5 group-hover:scale-125",
+      icon: "from-rose-500 to-pink-600 shadow-rose-200/80 border border-rose-400/20",
+      label: "text-rose-800/70",
+      val: "text-slate-900",
+      sub: "bg-rose-50/70 text-rose-700 border border-rose-100/50",
     },
     indigo: {
-      bg: "bg-white border-indigo-50",
-      glow: "bg-indigo-500/5 group-hover:bg-indigo-500/10",
-      icon: "from-indigo-500 to-purple-700 shadow-indigo-200",
-      label: "text-indigo-600/70",
-      val: "text-gray-900",
-      sub: "bg-indigo-50 text-indigo-700",
+      bg: "bg-white/90 border-indigo-100/60 hover:border-indigo-300/80 hover:shadow-indigo-100/40",
+      glow: "from-indigo-400/20 to-purple-400/5 group-hover:scale-125",
+      icon: "from-indigo-500 to-purple-600 shadow-indigo-200/80 border border-indigo-400/20",
+      label: "text-indigo-800/70",
+      val: "text-slate-900",
+      sub: "bg-indigo-50/70 text-indigo-700 border border-indigo-100/50",
     },
     red: {
-      bg: "bg-white border-red-50",
-      glow: "bg-red-500/5 group-hover:bg-red-500/10",
-      icon: "from-red-400 to-red-600 shadow-red-200",
-      label: "text-red-600/70",
+      bg: "bg-white/90 border-red-100/60 hover:border-red-300/80 hover:shadow-red-100/40",
+      glow: "from-red-400/20 to-orange-400/5 group-hover:scale-125",
+      icon: "from-red-500 to-orange-600 shadow-red-200/80 border border-red-400/20",
+      label: "text-red-800/70",
       val: "text-red-700",
-      sub: "bg-red-50 text-red-700",
+      sub: "bg-red-50/70 text-red-700 border border-red-100/50",
     },
     amber: {
-      bg: "bg-white border-amber-50",
-      glow: "bg-amber-500/5 group-hover:bg-amber-500/10",
-      icon: "from-amber-400 to-orange-500 shadow-amber-200",
-      label: "text-amber-600/70",
-      val: "text-gray-900",
-      sub: "bg-amber-50 text-amber-700",
+      bg: "bg-white/90 border-amber-100/60 hover:border-amber-300/80 hover:shadow-amber-100/40",
+      glow: "from-amber-400/20 to-yellow-400/5 group-hover:scale-125",
+      icon: "from-amber-500 to-orange-600 shadow-amber-200/80 border border-amber-400/20",
+      label: "text-amber-800/70",
+      val: "text-slate-900",
+      sub: "bg-amber-50/70 text-amber-700 border border-amber-100/50",
     },
     teal: {
-      bg: "bg-white border-teal-50",
-      glow: "bg-teal-500/5 group-hover:bg-teal-500/10",
-      icon: "from-teal-400 to-emerald-500 shadow-teal-200",
-      label: "text-teal-600/70",
-      val: "text-gray-900",
-      sub: "bg-teal-50 text-teal-700",
+      bg: "bg-white/90 border-teal-100/60 hover:border-teal-300/80 hover:shadow-teal-100/40",
+      glow: "from-teal-400/20 to-emerald-400/5 group-hover:scale-125",
+      icon: "from-teal-500 to-emerald-600 shadow-teal-200/80 border border-teal-400/20",
+      label: "text-teal-800/70",
+      val: "text-slate-900",
+      sub: "bg-teal-50/70 text-teal-700 border border-teal-100/50",
     },
   }[color];
 
   return (
     <div
-      className={`${colors.bg} rounded-3xl p-5 md:p-6 shadow-[0_20px_50px_rgba(0,0,0,0.04)] border flex flex-col relative overflow-hidden group hover:-translate-y-1 transition-all duration-500`}
+      className={`${colors.bg} rounded-[2rem] p-5 md:p-6 shadow-[0_20px_50px_rgba(0,0,0,0.02)] border flex flex-col relative overflow-hidden group hover:-translate-y-1.5 hover:shadow-2xl transition-all duration-500 backdrop-blur-md`}
     >
+      {/* Background glow circle */}
       <div
-        className={`absolute -right-8 -top-8 w-40 h-40 ${colors.glow} rounded-full blur-2xl transition-all duration-700`}
+        className={`absolute -right-10 -top-10 w-44 h-44 bg-gradient-to-br ${colors.glow} rounded-full blur-2xl transition-all duration-1000 ease-out`}
       />
       <div className="flex justify-between items-start relative z-10">
         <div className="flex-1 min-w-0">
           <p
-            className={`text-[10px] font-black uppercase tracking-widest mb-2 ${colors.label}`}
+            className={`text-[9px] font-black uppercase tracking-widest mb-2.5 ${colors.label}`}
           >
             {label}
           </p>
           <p
-            className={`text-2xl md:text-3xl font-black ${colors.val} leading-none`}
+            className={`text-2xl md:text-3xl font-black ${colors.val} tracking-tight leading-none`}
           >
             {value}
           </p>
           <div
-            className={`mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black ${colors.sub}`}
+            className={`mt-4 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] font-black border transition-colors ${colors.sub}`}
           >
             {subPositive ? (
-              <TrendUp className="w-3 h-3" />
+              <TrendUp className="w-3 h-3 text-emerald-500" />
             ) : (
-              <TrendingDown className="w-3 h-3" />
+              <TrendingDown className="w-3 h-3 text-rose-500" />
             )}
             {sub}
           </div>
         </div>
         <div
-          className={`p-3.5 bg-gradient-to-br ${colors.icon} rounded-2xl shadow-lg ml-3 shrink-0`}
+          className={`p-3.5 bg-gradient-to-br ${colors.icon} rounded-2xl shadow-lg ml-3 shrink-0 hover:rotate-6 transition-transform duration-300`}
         >
           <div className="text-white">{icon}</div>
         </div>

@@ -19,6 +19,7 @@ import {
   Activity,
   Edit2,
   ArrowUpLeft,
+  AlertCircle,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import {
@@ -134,6 +135,8 @@ export default function PendingPage() {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [idToDelete, setIdToDelete] = useState<string | null>(null);
   const [activeType, setActiveType] = useState<"INCOME" | "EXPENSE">("INCOME");
+  const [showLiquidityWarning, setShowLiquidityWarning] = useState(false);
+  const [pendingAction, setPendingAction] = useState<(() => Promise<void>) | null>(null);
 
   const [showAllReceivables, setShowAllReceivables] = useState(false);
   const [showAllPayables, setShowAllPayables] = useState(false);
@@ -516,17 +519,26 @@ export default function PendingPage() {
     const newStatus: "PENDING" | "PAID" =
       currentStatus === "PENDING" ? "PAID" : "PENDING";
 
-    try {
-      await markAsPaidRequest(id, { status: newStatus });
-      await loadData(); // 🔥 Recargamos de inmediato del servidor para removerlo de la vista y actualizar totales
-      toast.success(
-        newStatus === "PAID" ? "Marcado como pagado" : "Marcado como pendiente",
-      );
-    } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : "Error al actualizar estado";
-      toast.error(message);
-    }
+    const executeToggle = async (ignoreLiquidity = false) => {
+      try {
+        await markAsPaidRequest(id, { status: newStatus, ignoreLiquidity });
+        await loadData();
+        toast.success(
+          newStatus === "PAID" ? "Marcado como pagado" : "Marcado como pendiente",
+        );
+      } catch (error: unknown) {
+        const message =
+          error instanceof Error ? error.message : "Error al actualizar estado";
+        if (message.toLowerCase().includes("liquidez")) {
+          setPendingAction(() => () => executeToggle(true));
+          setShowLiquidityWarning(true);
+        } else {
+          toast.error(message);
+        }
+      }
+    };
+
+    await executeToggle(false);
   };
 
   const handleDelete = (id: string) => {
@@ -1500,6 +1512,22 @@ export default function PendingPage() {
           onConfirm={confirmDelete}
           title="Eliminar Registro"
           message="¿Estás seguro de que deseas eliminar este registro pendiente? Esta acción no se puede deshacer."
+        />
+        <ConfirmModal
+          isOpen={showLiquidityWarning}
+          onClose={() => setShowLiquidityWarning(false)}
+          onConfirm={async () => {
+            setShowLiquidityWarning(false);
+            if (pendingAction) {
+              await pendingAction();
+            }
+          }}
+          title="Saldo Insuficiente"
+          message="No tienes saldo para esto, si das en continuar, tu saldo será negativo y estarás registrando, ¿deseas continuar?"
+          confirmText="Sí, continuar"
+          cancelText="Cancelar"
+          variant="warning"
+          buttonIcon={<AlertCircle className="w-5 h-5" />}
         />
       </div>
     </Appshell>

@@ -19,6 +19,7 @@ import {
   Wallet,
   ArrowUpRight,
   RotateCcw,
+  AlertCircle,
 } from "lucide-react";
 import ImageUploader, { getReceiptAbsoluteUrl, uploadReceiptFile } from "../components/ui/ImageUploader";
 import { toast } from "react-hot-toast";
@@ -82,6 +83,8 @@ export default function ExpensesPage() {
   const [selectedSubCategoryId, setSelectedSubCategoryId] = useState("");
 
   const [expensesPage, setExpensesPage] = useState(1);
+  const [showLiquidityWarning, setShowLiquidityWarning] = useState(false);
+  const [pendingAction, setPendingAction] = useState<(() => Promise<void>) | null>(null);
 
   const localDate = getPeruTodayInputStr();
 
@@ -513,54 +516,64 @@ export default function ExpensesPage() {
       return toast.error("Ingresa un tipo de cambio válido");
 
     const originalItem = editingId ? items.find((i) => i.id === editingId) : undefined;
-    setSaving(true);
-    try {
-      let finalReceiptUrl = formData.receiptUrl;
-      if (formData.receiptUrl instanceof File) {
-        const uploadToast = toast.loading("Subiendo comprobante...");
-        try {
-          finalReceiptUrl = await uploadReceiptFile(formData.receiptUrl);
-          toast.dismiss(uploadToast);
-        } catch (uploadError: any) {
-          toast.dismiss(uploadToast);
-          toast.error(uploadError.message || "Error al subir el comprobante");
-          setSaving(false);
-          return;
+    
+    const executeSave = async (ignoreLiquidity = false) => {
+      setSaving(true);
+      try {
+        let finalReceiptUrl = formData.receiptUrl;
+        if (formData.receiptUrl instanceof File) {
+          const uploadToast = toast.loading("Subiendo comprobante...");
+          try {
+            finalReceiptUrl = await uploadReceiptFile(formData.receiptUrl);
+            toast.dismiss(uploadToast);
+          } catch (uploadError: any) {
+            toast.dismiss(uploadToast);
+            toast.error(uploadError.message || "Error al subir el comprobante");
+            setSaving(false);
+            return;
+          }
         }
-      }
 
-      const payload = {
-        ...formData,
-        date: peruInputDateToUtcISO(formData.date, originalItem?.date),
-        paidAt: peruInputDateToUtcISO(formData.paidAt, originalItem?.paidAt),
-        name: formData.name || "Egreso",
-        description: formData.description || "Egreso",
-        amount: Number(formData.amount),
-        exchangeRate: Number(formData.exchangeRate),
-        type: "EXPENSE",
-        categoryId: selectedCategoryId,
-        subCategoryId: selectedSubCategoryId || null,
-        justified: formData.justified,
-        programmed: formData.programmed,
-        receiptUrl: finalReceiptUrl,
-      };
+        const payload = {
+          ...formData,
+          date: peruInputDateToUtcISO(formData.date, originalItem?.date),
+          paidAt: peruInputDateToUtcISO(formData.paidAt, originalItem?.paidAt),
+          name: formData.name || "Egreso",
+          description: formData.description || "Egreso",
+          amount: Number(formData.amount),
+          exchangeRate: Number(formData.exchangeRate),
+          type: "EXPENSE",
+          categoryId: selectedCategoryId,
+          subCategoryId: selectedSubCategoryId || null,
+          justified: formData.justified,
+          programmed: formData.programmed,
+          receiptUrl: finalReceiptUrl,
+          ignoreLiquidity,
+        };
 
-      if (editingId) {
-        await updateTransactionRequest(editingId, payload as any);
-        toast.success("Actualizado correctamente");
-      } else {
-        await createTransactionRequest(payload as any);
-        toast.success("Creado correctamente");
+        if (editingId) {
+          await updateTransactionRequest(editingId, payload as any);
+          toast.success("Actualizado correctamente");
+        } else {
+          await createTransactionRequest(payload as any);
+          toast.success("Creado correctamente");
+        }
+        setIsModalOpen(false);
+        loadData();
+      } catch (error: unknown) {
+        const message = (error as any)?.message || String(error) || "Error al guardar";
+        if (message.toLowerCase().includes("liquidez")) {
+          setPendingAction(() => () => executeSave(true));
+          setShowLiquidityWarning(true);
+        } else {
+          toast.error(message);
+        }
+      } finally {
+        setSaving(false);
       }
-      setIsModalOpen(false);
-      loadData();
-    } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : "Error al guardar";
-      toast.error(message);
-    } finally {
-      setSaving(false);
-    }
+    };
+
+    await executeSave(false);
   };
 
   const handleDelete = (id: string) => {
@@ -586,18 +599,25 @@ export default function ExpensesPage() {
     setStatus(status);
     setIsConfirmReturn(true);
   };
-  const confirmReturn = async () => {
+  const confirmReturn = async (ignoreLiquidity = false) => {
     if (!idToReturn) return;
     try {
       await markAsPendingRequest(idToReturn, {
         status: idStatus === "PAID" ? "PENDING" : "PAID",
-      });
+        ignoreLiquidity,
+      } as any);
       toast.success("Actualizado correctamente");
+      setIsConfirmReturn(false);
       loadData();
     } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : "Error al enviar a pendiente";
-      toast.error(message);
+      const message = (error as any)?.message || String(error) || "Error al actualizar";
+      if (message.toLowerCase().includes("liquidez")) {
+        setIsConfirmReturn(false);
+        setPendingAction(() => () => confirmReturn(true));
+        setShowLiquidityWarning(true);
+      } else {
+        toast.error(message);
+      }
     } finally {
       setSaving(false);
     }
@@ -1439,6 +1459,22 @@ export default function ExpensesPage() {
           confirmText="Devolver"
           buttonIcon={<RotateCcw className="w-5 h-5" />}
           variant="info"
+        />
+        <ConfirmModal
+          isOpen={showLiquidityWarning}
+          onClose={() => setShowLiquidityWarning(false)}
+          onConfirm={async () => {
+            setShowLiquidityWarning(false);
+            if (pendingAction) {
+              await pendingAction();
+            }
+          }}
+          title="Saldo Insuficiente"
+          message="No tienes saldo para esto, si das en continuar, tu saldo será negativo y estarás registrando, ¿deseas continuar?"
+          confirmText="Sí, continuar"
+          cancelText="Cancelar"
+          variant="warning"
+          buttonIcon={<AlertCircle className="w-5 h-5" />}
         />
       </div>
     </Appshell>
