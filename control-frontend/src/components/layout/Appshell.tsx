@@ -26,6 +26,8 @@ import {
   Camera,
   MapPin,
   PiggyBank,
+  Download,
+  Smartphone,
 } from "lucide-react";
 
 import { toast } from "react-hot-toast";
@@ -64,6 +66,44 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
   const [isSavingPassword, setIsSavingPassword] = useState(false);
   const [passwordChanged, setPasswordChanged] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // PWA Install State & Listener
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [canInstall, setCanInstall] = useState(false);
+
+  useEffect(() => {
+    // Check if the prompt was already captured by index.html early script
+    const globalPrompt = (window as any).deferredPrompt;
+    if (globalPrompt) {
+      setDeferredPrompt(globalPrompt);
+      setCanInstall(true);
+    }
+
+    // Listen to custom event fired by index.html early script
+    const handlePwaReady = () => {
+      const p = (window as any).deferredPrompt;
+      if (p) {
+        setDeferredPrompt(p);
+        setCanInstall(true);
+      }
+    };
+
+    // Standard listener as fallback
+    const handleBeforeInstall = (e: any) => {
+      e.preventDefault();
+      (window as any).deferredPrompt = e;
+      setDeferredPrompt(e);
+      setCanInstall(true);
+    };
+
+    window.addEventListener("pwa-install-ready", handlePwaReady);
+    window.addEventListener("beforeinstallprompt", handleBeforeInstall);
+
+    return () => {
+      window.removeEventListener("pwa-install-ready", handlePwaReady);
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
+    };
+  }, []);
 
   // Profile module toggles
   const [activeProfiles, setActiveProfiles] = useState<string[]>(
@@ -896,6 +936,41 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                 </div>
               </div>
             </div>
+
+            {canInstall && (
+              <div className="mt-4 p-4 rounded-2xl bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-transparent border border-indigo-500/20 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center shadow-md shadow-indigo-500/10">
+                    <Smartphone className="w-5.5 h-5.5 text-white" />
+                  </div>
+                  <div className="text-left">
+                    <h4 className="text-sm font-black text-slate-800">
+                      Instalar Think en tu dispositivo
+                    </h4>
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      Disfruta de la experiencia completa, notificaciones rápidas y acceso directo sin conexión.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    deferredPrompt?.prompt();
+                    const choice = await deferredPrompt?.userChoice;
+                    if (choice?.outcome === 'accepted') {
+                      (window as any).deferredPrompt = null;
+                      setDeferredPrompt(null);
+                      setCanInstall(false);
+                      toast.success("¡Gracias por instalar Think!");
+                    }
+                  }}
+                  className="w-full sm:w-auto px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl text-xs font-black shadow-lg shadow-indigo-500/20 active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Instalar Aplicación
+                </button>
+              </div>
+            )}
 
             <div className="flex justify-end gap-3 pt-4 border-t border-gray-50">
               <button

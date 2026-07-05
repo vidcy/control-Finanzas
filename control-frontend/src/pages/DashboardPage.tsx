@@ -29,7 +29,6 @@ import {
   Check,
   Zap,
   TrendingUp as TrendUp,
-  Download,
   X,
   PiggyBank,
   CreditCard,
@@ -110,22 +109,6 @@ export default function DashboardPage() {
   // 👇 NUEVO: Referencia para la tabla y altura medida
   const tableRef = useRef<HTMLDivElement>(null);
   const [tableHeight, setTableHeight] = useState(0);
-
-
-  // PWA Install
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [canInstall, setCanInstall] = useState(false);
-
-  useEffect(() => {
-    const h = (e: any) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-      setCanInstall(true);
-    };
-    window.addEventListener("beforeinstallprompt", h);
-    return () => window.removeEventListener("beforeinstallprompt", h);
-  }, []);
-
   // ── Load Data ───────────────────────────────────────────────────────────────
   const loadData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -838,21 +821,6 @@ export default function DashboardPage() {
                 <span className="hidden sm:inline">Actualizar</span>
               </button>
 
-              {/* PWA Install */}
-              {canInstall && (
-                <button
-                  onClick={async () => {
-                    deferredPrompt?.prompt();
-                    await deferredPrompt?.userChoice;
-                    setDeferredPrompt(null);
-                    setCanInstall(false);
-                  }}
-                  className="flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-white px-3 py-2 rounded-2xl font-black text-sm shadow-lg shadow-emerald-200"
-                >
-                  <Download className="w-4 h-4" />
-                  <span className="hidden sm:inline">Instalar App</span>
-                </button>
-              )}
             </div>
           </div>
         </div>

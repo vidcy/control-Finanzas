@@ -5,8 +5,15 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="manifest" href="/manifest.json" />
-<meta name="theme-color" content="#4f46e5" />
-    <title>Think - Global Ccoplex</title>
+    <meta name="theme-color" content="#863bff" />
+    <title>Think - Finanzas Inteligentes</title>
+    <script>
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        window.deferredPrompt = e;
+        window.dispatchEvent(new CustomEvent('pwa-install-ready'));
+      });
+    </script>
   </head>
   <body>
     <div id="root"></div>
