@@ -25,6 +25,7 @@ import {
   Loader2,
   Camera,
   MapPin,
+  PiggyBank,
 } from "lucide-react";
 
 import { toast } from "react-hot-toast";
@@ -36,6 +37,7 @@ import { formatPeruTime } from "../../utils/date.utils";
 import Modal from "../ui/Modal";
 import { changePasswordRequest } from "../../services/auth.api";
 import { FloatingSaveButton } from "../../pages/PiggPage";
+import PersonalAIChatFloating from "../dashboard/PersonalAIChatFloating";
 
 export default function FinanceAppShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
@@ -234,7 +236,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       targetWorkspace = "BUSINESS";
     } else if (path === "/categories") {
       targetWorkspace = activeWorkspace || "PERSONAL";
-    } else if (["/dashboard", "/income", "/expenses", "/pending", "/users"].some(p => path === p || path.startsWith(p + "/"))) {
+    } else if (["/dashboard", "/income", "/expenses", "/pending", "/savings", "/users"].some(p => path === p || path.startsWith(p + "/"))) {
       targetWorkspace = "PERSONAL";
     }
 
@@ -361,6 +363,13 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       icon: ArrowRightLeft,
       color: "from-indigo-400 to-indigo-600",
       bgActive: "bg-indigo-50 text-indigo-700",
+    },
+    {
+      name: "Ahorros",
+      path: "/savings",
+      icon: PiggyBank,
+      color: "from-pink-400 to-pink-600",
+      bgActive: "bg-pink-50 text-pink-700",
     },
     {
       name: "Categorías",
@@ -1507,7 +1516,12 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
         </div>
       </Modal>
 
-      {activeWorkspace === "PERSONAL" && <FloatingSaveButton />}
+      {activeWorkspace === "PERSONAL" && (
+        <>
+          <FloatingSaveButton />
+          <PersonalAIChatFloating />
+        </>
+      )}
     </div>
   );
 }

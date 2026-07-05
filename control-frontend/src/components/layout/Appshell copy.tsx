@@ -24,6 +24,7 @@ import {
   History,
   Loader2,
   Camera,
+  PiggyBank,
 } from "lucide-react";
 
 import { toast } from "react-hot-toast";
@@ -221,7 +222,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
     let targetWorkspace: "PERSONAL" | "BUSINESS" | null = null;
     if (path.startsWith("/business-")) {
       targetWorkspace = "BUSINESS";
-    } else if (["/dashboard", "/income", "/expenses", "/pending", "/users"].some(p => path === p || path.startsWith(p + "/"))) {
+    } else if (["/dashboard", "/income", "/expenses", "/pending", "/savings", "/users"].some(p => path === p || path.startsWith(p + "/"))) {
       targetWorkspace = "PERSONAL";
     }
 
@@ -311,6 +312,13 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       icon: ArrowRightLeft,
       color: "from-indigo-400 to-indigo-600",
       bgActive: "bg-indigo-50 text-indigo-700",
+    },
+    {
+      name: "Ahorros",
+      path: "/savings",
+      icon: PiggyBank,
+      color: "from-pink-400 to-pink-600",
+      bgActive: "bg-pink-50 text-pink-700",
     },
     {
       name: "Categorías",

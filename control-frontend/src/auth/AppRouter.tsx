@@ -18,6 +18,7 @@ import IncomePage from "../pages/IncomePage";
 import ExpensesPage from "../pages/ExpensesPage";
 import CategoriesPage from "../pages/CategoriesPage";
 import PendingPage from "../pages/PendingPage";
+import PiggPage from "../pages/PiggPage";
 import BusinessHistoryPage from "../pages/BusinessHistoryPage";
 import BusinessBranchesPage from "../pages/BusinessBranchesPage";
 import BusinessWorkersPage from "../pages/BusinessWorkersPage";
@@ -186,6 +187,14 @@ export default function AppRoutes() {
         element={
           <ProtectedRoute>
             <PendingPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/savings"
+        element={
+          <ProtectedRoute>
+            <PiggPage />
           </ProtectedRoute>
         }
       />

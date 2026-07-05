@@ -107,9 +107,9 @@ export default function DashboardPage() {
   const [simulatorSavings, setSimulatorSavings] = useState(0);
   const [payingId, setPayingId] = useState<string | null>(null);
 
-  // 👇 NUEVO: Referencia para la tabla y estado para saber si los módulos deben apilarse
+  // 👇 NUEVO: Referencia para la tabla y altura medida
   const tableRef = useRef<HTMLDivElement>(null);
-  const [shouldStackModules, setShouldStackModules] = useState(false);
+  const [tableHeight, setTableHeight] = useState(0);
 
 
   // PWA Install
@@ -155,15 +155,16 @@ export default function DashboardPage() {
 
     const observer = new ResizeObserver((entries) => {
       for (let entry of entries) {
-        const height = entry.contentRect.height;
-        // Si la tabla mide menos de 400px de altura, apilamos los módulos debajo
-        setShouldStackModules(height < 400);
+        setTableHeight(entry.contentRect.height);
       }
     });
 
     observer.observe(tableRef.current);
     return () => observer.disconnect();
   }, []);
+
+  const isTableCollapsed = Object.values(expandedCats).filter(Boolean).length <= 1;
+  const shouldStackModules = isTableCollapsed || tableHeight < 550;
 
   // ── Quick Pay ───────────────────────────────────────────────────────────────
   const handleQuickPay = async (id: string) => {
@@ -434,6 +435,267 @@ export default function DashboardPage() {
       .sort((a, b) => b.amtSoles - a.amtSoles)
       .slice(0, 8);
   }, [activeTx, selectedMonth]);
+
+  const renderSimulator = () => {
+    return (
+      <div className="bg-white/80 backdrop-blur-md rounded-[2rem] border border-white/60 shadow-[0_30px_70px_rgba(0,0,0,0.02)] p-6 relative overflow-hidden hover:shadow-2xl hover:border-emerald-100/50 transition-all duration-500 w-full text-left">
+        <div className="absolute -left-6 -bottom-6 w-24 h-24 bg-emerald-400/5 rounded-full blur-xl pointer-events-none" />
+        <div className="flex items-center gap-3 mb-5">
+          <div className="p-2.5 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl text-white shadow-md shadow-emerald-200/50">
+            <PiggyBank className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h3 className="text-sm font-black text-gray-800">
+              Simulador de Deuda
+            </h3>
+            <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">
+              Proyección de Amortización
+            </p>
+          </div>
+        </div>
+
+        {pendingStats.payable > 0 ? (
+          (() => {
+            const avgBal = totalBalance / 12;
+            const capacity = Math.max(
+              avgBal + simulatorSavings,
+              0.01,
+            );
+            const months =
+              pendingStats.payable <= 0
+                ? 0
+                : Math.ceil(pendingStats.payable / capacity);
+            const isAchievable = months <= 60;
+            const pct = Math.min(
+              (simulatorSavings / 5000) * 100,
+              100,
+            );
+            const colorClass = !isAchievable
+              ? "text-rose-600 bg-rose-50 border-rose-100"
+              : months <= 6
+                ? "text-emerald-600 bg-emerald-50 border-emerald-100"
+                : months <= 18
+                  ? "text-amber-600 bg-amber-50 border-amber-100"
+                  : "text-indigo-600 bg-indigo-50 border-indigo-100";
+
+            return (
+              <>
+                <div className="mb-4">
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">
+                      Ahorro Extra Mensual
+                    </label>
+                    <span className="text-sm font-black text-emerald-600">
+                      S/ {simulatorSavings.toLocaleString()}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={5000}
+                    step={50}
+                    value={simulatorSavings}
+                    onChange={(e) =>
+                      setSimulatorSavings(Number(e.target.value))
+                    }
+                    className="w-full sim-slider"
+                  />
+                  <div className="flex justify-between text-[9px] text-gray-300 font-black mt-1">
+                    <span>S/ 0</span>
+                    <span>S/ 5,000</span>
+                  </div>
+                </div>
+
+                <div
+                  className={`p-4 rounded-2xl border ${colorClass}`}
+                >
+                  <p className="text-[9px] font-black uppercase tracking-widest text-gray-500 mb-1">
+                    Tiempo para liquidar deuda
+                  </p>
+                  <p
+                    className={`text-3xl font-black ${colorClass.split(" ")[0]}`}
+                  >
+                    {!isAchievable
+                      ? "+60 meses"
+                      : months === 0
+                        ? "¡Liquidada!"
+                        : `${months} ${months === 1 ? "mes" : "meses"}`}
+                  </p>
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    Deuda total: S/ {fmt(pendingStats.payable, 0)}
+                  </p>
+                </div>
+
+                <div className="mt-3 h-2 bg-gray-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-emerald-400 to-teal-500 rounded-full transition-all duration-500"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <p className="text-[9px] text-gray-400 text-center mt-2 font-semibold">
+                  {simulatorSavings > 0
+                    ? `+S/${simulatorSavings}/mes reduce ${Math.ceil(pendingStats.payable / Math.max(avgBal, 0.01)) - months} meses`
+                    : "Mueve el slider para simular"}
+                </p>
+              </>
+            );
+          })()
+        ) : (
+          <div className="flex flex-col items-center p-6 bg-emerald-50/40 rounded-2xl border border-emerald-100 text-center">
+            <CheckCircle className="w-10 h-10 text-emerald-500 mb-2" />
+            <p className="text-sm font-black text-emerald-700">
+              ¡Sin deudas!
+            </p>
+            <p className="text-[10px] text-gray-400 mt-1">
+              Tu flujo está libre de compromisos por pagar.
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderAccionRapida = () => {
+    return (
+      <div className="bg-white/80 backdrop-blur-md rounded-[2rem] border border-white/60 shadow-[0_30px_70px_rgba(0,0,0,0.02)] p-6 relative overflow-hidden hover:shadow-2xl hover:border-rose-100/50 transition-all duration-500 w-full text-left">
+        <div className="absolute -right-4 -top-4 w-20 h-20 bg-rose-400/5 rounded-full blur-xl pointer-events-none" />
+
+        <div className="flex items-center gap-3 mb-4">
+          <div className="p-2.5 bg-gradient-to-br from-rose-500 to-orange-500 rounded-xl text-white shadow-md shadow-rose-200/50">
+            <Zap className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h3 className="text-sm font-black text-gray-800">
+              Acción Rápida
+            </h3>
+            <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">
+              Pendientes Urgentes
+            </p>
+          </div>
+        </div>
+
+        {/* Totals */}
+        <div className="grid grid-cols-2 gap-2 mb-4 p-3 bg-slate-50/60 rounded-2xl border border-slate-100">
+          <div>
+            <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">
+              Por Cobrar
+            </p>
+            <p className="text-sm font-black text-emerald-600">
+              S/ {fmt(pendingStats.receivable, 0)}
+            </p>
+          </div>
+          <div className="border-l border-slate-200 pl-3">
+            <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">
+              Por Pagar
+            </p>
+            <p className="text-sm font-black text-rose-600">
+              S/ {fmt(pendingStats.payable, 0)}
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-2.5">
+          {pendingStats.urgent.length === 0 ? (
+            <div className="flex flex-col items-center p-6 bg-emerald-50/40 rounded-2xl border border-emerald-100 text-center">
+              <Check className="w-8 h-8 text-emerald-500 mb-1.5" />
+              <p className="text-xs font-black text-emerald-700">
+                ¡Al día!
+              </p>
+              <p className="text-[10px] text-gray-400 mt-0.5">
+                Sin compromisos urgentes pendientes.
+              </p>
+            </div>
+          ) : (
+            pendingStats.urgent.map((item, idx) => {
+              const isInc = item.type === "INCOME";
+              const isExp = item.dueInfo.status === "EXPIRED";
+              const isToday = item.dueInfo.status === "TODAY";
+              let badge =
+                "bg-slate-50 text-slate-500 border-slate-100";
+              if (isExp)
+                badge =
+                  "bg-rose-50 text-rose-600 border-rose-200 animate-pulse";
+              else if (isToday)
+                badge =
+                  "bg-orange-50 text-orange-600 border-orange-100";
+              else
+                badge = "bg-amber-50 text-amber-600 border-amber-100";
+              const isPaying = payingId === (item.id || item._id);
+
+              return (
+                <div
+                  key={idx}
+                  className="group/item flex items-center justify-between p-3 bg-white/80 hover:bg-slate-50 border border-slate-100 rounded-2xl transition-all hover:shadow-sm"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div
+                      className={`p-1.5 rounded-xl shrink-0 ${isInc ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-500"}`}
+                    >
+                      {isInc ? (
+                        <ArrowUpRight className="w-3.5 h-3.5 text-emerald-550" />
+                      ) : (
+                        <ArrowDownRight className="w-3.5 h-3.5 text-rose-550" />
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-black text-gray-800 truncate">
+                        {item.description ||
+                          item.name ||
+                          "Sin descripción"}
+                      </p>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <span className="text-[8px] text-gray-400 font-semibold">
+                          {item.category?.name ||
+                            item.category ||
+                            "Otros"}
+                        </span>
+                        <span className="text-gray-200">·</span>
+                        <span
+                          className={`text-[8px] px-1.5 py-0.5 rounded border font-bold ${badge}`}
+                        >
+                          {item.dueInfo.message}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 pl-2">
+                    <span
+                      className={`text-xs font-black ${isInc ? "text-emerald-600" : "text-rose-600"}`}
+                    >
+                      S/
+                      {item.amountSoles.toLocaleString("es-PE", {
+                        maximumFractionDigits: 0,
+                      })}
+                    </span>
+                    <button
+                      onClick={() =>
+                        handleQuickPay(item.id || item._id)
+                      }
+                      disabled={isPaying}
+                      className={`p-1.5 rounded-xl border transition-all flex items-center justify-center ${
+                        isInc
+                          ? "bg-emerald-50 hover:bg-emerald-500 hover:text-white text-emerald-600 border-emerald-100 hover:shadow-lg hover:shadow-emerald-200"
+                          : "bg-rose-50 hover:bg-rose-500 hover:text-white text-rose-500 border-rose-100 hover:shadow-lg hover:shadow-rose-200"
+                      } disabled:opacity-50`}
+                      title={
+                        isInc ? "Registrar cobro" : "Registrar pago"
+                      }
+                    >
+                      {isPaying ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Check className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    );
+  };
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
   const fmtVal = (v: number) => (showValues ? `S/ ${fmt(v)}` : "••••••");
@@ -1222,14 +1484,30 @@ export default function DashboardPage() {
                 </table>
               </div>
             </div>
+
+            {/* 👇 Módulos apilados debajo de la tabla en pantallas grandes si la tabla es corta */}
+            <div className="hidden xl:grid xl:grid-cols-2 gap-5 mt-5">
+              {shouldStackModules && (
+                <>
+                  {renderSimulator()}
+                  {renderAccionRapida()}
+                </>
+              )}
+            </div>
           </div>
+
           {/* ── RIGHT SIDEBAR ─────────────────────────────────────────────────── */}
-          {/* ── RIGHT SIDEBAR ─────────────────────────────────────────────────── */}
-          {/* 👇 Si shouldStackModules es true, el sidebar ocupará todo el ancho en pantallas grandes */}
-          <div
-            className={shouldStackModules ? "xl:col-span-3" : "xl:col-span-1"}
-          >
+          {/* 👇 El sidebar ocupará siempre col-span-1 en pantallas grandes para balancear el diseño */}
+          <div className="xl:col-span-1">
             <div className="flex flex-col gap-5">
+              {/* Financial Health Advisor (¡Ahora primero!) */}
+              <div className="min-w-[300px] w-full h-[500px]">
+                <PersonalAIAdvisor 
+                  analysis={financialAnalysisEngine} 
+                  onActionClick={handleRecommendationClick} 
+                />
+              </div>
+
               {/* 💳 MIS CUENTAS & SALDOS */}
               <div className="bg-white/80 backdrop-blur-md rounded-[2rem] border border-white/60 shadow-[0_30px_70px_rgba(0,0,0,0.02)] p-6 relative overflow-hidden hover:shadow-2xl hover:border-indigo-100/50 transition-all duration-500">
                 <div className="absolute -right-6 -top-6 w-24 h-24 bg-indigo-500/5 rounded-full blur-xl pointer-events-none" />
@@ -1237,7 +1515,7 @@ export default function DashboardPage() {
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-3">
                     <div className="p-2.5 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl text-white shadow-md shadow-indigo-200/50">
-                      <CreditCard className="w-5 h-5" />
+                      <CreditCard className="w-5 h-5 animate-pulse" />
                     </div>
                     <div>
                       <h3 className="text-sm font-black text-gray-800">
@@ -1302,270 +1580,10 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* Financial Health Advisor */}
-              <div className="min-w-[300px] w-full h-[550px]">
-                <PersonalAIAdvisor 
-                  analysis={financialAnalysisEngine} 
-                  onActionClick={handleRecommendationClick} 
-                />
-              </div>
-
-              {/* Debt Payoff Simulator */}
-              {/* Contenedor para Simulador + Acción Rápida */}
-              {/* 👇 Si shouldStackModules es true, estos módulos se pondrán DEBAJO de la tabla */}
-              <div className={shouldStackModules ? "xl:col-span-2" : ""}>
-                <div className="bg-white/80 backdrop-blur-md rounded-[2rem] border border-white/60 shadow-[0_30px_70px_rgba(0,0,0,0.02)] p-6 relative overflow-hidden hover:shadow-2xl hover:border-emerald-100/50 transition-all duration-500">
-                  <div className="absolute -left-6 -bottom-6 w-24 h-24 bg-emerald-400/5 rounded-full blur-xl" />
-                  <div className="flex items-center gap-3 mb-5">
-                    <div className="p-2.5 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl text-white shadow-md shadow-emerald-200/50">
-                      <PiggyBank className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-black text-gray-800">
-                        Simulador de Deuda
-                      </h3>
-                      <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">
-                        Proyección de Amortización
-                      </p>
-                    </div>
-                  </div>
-
-                  {pendingStats.payable > 0 ? (
-                    (() => {
-                      const avgBal = totalBalance / 12;
-                      const capacity = Math.max(
-                        avgBal + simulatorSavings,
-                        0.01,
-                      );
-                      const months =
-                        pendingStats.payable <= 0
-                          ? 0
-                          : Math.ceil(pendingStats.payable / capacity);
-                      const isAchievable = months <= 60;
-                      const pct = Math.min(
-                        (simulatorSavings / 5000) * 100,
-                        100,
-                      );
-                      const colorClass = !isAchievable
-                        ? "text-rose-600 bg-rose-50 border-rose-100"
-                        : months <= 6
-                          ? "text-emerald-600 bg-emerald-50 border-emerald-100"
-                          : months <= 18
-                            ? "text-amber-600 bg-amber-50 border-amber-100"
-                            : "text-indigo-600 bg-indigo-50 border-indigo-100";
-
-                      return (
-                        <>
-                          <div className="mb-4">
-                            <div className="flex justify-between items-center mb-2">
-                              <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">
-                                Ahorro Extra Mensual
-                              </label>
-                              <span className="text-sm font-black text-emerald-600">
-                                S/ {simulatorSavings.toLocaleString()}
-                              </span>
-                            </div>
-                            <input
-                              type="range"
-                              min={0}
-                              max={5000}
-                              step={50}
-                              value={simulatorSavings}
-                              onChange={(e) =>
-                                setSimulatorSavings(Number(e.target.value))
-                              }
-                              className="w-full sim-slider"
-                            />
-                            <div className="flex justify-between text-[9px] text-gray-300 font-black mt-1">
-                              <span>S/ 0</span>
-                              <span>S/ 5,000</span>
-                            </div>
-                          </div>
-
-                          <div
-                            className={`p-4 rounded-2xl border ${colorClass}`}
-                          >
-                            <p className="text-[9px] font-black uppercase tracking-widest text-gray-500 mb-1">
-                              Tiempo para liquidar deuda
-                            </p>
-                            <p
-                              className={`text-3xl font-black ${colorClass.split(" ")[0]}`}
-                            >
-                              {!isAchievable
-                                ? "+60 meses"
-                                : months === 0
-                                  ? "¡Liquidada!"
-                                  : `${months} ${months === 1 ? "mes" : "meses"}`}
-                            </p>
-                            <p className="text-[10px] text-gray-400 mt-1">
-                              Deuda total: S/ {fmt(pendingStats.payable, 0)}
-                            </p>
-                          </div>
-
-                          <div className="mt-3 h-2 bg-gray-100 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-gradient-to-r from-emerald-400 to-teal-500 rounded-full transition-all duration-500"
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                          <p className="text-[9px] text-gray-400 text-center mt-2 font-semibold">
-                            {simulatorSavings > 0
-                              ? `+S/${simulatorSavings}/mes reduce ${Math.ceil(pendingStats.payable / Math.max(avgBal, 0.01)) - months} meses`
-                              : "Mueve el slider para simular"}
-                          </p>
-                        </>
-                      );
-                    })()
-                  ) : (
-                    <div className="flex flex-col items-center p-6 bg-emerald-50/40 rounded-2xl border border-emerald-100 text-center">
-                      <CheckCircle className="w-10 h-10 text-emerald-500 mb-2" />
-                      <p className="text-sm font-black text-emerald-700">
-                        ¡Sin deudas!
-                      </p>
-                      <p className="text-[10px] text-gray-400 mt-1">
-                        Tu flujo está libre de compromisos por pagar.
-                      </p>
-                    </div>
-                  )}
-                </div>
-                {/* Urgent Pending Actions */}
-                <div className="bg-white/80 backdrop-blur-md rounded-[2rem] border border-white/60 shadow-[0_30px_70px_rgba(0,0,0,0.02)] p-6 relative overflow-hidden hover:shadow-2xl hover:border-rose-100/50 transition-all duration-500">
-                  <div className="absolute -right-4 -top-4 w-20 h-20 bg-rose-400/5 rounded-full blur-xl" />
-
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2.5 bg-gradient-to-br from-rose-500 to-orange-500 rounded-xl text-white shadow-md shadow-rose-200/50">
-                      <Zap className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-black text-gray-800">
-                        Acción Rápida
-                      </h3>
-                      <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">
-                        Pendientes Urgentes
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Totals */}
-                  <div className="grid grid-cols-2 gap-2 mb-4 p-3 bg-slate-50/60 rounded-2xl border border-slate-100">
-                    <div>
-                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">
-                        Por Cobrar
-                      </p>
-                      <p className="text-sm font-black text-emerald-600">
-                        S/ {fmt(pendingStats.receivable, 0)}
-                      </p>
-                    </div>
-                    <div className="border-l border-slate-200 pl-3">
-                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">
-                        Por Pagar
-                      </p>
-                      <p className="text-sm font-black text-rose-600">
-                        S/ {fmt(pendingStats.payable, 0)}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2.5">
-                    {pendingStats.urgent.length === 0 ? (
-                      <div className="flex flex-col items-center p-6 bg-emerald-50/40 rounded-2xl border border-emerald-100 text-center">
-                        <Check className="w-8 h-8 text-emerald-500 mb-1.5" />
-                        <p className="text-xs font-black text-emerald-700">
-                          ¡Al día!
-                        </p>
-                        <p className="text-[10px] text-gray-400 mt-0.5">
-                          Sin compromisos urgentes pendientes.
-                        </p>
-                      </div>
-                    ) : (
-                      pendingStats.urgent.map((item, idx) => {
-                        const isInc = item.type === "INCOME";
-                        const isExp = item.dueInfo.status === "EXPIRED";
-                        const isToday = item.dueInfo.status === "TODAY";
-                        let badge =
-                          "bg-slate-50 text-slate-500 border-slate-100";
-                        if (isExp)
-                          badge =
-                            "bg-rose-50 text-rose-600 border-rose-200 animate-pulse";
-                        else if (isToday)
-                          badge =
-                            "bg-orange-50 text-orange-600 border-orange-100";
-                        else
-                          badge = "bg-amber-50 text-amber-600 border-amber-100";
-                        const isPaying = payingId === (item.id || item._id);
-
-                        return (
-                          <div
-                            key={idx}
-                            className="group/item flex items-center justify-between p-3 bg-white/80 hover:bg-slate-50 border border-slate-100 rounded-2xl transition-all hover:shadow-sm"
-                          >
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <div
-                                className={`p-1.5 rounded-xl shrink-0 ${isInc ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-500"}`}
-                              >
-                                {isInc ? (
-                                  <ArrowUpRight className="w-3.5 h-3.5" />
-                                ) : (
-                                  <ArrowDownRight className="w-3.5 h-3.5" />
-                                )}
-                              </div>
-                              <div className="min-w-0">
-                                <p className="text-xs font-black text-gray-800 truncate">
-                                  {item.description ||
-                                    item.name ||
-                                    "Sin descripción"}
-                                </p>
-                                <div className="flex items-center gap-1 mt-0.5">
-                                  <span className="text-[8px] text-gray-400 font-semibold">
-                                    {item.category?.name ||
-                                      item.category ||
-                                      "Otros"}
-                                  </span>
-                                  <span className="text-gray-200">·</span>
-                                  <span
-                                    className={`text-[8px] px-1.5 py-0.5 rounded border font-bold ${badge}`}
-                                  >
-                                    {item.dueInfo.message}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0 pl-2">
-                              <span
-                                className={`text-xs font-black ${isInc ? "text-emerald-600" : "text-rose-600"}`}
-                              >
-                                S/
-                                {item.amountSoles.toLocaleString("es-PE", {
-                                  maximumFractionDigits: 0,
-                                })}
-                              </span>
-                              <button
-                                onClick={() =>
-                                  handleQuickPay(item.id || item._id)
-                                }
-                                disabled={isPaying}
-                                className={`p-1.5 rounded-xl border transition-all flex items-center justify-center ${
-                                  isInc
-                                    ? "bg-emerald-50 hover:bg-emerald-500 hover:text-white text-emerald-600 border-emerald-100 hover:shadow-lg hover:shadow-emerald-200"
-                                    : "bg-rose-50 hover:bg-rose-500 hover:text-white text-rose-500 border-rose-100 hover:shadow-lg hover:shadow-rose-200"
-                                } disabled:opacity-50`}
-                                title={
-                                  isInc ? "Registrar cobro" : "Registrar pago"
-                                }
-                              >
-                                {isPaying ? (
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                ) : (
-                                  <Check className="w-3.5 h-3.5" />
-                                )}
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
+              {/* Debt Payoff Simulator & Quick Action (renderizados aquí si NO están apilados debajo de la tabla) */}
+              <div className={`flex flex-col gap-5 ${shouldStackModules ? "xl:hidden" : ""}`}>
+                {renderSimulator()}
+                {renderAccionRapida()}
               </div>
             </div>
           </div>
@@ -1624,6 +1642,7 @@ export default function DashboardPage() {
       `,
         }}
       />
+
     </Appshell>
   );
 }

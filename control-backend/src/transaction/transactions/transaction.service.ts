@@ -36,13 +36,18 @@ export class TransactionService {
     if ((dto.type === 'EXPENSE' || dto.type === 'TRANSFER') && isPaid) {
       if (!dto.ignoreLiquidity) {
         const workspace = dto.workspace || 'PERSONAL';
-        const currentLiquidity = await this.getLiquidity(
-          userId,
-          workspace,
-        );
-        if (amountSoles > currentLiquidity) {
+        let limit = 0;
+        let limitName = 'caja';
+        if (dto.type === 'TRANSFER' && dto.originAccount?.toLowerCase().includes('chanchito')) {
+          limit = await this.getChanchitoBalance(userId, workspace);
+          limitName = 'ahorros (Chanchito)';
+        } else {
+          limit = await this.getLiquidity(userId, workspace);
+        }
+
+        if (amountSoles > limit) {
           throw new BadRequestException(
-            `Límite de liquidez superado. No tiene suficiente liquidez en caja para realizar esta operación. Liquidez disponible: S/ ${currentLiquidity.toFixed(2)}.`,
+            `Límite de liquidez superado. No tiene suficiente liquidez en ${limitName} para realizar esta operación. Liquidez disponible: S/ ${limit.toFixed(2)}.`,
           );
         }
       }
@@ -258,6 +263,40 @@ export class TransactionService {
     return income - expense - chanchitoBalance;
   }
 
+  async getChanchitoBalance(
+    userId: string,
+    workspace: string = 'PERSONAL',
+  ): Promise<number> {
+    const ownerId = await this.getOwnerId(userId);
+    const savingsIn = await this.prisma.transaction.aggregate({
+      _sum: { amountSoles: true },
+      where: {
+        OR: [{ userId: ownerId }, { user: { parentId: ownerId } }],
+        workspace,
+        status: TransactionStatus.PAID,
+        type: 'TRANSFER',
+        destinationAccount: {
+          contains: 'chanchito',
+        },
+      },
+    });
+
+    const savingsOut = await this.prisma.transaction.aggregate({
+      _sum: { amountSoles: true },
+      where: {
+        OR: [{ userId: ownerId }, { user: { parentId: ownerId } }],
+        workspace,
+        status: TransactionStatus.PAID,
+        type: 'TRANSFER',
+        originAccount: {
+          contains: 'chanchito',
+        },
+      },
+    });
+
+    return (savingsIn._sum.amountSoles ?? 0) - (savingsOut._sum.amountSoles ?? 0);
+  }
+
   // =========================================================
   // FIND BY ID
   // =========================================================
@@ -306,36 +345,30 @@ export class TransactionService {
       amountSoles = isUSD ? amount * (exchangeRate || 1) : amount;
     }
 
-    // Validate liquidity difference on update
-    const wasPaidExpense =
-      existing.type === 'EXPENSE' &&
-      existing.status === TransactionStatus.PAID;
+    // Validate liquidity limit
+    const isWithdrawal =
+      (dto.type ?? existing.type) === 'TRANSFER' &&
+      (dto.originAccount ?? existing.originAccount)?.toLowerCase().includes('chanchito');
 
-    const targetStatus = dto.status ?? existing.status;
-    const targetType = dto.type ?? existing.type;
+    const limit = isWithdrawal
+      ? await this.getChanchitoBalance(existing.userId, existing.workspace)
+      : await this.getLiquidity(existing.userId, existing.workspace);
 
-    const isPaidExpense =
-      targetType === 'EXPENSE' &&
-      targetStatus === TransactionStatus.PAID;
+    const limitName = isWithdrawal ? 'ahorros (Chanchito)' : 'caja';
 
     const oldAmount = existing.amountSoles !== null && existing.amountSoles !== undefined ? existing.amountSoles : existing.amount;
     const newAmount = amountSoles !== null && amountSoles !== undefined ? amountSoles : amount;
 
-    let diff = 0;
-    if (wasPaidExpense) diff -= oldAmount;
-    if (isPaidExpense) diff += newAmount;
+    const maxAvailable = limit + (existing.status === TransactionStatus.PAID ? oldAmount : 0);
 
-    if (diff > 0) {
-      if (!dto.ignoreLiquidity) {
-        const currentLiquidity = await this.getLiquidity(
-          existing.userId,
-          existing.workspace,
+    const targetStatus = dto.status ?? existing.status;
+    const isPaid = targetStatus === TransactionStatus.PAID;
+
+    if (isPaid && !dto.ignoreLiquidity) {
+      if (newAmount > maxAvailable) {
+        throw new BadRequestException(
+          `Límite de liquidez superado. No tiene suficiente liquidez en ${limitName} para esta modificación. Liquidez disponible: S/ ${limit.toFixed(2)}.`,
         );
-        if (diff > currentLiquidity) {
-          throw new BadRequestException(
-            `Límite de liquidez superado. No tiene suficiente liquidez en caja para esta modificación. Liquidez disponible: S/ ${currentLiquidity.toFixed(2)}.`,
-          );
-        }
       }
     }
 

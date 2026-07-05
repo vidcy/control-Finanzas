@@ -212,6 +212,57 @@ export function usePersonalAI({
 
     score = Math.max(0, Math.min(100, score));
 
+    // Calculate Grade and Label
+    let grade = "C";
+    let healthLabel = "Estable";
+    let healthColor = "text-amber-500 bg-amber-50 border-amber-200";
+    if (score >= 90) {
+      grade = "A+";
+      healthLabel = "Excelente";
+      healthColor = "text-emerald-500 bg-emerald-50 border-emerald-200";
+    } else if (score >= 80) {
+      grade = "A";
+      healthLabel = "Muy Buena";
+      healthColor = "text-emerald-500 bg-emerald-50 border-emerald-200";
+    } else if (score >= 70) {
+      grade = "B";
+      healthLabel = "Buena/Saludable";
+      healthColor = "text-indigo-500 bg-indigo-50 border-indigo-200";
+    } else if (score >= 50) {
+      grade = "C";
+      healthLabel = "Estable con Riesgos";
+      healthColor = "text-amber-500 bg-amber-50 border-amber-200";
+    } else if (score >= 30) {
+      grade = "D";
+      healthLabel = "Vulnerable";
+      healthColor = "text-rose-500 bg-rose-50 border-rose-200";
+    } else {
+      grade = "F";
+      healthLabel = "Crítica";
+      healthColor = "text-red-500 bg-red-50 border-red-200";
+    }
+
+    // 3-Month Projections
+    const avgInc = totalIncome / 12 || 0;
+    const avgExp = totalExpense / 12 || 0;
+    const monthlyNetSavings = avgInc - avgExp;
+    const projections = [
+      { month: "Mes 1", balance: totalBalance + monthlyNetSavings },
+      { month: "Mes 2", balance: totalBalance + monthlyNetSavings * 2 },
+      { month: "Mes 3", balance: totalBalance + monthlyNetSavings * 3 },
+    ];
+
+    // Money leaks (Fugas de dinero)
+    const moneyLeaks = [] as string[];
+    if ((100 - expenseAnalysis.fixedVsVariable.fixedPct) > 60) {
+      moneyLeaks.push("Tus gastos variables representan más del 60% de tus egresos. Intenta reducirlos.");
+    }
+    expenseAnalysis.topCategories.slice(0, 2).forEach(cat => {
+      if (cat.percentage > 35 && cat.name !== "Alquiler" && cat.name !== "Otros Gastos") {
+        moneyLeaks.push(`El gasto en ${cat.name} es muy alto (S/ ${fmt(cat.amount)}), representando el ${cat.percentage.toFixed(1)}% de tus egresos.`);
+      }
+    });
+
     return {
       incomeAnalysis,
       expenseAnalysis,
@@ -220,6 +271,12 @@ export function usePersonalAI({
       liquidityRatio,
       riskAnalysis,
       score,
+      grade,
+      healthLabel,
+      healthColor,
+      projections,
+      moneyLeaks,
+      activeTx,
     };
   }, [activeTx, mIncome, mExpense, mBalance, totalIncome, totalExpense, totalBalance, pendingStats]);
 }
