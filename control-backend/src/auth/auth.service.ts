@@ -23,6 +23,19 @@ export class AuthService {
 
     if (!user) throw new UnauthorizedException('Usuario no existe');
 
+    // Check trial expiration
+    if (user.isSelfRegistered && user.trialEndsAt && new Date() > new Date(user.trialEndsAt)) {
+      if (user.isActive) {
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: { isActive: false },
+        });
+      }
+      throw new UnauthorizedException(
+        'Tu período de prueba de 30 días ha vencido. Por favor, comunícate con el administrador para adquirir una licencia.',
+      );
+    }
+
     // ✅ Check account activation BEFORE password so the error is clear
     if (!user.isActive)
       throw new UnauthorizedException(

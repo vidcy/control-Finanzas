@@ -1,29 +1,61 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
-import { v2 as cloudinary } from 'cloudinary';
-import { Readable } from 'stream';
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 
 @Injectable()
 export class FilesService {
-  constructor() {
-    // Aquí configuras tus credenciales (puedes ponerlas en el .env)
-    cloudinary.config({
-      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-      api_key: process.env.CLOUDINARY_API_KEY,
-      api_secret: process.env.CLOUDINARY_API_SECRET,
+  private getS3Client(): S3Client {
+    if (
+      !process.env.DO_SPACES_KEY ||
+      !process.env.DO_SPACES_SECRET ||
+      !process.env.DO_SPACES_ENDPOINT ||
+      !process.env.DO_SPACES_BUCKET
+    ) {
+      throw new BadRequestException(
+        'Las credenciales de DigitalOcean Spaces no están configuradas correctamente en el archivo .env (DO_SPACES_KEY, DO_SPACES_SECRET, DO_SPACES_ENDPOINT, DO_SPACES_BUCKET).',
+      );
+    }
+
+    return new S3Client({
+      endpoint: process.env.DO_SPACES_ENDPOINT,
+      region: 'us-east-1', // DigitalOcean Spaces ignora la región pero el SDK de AWS la requiere
+      credentials: {
+        accessKeyId: process.env.DO_SPACES_KEY,
+        secretAccessKey: process.env.DO_SPACES_SECRET,
+      },
     });
   }
 
-  async uploadReceipt(file: Express.Multer.File): Promise<string> {
-    if (
-      !process.env.CLOUDINARY_CLOUD_NAME ||
-      !process.env.CLOUDINARY_API_KEY ||
-      !process.env.CLOUDINARY_API_SECRET
-    ) {
-      throw new BadRequestException(
-        'Las credenciales de Cloudinary no están configuradas en el archivo .env del backend (CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET).',
-      );
+  private generateKey(folder: string, originalName: string): string {
+    const cleanName = originalName.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    return `${folder}/${uniqueSuffix}-${cleanName}`;
+  }
+
+  private getAbsoluteUrl(key: string): string {
+    const bucket = process.env.DO_SPACES_BUCKET || '';
+    const cdnBase = process.env.DO_SPACES_CDN || '';
+    const endpoint = process.env.DO_SPACES_ENDPOINT || '';
+
+    if (cdnBase) {
+      const cleanCdn = cdnBase.replace(/\/$/, '');
+      try {
+        const parsed = new URL(cleanCdn);
+        // Si es el host CDN genérico de DO y no comienza con el nombre del bucket
+        if (parsed.hostname.endsWith('.cdn.digitaloceanspaces.com') && !parsed.hostname.startsWith(bucket)) {
+          return `https://${bucket}.${parsed.hostname}/${key}`;
+        }
+      } catch (e) {
+        // Fallback si no es una URL válida
+      }
+      return `${cleanCdn}/${key}`;
     }
-    // Validación estricta de formatos
+
+    // Endpoint estándar de DO Spaces: https://{bucket}.{region}.digitaloceanspaces.com o similar
+    const cleanEndpoint = endpoint.replace(/^https?:\/\//, '').replace(/\/$/, '');
+    return `https://${bucket}.${cleanEndpoint}/${key}`;
+  }
+
+  async uploadReceipt(file: Express.Multer.File): Promise<string> {
     const allowedMimeTypes = [
       'image/jpeg',
       'image/png',
@@ -37,30 +69,29 @@ export class FilesService {
       );
     }
 
-    // Subida profesional usando streams (muy rápido y eficiente)
-    return new Promise((resolve, reject) => {
-      const uploadStream = cloudinary.uploader.upload_stream(
-        { folder: 'comprobantes' }, // Carpeta en Cloudinary
-        (error, result) => {
-          if (error) return reject(new BadRequestException(error.message));
-          resolve(result.secure_url); // Esta URL es la que guardas en Prisma
-        },
+    try {
+      const s3Client = this.getS3Client();
+      const key = this.generateKey('comprobantes', file.originalname);
+
+      await s3Client.send(
+        new PutObjectCommand({
+          Bucket: process.env.DO_SPACES_BUCKET,
+          Key: key,
+          Body: file.buffer,
+          ContentType: file.mimetype,
+          ACL: 'public-read',
+        }),
       );
-      uploadStream.end(file.buffer);
-    });
+
+      return this.getAbsoluteUrl(key);
+    } catch (error: any) {
+      throw new BadRequestException(
+        `Error al subir el comprobante a DigitalOcean Spaces: ${error.message}`,
+      );
+    }
   }
 
   async uploadProductImage(file: Express.Multer.File): Promise<string> {
-    if (
-      !process.env.CLOUDINARY_CLOUD_NAME ||
-      !process.env.CLOUDINARY_API_KEY ||
-      !process.env.CLOUDINARY_API_SECRET
-    ) {
-      throw new BadRequestException(
-        'Las credenciales de Cloudinary no están configuradas en el archivo .env del backend (CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET).',
-      );
-    }
-    // Validación de imágenes del producto
     const allowedMimeTypes = [
       'image/jpeg',
       'image/png',
@@ -73,55 +104,55 @@ export class FilesService {
       );
     }
 
-    return new Promise((resolve, reject) => {
-      const uploadStream = cloudinary.uploader.upload_stream(
-        { folder: 'productos' }, // Carpeta en Cloudinary
-        (error, result) => {
-          if (error) return reject(new BadRequestException(error.message));
-          resolve(result.secure_url);
-        },
+    try {
+      const s3Client = this.getS3Client();
+      const key = this.generateKey('productos', file.originalname);
+
+      await s3Client.send(
+        new PutObjectCommand({
+          Bucket: process.env.DO_SPACES_BUCKET,
+          Key: key,
+          Body: file.buffer,
+          ContentType: file.mimetype,
+          ACL: 'public-read',
+        }),
       );
-      uploadStream.end(file.buffer);
-    });
+
+      return this.getAbsoluteUrl(key);
+    } catch (error: any) {
+      throw new BadRequestException(
+        `Error al subir la imagen del producto a DigitalOcean Spaces: ${error.message}`,
+      );
+    }
   }
 
   async deleteFile(url: string): Promise<boolean> {
-    if (!url || !url.includes('cloudinary.com')) {
-      return false;
-    }
+    if (!url) return false;
     try {
-      const parts = url.split('/');
-      const uploadIdx = parts.indexOf('upload');
-      if (uploadIdx === -1) return false;
+      const parsedUrl = new URL(url);
+      let key = parsedUrl.pathname;
 
-      let publicIdParts = parts.slice(uploadIdx + 1);
-      // Omitir el tag de versión (ej. v171922521)
-      if (publicIdParts[0] && /^v\d+$/.test(publicIdParts[0])) {
-        publicIdParts = publicIdParts.slice(1);
+      const bucketName = process.env.DO_SPACES_BUCKET;
+      // Remover prefijo del bucket si existe en la ruta (ej. /bucket-name/key)
+      if (bucketName && key.startsWith(`/${bucketName}/`)) {
+        key = key.substring(bucketName.length + 2);
+      } else if (key.startsWith('/')) {
+        key = key.substring(1);
       }
 
-      // Remover extensión del archivo
-      const lastPart = publicIdParts[publicIdParts.length - 1];
-      const dotIdx = lastPart.lastIndexOf('.');
-      if (dotIdx !== -1) {
-        publicIdParts[publicIdParts.length - 1] = lastPart.substring(0, dotIdx);
-      }
+      key = decodeURIComponent(key);
 
-      const publicId = publicIdParts.join('/');
+      const s3Client = this.getS3Client();
+      await s3Client.send(
+        new DeleteObjectCommand({
+          Bucket: process.env.DO_SPACES_BUCKET,
+          Key: key,
+        }),
+      );
 
-      // Intentar eliminar como imagen primero
-      let result = await cloudinary.uploader.destroy(publicId, {
-        resource_type: 'image',
-      });
-      if (result.result === 'ok') return true;
-
-      // Intentar eliminar como raw (para PDFs cargados como crudos)
-      result = await cloudinary.uploader.destroy(publicId, {
-        resource_type: 'raw',
-      });
-      return result.result === 'ok';
+      return true;
     } catch (error) {
-      console.error('Error al eliminar archivo de Cloudinary:', error);
+      console.error('Error al eliminar archivo de DigitalOcean Spaces:', error);
       return false;
     }
   }

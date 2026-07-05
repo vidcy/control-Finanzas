@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NubefactService } from '../nubefact/nubefact.service';
 
@@ -240,6 +240,17 @@ export class SalesService {
 
     if (!sale) {
       throw new NotFoundException('Venta no encontrada');
+    }
+
+    if (sale.cashShiftId) {
+      const shift = await this.prisma.cashShift.findUnique({
+        where: { id: sale.cashShiftId },
+      });
+      if (shift && shift.status === 'CLOSED') {
+        throw new BadRequestException(
+          'No se puede eliminar una venta que pertenece a un cierre de caja ya cerrado.',
+        );
+      }
     }
 
     return this.prisma.$transaction(async (tx) => {

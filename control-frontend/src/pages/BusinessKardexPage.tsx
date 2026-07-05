@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import Appshell from "../components/layout/Appshell";
 import Pagination from "../components/ui/Pagination";
+import { useAuth } from "../auth/AuthContext";
 import {
   Search,
   ArrowRightLeft,
@@ -60,6 +61,7 @@ interface EnrichedMovement extends InventoryMovement {
 }
 
 export default function BusinessKardexPage() {
+  const { user } = useAuth();
   // Data States
   const [products, setProducts] = useState<Product[]>([]);
   const [movements, setMovements] = useState<InventoryMovement[]>([]);
@@ -1077,7 +1079,7 @@ export default function BusinessKardexPage() {
             </h2>
           </div>
 
-          <div className={`grid grid-cols-1 sm:grid-cols-2 ${branches.length > 1 ? "lg:grid-cols-8" : "lg:grid-cols-7"} gap-3`}>
+          <div className={`grid grid-cols-1 sm:grid-cols-2 ${(user?.profiles?.includes("BUSINESS_BRANCHES") && branches.length > 1) ? "lg:grid-cols-8" : "lg:grid-cols-7"} gap-3`}>
             
             {/* Search query */}
             <div className="space-y-1">
@@ -1095,7 +1097,7 @@ export default function BusinessKardexPage() {
             </div>
 
             {/* Branch Selector (only if multiple branches exist) */}
-            {branches.length > 1 && (
+            {user?.profiles?.includes("BUSINESS_BRANCHES") && branches.length > 1 && (
               <div className="space-y-1">
                 <label className="block text-[10px] font-bold text-gray-400 uppercase">Sede / Almacén</label>
                 <select
@@ -1212,7 +1214,7 @@ export default function BusinessKardexPage() {
               {/* Header Blocks Row 1 */}
               <thead>
                 <tr className="bg-teal-700 text-white text-[10px] font-black uppercase tracking-wider text-center border-b border-teal-800">
-                  <th colSpan={branches.length > 1 ? 4 : 3} className="px-4 py-3.5 text-left border-r border-teal-800">DOCUMENTACIÓN Y REFERENCIAS</th>
+                  <th colSpan={(user?.profiles?.includes("BUSINESS_BRANCHES") && branches.length > 1) ? 4 : 3} className="px-4 py-3.5 text-left border-r border-teal-800">DOCUMENTACIÓN Y REFERENCIAS</th>
                   <th colSpan={3} className="px-4 py-3.5 border-r border-teal-800 bg-teal-800/40">ENTRADAS (INGRESOS A ALMACÉN)</th>
                   <th colSpan={3} className="px-4 py-3.5 border-r border-teal-800 bg-rose-900/10">SALIDAS (RETIROS DE ALMACÉN)</th>
                   <th colSpan={3} className="px-4 py-3.5 bg-teal-800/20">SALDOS RESULTANTES (VALORACIÓN CPP)</th>
@@ -1221,7 +1223,7 @@ export default function BusinessKardexPage() {
                 {/* Header Sub-columns Row 2 */}
                 <tr className="bg-teal-600/90 text-white text-[9px] font-black uppercase tracking-wider text-center border-b border-gray-100">
                   <th className="px-4 py-2.5 text-left border-r border-teal-700/50">Fecha y Hora</th>
-                  {branches.length > 1 && (
+                  {user?.profiles?.includes("BUSINESS_BRANCHES") && branches.length > 1 && (
                     <th className="px-4 py-2.5 text-left border-r border-teal-700/50">Sede</th>
                   )}
                   <th className="px-4 py-2.5 text-left border-r border-teal-700/50">Producto / Item</th>
@@ -1251,7 +1253,7 @@ export default function BusinessKardexPage() {
                   Array.from({ length: 6 }).map((_, i) => (
                     <tr key={i} className="animate-pulse">
                       <td className="px-4 py-4"><div className="h-3 w-20 bg-gray-100 rounded"></div></td>
-                      {branches.length > 1 && (
+                      {user?.profiles?.includes("BUSINESS_BRANCHES") && branches.length > 1 && (
                         <td className="px-4 py-4"><div className="h-3 w-16 bg-gray-100 rounded"></div></td>
                       )}
                       <td className="px-4 py-4"><div className="h-3 w-28 bg-gray-100 rounded"></div></td>
@@ -1262,7 +1264,7 @@ export default function BusinessKardexPage() {
                 ) : filteredMovements.length === 0 ? (
                   // Empty State
                   <tr>
-                    <td colSpan={branches.length > 1 ? 13 : 12} className="py-16 text-center">
+                    <td colSpan={(user?.profiles?.includes("BUSINESS_BRANCHES") && branches.length > 1) ? 13 : 12} className="py-16 text-center">
                       {movements.length === 0 ? (
                         <div className="flex flex-col items-center justify-center max-w-md mx-auto p-6 bg-slate-50/50 rounded-3xl border border-dashed border-gray-200 shadow-sm animate-fade-in">
                           <div className="p-3.5 bg-indigo-50 text-indigo-600 rounded-full mb-4 animate-bounce">
@@ -1321,7 +1323,7 @@ export default function BusinessKardexPage() {
                         </td>
 
                         {/* Sede/Branch column */}
-                        {branches.length > 1 && (
+                        {user?.profiles?.includes("BUSINESS_BRANCHES") && branches.length > 1 && (
                           <td className="px-4 py-3 text-left border-r border-gray-100 text-xs font-semibold text-gray-600">
                             🏢 {m.branch?.name || "Almacén Central"}
                           </td>
@@ -1474,7 +1476,7 @@ export default function BusinessKardexPage() {
               >
                 <option value="">-- Elija un producto --</option>
                 {products.map((p) => {
-                  const stockDetails = p.branchStocks && p.branchStocks.length > 0
+                  const stockDetails = user?.profiles?.includes("BUSINESS_BRANCHES") && p.branchStocks && p.branchStocks.length > 0
                     ? ` | ` + p.branchStocks.map(bs => `${branches.find(b => b.id === bs.branchId)?.name || "Sede"}: ${bs.stock}`).join(", ")
                     : "";
                   return (
@@ -1486,7 +1488,7 @@ export default function BusinessKardexPage() {
               </select>
             </div>
 
-            {branches.length > 0 && (
+            {user?.profiles?.includes("BUSINESS_BRANCHES") && branches.length > 0 && (
               <div className="space-y-1">
                 <label className="block text-[10px] font-black text-gray-400 uppercase">Sede / Almacén a Ajustar</label>
                 <select

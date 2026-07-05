@@ -73,6 +73,43 @@ export class BranchesService {
     if (!branch) {
       throw new NotFoundException('Sede no encontrada');
     }
+
+    // Check associated data
+    const [salesCount, cashShiftsCount, workersCount, transactionsCount, movementsCount, stocksCount] = await Promise.all([
+      this.prisma.sale.count({ where: { branchId: id } }),
+      this.prisma.cashShift.count({ where: { branchId: id } }),
+      this.prisma.user.count({ where: { branchId: id } }),
+      this.prisma.transaction.count({ where: { branchId: id } }),
+      this.prisma.inventoryMovement.count({ where: { branchId: id } }),
+      this.prisma.branchStock.count({ where: { branchId: id, stock: { gt: 0 } } }),
+    ]);
+
+    if (
+      salesCount > 0 ||
+      cashShiftsCount > 0 ||
+      workersCount > 0 ||
+      transactionsCount > 0 ||
+      movementsCount > 0 ||
+      stocksCount > 0
+    ) {
+      const details = [];
+      if (salesCount > 0) details.push(`${salesCount} venta(s)`);
+      if (cashShiftsCount > 0) details.push(`${cashShiftsCount} turno(s) de caja`);
+      if (workersCount > 0) details.push(`${workersCount} trabajador(es)`);
+      if (transactionsCount > 0) details.push(`${transactionsCount} transacción(es)`);
+      if (movementsCount > 0) details.push(`${movementsCount} movimiento(s) de inventario`);
+      if (stocksCount > 0) details.push(`${stocksCount} producto(s) con stock positivo`);
+
+      throw new BadRequestException(
+        `No se puede eliminar la sede porque tiene registros asociados: ${details.join(', ')}.`,
+      );
+    }
+
+    // Since BranchStock has onDelete: Cascade, we can delete the branch. But we can also explicitly delete BranchStock rows first just in case
+    await this.prisma.branchStock.deleteMany({
+      where: { branchId: id },
+    });
+
     return this.prisma.branch.delete({
       where: { id },
     });

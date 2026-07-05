@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 
 @Injectable()
@@ -55,6 +55,22 @@ export class AdvisorsService {
     if (!advisor) {
       throw new NotFoundException('Asesor no encontrado');
     }
+
+    const [salesCount, commissionsCount] = await Promise.all([
+      this.prisma.sale.count({ where: { advisorId: id } }),
+      this.prisma.commission.count({ where: { advisorId: id } }),
+    ]);
+
+    const reasons: string[] = [];
+    if (salesCount > 0) reasons.push(`${salesCount} venta(s)`);
+    if (commissionsCount > 0) reasons.push(`${commissionsCount} comisión(es)`);
+
+    if (reasons.length > 0) {
+      throw new BadRequestException(
+        `No se puede eliminar el asesor porque tiene registros asociados: ${reasons.join(', ')}. Puede desactivar su cuenta en lugar de eliminarla.`,
+      );
+    }
+
     return this.prisma.advisor.delete({
       where: { id },
     });

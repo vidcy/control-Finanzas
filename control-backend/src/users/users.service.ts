@@ -46,6 +46,10 @@ export class UsersService {
             : ['PERSONAL'],
         isActive: data.isActive !== undefined ? data.isActive : true,
         parentId: data.parentId || null,
+        isSelfRegistered: data.isSelfRegistered || false,
+        trialEndsAt: data.isSelfRegistered
+          ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 días
+          : null,
       },
     });
     //seed categories only if it's not a worker user
@@ -71,6 +75,7 @@ export class UsersService {
         profiles: true,
         blockedProfiles: true,
         parentId: true,
+        hasElectronicBilling: true,
       },
     });
   }
@@ -111,7 +116,7 @@ export class UsersService {
   }
   async me(id: string) {
     // console.log("🔥 PROFILE SERVICE ID:", id);
-    return this.prisma.user.findUnique({
+    const user = await this.prisma.user.findUnique({
       where: { id },
       select: {
         id: true,
@@ -137,8 +142,24 @@ export class UsersService {
         hasElectronicBilling: true,
         nubefactUrl: true,
         nubefactToken: true,
+        isSelfRegistered: true,
+        trialEndsAt: true,
       },
     });
+
+    if (user && user.isSelfRegistered && user.trialEndsAt && new Date() > new Date(user.trialEndsAt)) {
+      if (user.isActive) {
+        await this.prisma.user.update({
+          where: { id },
+          data: { isActive: false },
+        });
+      }
+      throw new ForbiddenException(
+        'Tu período de prueba de 30 días ha vencido. Por favor, comunícate con el administrador para adquirir una licencia.',
+      );
+    }
+
+    return user;
   }
 
   async updateMyProfile(id: string, data: any) {
@@ -181,7 +202,7 @@ export class UsersService {
       }
     }
 
-    // Obtener los datos actuales del usuario antes de actualizar para limpiar de Cloudinary si cambia/elimina imágenes
+    // Obtener los datos actuales del usuario antes de actualizar para limpiar de DigitalOcean Spaces si cambia/elimina imágenes
     const currentUser = await this.prisma.user.findUnique({
       where: { id },
       select: {
@@ -368,6 +389,26 @@ export class UsersService {
     if (!worker) {
       throw new NotFoundException('Trabajador no encontrado');
     }
+
+    const [salesCount, cashShiftsCount, transactionsCount, inventoryMovementsCount] = await Promise.all([
+      this.prisma.sale.count({ where: { userId: id } }),
+      this.prisma.cashShift.count({ where: { userId: id } }),
+      this.prisma.transaction.count({ where: { userId: id } }),
+      this.prisma.inventoryMovement.count({ where: { userId: id } }),
+    ]);
+
+    const reasons: string[] = [];
+    if (salesCount > 0) reasons.push(`${salesCount} venta(s)`);
+    if (cashShiftsCount > 0) reasons.push(`${cashShiftsCount} turno(s) de caja`);
+    if (transactionsCount > 0) reasons.push(`${transactionsCount} transacción(es)`);
+    if (inventoryMovementsCount > 0) reasons.push(`${inventoryMovementsCount} movimiento(s) de inventario`);
+
+    if (reasons.length > 0) {
+      throw new BadRequestException(
+        `No se puede eliminar el trabajador porque tiene registros asociados: ${reasons.join(', ')}. Puede desactivar su cuenta en lugar de eliminarla.`,
+      );
+    }
+
     return this.prisma.user.delete({
       where: { id },
     });

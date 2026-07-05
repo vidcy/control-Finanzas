@@ -1033,7 +1033,7 @@ export default function BusinessPosPage() {
       let finalReceiptUrl: string | undefined = undefined;
 
       if (receiptUrl instanceof File) {
-        // Caso A: El usuario seleccionó un archivo nuevo -> Subimos a Cloudinary
+        // Caso A: El usuario seleccionó un archivo nuevo -> Subimos a DigitalOcean Spaces
         const uploadToast = toast.loading("Subiendo comprobante...");
         try {
           finalReceiptUrl = await uploadReceiptFile(receiptUrl);
@@ -1496,9 +1496,11 @@ export default function BusinessPosPage() {
               }}
             >
               <div>¡Gracias por tu preferencia!</div>
-              <div style={{ fontSize: "5px", color: "#999", marginTop: "4px" }}>
-                Solicita tu Boleta o Factura
-              </div>
+              {(!lastSale?.billingType || lastSale.billingType === "TICKET_VENTA" || lastSale.billingType === "TICKET") && (
+                <div style={{ fontSize: "5px", color: "#999", marginTop: "4px" }}>
+                  Solicita tu Boleta o Factura
+                </div>
+              )}
               <div
                 style={{
                   fontSize: "8px",
@@ -1937,8 +1939,7 @@ export default function BusinessPosPage() {
               onClick={() => setIsSalesListOpen(true)}
               className="w-full mt-3 py-3 border border-indigo-200 text-indigo-600 rounded-2xl font-black text-xs flex items-center justify-center gap-2 hover:bg-indigo-50 transition-all shadow-sm"
             >
-              <FileText className="w-4 h-4" /> Ver Ventas Recientes
-              (Editar/Eliminar)
+              <FileText className="w-4 h-4" /> Ver Ventas Recientes (Editar/Anular/Notas F.E.)
             </button>
           </div>
         </div>
@@ -2149,9 +2150,11 @@ export default function BusinessPosPage() {
 
               <div className="text-center text-gray-500 pt-2 border-t border-dashed border-gray-200">
                 <div className="text-[10px]">¡Gracias por tu preferencia!</div>
-                <div className="text-[5px] text-gray-400 mt-0.5">
-                  Solicita tu Boleta o Factura
-                </div>
+                {(!lastSale?.billingType || lastSale.billingType === "TICKET_VENTA" || lastSale.billingType === "TICKET") && (
+                  <div className="text-[5px] text-gray-400 mt-0.5">
+                    Solicita tu Boleta o Factura
+                  </div>
+                )}
                 <div className="text-[8px] font-bold text-gray-700 mt-2">
                   Global Ccoplex
                 </div>
@@ -2338,7 +2341,7 @@ export default function BusinessPosPage() {
           )}
 
           {/* ADVISOR SELECTOR */}
-          {advisors.length > 0 && (
+          {user?.profiles?.includes("BUSINESS_WORKERS") && advisors.length > 0 && (
             <div className="space-y-2 border-t border-gray-100 pt-4">
               <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">
                 Asignar {user?.advisorLabel || "Asesor de venta"}
@@ -3202,22 +3205,31 @@ export default function BusinessPosPage() {
               <span className="font-bold">{hoveredProduct.unit}</span>
             </div>
 
-            <div>
-              <span className="block text-[9px] uppercase font-black text-slate-400">Stock Sede</span>
-              <span className="font-bold text-emerald-400">
-                {(() => {
-                  const bsStock = activeShift?.branchId
-                    ? (hoveredProduct.branchStocks?.find((bs: any) => bs.branchId === activeShift.branchId)?.stock || 0)
-                    : hoveredProduct.stock;
-                  return bsStock;
-                })()}
-              </span>
-            </div>
+            {user?.profiles?.includes("BUSINESS_BRANCHES") ? (
+              <>
+                <div>
+                  <span className="block text-[9px] uppercase font-black text-slate-400">Stock Sede</span>
+                  <span className="font-bold text-emerald-400">
+                    {(() => {
+                      const bsStock = activeShift?.branchId
+                        ? (hoveredProduct.branchStocks?.find((bs: any) => bs.branchId === activeShift.branchId)?.stock || 0)
+                        : hoveredProduct.stock;
+                      return bsStock;
+                    })()}
+                  </span>
+                </div>
 
-            <div>
-              <span className="block text-[9px] uppercase font-black text-slate-400">Stock Global</span>
-              <span className="font-bold text-cyan-400">{hoveredProduct.stock}</span>
-            </div>
+                <div>
+                  <span className="block text-[9px] uppercase font-black text-slate-400">Stock Global</span>
+                  <span className="font-bold text-cyan-400">{hoveredProduct.stock}</span>
+                </div>
+              </>
+            ) : (
+              <div>
+                <span className="block text-[9px] uppercase font-black text-slate-400">Stock</span>
+                <span className="font-bold text-emerald-400">{hoveredProduct.stock}</span>
+              </div>
+            )}
 
             <div>
               <span className="block text-[9px] uppercase font-black text-slate-400">Precio Costo</span>

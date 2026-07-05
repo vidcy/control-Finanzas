@@ -439,15 +439,14 @@ export default function UserPage() {
                                 toast.error(err.message || "Error al actualizar");
                               }
                             }}
-                            className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-widest px-3 py-2 rounded-xl transition-all shadow-sm ${
-                              user.hasElectronicBilling
+                            className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-widest px-3 py-2 rounded-xl transition-all shadow-sm ${user.hasElectronicBilling
                                 ? "bg-emerald-500 text-white shadow-emerald-100 hover:brightness-110"
                                 : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                            }`}
+                              }`}
                             title={user.hasElectronicBilling ? "Deshabilitar facturación electrónica" : "Habilitar facturación electrónica"}
                           >
                             <Receipt className="w-3.5 h-3.5" />
-                            {user.hasElectronicBilling ? "Activa" : "Sin FE"}
+                            {user.hasElectronicBilling ? "ACTIVADO" : "Sin FE"}
                           </button>
                         ) : (
                           <span className="text-[10px] text-gray-300 font-bold">Heredada</span>
@@ -827,7 +826,7 @@ export default function UserPage() {
                             let updated = e.target.checked
                               ? [...formData.profiles, "BUSINESS"]
                               : formData.profiles.filter(p => p !== "BUSINESS");
-                            
+
                             // If checked, also activate all business submodules by default except branches
                             if (e.target.checked) {
                               const subs = SUB_MODULES.map(m => m.key).filter(k => k !== "BUSINESS_BRANCHES");
@@ -1115,7 +1114,7 @@ export default function UserPage() {
                             let updated = e.target.checked
                               ? [...formData.profiles, "BUSINESS"]
                               : formData.profiles.filter(p => p !== "BUSINESS");
-                            
+
                             // If checked, also activate all business submodules by default except branches
                             if (e.target.checked) {
                               const subs = SUB_MODULES.map(m => m.key).filter(k => k !== "BUSINESS_BRANCHES");

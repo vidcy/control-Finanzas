@@ -109,7 +109,7 @@ export function peruInputDateToUtcISO(peruDateStr: string, existingUtcISO?: stri
   if (!peruDateStr) return new Date().toISOString();
 
   const [year, month, day] = peruDateStr.split("-").map(Number);
-  
+
   let hours = 0;
   let minutes = 0;
   let seconds = 0;
@@ -134,7 +134,7 @@ export function peruInputDateToUtcISO(peruDateStr: string, existingUtcISO?: stri
 
   // Formato: YYYY-MM-DD HH:mm:ss.SSS
   const localDateTimeStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")} ${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${String(milliseconds).padStart(3, "0")}`;
-  
+
   const utcDate = fromZonedTime(localDateTimeStr, PERU_TZ);
   return utcDate.toISOString();
 }
@@ -170,7 +170,7 @@ export function getDueDateStatus(dueDateUtcISO: string | Date | undefined): DueD
   if (!dueDateUtcISO) {
     return { status: "FUTURE", daysDifference: 9999, message: "Sin fecha" };
   }
-  
+
   const dateObj = new Date(dueDateUtcISO);
   if (isNaN(dateObj.getTime())) {
     return { status: "FUTURE", daysDifference: 9999, message: "Fecha inválida" };

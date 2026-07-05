@@ -20,6 +20,7 @@ export class CashShiftController {
   async openShift(
     @Request() req,
     @Body('initialBalance') initialBalance: number,
+    @Body('password') password?: string,
     @Body('branchId') branchId?: string,
     @Body('categoryId') categoryId?: string,
     @Body('subCategoryId') subCategoryId?: string,
@@ -30,6 +31,7 @@ export class CashShiftController {
       ownerId,
       workerId,
       initialBalance,
+      password,
       branchId,
       categoryId,
       subCategoryId,
@@ -39,6 +41,7 @@ export class CashShiftController {
   @Post('close')
   async closeShift(
     @Request() req,
+    @Body('password') password?: string,
     @Body('categoryId') categoryId?: string,
     @Body('subCategoryId') subCategoryId?: string,
   ) {
@@ -49,6 +52,7 @@ export class CashShiftController {
       workerId,
       categoryId,
       subCategoryId,
+      password,
     );
   }
 

@@ -253,6 +253,17 @@ export class TransactionService {
   async updateTransaction(id: string, dto: UpdateTransactionDto) {
     const existing = await this.findById(id);
 
+    if (existing.cashShiftId) {
+      const shift = await this.prisma.cashShift.findUnique({
+        where: { id: existing.cashShiftId },
+      });
+      if (shift && shift.status === 'CLOSED') {
+        throw new BadRequestException(
+          'No se puede modificar una transacción que pertenece a un cierre de caja ya cerrado.',
+        );
+      }
+    }
+
     const currency = dto.currency ?? existing.currency;
     const amount = dto.amount ?? existing.amount;
     const exchangeRate = dto.exchangeRate ?? existing.exchangeRate;
@@ -336,6 +347,17 @@ export class TransactionService {
   // =========================================================
   async deleteTransaction(id: string) {
     const existing = await this.findById(id);
+
+    if (existing.cashShiftId) {
+      const shift = await this.prisma.cashShift.findUnique({
+        where: { id: existing.cashShiftId },
+      });
+      if (shift && shift.status === 'CLOSED') {
+        throw new BadRequestException(
+          'No se puede eliminar una transacción que pertenece a un cierre de caja ya cerrado.',
+        );
+      }
+    }
 
     // 1. Buscar movimientos de inventario asociados (margen de 5 segundos)
     const movements = await this.prisma.inventoryMovement.findMany({

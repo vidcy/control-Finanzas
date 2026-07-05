@@ -2411,7 +2411,7 @@ export default function BusinessInventoryPage() {
                   )}
 
                   {/* Sede/Almacén filter */}
-                  {branches.length > 0 && (
+                  {user?.profiles?.includes("BUSINESS_BRANCHES") && branches.length > 0 && (
                     <select
                       value={activeBranchId}
                       onChange={(e) => setActiveBranchId(e.target.value)}
@@ -2664,7 +2664,7 @@ export default function BusinessInventoryPage() {
                                           </span>
                                         </div>
                                       </div>
-                                      {p.branchStocks &&
+                                      {user?.profiles?.includes("BUSINESS_BRANCHES") && p.branchStocks &&
                                         p.branchStocks.length > 0 && (
                                           <div className="border-t border-slate-200/60 pt-2 space-y-1">
                                             <div className="text-[8px] text-indigo-500 font-black uppercase tracking-wider">
@@ -2745,13 +2745,15 @@ export default function BusinessInventoryPage() {
                                       <TrendingUp className="w-3.5 h-3.5" />{" "}
                                       Comprar
                                     </button>
-                                    <button
-                                      onClick={() => handleOpenStockMgmt(p)}
-                                      className="px-3 py-2 bg-indigo-55 bg-indigo-50 text-indigo-700 rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-indigo-100 transition-colors flex items-center justify-center gap-1"
-                                      title="Gestionar Stock por Sede"
-                                    >
-                                      <Truck className="w-3.5 h-3.5" />
-                                    </button>
+                                    {user?.profiles?.includes("BUSINESS_BRANCHES") && (
+                                      <button
+                                        onClick={() => handleOpenStockMgmt(p)}
+                                        className="px-3 py-2 bg-indigo-55 bg-indigo-50 text-indigo-700 rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-indigo-100 transition-colors flex items-center justify-center gap-1"
+                                        title="Gestionar Stock por Sede"
+                                      >
+                                        <Truck className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
                                     <button
                                       onClick={() => handleOpenModal(p)}
                                       className="px-3 py-2 bg-slate-50 text-slate-600 rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-slate-100 transition-colors flex items-center justify-center"

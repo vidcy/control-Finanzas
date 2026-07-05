@@ -98,6 +98,7 @@ export class UsersController {
     // 4. Crear usuario inactivo por defecto para registro público
     body.email = email;
     body.isActive = false;
+    body.isSelfRegistered = true;
     const user = await this.usersService.createUsers(body);
 
     // 5. Generar token y enviar correo de activación

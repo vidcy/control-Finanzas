@@ -56,6 +56,9 @@ export default function BusinessCashRegisterPage() {
   const [closeCategoryId, setCloseCategoryId] = useState("");
   const [closeSubCategoryId, setCloseSubCategoryId] = useState("");
 
+  const [openPassword, setOpenPassword] = useState("");
+  const [closePassword, setClosePassword] = useState("");
+
   const loadInitialData = async () => {
     try {
       const [branchList, catList, workerList] = await Promise.all([
@@ -469,17 +472,23 @@ export default function BusinessCashRegisterPage() {
       toast.error("Debe seleccionar una categoría contable");
       return;
     }
+    if (!openPassword) {
+      toast.error("Por favor, ingrese la contraseña del dueño para autorizar");
+      return;
+    }
     
     try {
       await openCashShiftRequest(
         Number(initialBalance),
         selectedBranchId,
         selectedCategoryId,
-        selectedSubCategoryId || undefined
+        selectedSubCategoryId || undefined,
+        openPassword
       );
       toast.success("Caja abierta exitosamente");
       setIsModalOpen(false);
       setInitialBalance("");
+      setOpenPassword("");
       loadActiveShiftAndHistory();
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Error al abrir la caja");
@@ -487,10 +496,15 @@ export default function BusinessCashRegisterPage() {
   };
 
   const handleCloseShift = async () => {
+    if (!closePassword) {
+      toast.error("Por favor, ingrese su contraseña de confirmación");
+      return;
+    }
     try {
-      await closeCashShiftRequest(closeCategoryId, closeSubCategoryId || undefined);
+      await closeCashShiftRequest(closeCategoryId, closeSubCategoryId || undefined, closePassword);
       toast.success("Caja cerrada exitosamente");
       setIsCloseConfirmOpen(false);
+      setClosePassword("");
       loadActiveShiftAndHistory();
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Error al cerrar la caja");
@@ -763,7 +777,7 @@ export default function BusinessCashRegisterPage() {
         </div>
       </div>
 
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Abrir Caja">
+      <Modal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setOpenPassword(""); }} title="Abrir Caja">
         <form onSubmit={handleOpenShift} className="space-y-4">
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Monto Inicial en Efectivo (Base de Caja)</label>
@@ -843,6 +857,25 @@ export default function BusinessCashRegisterPage() {
             );
           })()}
 
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
+              Contraseña de Autorización del Dueño
+            </label>
+            <input 
+              type="password" 
+              required 
+              value={openPassword} 
+              onChange={e => setOpenPassword(e.target.value)} 
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-semibold" 
+              placeholder="••••••••" 
+            />
+            {user?.parentId && (
+              <p className="text-[11px] text-amber-600 mt-1 font-medium bg-amber-50 border border-amber-100 p-2 rounded-lg">
+                ⚠️ Como trabajador, debes solicitar al dueño su contraseña para autorizar la apertura de caja y el fondo asignado.
+              </p>
+            )}
+          </div>
+
           <div className="pt-4 flex justify-end gap-3">
             <button type="button" onClick={() => setIsModalOpen(false)} className="px-5 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200 transition-colors text-sm">Cancelar</button>
             <button type="submit" className="px-5 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-all shadow-md shadow-indigo-500/30 text-sm">
@@ -855,7 +888,7 @@ export default function BusinessCashRegisterPage() {
       {/* MODAL: CERRAR CAJA (CON SELECCIÓN DE CATEGORÍA Y SUBCATEGORÍA DE INGRESO) */}
       <Modal
         isOpen={isCloseConfirmOpen}
-        onClose={() => setIsCloseConfirmOpen(false)}
+        onClose={() => { setIsCloseConfirmOpen(false); setClosePassword(""); }}
         title="Cerrar turno de caja"
       >
         <form
@@ -921,6 +954,23 @@ export default function BusinessCashRegisterPage() {
               </div>
             );
           })()}
+
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
+              Tu Contraseña de Confirmación
+            </label>
+            <input 
+              type="password" 
+              required 
+              value={closePassword} 
+              onChange={e => setClosePassword(e.target.value)} 
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-semibold" 
+              placeholder="••••••••" 
+            />
+            <p className="text-[11px] text-gray-400 mt-1">
+              Ingresa tu contraseña de acceso para autorizar el cierre del turno.
+            </p>
+          </div>
 
           <div className="pt-4 flex justify-end gap-3 border-t border-gray-100">
             <button

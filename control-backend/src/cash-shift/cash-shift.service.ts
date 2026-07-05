@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class CashShiftService {
@@ -27,7 +28,7 @@ export class CashShiftService {
           where: { id: shift.userId },
         });
         const ownerId = workerUser?.parentId || shift.userId;
-        await this.closeShift(ownerId, shift.userId);
+        await this.closeShift(ownerId, shift.userId, undefined, undefined, undefined, true);
         this.logger.log(
           `Caja cerrada automáticamente para usuario ${shift.userId}`,
         );
@@ -46,6 +47,7 @@ export class CashShiftService {
     ownerId: string;
     workerId: string;
     initialBalance: number;
+    password?: string;
     branchId?: string;
     categoryId?: string;
     subCategoryId?: string;
@@ -54,10 +56,32 @@ export class CashShiftService {
       ownerId,
       workerId,
       initialBalance,
+      password,
       branchId,
       categoryId,
       subCategoryId,
     } = options;
+
+    if (!password) {
+      throw new BadRequestException(
+        'Se requiere la contraseña del dueño del negocio para abrir la caja.',
+      );
+    }
+
+    const owner = await this.prisma.user.findUnique({
+      where: { id: ownerId },
+    });
+
+    if (!owner) {
+      throw new NotFoundException('Dueño del negocio no encontrado.');
+    }
+
+    const isMatch = await bcrypt.compare(password, owner.password);
+    if (!isMatch) {
+      throw new BadRequestException(
+        'Contraseña del dueño del negocio incorrecta.',
+      );
+    }
 
     const activeShift = await this.prisma.cashShift.findFirst({
       where: { userId: workerId, status: 'OPEN' },
@@ -110,7 +134,30 @@ export class CashShiftService {
     workerId: string,
     categoryId?: string,
     subCategoryId?: string,
+    password?: string,
+    isCron: boolean = false,
   ) {
+    if (!isCron) {
+      if (!password) {
+        throw new BadRequestException(
+          'Se requiere la contraseña para cerrar la caja.',
+        );
+      }
+
+      const user = await this.prisma.user.findUnique({
+        where: { id: workerId },
+      });
+
+      if (!user) {
+        throw new NotFoundException('Usuario no encontrado.');
+      }
+
+      const isMatch = await bcrypt.compare(password, user.password);
+      if (!isMatch) {
+        throw new BadRequestException('Contraseña incorrecta.');
+      }
+    }
+
     const activeShift = await this.prisma.cashShift.findFirst({
       where: { userId: workerId, status: 'OPEN' },
     });

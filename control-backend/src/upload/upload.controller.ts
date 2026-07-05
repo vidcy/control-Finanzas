@@ -16,7 +16,7 @@ export class UploadController {
 
   /**
    * Upload a PRODUCT IMAGE (no PDF, images only)
-   * Uploads to Cloudinary 'productos' folder
+   * Uploads to DigitalOcean Spaces 'productos' folder
    */
   @UseGuards(JwtAuthGuard)
   @Post('product-image')
@@ -33,14 +33,14 @@ export class UploadController {
     }
     const url = await this.filesService.uploadProductImage(file);
     return {
-      message: 'Imagen del producto subida correctamente a Cloudinary',
+      message: 'Imagen del producto subida correctamente a DigitalOcean Spaces',
       url,
     };
   }
 
   /**
    * Upload a RECEIPT / COMPROBANTE (image or PDF)
-   * Uploads to Cloudinary 'comprobantes' folder
+   * Uploads to DigitalOcean Spaces 'comprobantes' folder
    */
   @UseGuards(JwtAuthGuard)
   @Post('receipt')
@@ -57,7 +57,7 @@ export class UploadController {
     }
     const url = await this.filesService.uploadReceipt(file);
     return {
-      message: 'Comprobante subido correctamente a Cloudinary',
+      message: 'Comprobante subido correctamente a DigitalOcean Spaces',
       url,
     };
   }

@@ -1173,49 +1173,57 @@ export default function BusinessReportsPage() {
         </div>
 
         {/* FILTROS AVANZADOS */}
-        <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm grid grid-cols-1 sm:grid-cols-5 gap-4">
-          <div className="space-y-1">
-            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Sede / Sucursal</label>
-            <select
-              value={selectedBranch}
-              onChange={(e) => {
-                setSelectedBranch(e.target.value);
-                toast.success("Filtro de Sede actualizado");
-              }}
-              className="w-full bg-slate-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-bold text-gray-700 outline-none focus:border-indigo-500 transition-colors"
-            >
-              <option value="">Todas las Sedes</option>
-              {branches.map((b: any) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
-          </div>
+        <div className={`bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm grid grid-cols-1 sm:grid-cols-${
+          5 - 
+          (!user?.profiles?.includes("BUSINESS_BRANCHES") ? 1 : 0) -
+          (!user?.profiles?.includes("BUSINESS_WORKERS") ? 2 : 0)
+        } gap-4`}>
+          {user?.profiles?.includes("BUSINESS_BRANCHES") && (
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Sede / Sucursal</label>
+              <select
+                value={selectedBranch}
+                onChange={(e) => {
+                  setSelectedBranch(e.target.value);
+                  toast.success("Filtro de Sede actualizado");
+                }}
+                className="w-full bg-slate-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-bold text-gray-700 outline-none focus:border-indigo-500 transition-colors"
+              >
+                <option value="">Todas las Sedes</option>
+                {branches.map((b: any) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
-          <div className="space-y-1">
-            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Vendedor / Colaborador</label>
-            <select
-              value={selectedWorker}
-              onChange={(e) => {
-                setSelectedWorker(e.target.value);
-                toast.success("Filtro de Vendedor actualizado");
-              }}
-              className="w-full bg-slate-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-bold text-gray-700 outline-none focus:border-indigo-500 transition-colors"
-            >
-              <option value="">Todos los Vendedores</option>
-              {user && (
-                <option value={user.parentId || user.id}>
-                  Propietario / Administrador
-                </option>
-              )}
-              {workers.map((w: any) => (
-                <option key={w.id} value={w.id}>
-                  {w.name} {w.lastName || ""}
-                </option>
-              ))}
-            </select>
-          </div>
+          {user?.profiles?.includes("BUSINESS_WORKERS") && (
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Vendedor / Colaborador</label>
+              <select
+                value={selectedWorker}
+                onChange={(e) => {
+                  setSelectedWorker(e.target.value);
+                  toast.success("Filtro de Vendedor actualizado");
+                }}
+                className="w-full bg-slate-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-bold text-gray-700 outline-none focus:border-indigo-500 transition-colors"
+              >
+                <option value="">Todos los Vendedores</option>
+                {user && (
+                  <option value={user.parentId || user.id}>
+                    Propietario / Administrador
+                  </option>
+                )}
+                {workers.map((w: any) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name} {w.lastName || ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div className="space-y-1">
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Método de Pago</label>
@@ -1236,24 +1244,26 @@ export default function BusinessReportsPage() {
             </select>
           </div>
 
-          <div className="space-y-1">
-            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Asesor de Venta</label>
-            <select
-              value={selectedAdvisor}
-              onChange={(e) => {
-                setSelectedAdvisor(e.target.value);
-                toast.success("Filtro de Asesor actualizado");
-              }}
-              className="w-full bg-slate-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-bold text-gray-700 outline-none focus:border-indigo-500 transition-colors"
-            >
-              <option value="">Todos los Asesores</option>
-              {advisors.map((adv: any) => (
-                <option key={adv.id} value={adv.id}>
-                  {adv.name} ({adv.commissionPercentage}%)
-                </option>
-              ))}
-            </select>
-          </div>
+          {user?.profiles?.includes("BUSINESS_WORKERS") && (
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Asesor de Venta</label>
+              <select
+                value={selectedAdvisor}
+                onChange={(e) => {
+                  setSelectedAdvisor(e.target.value);
+                  toast.success("Filtro de Asesor actualizado");
+                }}
+                className="w-full bg-slate-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs font-bold text-gray-700 outline-none focus:border-indigo-500 transition-colors"
+              >
+                <option value="">Todos los Asesores</option>
+                {advisors.map((adv: any) => (
+                  <option key={adv.id} value={adv.id}>
+                    {adv.name} ({adv.commissionPercentage}%)
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div className="space-y-1">
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Producto</label>
@@ -1317,14 +1327,16 @@ export default function BusinessReportsPage() {
           >
             <ArrowUpDown className="w-4 h-4" /> Movimientos Kardex
           </button>
-          <button
-            onClick={() => setActiveTab("comisiones")}
-            className={`flex-1 min-w-[120px] py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all ${
-              activeTab === "comisiones" ? "bg-indigo-600 text-white shadow-md" : "text-gray-500 hover:text-gray-800 hover:bg-gray-50"
-            }`}
-          >
-            <DollarSign className="w-4 h-4" /> Comisiones Asesores
-          </button>
+          {user?.profiles?.includes("BUSINESS_WORKERS") && (
+            <button
+              onClick={() => setActiveTab("comisiones")}
+              className={`flex-1 min-w-[120px] py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all ${
+                activeTab === "comisiones" ? "bg-indigo-600 text-white shadow-md" : "text-gray-500 hover:text-gray-800 hover:bg-gray-50"
+              }`}
+            >
+              <DollarSign className="w-4 h-4" /> Comisiones Asesores
+            </button>
+          )}
         </div>
 
         {loading ? (

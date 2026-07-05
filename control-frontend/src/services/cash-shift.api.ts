@@ -5,18 +5,28 @@ export const openCashShiftRequest = async (
   branchId?: string,
   categoryId?: string,
   subCategoryId?: string,
+  password?: string,
 ) => {
   const res = await axios.post('/cash-shift/open', {
     initialBalance,
     branchId,
     categoryId,
     subCategoryId,
+    password,
   });
   return res.data;
 };
 
-export const closeCashShiftRequest = async (categoryId?: string, subCategoryId?: string) => {
-  const res = await axios.post('/cash-shift/close', { categoryId, subCategoryId });
+export const closeCashShiftRequest = async (
+  categoryId?: string,
+  subCategoryId?: string,
+  password?: string,
+) => {
+  const res = await axios.post('/cash-shift/close', {
+    categoryId,
+    subCategoryId,
+    password,
+  });
   return res.data;
 };
 
