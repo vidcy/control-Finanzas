@@ -107,8 +107,8 @@ export function ProductImageUploader({
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error("La imagen es demasiado grande (máximo 5MB)");
+      if (file.size > 50 * 1024 * 1024) {
+        toast.error("La imagen es demasiado grande (máximo 50MB)");
         return;
       }
       onUploadSuccess(file);
@@ -154,7 +154,7 @@ export function ProductImageUploader({
         <ImageIcon className="w-7 h-7 mb-1" />
         <span className="text-sm font-bold">{label}</span>
         <span className="text-[10px] mt-0.5 opacity-60">
-          JPG · PNG · WEBP (máx. 5MB)
+          JPG · PNG · WEBP · HEIC (máx. 50MB)
         </span>
       </div>
 
@@ -172,7 +172,7 @@ export function ProductImageUploader({
         ref={fileInputRef}
         onChange={handleFileSelect}
         className="hidden"
-        accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+        accept="*/*"
       />
       <input
         type="file"
@@ -233,8 +233,8 @@ export default function ReceiptUploader({
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 8 * 1024 * 1024) {
-        toast.error("El archivo es demasiado grande (máximo 8MB)");
+      if (file.size > 50 * 1024 * 1024) {
+        toast.error("El archivo es demasiado grande (máximo 50MB)");
         return;
       }
       onUploadSuccess(file);
@@ -280,7 +280,7 @@ export default function ReceiptUploader({
               Arrastra o haz clic para adjuntar
             </span>
             <span className="text-[10px] mt-0.5 opacity-60">
-              PNG · JPG · PDF (máx. 8MB)
+              Cualquier formato de Foto/Documento (máx. 50MB)
             </span>
           </div>
 
@@ -298,7 +298,7 @@ export default function ReceiptUploader({
             ref={fileInputRef}
             onChange={handleFileSelect}
             className="hidden"
-            accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp,application/pdf,.pdf"
+            accept="*/*"
           />
           <input
             type="file"

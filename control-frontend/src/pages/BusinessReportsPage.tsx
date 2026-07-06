@@ -404,17 +404,21 @@ export default function BusinessReportsPage() {
   };
 
   const exportInventoryExcel = async () => {
+    const productsToExport = selectedBranch
+      ? products.filter((p: any) => p.branchStocks?.some((bs: any) => bs.branchId === selectedBranch && bs.stock > 0))
+      : products;
+
     await exportToExcel(
-      products.map((p: any) => ({
+      productsToExport.map((p: any) => ({
         sku: p.sku || "—",
         nombre: p.name,
-        stock: p.stock,
+        stock: selectedBranch ? (p.branchStocks?.find((bs: any) => bs.branchId === selectedBranch)?.stock ?? p.stock) : p.stock,
         minimo: p.minStock,
         unidad: p.unit || "uds",
         costo: p.costPrice,
         precio: p.salePrice,
-        valCosto: p.costPrice * p.stock,
-        valVenta: p.salePrice * p.stock,
+        valCosto: p.costPrice * (selectedBranch ? (p.branchStocks?.find((bs: any) => bs.branchId === selectedBranch)?.stock ?? p.stock) : p.stock),
+        valVenta: p.salePrice * (selectedBranch ? (p.branchStocks?.find((bs: any) => bs.branchId === selectedBranch)?.stock ?? p.stock) : p.stock),
       })),
       [
         { key: "sku", label: "SKU" },

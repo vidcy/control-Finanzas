@@ -22,7 +22,7 @@ export class UploadController {
   @Post('product-image')
   @UseInterceptors(
     FileInterceptor('file', {
-      limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+      limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
     }),
   )
   async uploadProductImage(@UploadedFile() file: Express.Multer.File) {
@@ -46,7 +46,7 @@ export class UploadController {
   @Post('receipt')
   @UseInterceptors(
     FileInterceptor('file', {
-      limits: { fileSize: 8 * 1024 * 1024 }, // 8MB limit
+      limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
     }),
   )
   async uploadReceipt(@UploadedFile() file: Express.Multer.File) {
