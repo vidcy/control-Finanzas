@@ -5,7 +5,7 @@ import {
   IsNumber,
   IsDateString,
 } from 'class-validator';
-import { TransactionStatus, Currency } from '@prisma/client';
+import { TransactionStatus, Currency, TransactionType } from '@prisma/client';
 export class UpdatePendingTransactionDto {
   @IsOptional()
   @IsEnum(TransactionStatus)
@@ -59,6 +59,14 @@ export class UpdatePendingTransactionDto {
   @IsOptional()
   @IsString()
   receiptUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  workspace?: string;
+
+  @IsOptional()
+  @IsEnum(TransactionType)
+  type?: TransactionType;
 }
 
 export class MarkAsPaidDto {
