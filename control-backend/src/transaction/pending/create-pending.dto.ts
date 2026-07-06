@@ -78,4 +78,8 @@ export class CreatePendingTransactionDto {
   @IsOptional()
   @IsString()
   receiptUrl?: string;
+
+  @IsOptional()
+  @IsEnum(TransactionStatus)
+  status?: TransactionStatus;
 }
