@@ -122,7 +122,7 @@ export default function BusinessReportsPage() {
   };
 
   // 1. FILTERED DATASETS
-  const filteredTxs = transactions.filter((t: any) => {
+  const filteredTxs = useMemo(() => transactions.filter((t: any) => {
     if (!t.date) return true;
     const day = typeof t.date === "string" ? t.date.slice(0, 10) : "";
     if (dateFrom && day < dateFrom) return false;
@@ -138,10 +138,10 @@ export default function BusinessReportsPage() {
       if (!inName && !inDesc) return false;
     }
     return true;
-  });
+  }), [transactions, dateFrom, dateTo, selectedBranch, selectedWorker, selectedPaymentMethod, selectedAdvisor, selectedProduct]);
 
   // POS Sales only
-  const filteredSales = sales.filter((s: any) => {
+  const filteredSales = useMemo(() => sales.filter((s: any) => {
     if (!s.date) return true;
     const day = typeof s.date === "string" ? s.date.slice(0, 10) : "";
     if (dateFrom && day < dateFrom) return false;
@@ -151,7 +151,7 @@ export default function BusinessReportsPage() {
     if (selectedPaymentMethod && s.paymentMethod !== selectedPaymentMethod) return false;
     if (selectedAdvisor && s.advisorId !== selectedAdvisor) return false;
     return true;
-  });
+  }), [sales, dateFrom, dateTo, selectedBranch, selectedWorker, selectedPaymentMethod, selectedAdvisor]);
 
 
   // 2. METRICS & CHART COMPUTATIONS
@@ -166,7 +166,7 @@ export default function BusinessReportsPage() {
 
   const netCashFlow = totalIncome - totalExpense;
 
-  const filteredTreasury = filteredTxs.filter((t: any) => {
+  const filteredTreasury = useMemo(() => filteredTxs.filter((t: any) => {
     if (searchTx) {
       const q = searchTx.toLowerCase();
       return (
@@ -176,10 +176,10 @@ export default function BusinessReportsPage() {
       );
     }
     return true;
-  });
+  }), [filteredTxs, searchTx]);
 
   // Kardex movements
-  const filteredMovements = movements.filter((m: any) => {
+  const filteredMovements = useMemo(() => movements.filter((m: any) => {
     if (!m.createdAt) return true;
     const day = typeof m.createdAt === "string" ? m.createdAt.slice(0, 10) : "";
     if (dateFrom && day < dateFrom) return false;
@@ -199,7 +199,7 @@ export default function BusinessReportsPage() {
       );
     }
     return true;
-  });
+  }), [movements, dateFrom, dateTo, selectedBranch, selectedWorker, selectedProduct, searchProduct]);
 
   const paginatedSales = useMemo(() => {
     return filteredSales.slice((salesPage - 1) * pageSize, salesPage * pageSize);

@@ -125,6 +125,14 @@ export default function UserPage() {
     }
     setIsSaving(true);
     try {
+      const ALL_KEYS = [
+        "PERSONAL", "BUSINESS", "BUSINESS_BRANCHES", "BUSINESS_WORKERS",
+        "BUSINESS_DASHBOARD", "BUSINESS_POS", "BUSINESS_INVENTORY",
+        "BUSINESS_FINANCE", "BUSINESS_CASH_REGISTER", "BUSINESS_PENDING",
+        "BUSINESS_REPORTS", "BUSINESS_HISTORY", "BUSINESS_CATEGORIES"
+      ];
+      const computedBlockedProfiles = ALL_KEYS.filter(k => !formData.profiles.includes(k));
+
       await registerRequest(
         formData.name,
         formData.lastName,
@@ -133,7 +141,8 @@ export default function UserPage() {
         formData.role,
         true,
         formData.profiles,
-        isWorker ? parentId : null
+        isWorker ? parentId : null,
+        computedBlockedProfiles
       );
       toast.success("Usuario creado exitosamente");
       await fetchUsers();
@@ -155,11 +164,20 @@ export default function UserPage() {
     }
     setIsSaving(true);
     try {
+      const ALL_KEYS = [
+        "PERSONAL", "BUSINESS", "BUSINESS_BRANCHES", "BUSINESS_WORKERS",
+        "BUSINESS_DASHBOARD", "BUSINESS_POS", "BUSINESS_INVENTORY",
+        "BUSINESS_FINANCE", "BUSINESS_CASH_REGISTER", "BUSINESS_PENDING",
+        "BUSINESS_REPORTS", "BUSINESS_HISTORY", "BUSINESS_CATEGORIES"
+      ];
+      const computedBlockedProfiles = ALL_KEYS.filter(k => !formData.profiles.includes(k));
+
       const payload: any = {
         name: formData.name,
         lastName: formData.lastName,
         role: formData.role,
         profiles: formData.profiles,
+        blockedProfiles: computedBlockedProfiles,
         parentId: isWorker ? parentId : null,
         hasElectronicBilling,
       };
@@ -357,12 +375,21 @@ export default function UserPage() {
                                   const newProfiles = e.target.checked
                                     ? [...user.profiles, "PERSONAL"]
                                     : user.profiles.filter((p) => p !== "PERSONAL");
-                                  if (newProfiles.length === 0) {
-                                    toast.error("El usuario debe tener al menos un módulo");
+                                  if (!newProfiles.includes("PERSONAL") && !newProfiles.includes("BUSINESS")) {
+                                    toast.error("El usuario debe tener al menos un módulo habilitado (Personal o Negocio).");
                                     return;
                                   }
+
+                                  const ALL_KEYS = [
+                                    "PERSONAL", "BUSINESS", "BUSINESS_BRANCHES", "BUSINESS_WORKERS",
+                                    "BUSINESS_DASHBOARD", "BUSINESS_POS", "BUSINESS_INVENTORY",
+                                    "BUSINESS_FINANCE", "BUSINESS_CASH_REGISTER", "BUSINESS_PENDING",
+                                    "BUSINESS_REPORTS", "BUSINESS_HISTORY", "BUSINESS_CATEGORIES"
+                                  ];
+                                  const computedBlockedProfiles = ALL_KEYS.filter(k => !newProfiles.includes(k));
+
                                   try {
-                                    await updateUserRequest(user.id, { profiles: newProfiles });
+                                    await updateUserRequest(user.id, { profiles: newProfiles, blockedProfiles: computedBlockedProfiles });
                                     toast.success("Módulo actualizado");
                                     await fetchUsers();
                                   } catch (err: any) {
@@ -404,15 +431,33 @@ export default function UserPage() {
                                 type="checkbox"
                                 checked={user.profiles.includes("BUSINESS")}
                                 onChange={async (e) => {
-                                  const newProfiles = e.target.checked
+                                  let newProfiles = e.target.checked
                                     ? [...user.profiles, "BUSINESS"]
-                                    : user.profiles.filter((p) => p !== "BUSINESS");
-                                  if (newProfiles.length === 0) {
-                                    toast.error("El usuario debe tener al menos un módulo");
+                                    : user.profiles.filter((p) => p !== "BUSINESS" && !p.startsWith("BUSINESS_"));
+                                  if (!newProfiles.includes("PERSONAL") && !newProfiles.includes("BUSINESS")) {
+                                    toast.error("El usuario debe tener al menos un módulo habilitado (Personal o Negocio).");
                                     return;
                                   }
+
+                                  if (e.target.checked) {
+                                    const subs = [
+                                      "BUSINESS_DASHBOARD", "BUSINESS_POS", "BUSINESS_INVENTORY",
+                                      "BUSINESS_FINANCE", "BUSINESS_CASH_REGISTER", "BUSINESS_PENDING",
+                                      "BUSINESS_REPORTS", "BUSINESS_HISTORY", "BUSINESS_CATEGORIES", "BUSINESS_WORKERS"
+                                    ];
+                                    newProfiles = Array.from(new Set([...newProfiles, ...subs]));
+                                  }
+
+                                  const ALL_KEYS = [
+                                    "PERSONAL", "BUSINESS", "BUSINESS_BRANCHES", "BUSINESS_WORKERS",
+                                    "BUSINESS_DASHBOARD", "BUSINESS_POS", "BUSINESS_INVENTORY",
+                                    "BUSINESS_FINANCE", "BUSINESS_CASH_REGISTER", "BUSINESS_PENDING",
+                                    "BUSINESS_REPORTS", "BUSINESS_HISTORY", "BUSINESS_CATEGORIES"
+                                  ];
+                                  const computedBlockedProfiles = ALL_KEYS.filter(k => !newProfiles.includes(k));
+
                                   try {
-                                    await updateUserRequest(user.id, { profiles: newProfiles });
+                                    await updateUserRequest(user.id, { profiles: newProfiles, blockedProfiles: computedBlockedProfiles });
                                     toast.success("Módulo actualizado");
                                     await fetchUsers();
                                   } catch (err: any) {

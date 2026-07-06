@@ -16,7 +16,8 @@ export const registerRequest = async (
   role?: string,
   status?: boolean,
   profiles?: string[],
-  parentId?: string | null
+  parentId?: string | null,
+  blockedProfiles?: string[]
 ) => {
   try {
     const res = await API.post("/users", {
@@ -28,6 +29,7 @@ export const registerRequest = async (
       isActive: status,
       profiles,
       parentId,
+      blockedProfiles,
     });
 
     // 👇 SI LLEGAMOS AQUÍ = backend respondió 200 OK

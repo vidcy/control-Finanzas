@@ -26,6 +26,7 @@ interface AuthContextType {
   activeWorkspace: WorkspaceType | null;
   setActiveWorkspace: (workspace: WorkspaceType | null) => void;
   userProfiles: string[];
+  syncProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -77,42 +78,62 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const userProfiles: string[] = parseProfiles(user?.profiles);
 
+  const syncProfile = async () => {
+    try {
+      if (!token) return;
+      const freshUser = await getUserRequest();
+
+      if (freshUser.isActive === false) {
+        logout();
+        return;
+      }
+
+      const parsedProfiles = parseProfiles(freshUser.profiles);
+      const parsedBlocked = freshUser.blockedProfiles ? parseProfiles(freshUser.blockedProfiles) : [];
+      
+      // Auto-inject missing business submodules if they have BUSINESS and it's not blocked
+      if (parsedProfiles.includes("BUSINESS")) {
+         const subs = [
+           "BUSINESS_DASHBOARD", "BUSINESS_POS", "BUSINESS_INVENTORY",
+           "BUSINESS_FINANCE", "BUSINESS_CASH_REGISTER", "BUSINESS_PENDING",
+           "BUSINESS_REPORTS", "BUSINESS_HISTORY", "BUSINESS_CATEGORIES", "BUSINESS_WORKERS"
+         ];
+         subs.forEach(s => {
+           if (!parsedProfiles.includes(s) && !parsedBlocked.includes(s)) {
+             parsedProfiles.push(s);
+           }
+         });
+      }
+
+      const loggedUser: User = {
+        ...freshUser,
+        profiles: parsedProfiles,
+        blockedProfiles: parsedBlocked,
+      };
+
+      localStorage.setItem("user", JSON.stringify(loggedUser));
+      setUser(loggedUser);
+
+      const userProfs = loggedUser.profiles;
+      if (loggedUser.parentId) {
+        setActiveWorkspace("BUSINESS");
+      } else if (userProfs.length === 1) {
+        setActiveWorkspace(userProfs[0] as WorkspaceType);
+      } else if (activeWorkspace && !userProfs.includes(activeWorkspace)) {
+        setActiveWorkspaceState(null);
+        localStorage.removeItem("activeWorkspace");
+      }
+    } catch (error: any) {
+      console.error("Error syncing profile with backend:", error);
+      if (error?.response?.status === 401) {
+        logout();
+      }
+    }
+  };
+
   // Sync user profile with backend on mount/token change
   useEffect(() => {
     if (!token) return;
-
-    const syncProfile = async () => {
-      try {
-        const freshUser = await getUserRequest();
-
-        if (freshUser.isActive === false) {
-          logout();
-          return;
-        }
-
-        const loggedUser: User = {
-          ...freshUser,
-          profiles: parseProfiles(freshUser.profiles),
-          blockedProfiles: freshUser.blockedProfiles ? parseProfiles(freshUser.blockedProfiles) : [],
-        };
-
-        localStorage.setItem("user", JSON.stringify(loggedUser));
-        setUser(loggedUser);
-
-        const userProfs = loggedUser.profiles;
-        if (loggedUser.parentId) {
-          setActiveWorkspace("BUSINESS");
-        } else if (userProfs.length === 1) {
-          setActiveWorkspace(userProfs[0] as WorkspaceType);
-        } else if (activeWorkspace && !userProfs.includes(activeWorkspace)) {
-          setActiveWorkspaceState(null);
-          localStorage.removeItem("activeWorkspace");
-        }
-      } catch (error) {
-        console.error("Error syncing profile with backend:", error);
-      }
-    };
-
     syncProfile();
   }, [token]);
 
@@ -127,10 +148,26 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       localStorage.setItem("token", data.access_token);
 
+      const parsedProfiles = parseProfiles(data.user?.profiles);
+      const parsedBlocked = data.user?.blockedProfiles ? parseProfiles(data.user.blockedProfiles) : [];
+      
+      if (parsedProfiles.includes("BUSINESS")) {
+         const subs = [
+           "BUSINESS_DASHBOARD", "BUSINESS_POS", "BUSINESS_INVENTORY",
+           "BUSINESS_FINANCE", "BUSINESS_CASH_REGISTER", "BUSINESS_PENDING",
+           "BUSINESS_REPORTS", "BUSINESS_HISTORY", "BUSINESS_CATEGORIES", "BUSINESS_WORKERS"
+         ];
+         subs.forEach(s => {
+           if (!parsedProfiles.includes(s) && !parsedBlocked.includes(s)) {
+             parsedProfiles.push(s);
+           }
+         });
+      }
+
       const loggedUser: User = {
         ...data.user,
-        profiles: parseProfiles(data.user?.profiles),
-        blockedProfiles: data.user?.blockedProfiles ? parseProfiles(data.user.blockedProfiles) : [],
+        profiles: parsedProfiles,
+        blockedProfiles: parsedBlocked,
       };
 
       localStorage.setItem("user", JSON.stringify(loggedUser));
@@ -210,6 +247,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         activeWorkspace,
         setActiveWorkspace,
         userProfiles,
+        syncProfile,
       }}
     >
       {children}

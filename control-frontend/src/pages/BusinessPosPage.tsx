@@ -152,20 +152,24 @@ const calculateFrontendCommission = (input: FrontendEngineInput) => {
 
   let commissionUnit = 0;
   switch (normalizedType) {
-    case 'FIXED_PER_UNIT':
+    case 'FIXED_PER_UNIT': {
       commissionUnit = value;
       break;
-    case 'PERCENT_OF_MARGIN':
+    }
+    case 'PERCENT_OF_MARGIN': {
       const profit = Math.max(0, input.basePrice - input.costPrice);
       const marginFactor = value > 1 ? value / 100 : value;
       commissionUnit = profit * marginFactor;
       break;
-    case 'PERCENT_OF_SALE':
+    }
+    case 'PERCENT_OF_SALE': {
       const saleFactor = value > 1 ? value / 100 : value;
       commissionUnit = input.basePrice * saleFactor;
       break;
-    default:
+    }
+    default: {
       commissionUnit = 0;
+    }
   }
 
   const minComm = input.minCommission ?? 0;
