@@ -164,9 +164,9 @@ export default function BusinessFinancePage() {
           try {
             finalReceiptUrl = await uploadReceiptFile(formData.receiptUrl);
             toast.dismiss(uploadToast);
-          } catch {
+          } catch (uploadError: any) {
             toast.dismiss(uploadToast);
-            toast.error("Error al subir el comprobante");
+            toast.error(uploadError.message || "Error al subir el comprobante");
             return;
           }
         }

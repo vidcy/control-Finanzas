@@ -83,6 +83,81 @@ export function normalizeUploadedFile(file: File): File {
   return file;
 }
 
+// Helper to compress an image using HTML Canvas
+export function compressImage(file: File, maxWidth = 1280, maxHeight = 1280, quality = 0.7): Promise<File> {
+  return new Promise((resolve) => {
+    // Only compress image files (excluding PDFs, etc.)
+    if (!file.type.startsWith("image/")) {
+      resolve(file);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+
+        // Calculate new dimensions keeping aspect ratio
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(file);
+          return;
+        }
+
+        // Draw and resize
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Convert canvas back to File
+        canvas.toBlob(
+          (blob) => {
+            if (blob) {
+              const originalName = file.name || "camera_photo.jpg";
+              const dotIndex = originalName.lastIndexOf(".");
+              const baseName = dotIndex !== -1 ? originalName.substring(0, dotIndex) : originalName;
+              const newName = `${baseName}.jpg`;
+
+              const compressedFile = new File([blob], newName, {
+                type: "image/jpeg",
+                lastModified: Date.now(),
+              });
+              resolve(compressedFile);
+            } else {
+              resolve(file);
+            }
+          },
+          "image/jpeg",
+          quality
+        );
+      };
+      img.onerror = () => {
+        resolve(file);
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.onerror = () => resolve(file);
+    reader.readAsDataURL(file);
+  });
+}
+
+
 
 // ─────────────────────────────────────────────────────────
 // Helpers: Deferred upload execution functions
@@ -153,10 +228,18 @@ export function ProductImageUploader({
     ? objectUrl
     : getReceiptAbsoluteUrl(currentImageUrl as string | null | undefined);
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     let file = e.target.files?.[0];
     if (file) {
       file = normalizeUploadedFile(file);
+      const compressToast = toast.loading("Procesando imagen...");
+      try {
+        file = await compressImage(file);
+      } catch (err) {
+        console.error("Compression failed, using original file", err);
+      } finally {
+        toast.dismiss(compressToast);
+      }
       if (file.size > 50 * 1024 * 1024) {
         toast.error("La imagen es demasiado grande (máximo 50MB)");
         return;
@@ -280,10 +363,18 @@ export default function ReceiptUploader({
     ? objectUrl
     : getReceiptAbsoluteUrl(currentImageUrl as string | null | undefined);
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     let file = e.target.files?.[0];
     if (file) {
       file = normalizeUploadedFile(file);
+      const compressToast = toast.loading("Procesando comprobante...");
+      try {
+        file = await compressImage(file);
+      } catch (err) {
+        console.error("Compression failed, using original file", err);
+      } finally {
+        toast.dismiss(compressToast);
+      }
       if (file.size > 50 * 1024 * 1024) {
         toast.error("El archivo es demasiado grande (máximo 50MB)");
         return;
