@@ -165,7 +165,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       setNubefactUrl(user.nubefactUrl || "");
       setNubefactToken(user.nubefactToken || "");
     }
-  }, [isProfileModalOpen, user]);
+  }, [isProfileModalOpen]);
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();

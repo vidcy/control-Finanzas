@@ -62,23 +62,49 @@ export class FilesService {
       'image/jpg',
       'image/webp',
       'application/pdf',
+      'image/heic',
+      'image/heif',
+      'image/octet-stream',
+      'application/octet-stream',
     ];
-    if (!allowedMimeTypes.includes(file.mimetype)) {
+
+    const originalName = file.originalname || 'photo.jpg';
+    const extension = originalName.split('.').pop()?.toLowerCase() || '';
+    const allowedExtensions = ['jpg', 'jpeg', 'png', 'webp', 'pdf', 'heic', 'heif'];
+
+    const isValidMime = allowedMimeTypes.includes(file.mimetype);
+    const isValidExt = allowedExtensions.includes(extension);
+
+    if (!isValidMime && !isValidExt) {
       throw new BadRequestException(
-        'Formato no permitido. Solo JPG, PNG, WEBP o PDF.',
+        'Formato no permitido. Solo JPG, PNG, WEBP, PDF o HEIC.',
       );
+    }
+
+    let contentType = file.mimetype;
+    if (contentType === 'application/octet-stream' || contentType === 'image/octet-stream') {
+      const extToMime: Record<string, string> = {
+        jpg: 'image/jpeg',
+        jpeg: 'image/jpeg',
+        png: 'image/png',
+        webp: 'image/webp',
+        pdf: 'application/pdf',
+        heic: 'image/heic',
+        heif: 'image/heif',
+      };
+      contentType = extToMime[extension] || contentType;
     }
 
     try {
       const s3Client = this.getS3Client();
-      const key = this.generateKey('comprobantes', file.originalname);
+      const key = this.generateKey('comprobantes', originalName);
 
       await s3Client.send(
         new PutObjectCommand({
           Bucket: process.env.DO_SPACES_BUCKET,
           Key: key,
           Body: file.buffer,
-          ContentType: file.mimetype,
+          ContentType: contentType,
           ACL: 'public-read',
         }),
       );
@@ -97,23 +123,48 @@ export class FilesService {
       'image/png',
       'image/jpg',
       'image/webp',
+      'image/heic',
+      'image/heif',
+      'image/octet-stream',
+      'application/octet-stream',
     ];
-    if (!allowedMimeTypes.includes(file.mimetype)) {
+
+    const originalName = file.originalname || 'photo.jpg';
+    const extension = originalName.split('.').pop()?.toLowerCase() || '';
+    const allowedExtensions = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'];
+
+    const isValidMime = allowedMimeTypes.includes(file.mimetype);
+    const isValidExt = allowedExtensions.includes(extension);
+
+    if (!isValidMime && !isValidExt) {
       throw new BadRequestException(
-        'Formato no permitido. Solo imágenes JPG, PNG o WEBP.',
+        'Formato no permitido. Solo imágenes JPG, PNG, WEBP o HEIC.',
       );
+    }
+
+    let contentType = file.mimetype;
+    if (contentType === 'application/octet-stream' || contentType === 'image/octet-stream') {
+      const extToMime: Record<string, string> = {
+        jpg: 'image/jpeg',
+        jpeg: 'image/jpeg',
+        png: 'image/png',
+        webp: 'image/webp',
+        heic: 'image/heic',
+        heif: 'image/heif',
+      };
+      contentType = extToMime[extension] || contentType;
     }
 
     try {
       const s3Client = this.getS3Client();
-      const key = this.generateKey('productos', file.originalname);
+      const key = this.generateKey('productos', originalName);
 
       await s3Client.send(
         new PutObjectCommand({
           Bucket: process.env.DO_SPACES_BUCKET,
           Key: key,
           Body: file.buffer,
-          ContentType: file.mimetype,
+          ContentType: contentType,
           ACL: 'public-read',
         }),
       );

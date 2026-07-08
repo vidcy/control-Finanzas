@@ -459,10 +459,6 @@ export default function PendingPage() {
       return;
     }
 
-    if (!formData.description.trim()) {
-      toast.error("Ingresa una descripción del motivo");
-      return;
-    }
 
     if (!formData.amount || Number(formData.amount) <= 0) {
       toast.error("Ingresa un monto válido");
@@ -479,7 +475,7 @@ export default function PendingPage() {
 
     const payload: any = {
       name: formData.person.trim(),
-      description: formData.description.trim(),
+      description: formData.description.trim() || (activeType === "INCOME" ? "Cuenta por cobrar" : "Cuenta por pagar"),
       amount: Number(formData.amount),
       exchangeRate: Number(formData.exchangeRate),
       categoryId: selectedCategoryId,
@@ -1389,10 +1385,9 @@ export default function PendingPage() {
                 <div className="space-y-2 md:col-span-2">
                   <label className="flex items-center gap-2 text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] ml-1">
                     <Info className="w-3.5 h-3.5 text-indigo-500" /> Descripción
-                    del motivo
+                    del motivo <span className="text-gray-300 font-medium normal-case">(Opcional)</span>
                   </label>
                   <input
-                    required
                     type="text"
                     placeholder="Ej. Préstamo de emergencia"
                     className="w-full px-5 py-4 bg-white border border-gray-100 rounded-[1.5rem] outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-sm font-bold text-gray-700 shadow-sm"

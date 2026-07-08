@@ -47,6 +47,17 @@ export default defineConfig({
       }
     }),
   ],
+  // Agrega este bloque para el servidor de desarrollo (npm run dev)
+  server: {
+    host: true, // Esto permite conexiones desde tu red local (Wi-Fi)
+    port: 5173, // El puerto por defecto de Vite
+    allowedHosts: [
+      "mifront-production.up.railway.app", // Para Railway
+      "localhost", // Para tu PC
+      ".local" // Permite acceso desde móviles en la misma red
+    ],
+  },
+
   preview: {
     host: true,
     port: process.env.PORT ? Number(process.env.PORT) : 3000,

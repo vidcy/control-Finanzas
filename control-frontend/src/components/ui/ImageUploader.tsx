@@ -36,6 +36,55 @@ export function getReceiptAbsoluteUrl(
 }
 
 // ─────────────────────────────────────────────────────────
+// Helper: normalize file extension and mimetype for mobile device camera captures
+// ─────────────────────────────────────────────────────────
+export function normalizeUploadedFile(file: File): File {
+  const fileName = file.name || "camera_photo.jpg";
+  let fileType = file.type;
+
+  // If extension is missing in the file name, append it
+  const hasExtension = fileName.includes(".");
+  let finalName = fileName;
+  if (!hasExtension) {
+    if (fileType.includes("jpeg") || fileType.includes("jpg")) {
+      finalName = `${fileName}.jpg`;
+    } else if (fileType.includes("png")) {
+      finalName = `${fileName}.png`;
+    } else if (fileType.includes("webp")) {
+      finalName = `${fileName}.webp`;
+    } else if (fileType.includes("heic")) {
+      finalName = `${fileName}.heic`;
+    } else {
+      // Default fallback
+      finalName = `${fileName}.jpg`;
+      fileType = "image/jpeg";
+    }
+  }
+
+  // If mime type is missing or generic octet-stream, try to infer it from filename
+  if (
+    !fileType ||
+    fileType === "application/octet-stream" ||
+    fileType === "image/octet-stream"
+  ) {
+    const ext = finalName.split(".").pop()?.toLowerCase();
+    if (ext === "jpg" || ext === "jpeg") fileType = "image/jpeg";
+    else if (ext === "png") fileType = "image/png";
+    else if (ext === "webp") fileType = "image/webp";
+    else if (ext === "heic") fileType = "image/heic";
+    else if (ext === "pdf") fileType = "application/pdf";
+  }
+
+  // Recreate File object if we normalized the name or type
+  if (finalName !== file.name || fileType !== file.type) {
+    return new File([file], finalName, { type: fileType });
+  }
+
+  return file;
+}
+
+
+// ─────────────────────────────────────────────────────────
 // Helpers: Deferred upload execution functions
 // ─────────────────────────────────────────────────────────
 export const uploadReceiptFile = async (file: File): Promise<string> => {
@@ -105,8 +154,9 @@ export function ProductImageUploader({
     : getReceiptAbsoluteUrl(currentImageUrl as string | null | undefined);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    let file = e.target.files?.[0];
     if (file) {
+      file = normalizeUploadedFile(file);
       if (file.size > 50 * 1024 * 1024) {
         toast.error("La imagen es demasiado grande (máximo 50MB)");
         return;
@@ -231,8 +281,9 @@ export default function ReceiptUploader({
     : getReceiptAbsoluteUrl(currentImageUrl as string | null | undefined);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    let file = e.target.files?.[0];
     if (file) {
+      file = normalizeUploadedFile(file);
       if (file.size > 50 * 1024 * 1024) {
         toast.error("El archivo es demasiado grande (máximo 50MB)");
         return;

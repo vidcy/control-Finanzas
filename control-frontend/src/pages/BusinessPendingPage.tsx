@@ -77,6 +77,17 @@ export default function BusinessPendingPage() {
       toast.error("Selecciona una categoría");
       return;
     }
+    if (!formData.amount || Number(formData.amount) <= 0) {
+      toast.error("Ingresa un monto válido");
+      return;
+    }
+    if (
+      formData.currency === "USD" &&
+      (!formData.exchangeRate || Number(formData.exchangeRate) <= 0)
+    ) {
+      toast.error("Ingresa un tipo de cambio válido");
+      return;
+    }
     
     try {
       const payload = {

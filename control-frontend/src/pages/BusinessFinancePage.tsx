@@ -144,6 +144,17 @@ export default function BusinessFinancePage() {
       toast.error("Selecciona una categoría");
       return;
     }
+    if (!formData.amount || Number(formData.amount) <= 0) {
+      toast.error("Ingresa un monto válido");
+      return;
+    }
+    if (
+      formData.currency === "USD" &&
+      (!formData.exchangeRate || Number(formData.exchangeRate) <= 0)
+    ) {
+      toast.error("Ingresa un tipo de cambio válido");
+      return;
+    }
 
     const executeSubmit = async (ignoreLiquidity = false) => {
       try {
@@ -987,11 +998,10 @@ export default function BusinessFinancePage() {
 
               <div className="space-y-1.5">
                 <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">
-                  Título del Movimiento
+                  Título del Movimiento <span className="text-gray-300 font-medium normal-case">(Opcional)</span>
                 </label>
                 <input
                   type="text"
-                  required
                   value={formData.name}
                   onChange={(e) =>
                     setFormData({ ...formData, name: e.target.value })

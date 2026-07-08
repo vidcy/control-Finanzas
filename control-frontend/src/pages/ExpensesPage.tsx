@@ -505,8 +505,6 @@ export default function ExpensesPage() {
     if (!selectedCategoryId) return toast.error("Selecciona una categoría");
     if (hasSubcategories && !selectedSubCategoryId)
       return toast.error("Selecciona una subcategoría");
-    if (!formData.description.trim())
-      return toast.error("Ingresa una descripción");
     if (!formData.amount || Number(formData.amount) <= 0)
       return toast.error("Ingresa un monto válido");
     if (
@@ -1203,10 +1201,9 @@ export default function ExpensesPage() {
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">
-                    Destino
+                    Destino <span className="text-gray-300 normal-case font-medium ml-1">(Opcional)</span>
                   </label>
                   <input
-                    required
                     type="text"
                     placeholder="Ej. ElectroSurEste..."
                     className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-rose-500/10 focus:border-rose-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
@@ -1221,10 +1218,9 @@ export default function ExpensesPage() {
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">
-                    Descripción
+                    Descripción <span className="text-gray-300 normal-case font-medium ml-1">(Opcional)</span>
                   </label>
                   <input
-                    required
                     type="text"
                     placeholder="Ej. Pago de suministros..."
                     className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-rose-500/10 focus:border-rose-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
