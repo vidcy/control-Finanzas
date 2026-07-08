@@ -20,6 +20,7 @@ import {
   Edit2,
   ArrowUpLeft,
   AlertCircle,
+  Download,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import {
@@ -312,6 +313,181 @@ export default function PendingPage() {
     payablesPage * ITEMS_PER_PAGE
   );
 
+
+  const exportPendingExcel = async () => {
+    const listToExport = activeTab === "RECEIVABLES" ? receivables : payables;
+    if (listToExport.length === 0) {
+      toast.error("No hay transacciones para exportar");
+      return;
+    }
+    const exportToast = toast.loading("Generando Excel...");
+    try {
+      const { exportToExcel } = await import("../utils/exportExcel");
+      const dataToExport = listToExport.map((item) => ({
+        fecha: item.date ? item.date.slice(0, 10) : "",
+        deudor_acreedor: item.name || "",
+        descripcion: item.description || "",
+        categoria: item.category || "",
+        moneda: item.currency || "PEN",
+        monto: item.amount,
+        tipo_cambio: item.exchangeRate || 1,
+        monto_soles: item.currency === "USD" ? item.amount * (item.exchangeRate || 1) : item.amount,
+        vencimiento: item.dueDate ? item.dueDate.slice(0, 10) : "Sin vencimiento",
+        estado: item.status === "PENDING" ? "Pendiente" : "Pagado",
+      }));
+
+      const columns = [
+        { key: "fecha" as const, label: "Fecha" },
+        { key: "deudor_acreedor" as const, label: "Deudor/Acreedor" },
+        { key: "descripcion" as const, label: "Descripción" },
+        { key: "categoria" as const, label: "Categoría" },
+        { key: "moneda" as const, label: "Moneda" },
+        { key: "monto" as const, label: "Monto" },
+        { key: "tipo_cambio" as const, label: "T.C." },
+        { key: "monto_soles" as const, label: "Monto en S/" },
+        { key: "vencimiento" as const, label: "Vencimiento" },
+        { key: "estado" as const, label: "Estado" },
+      ];
+
+      const filename = activeTab === "RECEIVABLES" ? "Cuentas_Por_Cobrar" : "Cuentas_Por_Pagar";
+      await exportToExcel(dataToExport, columns, filename);
+      toast.dismiss(exportToast);
+      toast.success("Excel descargado correctamente");
+    } catch (error) {
+      toast.dismiss(exportToast);
+      toast.error("Error al exportar a Excel");
+    }
+  };
+
+  const exportPendingPdf = async () => {
+    const listToExport = activeTab === "RECEIVABLES" ? receivables : payables;
+    if (listToExport.length === 0) {
+      toast.error("No hay transacciones para exportar");
+      return;
+    }
+    const exportToast = toast.loading("Generando PDF...");
+    try {
+      const { jsPDF } = await import("jspdf");
+      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+
+      const isReceivables = activeTab === "RECEIVABLES";
+      // Header color: emerald for receivables, rose for payables
+      if (isReceivables) {
+        doc.setFillColor(16, 185, 129); // emerald-500
+      } else {
+        doc.setFillColor(244, 63, 94); // rose-500
+      }
+      doc.rect(0, 0, 210, 32, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(15);
+      doc.text(isReceivables ? "CUENTAS POR COBRAR PENDIENTES" : "CUENTAS POR PAGAR PENDIENTES", 14, 11);
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "normal");
+      doc.text(`Búsqueda actual: "${searchTerm || "Ninguna"}"`, 14, 18);
+      doc.text(`Fecha de Impresión: ${new Date().toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}`, 14, 24);
+
+      // Summary
+      const totalAmountSoles = listToExport.reduce((acc, item) => {
+        const val = item.currency === "USD" ? item.amount * (item.exchangeRate || 1) : item.amount;
+        return acc + val;
+      }, 0);
+
+      if (isReceivables) {
+        doc.setFillColor(236, 253, 245); // emerald-50
+      } else {
+        doc.setFillColor(255, 241, 242); // rose-50
+      }
+      doc.roundedRect(14, 38, 182, 20, 2, 2, "F");
+      doc.setTextColor(30, 41, 59);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.5);
+      doc.text("MONTO TOTAL ESTIMADO (S/)", 20, 45);
+      doc.setFontSize(11);
+      doc.setTextColor(isReceivables ? 4 : 225, isReceivables ? 120 : 29, isReceivables ? 87 : 72);
+      doc.text(`S/ ${totalAmountSoles.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 20, 53);
+
+      doc.setTextColor(30, 41, 59);
+      doc.setFontSize(7.5);
+      doc.text("TOTAL TRANSACCIONES", 120, 45);
+      doc.setFontSize(11);
+      doc.text(`${listToExport.length}`, 120, 53);
+
+      const headers = ["Fecha", isReceivables ? "Deudor" : "Acreedor", "Motivo", "Moneda", "Monto", "Vencimiento"];
+      const colWidths = [22, 45, 60, 16, 20, 19];
+
+      const drawTblHeader = (sy: number) => {
+        if (isReceivables) {
+          doc.setFillColor(16, 185, 129);
+        } else {
+          doc.setFillColor(244, 63, 94);
+        }
+        doc.rect(14, sy, 182, 7, "F");
+        doc.setTextColor(255, 255, 255);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(7.5);
+        let cx = 14;
+        headers.forEach((h, i) => {
+          doc.text(h, cx + 2, sy + 5);
+          cx += colWidths[i];
+        });
+        doc.setTextColor(0);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7.5);
+      };
+
+      let y = 64;
+      drawTblHeader(y);
+      y += 7;
+
+      listToExport.forEach((item: any, idx: number) => {
+        const rowH = 8;
+        if (y + rowH > 278) {
+          doc.addPage();
+          y = 15;
+          drawTblHeader(y);
+          y += 7;
+        }
+
+        if (idx % 2 === 0) {
+          if (isReceivables) {
+            doc.setFillColor(236, 253, 245);
+          } else {
+            doc.setFillColor(255, 241, 242);
+          }
+          doc.rect(14, y, 182, rowH, "F");
+        }
+        doc.setDrawColor(240, 240, 240);
+        doc.line(14, y + rowH, 196, y + rowH);
+
+        let cx = 14;
+        doc.setTextColor(100, 116, 139);
+        doc.text(item.date ? item.date.slice(0, 10) : "", cx + 2, y + 5);
+        cx += colWidths[0];
+        doc.setTextColor(30, 41, 59);
+        doc.text(doc.splitTextToSize(item.name || "", colWidths[1] - 4)[0], cx + 2, y + 5);
+        cx += colWidths[1];
+        doc.text(doc.splitTextToSize(item.description || "", colWidths[2] - 4)[0], cx + 2, y + 5);
+        cx += colWidths[2];
+        doc.text(item.currency || "PEN", cx + 2, y + 5);
+        cx += colWidths[3];
+        doc.text(item.amount.toLocaleString(undefined, { minimumFractionDigits: 2 }), cx + 2, y + 5);
+        cx += colWidths[4];
+        doc.text(item.dueDate ? item.dueDate.slice(0, 10) : "Sin fecha", cx + 2, y + 5);
+        cx += colWidths[5];
+
+        y += rowH;
+      });
+
+      const filename = isReceivables ? "Cuentas_Por_Cobrar.pdf" : "Cuentas_Por_Pagar.pdf";
+      doc.save(filename);
+      toast.dismiss(exportToast);
+      toast.success("PDF descargado correctamente");
+    } catch (error) {
+      toast.dismiss(exportToast);
+      toast.error("Error al generar PDF");
+    }
+  };
 
   const visibleReceivables = showAllReceivables
     ? receivables
@@ -614,6 +790,20 @@ export default function PendingPage() {
                 onChange={(e) => setSearchTerm(e.target.value.trimStart())}
               />
             </div>
+            <button
+              onClick={exportPendingExcel}
+              className="flex items-center gap-2 bg-white border border-gray-100 hover:bg-gray-50 text-gray-700 px-4 py-3 rounded-2xl font-bold shadow-sm transition-all active:scale-95 text-xs cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5 text-emerald-600" />
+              Excel
+            </button>
+            <button
+              onClick={exportPendingPdf}
+              className="flex items-center gap-2 bg-white border border-gray-100 hover:bg-gray-50 text-gray-700 px-4 py-3 rounded-2xl font-bold shadow-sm transition-all active:scale-95 text-xs cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5 text-red-500" />
+              PDF
+            </button>
           </div>
         </div>
 

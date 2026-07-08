@@ -28,6 +28,8 @@ import {
   PiggyBank,
   Download,
   Smartphone,
+  Share2,
+  PlusSquare,
 } from "lucide-react";
 
 import { toast } from "react-hot-toast";
@@ -70,8 +72,20 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
   // PWA Install State & Listener
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [canInstall, setCanInstall] = useState(false);
+  const [isIOS, setIsIOS] = useState(false);
+  const [showIOSInstructions, setShowIOSInstructions] = useState(false);
 
   useEffect(() => {
+    // Detect iOS and Standalone status
+    const userAgent = window.navigator.userAgent.toLowerCase();
+    const ios = /iphone|ipad|ipod/.test(userAgent);
+    const standalone = window.matchMedia("(display-mode: standalone)").matches || (window.navigator as any).standalone;
+    setIsIOS(ios);
+
+    if (ios && !standalone) {
+      setCanInstall(true);
+    }
+
     // Check if the prompt was already captured by index.html early script
     const globalPrompt = (window as any).deferredPrompt;
     if (globalPrompt) {
@@ -977,6 +991,10 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                 <button
                   type="button"
                   onClick={async () => {
+                    if (isIOS) {
+                      setShowIOSInstructions(true);
+                      return;
+                    }
                     deferredPrompt?.prompt();
                     const choice = await deferredPrompt?.userChoice;
                     if (choice?.outcome === 'accepted') {
@@ -1622,6 +1640,85 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
           </div>
         </div>
       </Modal>
+
+      {/* Modal de instrucciones para iOS */}
+      {showIOSInstructions && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-gray-100 relative animate-scale-up">
+            <button
+              type="button"
+              onClick={() => setShowIOSInstructions(false)}
+              className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-full transition-all"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="text-center pb-4 border-b border-gray-50">
+              <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20 mb-3">
+                <Smartphone className="w-8 h-8 text-white" />
+              </div>
+              <h3 className="text-lg font-black text-slate-800">
+                Instalar en tu iPhone / iPad
+              </h3>
+              <p className="text-xs text-slate-500 font-semibold mt-1">
+                Sigue estos sencillos pasos para agregar Think a tu pantalla de inicio:
+              </p>
+            </div>
+
+            <div className="py-6 space-y-5">
+              <div className="flex items-start gap-4">
+                <div className="w-7 h-7 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center font-black text-xs shrink-0 mt-0.5">
+                  1
+                </div>
+                <div className="text-left">
+                  <p className="text-xs font-bold text-slate-700">
+                    Toca el botón de Compartir en Safari
+                  </p>
+                  <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                    Está ubicado en la barra de navegación inferior de tu iPhone (el ícono de un cuadrado con una flecha hacia arriba <Share2 className="inline w-3.5 h-3.5 text-blue-500 mx-0.5" />).
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-4">
+                <div className="w-7 h-7 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center font-black text-xs shrink-0 mt-0.5">
+                  2
+                </div>
+                <div className="text-left">
+                  <p className="text-xs font-bold text-slate-700">
+                    Selecciona "Agregar al inicio"
+                  </p>
+                  <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                    Desplázate hacia abajo en el menú de opciones que aparece y presiona **Agregar al inicio** (<PlusSquare className="inline w-3.5 h-3.5 text-slate-700 mx-0.5" />).
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-4">
+                <div className="w-7 h-7 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center font-black text-xs shrink-0 mt-0.5">
+                  3
+                </div>
+                <div className="text-left">
+                  <p className="text-xs font-bold text-slate-700">
+                    Confirma y ¡Listo!
+                  </p>
+                  <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                    Presiona **Agregar** en la esquina superior derecha. Ahora tendrás acceso directo y rápido a la aplicación.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowIOSInstructions(false)}
+              className="w-full py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold rounded-xl text-sm transition-all shadow-lg shadow-indigo-600/10 active:scale-95 cursor-pointer text-center"
+            >
+              Entendido
+            </button>
+          </div>
+        </div>
+      )}
 
       {activeWorkspace === "PERSONAL" && (
         <>

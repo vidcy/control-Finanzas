@@ -18,6 +18,7 @@ import {
   Activity,
   Receipt,
   Zap,
+  Download,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import {
@@ -258,6 +259,157 @@ export default function UserPage() {
     setCurrentPage(1);
   }, [searchTerm]);
 
+  const exportUsersExcel = async () => {
+    if (filteredUsers.length === 0) {
+      toast.error("No hay usuarios para exportar");
+      return;
+    }
+    const exportToast = toast.loading("Generando Excel...");
+    try {
+      const { exportToExcel } = await import("../utils/exportExcel");
+      const dataToExport = filteredUsers.map((u) => ({
+        nombre: `${u.name} ${u.lastName}`,
+        email: u.email,
+        rol: u.role === "ADMIN" ? "Administrador" : "Usuario",
+        perfiles: (u.profiles || []).join(", "),
+        tipo: u.parentId ? "Trabajador" : "Propietario",
+        facturacion_electronica: u.hasElectronicBilling ? "Sí" : "No",
+      }));
+      const columns = [
+        { key: "nombre" as const, label: "Nombre Completo" },
+        { key: "email" as const, label: "Email" },
+        { key: "rol" as const, label: "Rol" },
+        { key: "perfiles" as const, label: "Perfiles Activos" },
+        { key: "tipo" as const, label: "Tipo Cuenta" },
+        { key: "facturacion_electronica" as const, label: "Fact. Electrónica" },
+      ];
+      await exportToExcel(dataToExport, columns, "Reporte_Usuarios");
+      toast.dismiss(exportToast);
+      toast.success("Excel descargado correctamente");
+    } catch (error) {
+      toast.dismiss(exportToast);
+      toast.error("Error al exportar a Excel");
+    }
+  };
+
+  const exportUsersPdf = async () => {
+    if (filteredUsers.length === 0) {
+      toast.error("No hay usuarios para exportar");
+      return;
+    }
+    const exportToast = toast.loading("Generando PDF...");
+    try {
+      const { jsPDF } = await import("jspdf");
+      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+
+      // Purple banner for users
+      doc.setFillColor(124, 58, 237);
+      doc.rect(0, 0, 210, 32, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(15);
+      doc.text("REPORTE DE USUARIOS Y ACCESOS", 14, 11);
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "normal");
+      doc.text(`Búsqueda actual: "${searchTerm || "Ninguna"}"`, 14, 18);
+      doc.text(`Fecha de Impresión: ${new Date().toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}`, 14, 24);
+
+      // KPI summary
+      const totalUsers = filteredUsers.length;
+      const adminCount = filteredUsers.filter((u) => u.role === "ADMIN").length;
+      const workerCount = filteredUsers.filter((u) => u.parentId).length;
+
+      doc.setFillColor(243, 232, 255);
+      doc.roundedRect(14, 38, 182, 20, 2, 2, "F");
+      doc.setTextColor(30, 41, 59);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.5);
+      doc.text("TOTAL USUARIOS", 20, 45);
+      doc.setFontSize(11);
+      doc.setTextColor(109, 40, 217);
+      doc.text(`${totalUsers}`, 20, 53);
+
+      doc.setTextColor(30, 41, 59);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.5);
+      doc.text("ADMINISTRADORES", 80, 45);
+      doc.setFontSize(11);
+      doc.text(`${adminCount}`, 80, 53);
+
+      doc.setTextColor(30, 41, 59);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.5);
+      doc.text("TRABAJADORES", 140, 45);
+      doc.setFontSize(11);
+      doc.text(`${workerCount}`, 140, 53);
+
+      const headers = ["Nombre Completo", "Email", "Rol", "Perfiles", "Tipo", "Fact. Elect."];
+      const colWidths = [45, 50, 20, 35, 18, 14];
+
+      const drawTblHeader = (sy: number) => {
+        doc.setFillColor(124, 58, 237);
+        doc.rect(14, sy, 182, 7, "F");
+        doc.setTextColor(255, 255, 255);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(7.5);
+        let cx = 14;
+        headers.forEach((h, i) => {
+          doc.text(h, cx + 2, sy + 5);
+          cx += colWidths[i];
+        });
+        doc.setTextColor(0);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7.5);
+      };
+
+      let y = 64;
+      drawTblHeader(y);
+      y += 7;
+
+      filteredUsers.forEach((u: any, idx: number) => {
+        const rowH = 8;
+        if (y + rowH > 278) {
+          doc.addPage();
+          y = 15;
+          drawTblHeader(y);
+          y += 7;
+        }
+
+        if (idx % 2 === 0) {
+          doc.setFillColor(250, 245, 255);
+          doc.rect(14, y, 182, rowH, "F");
+        }
+        doc.setDrawColor(243, 232, 255);
+        doc.line(14, y + rowH, 196, y + rowH);
+
+        let cx = 14;
+        doc.setTextColor(30, 41, 59);
+        doc.text(`${u.name} ${u.lastName}`, cx + 2, y + 5);
+        cx += colWidths[0];
+        doc.setTextColor(71, 85, 105);
+        doc.text(u.email || "", cx + 2, y + 5);
+        cx += colWidths[1];
+        doc.text(u.role === "ADMIN" ? "Admin" : "Usuario", cx + 2, y + 5);
+        cx += colWidths[2];
+        doc.text((u.profiles || []).join(", "), cx + 2, y + 5);
+        cx += colWidths[3];
+        doc.text(u.parentId ? "Trabajador" : "Propietario", cx + 2, y + 5);
+        cx += colWidths[4];
+        doc.text(u.hasElectronicBilling ? "Sí" : "No", cx + 2, y + 5);
+        cx += colWidths[5];
+
+        y += rowH;
+      });
+
+      doc.save("Reporte_Usuarios.pdf");
+      toast.dismiss(exportToast);
+      toast.success("PDF descargado correctamente");
+    } catch (error) {
+      toast.dismiss(exportToast);
+      toast.error("Error al generar PDF");
+    }
+  };
+
   return (
     <Appshell>
       <div className="flex flex-col gap-8 animate-fade-in-up pb-10">
@@ -291,8 +443,22 @@ export default function UserPage() {
               />
             </div>
             <button
+              onClick={exportUsersExcel}
+              className="flex items-center gap-2 bg-white border border-gray-100 hover:bg-gray-50 text-gray-700 px-4 py-3.5 rounded-2xl font-bold shadow-sm transition-all active:scale-95 text-sm cursor-pointer"
+            >
+              <Download className="w-4 h-4 text-emerald-600" />
+              Excel
+            </button>
+            <button
+              onClick={exportUsersPdf}
+              className="flex items-center gap-2 bg-white border border-gray-100 hover:bg-gray-50 text-gray-700 px-4 py-3.5 rounded-2xl font-bold shadow-sm transition-all active:scale-95 text-sm cursor-pointer"
+            >
+              <Download className="w-4 h-4 text-red-500" />
+              PDF
+            </button>
+            <button
               onClick={handleOpenCreate}
-              className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-purple-800 text-white px-6 py-3.5 rounded-2xl font-black shadow-lg shadow-purple-200 hover:-translate-y-1 transition-all active:scale-95 text-sm"
+              className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-purple-800 text-white px-6 py-3.5 rounded-2xl font-black shadow-lg shadow-purple-200 hover:-translate-y-1 transition-all active:scale-95 text-sm cursor-pointer"
             >
               <Plus className="w-5 h-5" /> Nuevo Usuario
             </button>
