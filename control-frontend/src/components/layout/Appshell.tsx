@@ -1,5 +1,6 @@
 import { type ReactNode, useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { createPortal } from "react-dom";
 import { useAuth, type WorkspaceType } from "../../auth/AuthContext";
 import {
   LayoutDashboard,
@@ -1642,9 +1643,9 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       </Modal>
 
       {/* Modal de instrucciones para iOS */}
-      {showIOSInstructions && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-gray-100 relative animate-scale-up">
+      {showIOSInstructions && createPortal(
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-gray-100 relative animate-scale-up z-50">
             <button
               type="button"
               onClick={() => setShowIOSInstructions(false)}
@@ -1717,7 +1718,8 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
               Entendido
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {activeWorkspace === "PERSONAL" && (

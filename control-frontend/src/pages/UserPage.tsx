@@ -300,11 +300,21 @@ export default function UserPage() {
     const exportToast = toast.loading("Generando PDF...");
     try {
       const { jsPDF } = await import("jspdf");
-      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
 
-      // Purple banner for users
+      const fitText = (docObj: any, text: string, maxWidth: number) => {
+        const str = String(text || "");
+        if (docObj.getTextWidth(str) <= maxWidth) return str;
+        let temp = str;
+        while (temp.length > 0 && docObj.getTextWidth(temp + "...") > maxWidth) {
+          temp = temp.slice(0, -1);
+        }
+        return temp + "...";
+      };
+
+      // Purple banner for users (landscape width = 297mm)
       doc.setFillColor(124, 58, 237);
-      doc.rect(0, 0, 210, 32, "F");
+      doc.rect(0, 0, 297, 32, "F");
       doc.setTextColor(255, 255, 255);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(15);
@@ -314,13 +324,13 @@ export default function UserPage() {
       doc.text(`Búsqueda actual: "${searchTerm || "Ninguna"}"`, 14, 18);
       doc.text(`Fecha de Impresión: ${new Date().toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}`, 14, 24);
 
-      // KPI summary
+      // KPI summary (landscape printable width = 269mm)
       const totalUsers = filteredUsers.length;
       const adminCount = filteredUsers.filter((u) => u.role === "ADMIN").length;
       const workerCount = filteredUsers.filter((u) => u.parentId).length;
 
       doc.setFillColor(243, 232, 255);
-      doc.roundedRect(14, 38, 182, 20, 2, 2, "F");
+      doc.roundedRect(14, 38, 269, 20, 2, 2, "F");
       doc.setTextColor(30, 41, 59);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(7.5);
@@ -332,23 +342,23 @@ export default function UserPage() {
       doc.setTextColor(30, 41, 59);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(7.5);
-      doc.text("ADMINISTRADORES", 80, 45);
+      doc.text("ADMINISTRADORES", 110, 45);
       doc.setFontSize(11);
-      doc.text(`${adminCount}`, 80, 53);
+      doc.text(`${adminCount}`, 110, 53);
 
       doc.setTextColor(30, 41, 59);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(7.5);
-      doc.text("TRABAJADORES", 140, 45);
+      doc.text("TRABAJADORES", 200, 45);
       doc.setFontSize(11);
-      doc.text(`${workerCount}`, 140, 53);
+      doc.text(`${workerCount}`, 200, 53);
 
-      const headers = ["Nombre Completo", "Email", "Rol", "Perfiles", "Tipo", "Fact. Elect."];
-      const colWidths = [45, 50, 20, 35, 18, 14];
+      const headers = ["Nombre Completo", "Email", "Rol", "Perfiles", "Tipo Cuenta", "Fact. Electrónica"];
+      const colWidths = [55, 60, 25, 70, 35, 24];
 
       const drawTblHeader = (sy: number) => {
         doc.setFillColor(124, 58, 237);
-        doc.rect(14, sy, 182, 7, "F");
+        doc.rect(14, sy, 269, 7, "F");
         doc.setTextColor(255, 255, 255);
         doc.setFont("helvetica", "bold");
         doc.setFontSize(7.5);
@@ -368,7 +378,7 @@ export default function UserPage() {
 
       filteredUsers.forEach((u: any, idx: number) => {
         const rowH = 8;
-        if (y + rowH > 278) {
+        if (y + rowH > 185) {
           doc.addPage();
           y = 15;
           drawTblHeader(y);
@@ -377,25 +387,48 @@ export default function UserPage() {
 
         if (idx % 2 === 0) {
           doc.setFillColor(250, 245, 255);
-          doc.rect(14, y, 182, rowH, "F");
+          doc.rect(14, y, 269, rowH, "F");
         }
         doc.setDrawColor(243, 232, 255);
-        doc.line(14, y + rowH, 196, y + rowH);
+        doc.line(14, y + rowH, 283, y + rowH);
 
         let cx = 14;
+        doc.setFontSize(7.5);
+
+        // Col 1: Nombre Completo
         doc.setTextColor(30, 41, 59);
-        doc.text(`${u.name} ${u.lastName}`, cx + 2, y + 5);
+        const nameVal = fitText(doc, `${u.name} ${u.lastName}`, colWidths[0] - 4);
+        doc.text(nameVal, cx + 2, y + 5);
         cx += colWidths[0];
+
+        // Col 2: Email
         doc.setTextColor(71, 85, 105);
-        doc.text(u.email || "", cx + 2, y + 5);
+        const emailVal = fitText(doc, u.email || "", colWidths[1] - 4);
+        doc.text(emailVal, cx + 2, y + 5);
         cx += colWidths[1];
-        doc.text(u.role === "ADMIN" ? "Admin" : "Usuario", cx + 2, y + 5);
+
+        // Col 3: Rol
+        doc.setTextColor(30, 41, 59);
+        const roleVal = fitText(doc, u.role === "ADMIN" ? "Administrador" : "Usuario", colWidths[2] - 4);
+        doc.text(roleVal, cx + 2, y + 5);
         cx += colWidths[2];
-        doc.text((u.profiles || []).join(", "), cx + 2, y + 5);
+
+        // Col 4: Perfiles Activos
+        doc.setTextColor(71, 85, 105);
+        const profVal = fitText(doc, (u.profiles || []).join(", "), colWidths[3] - 4);
+        doc.text(profVal, cx + 2, y + 5);
         cx += colWidths[3];
-        doc.text(u.parentId ? "Trabajador" : "Propietario", cx + 2, y + 5);
+
+        // Col 5: Tipo Cuenta
+        doc.setTextColor(30, 41, 59);
+        const typeVal = fitText(doc, u.parentId ? "Trabajador" : "Propietario", colWidths[4] - 4);
+        doc.text(typeVal, cx + 2, y + 5);
         cx += colWidths[4];
-        doc.text(u.hasElectronicBilling ? "Sí" : "No", cx + 2, y + 5);
+
+        // Col 6: Fact. Elect.
+        doc.setTextColor(30, 41, 59);
+        const electronicVal = fitText(doc, u.hasElectronicBilling ? "Sí" : "No", colWidths[5] - 4);
+        doc.text(electronicVal, cx + 2, y + 5);
         cx += colWidths[5];
 
         y += rowH;

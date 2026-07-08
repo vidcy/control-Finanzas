@@ -368,7 +368,17 @@ export default function PendingPage() {
     const exportToast = toast.loading("Generando PDF...");
     try {
       const { jsPDF } = await import("jspdf");
-      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+
+      const fitText = (docObj: any, text: string, maxWidth: number) => {
+        const str = String(text || "");
+        if (docObj.getTextWidth(str) <= maxWidth) return str;
+        let temp = str;
+        while (temp.length > 0 && docObj.getTextWidth(temp + "...") > maxWidth) {
+          temp = temp.slice(0, -1);
+        }
+        return temp + "...";
+      };
 
       const isReceivables = activeTab === "RECEIVABLES";
       // Header color: emerald for receivables, rose for payables
@@ -377,7 +387,7 @@ export default function PendingPage() {
       } else {
         doc.setFillColor(244, 63, 94); // rose-500
       }
-      doc.rect(0, 0, 210, 32, "F");
+      doc.rect(0, 0, 297, 32, "F");
       doc.setTextColor(255, 255, 255);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(15);
@@ -398,7 +408,7 @@ export default function PendingPage() {
       } else {
         doc.setFillColor(255, 241, 242); // rose-50
       }
-      doc.roundedRect(14, 38, 182, 20, 2, 2, "F");
+      doc.roundedRect(14, 38, 269, 20, 2, 2, "F");
       doc.setTextColor(30, 41, 59);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(7.5);
@@ -408,13 +418,32 @@ export default function PendingPage() {
       doc.text(`S/ ${totalAmountSoles.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 20, 53);
 
       doc.setTextColor(30, 41, 59);
+      doc.setFont("helvetica", "bold");
       doc.setFontSize(7.5);
-      doc.text("TOTAL TRANSACCIONES", 120, 45);
+      doc.text("TOTAL TRANSACCIONES", 110, 45);
       doc.setFontSize(11);
-      doc.text(`${listToExport.length}`, 120, 53);
+      doc.text(`${listToExport.length}`, 110, 53);
 
-      const headers = ["Fecha", isReceivables ? "Deudor" : "Acreedor", "Motivo", "Moneda", "Monto", "Vencimiento"];
-      const colWidths = [22, 45, 60, 16, 20, 19];
+      doc.setTextColor(30, 41, 59);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.5);
+      doc.text("FILTRO BÚSQUEDA", 200, 45);
+      doc.setFontSize(11);
+      doc.text(fitText(doc, searchTerm || "Ninguno", 75), 200, 53);
+
+      const headers = [
+        "Fecha",
+        isReceivables ? "Deudor" : "Acreedor",
+        "Motivo",
+        "Categoría",
+        "Moneda",
+        "Monto",
+        "T.C.",
+        "Monto S/",
+        "Vencimiento",
+        "Estado",
+      ];
+      const colWidths = [22, 45, 55, 30, 16, 20, 14, 23, 22, 22];
 
       const drawTblHeader = (sy: number) => {
         if (isReceivables) {
@@ -422,7 +451,7 @@ export default function PendingPage() {
         } else {
           doc.setFillColor(244, 63, 94);
         }
-        doc.rect(14, sy, 182, 7, "F");
+        doc.rect(14, sy, 269, 7, "F");
         doc.setTextColor(255, 255, 255);
         doc.setFont("helvetica", "bold");
         doc.setFontSize(7.5);
@@ -442,7 +471,7 @@ export default function PendingPage() {
 
       listToExport.forEach((item: any, idx: number) => {
         const rowH = 8;
-        if (y + rowH > 278) {
+        if (y + rowH > 185) {
           doc.addPage();
           y = 15;
           drawTblHeader(y);
@@ -455,26 +484,60 @@ export default function PendingPage() {
           } else {
             doc.setFillColor(255, 241, 242);
           }
-          doc.rect(14, y, 182, rowH, "F");
+          doc.rect(14, y, 269, rowH, "F");
         }
         doc.setDrawColor(240, 240, 240);
-        doc.line(14, y + rowH, 196, y + rowH);
+        doc.line(14, y + rowH, 283, y + rowH);
 
         let cx = 14;
+        doc.setFontSize(7.5);
+
+        // 1. Fecha
         doc.setTextColor(100, 116, 139);
         doc.text(item.date ? item.date.slice(0, 10) : "", cx + 2, y + 5);
         cx += colWidths[0];
+
+        // 2. Deudor/Acreedor
         doc.setTextColor(30, 41, 59);
-        doc.text(doc.splitTextToSize(item.name || "", colWidths[1] - 4)[0], cx + 2, y + 5);
+        doc.text(fitText(doc, item.name || "", colWidths[1] - 4), cx + 2, y + 5);
         cx += colWidths[1];
-        doc.text(doc.splitTextToSize(item.description || "", colWidths[2] - 4)[0], cx + 2, y + 5);
+
+        // 3. Motivo
+        doc.text(fitText(doc, item.description || "", colWidths[2] - 4), cx + 2, y + 5);
         cx += colWidths[2];
-        doc.text(item.currency || "PEN", cx + 2, y + 5);
+
+        // 4. Categoría
+        doc.text(fitText(doc, item.category || "", colWidths[3] - 4), cx + 2, y + 5);
         cx += colWidths[3];
-        doc.text(item.amount.toLocaleString(undefined, { minimumFractionDigits: 2 }), cx + 2, y + 5);
+
+        // 5. Moneda
+        doc.text(item.currency || "PEN", cx + 2, y + 5);
         cx += colWidths[4];
-        doc.text(item.dueDate ? item.dueDate.slice(0, 10) : "Sin fecha", cx + 2, y + 5);
+
+        // 6. Monto
+        doc.text(item.amount.toLocaleString(undefined, { minimumFractionDigits: 2 }), cx + 2, y + 5);
         cx += colWidths[5];
+
+        // 7. T.C.
+        doc.text((item.exchangeRate || 1).toLocaleString(undefined, { minimumFractionDigits: 3 }), cx + 2, y + 5);
+        cx += colWidths[6];
+
+        // 8. Monto S/.
+        const solesVal = item.currency === "USD" ? item.amount * (item.exchangeRate || 1) : item.amount;
+        doc.text(solesVal.toLocaleString(undefined, { minimumFractionDigits: 2 }), cx + 2, y + 5);
+        cx += colWidths[7];
+
+        // 9. Vencimiento
+        doc.setTextColor(100, 116, 139);
+        doc.text(item.dueDate ? item.dueDate.slice(0, 10) : "Sin fecha", cx + 2, y + 5);
+        cx += colWidths[8];
+
+        // 10. Estado
+        doc.setTextColor(item.status === "PENDING" ? (isReceivables ? 220 : 239) : 16, item.status === "PENDING" ? (isReceivables ? 120 : 68) : 185, item.status === "PENDING" ? 50 : 129);
+        doc.setFont("helvetica", "bold");
+        doc.text(item.status === "PENDING" ? "Pendiente" : "Pagado", cx + 2, y + 5);
+        doc.setFont("helvetica", "normal");
+        cx += colWidths[9];
 
         y += rowH;
       });
