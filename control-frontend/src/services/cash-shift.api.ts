@@ -6,6 +6,7 @@ export const openCashShiftRequest = async (
   categoryId?: string,
   subCategoryId?: string,
   password?: string,
+  targetWorkerId?: string,
 ) => {
   const res = await axios.post('/cash-shift/open', {
     initialBalance,
@@ -13,6 +14,7 @@ export const openCashShiftRequest = async (
     categoryId,
     subCategoryId,
     password,
+    targetWorkerId,
   });
   return res.data;
 };
@@ -21,11 +23,13 @@ export const closeCashShiftRequest = async (
   categoryId?: string,
   subCategoryId?: string,
   password?: string,
+  targetWorkerId?: string,
 ) => {
   const res = await axios.post('/cash-shift/close', {
     categoryId,
     subCategoryId,
     password,
+    targetWorkerId,
   });
   return res.data;
 };
@@ -33,6 +37,21 @@ export const closeCashShiftRequest = async (
 export const getActiveCashShiftRequest = async () => {
   const res = await axios.get('/cash-shift/active');
   return res.data; // Retorna null si no hay abierta, o { id, initialBalance, currentSales, ... } si está abierta
+};
+
+export const getAllActiveCashShiftsRequest = async () => {
+  const res = await axios.get('/cash-shift/active-all');
+  return res.data;
+};
+
+export const getCashRegisterPinRequest = async () => {
+  const res = await axios.get('/cash-shift/pin');
+  return res.data;
+};
+
+export const setCashRegisterPinRequest = async (pin: string) => {
+  const res = await axios.post('/cash-shift/pin', { pin });
+  return res.data;
 };
 
 export interface GetShiftHistoryParams {

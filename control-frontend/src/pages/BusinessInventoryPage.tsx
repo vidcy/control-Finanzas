@@ -2442,18 +2442,17 @@ export default function BusinessInventoryPage() {
                     </select>
                   )}
 
-                  {/* Sede/Almacén filter */}
-                  {user?.profiles?.includes("BUSINESS_BRANCHES") && branches.length > 0 && (
+                  {/* Sede/Almacén filter — Only if business has multiple branches */}
+                  {user?.profiles?.includes("BUSINESS_BRANCHES") && branches.length > 1 && (
                     <select
                       value={activeBranchId}
                       onChange={(e) => setActiveBranchId(e.target.value)}
                       className="bg-white border border-gray-100 shadow-sm rounded-2xl px-4 py-3.5 text-sm font-bold text-gray-700 outline-none focus:border-indigo-400 min-w-[160px]"
                     >
-                      <option value="">Almacén General (Todos)</option>
-                      {branches.map((b, index) => (
+                      <option value="">Todas las Sedes (Consolidado)</option>
+                      {branches.map((b) => (
                         <option key={b.id} value={b.id}>
-                          {b.name}{" "}
-                          {index === 0 ? " (Almacén Central / Matriz)" : ""}
+                          {b.name}
                         </option>
                       ))}
                     </select>
@@ -2492,13 +2491,9 @@ export default function BusinessInventoryPage() {
                 {/* Active filter chips */}
                 {(filterBrandId || filterFamilyId || activeBranchId) && (
                   <div className="flex flex-wrap gap-2">
-                    {activeBranchId && (
+                    {activeBranchId && branches.length > 1 && (
                       <span className="px-3 py-1.5 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-xl border border-emerald-100 flex items-center gap-1.5">
-                        Almacén:{" "}
-                        {branches.find((b) => b.id === activeBranchId)?.name}{" "}
-                        {branches[0]?.id === activeBranchId
-                          ? "(Almacén Central / Matriz)"
-                          : ""}
+                        Sede: {branches.find((b) => b.id === activeBranchId)?.name || "Sede Principal"}
                         <button
                           onClick={() => setActiveBranchId("")}
                           className="text-emerald-400 hover:text-emerald-700 font-black"

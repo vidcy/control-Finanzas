@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import Appshell from "../components/layout/Appshell";
-import { Lock, Unlock, History, DollarSign, Eye, Loader2 } from "lucide-react";
+import { Lock, Unlock, History, DollarSign, Eye, Loader2, Key, Users } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -11,8 +11,11 @@ import {
   openCashShiftRequest,
   closeCashShiftRequest,
   getActiveCashShiftRequest,
+  getAllActiveCashShiftsRequest,
   getCashShiftHistoryRequest,
   getCashShiftDetailsRequest,
+  getCashRegisterPinRequest,
+  setCashRegisterPinRequest,
 } from "../services/cash-shift.api";
 import { getBranchesRequest } from "../services/branch.api";
 import { listCategoriesRequest } from "../services/category.api";
@@ -21,6 +24,7 @@ import { getWorkersRequest } from "../services/user.api";
 export default function BusinessCashRegisterPage() {
   const { user } = useAuth();
   const [activeShift, setActiveShift] = useState<any>(null);
+  const [allActiveShifts, setAllActiveShifts] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -28,12 +32,18 @@ export default function BusinessCashRegisterPage() {
   const [categories, setCategories] = useState<any[]>([]);
   const [workers, setWorkers] = useState<any[]>([]);
 
+  // PIN modal state
+  const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+  const [configuredPin, setConfiguredPin] = useState("");
+
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [initialBalance, setInitialBalance] = useState<number | "">("");
   const [selectedBranchId, setSelectedBranchId] = useState("");
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
   const [selectedSubCategoryId, setSelectedSubCategoryId] = useState("");
+  const [targetWorkerId, setTargetWorkerId] = useState("");
+  const [closeTargetWorkerId, setCloseTargetWorkerId] = useState("");
 
   // Filters State
   const [filterBranchId, setFilterBranchId] = useState("");
@@ -130,9 +140,28 @@ export default function BusinessCashRegisterPage() {
     try {
       const active = await getActiveCashShiftRequest().catch(() => null);
       setActiveShift(active || null);
+
+      if (!user?.parentId || user?.role === "ADMIN") {
+        const allActive = await getAllActiveCashShiftsRequest().catch(() => []);
+        setAllActiveShifts(allActive || []);
+        const pinRes = await getCashRegisterPinRequest().catch(() => null);
+        setConfiguredPin(pinRes?.pin || "");
+      }
+
       await loadHistory(currentPage);
     } catch {
       toast.error("Error al cargar estado de la caja");
+    }
+  };
+
+  const handleSavePin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await setCashRegisterPinRequest(configuredPin);
+      toast.success("Clave de caja configurada exitosamente");
+      setIsPinModalOpen(false);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Error al configurar la clave de caja");
     }
   };
 
@@ -352,7 +381,9 @@ export default function BusinessCashRegisterPage() {
     const XLSX = await import("xlsx");
     const dataToExport = shiftDetails.sales.map((sale: any) => ({
       "Hora": format(new Date(sale.date), "HH:mm:ss"),
-      "Concepto / Descripción": sale.description || "",
+      "Concepto / Productos": (sale.items && sale.items.length > 0)
+        ? sale.items.map((i: any) => `${i.quantity}x ${i.name}`).join(", ")
+        : (sale.description || "").replace("Venta en POS: ", "") || "Venta Manual",
       "Método de Pago": sale.paymentMethod || "CASH",
       "Monto (S/)": sale.amount || 0
     }));
@@ -407,7 +438,9 @@ export default function BusinessCashRegisterPage() {
     y += 8;
 
     shiftDetails.sales.forEach((sale: any, idx: number) => {
-      const rawDesc = (sale.description || "").replace("Venta en POS: ", "");
+      const rawDesc = (sale.items && sale.items.length > 0)
+        ? sale.items.map((i: any) => `${i.quantity}x ${i.name}`).join(", ")
+        : (sale.description || "").replace("Venta en POS: ", "") || "Venta Manual";
       // Wrap text within the description column width
       const descLines = doc.splitTextToSize(rawDesc, 105);
       const rowHeight = Math.max(8, descLines.length * 5);
@@ -483,31 +516,59 @@ export default function BusinessCashRegisterPage() {
         selectedBranchId,
         selectedCategoryId,
         selectedSubCategoryId || undefined,
-        openPassword
+        openPassword,
+        targetWorkerId || undefined
       );
       toast.success("Caja abierta exitosamente");
       setIsModalOpen(false);
       setInitialBalance("");
       setOpenPassword("");
+      setTargetWorkerId("");
       loadActiveShiftAndHistory();
     } catch (error: any) {
-      toast.error(error.response?.data?.message || "Error al abrir la caja");
+      const errMsg = error.response?.data?.message || "";
+      if (
+        errMsg.toLowerCase().includes("incorrecta") ||
+        errMsg.toLowerCase().includes("clave") ||
+        errMsg.toLowerCase().includes("pin") ||
+        errMsg.toLowerCase().includes("contraseña")
+      ) {
+        toast.error("La contraseña ingresada para abrir caja es incorrecta");
+      } else {
+        toast.error(errMsg || "Error al abrir la caja");
+      }
     }
   };
 
   const handleCloseShift = async () => {
     if (!closePassword) {
-      toast.error("Por favor, ingrese su contraseña de confirmación");
+      toast.error("Por favor, ingrese la clave o contraseña de autorización");
       return;
     }
     try {
-      await closeCashShiftRequest(closeCategoryId, closeSubCategoryId || undefined, closePassword);
+      await closeCashShiftRequest(
+        closeCategoryId,
+        closeSubCategoryId || undefined,
+        closePassword,
+        closeTargetWorkerId || undefined
+      );
       toast.success("Caja cerrada exitosamente");
       setIsCloseConfirmOpen(false);
       setClosePassword("");
+      setCloseTargetWorkerId("");
       loadActiveShiftAndHistory();
     } catch (error: any) {
-      toast.error(error.response?.data?.message || "Error al cerrar la caja");
+      const errMsg = error.response?.data?.message || "";
+      if (
+        errMsg.toLowerCase().includes("incorrecta") ||
+        errMsg.toLowerCase().includes("clave") ||
+        errMsg.toLowerCase().includes("pin") ||
+        errMsg.toLowerCase().includes("contraseña")
+      ) {
+        toast.error("La contraseña ingresada para cerrar caja es incorrecta");
+      } else {
+        toast.error(errMsg || "Error al cerrar la caja");
+      }
     }
   };
 
@@ -548,19 +609,105 @@ export default function BusinessCashRegisterPage() {
               <p className="text-gray-500 font-medium mt-2 max-w-lg">Controla el dinero en efectivo y las ventas diarias. Abre tu turno al empezar y ciérralo al finalizar tu jornada.</p>
             </div>
 
-            <div>
+            <div className="flex flex-wrap items-center gap-3">
+              {(!user?.parentId || user?.role === "ADMIN") && (
+                <button
+                  onClick={() => setIsPinModalOpen(true)}
+                  className="px-5 py-3.5 bg-white text-indigo-700 border border-indigo-200 rounded-xl font-bold flex items-center gap-2 hover:bg-indigo-50 transition-all shadow-sm"
+                >
+                  <Key className="w-5 h-5 text-indigo-600" />
+                  {configuredPin ? "Clave Configurada (Modificar)" : "Configurar Clave de Caja"}
+                </button>
+              )}
               {activeShift ? (
-                <button onClick={() => setIsCloseConfirmOpen(true)} className="px-6 py-3.5 bg-rose-50 text-rose-600 border border-rose-200 rounded-xl font-bold flex items-center gap-2 hover:bg-rose-100 transition-all shadow-sm">
-                  <Lock className="w-5 h-5" /> Cerrar Caja Actual
+                <button 
+                  onClick={() => {
+                    setCloseTargetWorkerId("");
+                    setIsCloseConfirmOpen(true);
+                  }} 
+                  className="px-6 py-3.5 bg-rose-50 text-rose-600 border border-rose-200 rounded-xl font-bold flex items-center gap-2 hover:bg-rose-100 transition-all shadow-sm"
+                >
+                  <Lock className="w-5 h-5" /> Cerrar Mi Caja
                 </button>
               ) : (
                 <button onClick={() => setIsModalOpen(true)} className="px-6 py-3.5 bg-indigo-600 text-white border border-indigo-700 rounded-xl font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-md shadow-indigo-200">
-                  <Unlock className="w-5 h-5" /> Abrir Nueva Caja
+                  <Unlock className="w-5 h-5" /> Abrir Caja
                 </button>
               )}
             </div>
           </div>
         </div>
+
+        {/* OWNER VIEW: ALL ACTIVE SHIFTS IN BUSINESS */}
+        {(!user?.parentId || user?.role === "ADMIN") && allActiveShifts.length > 0 && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <Users className="w-5 h-5 text-indigo-600" />
+              <h2 className="text-lg font-bold text-gray-900">
+                Cajas Actualmente Abiertas en el Negocio ({allActiveShifts.length})
+              </h2>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {allActiveShifts.map((shift) => (
+                <div key={shift.id} className="bg-white rounded-3xl p-6 border border-emerald-100 shadow-sm relative overflow-hidden flex flex-col justify-between">
+                  <div className="absolute right-0 top-0 w-32 h-32 bg-emerald-50/60 rounded-full blur-2xl pointer-events-none"></div>
+                  
+                  <div>
+                    <div className="flex justify-between items-start mb-4 relative z-10">
+                      <div className="flex items-center gap-3">
+                        <div className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse"></div>
+                        <div>
+                          <h3 className="font-extrabold text-gray-900 text-base">
+                            👤 {shift.user?.name} {shift.user?.lastName || ""}
+                          </h3>
+                          <span className="text-[11px] text-gray-500 font-mono">{shift.user?.email}</span>
+                        </div>
+                      </div>
+                      <span className="text-xs px-2.5 py-1 bg-indigo-50 border border-indigo-100 text-indigo-600 rounded-full font-bold">
+                        📍 {shift.branch?.name || "Matriz"}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 relative z-10 mb-4">
+                      <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                        <span className="text-[10px] font-bold text-gray-400 uppercase block">Base Inicial</span>
+                        <span className="text-lg font-black text-gray-800">S/ {shift.initialBalance.toFixed(2)}</span>
+                      </div>
+                      <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100">
+                        <span className="text-[10px] font-bold text-emerald-600 uppercase block">Ventas Efectivo</span>
+                        <span className="text-lg font-black text-emerald-700">+ S/ {(shift.cashSales ?? shift.currentSales).toFixed(2)}</span>
+                      </div>
+                      <div className="p-3 bg-blue-50 rounded-xl border border-blue-100">
+                        <span className="text-[10px] font-bold text-blue-600 uppercase block">Ventas Digitales</span>
+                        <span className="text-lg font-black text-blue-700">+ S/ {(shift.digitalSales ?? 0).toFixed(2)}</span>
+                      </div>
+                      <div className="p-3 bg-indigo-50 rounded-xl border border-indigo-100">
+                        <span className="text-[10px] font-bold text-indigo-600 uppercase block">Esperado en Caja</span>
+                        <span className="text-lg font-black text-indigo-700">S/ {(shift.expectedCashInBox ?? (shift.initialBalance + (shift.cashSales ?? shift.currentSales))).toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center pt-3 border-t border-gray-100 relative z-10">
+                    <span className="text-[11px] text-gray-400">
+                      Desde: {format(new Date(shift.openedAt), "dd MMM, HH:mm", { locale: es })}
+                    </span>
+                    <button
+                      onClick={() => {
+                        setCloseTargetWorkerId(shift.userId);
+                        setIsCloseConfirmOpen(true);
+                      }}
+                      className="px-4 py-2 bg-rose-50 text-rose-600 border border-rose-200 rounded-xl font-bold text-xs hover:bg-rose-100 transition-all shadow-sm flex items-center gap-1.5"
+                    >
+                      <Lock className="w-3.5 h-3.5" /> Cerrar esta Caja
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* ACTIVE SHIFT STATUS */}
         {activeShift && (
@@ -580,18 +727,28 @@ export default function BusinessCashRegisterPage() {
               </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10">
-              <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100">
-                <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Monto Inicial (Base)</p>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 relative z-10">
+              <div className="p-4 bg-gray-50/80 rounded-2xl border border-gray-100">
+                <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Monto Inicial (Base)</p>
                 <p className="text-2xl font-black text-gray-900">S/ {activeShift.initialBalance.toFixed(2)}</p>
+                <p className="text-[10px] text-gray-400 mt-1">Efectivo asignado al apertura</p>
               </div>
-              <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100">
-                <p className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-1">Ventas del Turno</p>
-                <p className="text-2xl font-black text-blue-700">+ S/ {activeShift.currentSales.toFixed(2)}</p>
+              <div className="p-4 bg-emerald-50/80 rounded-2xl border border-emerald-100">
+                <p className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider mb-1">Ventas en Efectivo</p>
+                <p className="text-2xl font-black text-emerald-700">+ S/ {(activeShift.cashSales ?? activeShift.currentSales).toFixed(2)}</p>
+                <p className="text-[10px] text-emerald-600 mt-1 font-medium">Sumado a la caja física</p>
               </div>
-              <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100">
-                <p className="text-xs font-bold text-emerald-600 uppercase tracking-wider mb-1">Total Esperado en Caja</p>
-                <p className="text-2xl font-black text-emerald-700">S/ {(activeShift.initialBalance + activeShift.currentSales).toFixed(2)}</p>
+              <div className="p-4 bg-blue-50/80 rounded-2xl border border-blue-100">
+                <p className="text-[11px] font-bold text-blue-700 uppercase tracking-wider mb-1">Ventas Digitales</p>
+                <p className="text-2xl font-black text-blue-700">+ S/ {(activeShift.digitalSales ?? 0).toFixed(2)}</p>
+                <p className="text-[10px] text-blue-600 mt-1 font-medium">Yape / Plin / Tarjetas</p>
+              </div>
+              <div className="p-4 bg-indigo-50/80 rounded-2xl border border-indigo-100">
+                <p className="text-[11px] font-bold text-indigo-700 uppercase tracking-wider mb-1">Efectivo Esperado en Caja</p>
+                <p className="text-2xl font-black text-indigo-700">
+                  S/ {(activeShift.expectedCashInBox ?? (activeShift.initialBalance + (activeShift.cashSales ?? activeShift.currentSales))).toFixed(2)}
+                </p>
+                <p className="text-[10px] text-indigo-600 mt-1 font-medium">Total físico a verificar a cierre</p>
               </div>
             </div>
           </div>
@@ -615,24 +772,26 @@ export default function BusinessCashRegisterPage() {
             
             {/* Filters */}
             <div className="flex flex-wrap items-center gap-4">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px] font-black uppercase text-gray-400">Sede:</span>
-                <select
-                  value={filterBranchId}
-                  onChange={(e) => {
-                    setFilterBranchId(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs font-bold text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
-                >
-                  <option value="">Todas</option>
-                  {branches.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {branches.length > 1 && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-black uppercase text-gray-400">Sede:</span>
+                  <select
+                    value={filterBranchId}
+                    onChange={(e) => {
+                      setFilterBranchId(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs font-bold text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                  >
+                    <option value="">Todas las Sedes (Consolidado)</option>
+                    {branches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {(user?.role === "ADMIN" || !user?.parentId) && (
                 <div className="flex items-center gap-1.5">
@@ -794,22 +953,47 @@ export default function BusinessCashRegisterPage() {
             <p className="text-[11px] text-gray-400 mt-1">Este es el dinero con el que empiezas el día para dar vueltos.</p>
           </div>
 
-          <div>
-            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Sede / Sucursal de Caja</label>
-            <select
-              value={selectedBranchId}
-              onChange={(e) => setSelectedBranchId(e.target.value)}
-              required
-              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-semibold bg-white"
-            >
-              <option value="">Seleccionar Sede...</option>
-              {branches.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          {(!user?.parentId || user?.role === "ADMIN") && (
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
+                Asignar Caja a (Usuario / Vendedor)
+              </label>
+              <select
+                value={targetWorkerId}
+                onChange={(e) => setTargetWorkerId(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-semibold bg-white"
+              >
+                <option value="">Para Mí (Dueño)</option>
+                {workers.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    👤 {w.name} {w.lastName || ""} ({w.email})
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-gray-400 mt-1">
+                Puedes abrir la caja a tu propio nombre o asignársela directamente a un trabajador.
+              </p>
+            </div>
+          )}
+
+          {branches.length > 1 && (
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Sede / Sucursal de Caja</label>
+              <select
+                value={selectedBranchId}
+                onChange={(e) => setSelectedBranchId(e.target.value)}
+                required
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-semibold bg-white"
+              >
+                <option value="">Seleccionar Sede...</option>
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Categoría Contable (Egreso Inicial)</label>
@@ -859,21 +1043,19 @@ export default function BusinessCashRegisterPage() {
 
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
-              Contraseña de Autorización del Dueño
+              Clave de Autorización de Caja
             </label>
             <input 
               type="password" 
               required 
               value={openPassword} 
               onChange={e => setOpenPassword(e.target.value)} 
-              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-semibold" 
-              placeholder="••••••••" 
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-semibold tracking-wider font-mono" 
+              placeholder="Ej. 1234" 
             />
-            {user?.parentId && (
-              <p className="text-[11px] text-amber-600 mt-1 font-medium bg-amber-50 border border-amber-100 p-2 rounded-lg">
-                ⚠️ Como trabajador, debes solicitar al dueño su contraseña para autorizar la apertura de caja y el fondo asignado.
-              </p>
-            )}
+            <p className="text-[11px] text-gray-500 mt-1 font-medium bg-slate-50 border border-slate-200/60 p-2 rounded-lg">
+              🔑 Ingresa la clave de caja configurada por el dueño en el módulo de control de caja para autorizar la apertura.
+            </p>
           </div>
 
           <div className="pt-4 flex justify-end gap-3">
@@ -957,18 +1139,18 @@ export default function BusinessCashRegisterPage() {
 
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
-              Tu Contraseña de Confirmación
+              Clave de Autorización de Caja
             </label>
             <input 
               type="password" 
               required 
               value={closePassword} 
               onChange={e => setClosePassword(e.target.value)} 
-              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-semibold" 
-              placeholder="••••••••" 
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-semibold tracking-wider font-mono" 
+              placeholder="Ej. 1234" 
             />
-            <p className="text-[11px] text-gray-400 mt-1">
-              Ingresa tu contraseña de acceso para autorizar el cierre del turno.
+            <p className="text-[11px] text-gray-500 mt-1 font-medium bg-slate-50 border border-slate-200/60 p-2 rounded-lg">
+              🔑 Ingresa la clave de caja configurada por el dueño para autorizar el cierre del turno.
             </p>
           </div>
 
@@ -1107,8 +1289,10 @@ export default function BusinessCashRegisterPage() {
                             <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">
                               {format(new Date(sale.date), "HH:mm:ss")}
                             </td>
-                            <td className="px-4 py-2.5 text-gray-700 font-semibold truncate max-w-[200px]">
-                              {sale.description?.replace("Venta en POS: ", "") || "Venta Manual"}
+                            <td className="px-4 py-2.5 text-gray-700 font-semibold truncate max-w-[200px]" title={sale.items && sale.items.length > 0 ? sale.items.map((i: any) => `${i.quantity}x ${i.name}`).join(", ") : sale.description || ""}>
+                              {sale.items && sale.items.length > 0
+                                ? sale.items.map((i: any) => `${i.quantity}x ${i.name}`).join(", ")
+                                : sale.description?.replace("Venta en POS: ", "") || "Venta en POS"}
                             </td>
                             <td className="px-4 py-2.5 text-center whitespace-nowrap">
                               <span className="text-[9px] font-bold bg-gray-105 text-gray-600 px-1.5 py-0.5 rounded">
@@ -1169,6 +1353,49 @@ export default function BusinessCashRegisterPage() {
         ) : (
           <div className="p-6 text-center text-gray-400 font-medium">No se cargaron los detalles.</div>
         )}
+      </Modal>
+
+      {/* MODAL CONFIGURACIÓN DE CLAVE DE CAJA */}
+      <Modal
+        isOpen={isPinModalOpen}
+        onClose={() => setIsPinModalOpen(false)}
+        title="🔑 Configuración de Clave de Caja"
+        maxWidth="max-w-md"
+      >
+        <form onSubmit={handleSavePin} className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
+              Clave de Autorización de Caja
+            </label>
+            <input
+              type="text"
+              required
+              value={configuredPin}
+              onChange={(e) => setConfiguredPin(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-semibold tracking-wider font-mono"
+              placeholder="Ej. 1234 o CAJA2026"
+            />
+            <p className="text-[11px] text-gray-400 mt-2 leading-relaxed">
+              Esta clave personalizada servirá para abrir y cerrar cajas en cualquier turno del negocio. Si tus trabajadores la usan, se les asignará la caja a su usuario correspondiente.
+            </p>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
+            <button
+              type="button"
+              onClick={() => setIsPinModalOpen(false)}
+              className="px-4 py-2.5 bg-gray-100 text-gray-700 font-bold rounded-xl text-xs hover:bg-gray-200 transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              className="px-5 py-2.5 bg-indigo-600 text-white font-bold rounded-xl text-xs hover:bg-indigo-700 transition-all shadow-md shadow-indigo-200"
+            >
+              Guardar Clave de Caja
+            </button>
+          </div>
+        </form>
       </Modal>
     </Appshell>
   );

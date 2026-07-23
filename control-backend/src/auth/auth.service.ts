@@ -61,6 +61,7 @@ export class AuthService {
         email: user.email,
         role: user.role,
         profiles: user.profiles || [],
+        parentId: user.parentId || null,
       },
     };
   }

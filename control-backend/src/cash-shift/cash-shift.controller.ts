@@ -24,9 +24,10 @@ export class CashShiftController {
     @Body('branchId') branchId?: string,
     @Body('categoryId') categoryId?: string,
     @Body('subCategoryId') subCategoryId?: string,
+    @Body('targetWorkerId') targetWorkerId?: string,
   ) {
-    const ownerId = req.user.id;
-    const workerId = req.user.workerId || req.user.id;
+    const ownerId = req.user.parentId || req.user.id;
+    const workerId = req.user.workerId || targetWorkerId || req.user.id;
     return this.cashShiftService.openShift({
       ownerId,
       workerId,
@@ -44,9 +45,10 @@ export class CashShiftController {
     @Body('password') password?: string,
     @Body('categoryId') categoryId?: string,
     @Body('subCategoryId') subCategoryId?: string,
+    @Body('targetWorkerId') targetWorkerId?: string,
   ) {
-    const ownerId = req.user.id;
-    const workerId = req.user.workerId || req.user.id;
+    const ownerId = req.user.parentId || req.user.id;
+    const workerId = req.user.workerId || targetWorkerId || req.user.id;
     return this.cashShiftService.closeShift(
       ownerId,
       workerId,
@@ -60,6 +62,24 @@ export class CashShiftController {
   async getActiveShift(@Request() req) {
     const workerId = req.user.workerId || req.user.id;
     return this.cashShiftService.getActiveShift(workerId);
+  }
+
+  @Get('active-all')
+  async getAllActiveShifts(@Request() req) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.cashShiftService.getAllActiveShifts(ownerId);
+  }
+
+  @Get('pin')
+  async getPin(@Request() req) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.cashShiftService.getCashRegisterPin(ownerId);
+  }
+
+  @Post('pin')
+  async setPin(@Request() req, @Body('pin') pin: string) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.cashShiftService.setCashRegisterPin(ownerId, pin);
   }
 
   @Get('history')

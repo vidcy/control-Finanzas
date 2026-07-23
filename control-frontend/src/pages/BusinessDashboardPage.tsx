@@ -6,7 +6,6 @@ import { getTransactionsRequest } from "../services/transaction.api";
 import { getProductsRequest } from "../services/product.api";
 import {
   TrendingUp,
-  TrendingDown,
   Package,
   Activity,
   ArrowRight,
@@ -41,6 +40,10 @@ export default function BusinessDashboardPage() {
     businessLiquidity: 0,
     liquidityByMethod: { CASH: 0, TRANSFER: 0, CARD: 0, YAPE: 0, PLIN: 0 } as Record<string, number>,
     inventory: 0,
+    inventoryCost: 0,
+    inventoryProjected: 0,
+    inventoryProfit: 0,
+    inventoryMarginPercent: 0,
     patrimonio: 0,
     totalOpex: 0,
     lowStockCount: 0,
@@ -95,14 +98,24 @@ export default function BusinessDashboardPage() {
         .filter((t: any) => t.type === "INCOME" && t.name === "Venta en Caja" && new Date(t.date) >= monthStart)
         .reduce((acc: number, t: any) => acc + t.amount, 0);
 
-      // Inventory valuation
-      const inventoryValuation = prods.reduce(
-        (acc, p) => acc + (p.costPrice * p.stock),
+      // Inventory valuation (Cost vs. Projected Sale)
+      const inventoryCostValuation = prods.reduce(
+        (acc, p) => acc + ((p.costPrice || 0) * (p.stock || 0)),
         0
       );
 
-      // Patrimonio (Liquidity + Inventory)
-      const patrimonio = businessLiquidity + inventoryValuation;
+      const inventoryProjectedValuation = prods.reduce(
+        (acc, p) => acc + ((p.salePrice || 0) * (p.stock || 0)),
+        0
+      );
+
+      const inventoryProjectedProfit = Math.max(0, inventoryProjectedValuation - inventoryCostValuation);
+      const inventoryProjectedMargin = inventoryProjectedValuation > 0
+        ? (inventoryProjectedProfit / inventoryProjectedValuation) * 100
+        : 0;
+
+      // Patrimonio (Liquidity + Inventory Cost)
+      const patrimonio = businessLiquidity + inventoryCostValuation;
 
       // Monthly Expenses
       const monthlyExpenses = safeTx
@@ -140,7 +153,11 @@ export default function BusinessDashboardPage() {
         monthlySales,
         businessLiquidity,
         liquidityByMethod,
-        inventory: inventoryValuation,
+        inventory: inventoryCostValuation,
+        inventoryCost: inventoryCostValuation,
+        inventoryProjected: inventoryProjectedValuation,
+        inventoryProfit: inventoryProjectedProfit,
+        inventoryMarginPercent: inventoryProjectedMargin,
         patrimonio,
         totalOpex: monthlyExpenses,
         lowStockCount: lowStockList.length,
@@ -297,30 +314,30 @@ export default function BusinessDashboardPage() {
             )}
 
             {/* GRID PRINCIPAL DE MÉTRICAS */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
               
               {/* LIQUIDEZ / DINERO DISPONIBLE */}
-              <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex flex-col justify-between relative overflow-hidden group hover:shadow-xl hover:shadow-emerald-500/5 hover:-translate-y-1 transition-all duration-300">
-                <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-100/50 rounded-full opacity-60 blur-xl transform translate-x-4 -translate-y-4 group-hover:scale-110 transition-transform"></div>
+              <div className="bg-gradient-to-br from-emerald-50/90 via-white to-teal-50/60 p-6 rounded-[2rem] shadow-sm border border-emerald-100/80 flex flex-col justify-between relative overflow-hidden group hover:shadow-xl hover:shadow-emerald-500/10 hover:-translate-y-1 transition-all duration-300">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-200/40 rounded-full opacity-60 blur-xl transform translate-x-4 -translate-y-4 group-hover:scale-110 transition-transform"></div>
                 <div>
                   <div className="flex justify-between items-center mb-4 relative z-10">
-                    <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Caja y Bancos (Efectivo)</span>
-                    <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center border border-emerald-100/80">
-                      <Wallet className="w-5 h-5 text-emerald-600" />
+                    <span className="text-[11px] font-extrabold text-emerald-800/70 uppercase tracking-wider">Caja y Liquidez</span>
+                    <div className="w-10 h-10 bg-emerald-100/80 rounded-xl flex items-center justify-center border border-emerald-200/60">
+                      <Wallet className="w-5 h-5 text-emerald-700" />
                     </div>
                   </div>
-                  <h3 className="text-3xl font-black text-gray-900 tracking-tight">
+                  <h3 className="text-3xl font-black text-emerald-950 tracking-tight">
                     S/ {metrics.businessLiquidity.toFixed(2)}
                   </h3>
                 </div>
-                <div className="mt-4 pt-3 border-t border-gray-100 space-y-1.5">
-                  <div className="flex justify-between text-[11px] font-bold text-gray-500">
+                <div className="mt-4 pt-3 border-t border-emerald-100/60 space-y-1.5">
+                  <div className="flex justify-between text-[11px] font-bold text-emerald-800/80">
                     <span className="flex items-center gap-1"><Coins className="w-3.5 h-3.5 text-amber-500" /> Efectivo:</span>
-                    <span className="text-gray-800">S/ {(metrics.liquidityByMethod.CASH || 0).toFixed(2)}</span>
+                    <span className="text-emerald-950 font-black">S/ {(metrics.liquidityByMethod.CASH || 0).toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between text-[11px] font-bold text-gray-500">
-                    <span className="flex items-center gap-1"><ArrowUpRight className="w-3.5 h-3.5 text-indigo-500" /> Transferencia/Yape:</span>
-                    <span className="text-gray-800">
+                  <div className="flex justify-between text-[11px] font-bold text-emerald-800/80">
+                    <span className="flex items-center gap-1"><ArrowUpRight className="w-3.5 h-3.5 text-indigo-500" /> Digitales / Yape:</span>
+                    <span className="text-emerald-950 font-black">
                       S/ {((metrics.liquidityByMethod.TRANSFER || 0) + (metrics.liquidityByMethod.YAPE || 0) + (metrics.liquidityByMethod.PLIN || 0)).toFixed(2)}
                     </span>
                   </div>
@@ -328,70 +345,70 @@ export default function BusinessDashboardPage() {
               </div>
 
               {/* VENTAS DEL MES Y DEL DÍA */}
-              <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex flex-col justify-between relative overflow-hidden group hover:shadow-xl hover:shadow-indigo-500/5 hover:-translate-y-1 transition-all duration-300">
-                <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-100/50 rounded-full opacity-60 blur-xl transform translate-x-4 -translate-y-4 group-hover:scale-110 transition-transform"></div>
+              <div className="bg-gradient-to-br from-indigo-50/90 via-white to-blue-50/60 p-6 rounded-[2rem] shadow-sm border border-indigo-100/80 flex flex-col justify-between relative overflow-hidden group hover:shadow-xl hover:shadow-indigo-500/10 hover:-translate-y-1 transition-all duration-300">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-200/40 rounded-full opacity-60 blur-xl transform translate-x-4 -translate-y-4 group-hover:scale-110 transition-transform"></div>
                 <div>
                   <div className="flex justify-between items-center mb-4 relative z-10">
-                    <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Ventas del Mes</span>
-                    <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center border border-indigo-100/80">
-                      <TrendingUp className="w-5 h-5 text-indigo-600" />
+                    <span className="text-[11px] font-extrabold text-indigo-800/70 uppercase tracking-wider">Ventas del Mes</span>
+                    <div className="w-10 h-10 bg-indigo-100/80 rounded-xl flex items-center justify-center border border-indigo-200/60">
+                      <TrendingUp className="w-5 h-5 text-indigo-700" />
                     </div>
                   </div>
-                  <h3 className="text-3xl font-black text-gray-900 tracking-tight">
+                  <h3 className="text-3xl font-black text-indigo-950 tracking-tight">
                     S/ {metrics.monthlySales.toFixed(2)}
                   </h3>
                 </div>
-                <div className="mt-4 pt-3 border-t border-gray-100 flex justify-between items-center">
-                  <span className="text-xs font-bold text-gray-500">Ventas de Hoy:</span>
-                  <span className="text-xs font-extrabold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100/40">
+                <div className="mt-4 pt-3 border-t border-indigo-100/60 flex justify-between items-center">
+                  <span className="text-xs font-bold text-indigo-800/70">Ventas de Hoy:</span>
+                  <span className="text-xs font-black text-indigo-700 bg-indigo-100/70 px-2.5 py-1 rounded-lg border border-indigo-200/60">
                     S/ {metrics.dailySales.toFixed(2)}
                   </span>
                 </div>
               </div>
 
               {/* PATRIMONIO VALORADO (ACTIVOS TOTALES) */}
-              <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex flex-col justify-between relative overflow-hidden group hover:shadow-xl hover:shadow-blue-500/5 hover:-translate-y-1 transition-all duration-300">
-                <div className="absolute top-0 right-0 w-24 h-24 bg-blue-100/50 rounded-full opacity-60 blur-xl transform translate-x-4 -translate-y-4 group-hover:scale-110 transition-transform"></div>
+              <div className="bg-gradient-to-br from-sky-50/90 via-white to-cyan-50/60 p-6 rounded-[2rem] shadow-sm border border-sky-100/80 flex flex-col justify-between relative overflow-hidden group hover:shadow-xl hover:shadow-sky-500/10 hover:-translate-y-1 transition-all duration-300">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-sky-200/40 rounded-full opacity-60 blur-xl transform translate-x-4 -translate-y-4 group-hover:scale-110 transition-transform"></div>
                 <div>
                   <div className="flex justify-between items-center mb-4 relative z-10">
-                    <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Patrimonio Estimado</span>
-                    <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center border border-blue-100/80">
-                      <Package className="w-5 h-5 text-blue-600" />
+                    <span className="text-[11px] font-extrabold text-sky-800/70 uppercase tracking-wider">Patrimonio Estimado</span>
+                    <div className="w-10 h-10 bg-sky-100/80 rounded-xl flex items-center justify-center border border-sky-200/60">
+                      <Package className="w-5 h-5 text-sky-700" />
                     </div>
                   </div>
-                  <h3 className="text-3xl font-black text-gray-900 tracking-tight">
+                  <h3 className="text-3xl font-black text-sky-950 tracking-tight">
                     S/ {metrics.patrimonio.toFixed(2)}
                   </h3>
                 </div>
-                <div className="mt-4 pt-3 border-t border-gray-100 space-y-1.5">
-                  <div className="flex justify-between text-[11px] font-bold text-gray-500">
-                    <span>Dinero Líquido:</span>
-                    <span className="text-gray-800">S/ {metrics.businessLiquidity.toFixed(2)}</span>
+                <div className="mt-4 pt-3 border-t border-sky-100/60 space-y-1.5">
+                  <div className="flex justify-between text-[11px] font-bold text-sky-800/80">
+                    <span>Dinero en Caja:</span>
+                    <span className="text-sky-950 font-black">S/ {metrics.businessLiquidity.toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between text-[11px] font-bold text-gray-500">
-                    <span>Mercancía (Inventario):</span>
-                    <span className="text-gray-800">S/ {metrics.inventory.toFixed(2)}</span>
+                  <div className="flex justify-between text-[11px] font-bold text-sky-800/80">
+                    <span>Stock Valorizado:</span>
+                    <span className="text-sky-950 font-black">S/ {metrics.inventory.toFixed(2)}</span>
                   </div>
                 </div>
               </div>
 
               {/* GASTOS OPERATIVOS DEL MES */}
-              <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex flex-col justify-between relative overflow-hidden group hover:shadow-xl hover:shadow-rose-500/5 hover:-translate-y-1 transition-all duration-300">
-                <div className="absolute top-0 right-0 w-24 h-24 bg-rose-100/50 rounded-full opacity-60 blur-xl transform translate-x-4 -translate-y-4 group-hover:scale-110 transition-transform"></div>
+              <div className="bg-gradient-to-br from-purple-50/90 via-white to-pink-50/60 p-6 rounded-[2rem] shadow-sm border border-purple-100/80 flex flex-col justify-between relative overflow-hidden group hover:shadow-xl hover:shadow-purple-500/10 hover:-translate-y-1 transition-all duration-300">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-purple-200/40 rounded-full opacity-60 blur-xl transform translate-x-4 -translate-y-4 group-hover:scale-110 transition-transform"></div>
                 <div>
                   <div className="flex justify-between items-center mb-4 relative z-10">
-                    <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Egresos / Gastos Mes</span>
-                    <div className="w-10 h-10 bg-rose-50 rounded-xl flex items-center justify-center border border-rose-100/80">
-                      <TrendingDown className="w-5 h-5 text-rose-600" />
+                    <span className="text-[11px] font-extrabold text-purple-800/70 uppercase tracking-wider">Egresos del Mes</span>
+                    <div className="w-10 h-10 bg-purple-100/80 rounded-xl flex items-center justify-center border border-purple-200/60">
+                      <Activity className="w-5 h-5 text-purple-700" />
                     </div>
                   </div>
-                  <h3 className="text-3xl font-black text-gray-900 tracking-tight">
+                  <h3 className="text-3xl font-black text-purple-950 tracking-tight">
                     S/ {metrics.totalOpex.toFixed(2)}
                   </h3>
                 </div>
-                <div className="mt-4 pt-3 border-t border-gray-100 flex justify-between items-center">
-                  <span className="text-xs font-bold text-gray-500">Margen Comercial:</span>
-                  <span className={`text-xs font-extrabold px-2.5 py-1 rounded-lg border ${profitMargin > 0 ? 'text-emerald-700 bg-emerald-50 border-emerald-100/40' : 'text-rose-700 bg-rose-50 border-rose-100/40'}`}>
+                <div className="mt-4 pt-3 border-t border-purple-100/60 flex justify-between items-center">
+                  <span className="text-xs font-bold text-purple-800/70">Margen Comercial:</span>
+                  <span className="text-xs font-black text-purple-700 bg-purple-100/70 px-2.5 py-1 rounded-lg border border-purple-200/60">
                     {profitMargin.toFixed(1)}%
                   </span>
                 </div>

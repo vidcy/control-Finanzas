@@ -82,6 +82,7 @@ model User {
 
   resetToken       String?
   resetTokenExpiry DateTime?
+  cashRegisterPin  String?
 
   isSelfRegistered Boolean   @default(false)
   trialEndsAt      DateTime?

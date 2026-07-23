@@ -258,8 +258,8 @@ export default function BusinessHistoryPage() {
                     : null;
                   const branchId = newV?.branchId || oldV?.branchId;
                   const branchName = branchId
-                    ? branches.find((b) => b.id === branchId)?.name || "Sede Central"
-                    : (log.tableName === "Transaction" || log.tableName === "CashShift" ? "Sede Central" : null);
+                    ? branches.find((b) => b.id === branchId)?.name || "Sede Principal"
+                    : (log.tableName === "Transaction" || log.tableName === "CashShift" ? "Sede Principal" : null);
 
                   const txType = newV?.type || oldV?.type;
 
@@ -282,7 +282,7 @@ export default function BusinessHistoryPage() {
                             <span className="text-[10px] bg-gray-100 text-gray-500 font-bold px-1.5 py-0.5 rounded-md uppercase">
                               {log.tableName}
                             </span>
-                            {branchName && (
+                            {branchName && branches.length > 1 && (
                               <span className="text-[10px] bg-blue-50 text-blue-700 font-extrabold px-1.5 py-0.5 rounded-md uppercase border border-blue-100">
                                 Sede: {branchName}
                               </span>

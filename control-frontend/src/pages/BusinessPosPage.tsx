@@ -445,7 +445,9 @@ export default function BusinessPosPage() {
     const dataToExport = sales.map(sale => ({
       "Fecha/Hora": format(new Date(sale.date), "yyyy-MM-dd HH:mm"),
       "Vendedor": sale.user ? `${sale.user.name} ${sale.user.lastName || ""}`.trim() : "N/A",
-      "Detalle": sale.description || "",
+      "Detalle": (sale.items && sale.items.length > 0)
+        ? sale.items.map((i: any) => `${i.quantity}x ${i.name}`).join(", ")
+        : (sale.description || "").replace("Venta en POS: ", "") || "Venta POS",
       "Método de Pago": sale.paymentMethod || "CASH",
       "Total (S/)": sale.amountSoles || sale.amount || 0
     }));
@@ -501,7 +503,9 @@ export default function BusinessPosPage() {
     y += 8;
 
     sales.forEach((sale: any, idx: number) => {
-      const rawDesc = (sale.description || "").replace("Venta en POS: ", "");
+      const rawDesc = (sale.items && sale.items.length > 0)
+        ? sale.items.map((i: any) => `${i.quantity}x ${i.name}`).join(", ")
+        : (sale.description || "").replace("Venta en POS: ", "") || "Venta POS";
       const descLines = doc.splitTextToSize(rawDesc, 64); // 64mm column width
       const rowHeight = Math.max(8, descLines.length * 4.5);
 
@@ -592,8 +596,17 @@ export default function BusinessPosPage() {
 
   const handleDownloadPastTicket = (sale: any) => {
     setIsSalesListOpen(false); // Close history list modal first
+    const ticketItems = (sale.items && sale.items.length > 0)
+      ? sale.items.map((i: any) => ({
+          quantity: i.quantity,
+          name: i.name || i.product?.name || "Producto",
+          salePrice: i.price,
+          unit: i.product?.unit || "UNIDAD",
+        }))
+      : parseDescription(sale.description || "");
+
     setLastSale({
-      items: parseDescription(sale.description || ""),
+      items: ticketItems,
       total: sale.amount,
       paymentMethod: sale.paymentMethod,
       date: new Date(sale.date),
@@ -804,20 +817,29 @@ export default function BusinessPosPage() {
   const handleBarcodeScanned = (code: string) => {
     const cleanCode = code.trim().toLowerCase();
     setScanTestResult(code);
+    
     const match = products.find((p) => {
-      const matchesSku = p.sku && p.sku.toLowerCase() === cleanCode;
-      const matchesCodeRaw = (p as any).customCode && String((p as any).customCode) === cleanCode;
-      const matchesCodePadded = (p as any).customCode && String((p as any).customCode).padStart(4, "0") === cleanCode;
-      return matchesSku || matchesCodeRaw || matchesCodePadded;
+      const matchesSku = p.sku && p.sku.trim().toLowerCase() === cleanCode;
+      const matchesCodeRaw = (p as any).customCode && String((p as any).customCode).trim() === cleanCode;
+      const matchesCodePadded = (p as any).customCode && String((p as any).customCode).trim().padStart(4, "0") === cleanCode;
+      const matchesId = p.id && p.id.toLowerCase() === cleanCode;
+      const matchesPres = p.presentations?.some((pres: any) => 
+        (pres.sku && pres.sku.trim().toLowerCase() === cleanCode) ||
+        (pres.code && String(pres.code).trim().toLowerCase() === cleanCode)
+      );
+      return matchesSku || matchesCodeRaw || matchesCodePadded || matchesId || matchesPres;
     });
 
     if (match) {
       addToCart(match);
-      setSearchTerm(match.name); // Auto-filter POS list for this product
+      setSearchTerm(match.name);
       playBeep();
-      toast.success(`Agregado: ${match.name}`);
+      toast.success(`🛒 Agregado al carrito: ${match.name}`);
+      if (window.innerWidth < 768) {
+        setMobileTab("cart");
+      }
     } else {
-      toast.error(`Producto no encontrado: "${cleanCode}"`);
+      toast.error(`❌ Producto no registrado con código: "${cleanCode}"`);
     }
   };
 
@@ -2701,10 +2723,15 @@ export default function BusinessPosPage() {
                         <td className="px-4 py-3">
                           <p
                             className="font-semibold text-gray-800 text-xs truncate max-w-xs"
-                            title={sale.description}
+                            title={
+                              sale.items && sale.items.length > 0
+                                ? sale.items.map((i: any) => `${i.quantity}x ${i.name}`).join(", ")
+                                : sale.description?.replace("Venta en POS: ", "") || "Venta POS"
+                            }
                           >
-                            {sale.description?.replace("Venta en POS: ", "") ||
-                              "Venta Manual"}
+                            {sale.items && sale.items.length > 0
+                              ? sale.items.map((i: any) => `${i.quantity}x ${i.name}`).join(", ")
+                              : sale.description?.replace("Venta en POS: ", "") || "Venta POS"}
                           </p>
                           {sale.receiptUrl && (
                             <a

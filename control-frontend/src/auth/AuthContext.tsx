@@ -105,6 +105,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
          });
       }
 
+      // Workers must have BUSINESS profile and at least one submodule
+      if (freshUser.parentId) {
+        if (!parsedProfiles.includes("BUSINESS")) {
+          parsedProfiles.push("BUSINESS");
+        }
+        if (parsedProfiles.length === 1 && parsedProfiles[0] === "BUSINESS") {
+          parsedProfiles.push("BUSINESS_POS");
+        }
+      }
+
       const loggedUser: User = {
         ...freshUser,
         profiles: parsedProfiles,
@@ -162,6 +172,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
              parsedProfiles.push(s);
            }
          });
+      }
+
+      // Workers must have BUSINESS profile and at least one submodule
+      if (data.user?.parentId) {
+        if (!parsedProfiles.includes("BUSINESS")) {
+          parsedProfiles.push("BUSINESS");
+        }
+        if (parsedProfiles.length === 1 && parsedProfiles[0] === "BUSINESS") {
+          parsedProfiles.push("BUSINESS_POS");
+        }
       }
 
       const loggedUser: User = {

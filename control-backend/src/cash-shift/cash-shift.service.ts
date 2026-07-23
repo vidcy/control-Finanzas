@@ -68,18 +68,25 @@ export class CashShiftService {
       );
     }
 
+    const worker = await this.prisma.user.findUnique({
+      where: { id: workerId },
+    });
     const owner = await this.prisma.user.findUnique({
       where: { id: ownerId },
     });
 
-    if (!owner) {
-      throw new NotFoundException('Dueño del negocio no encontrado.');
+    if (!worker || !owner) {
+      throw new NotFoundException('Usuario o dueño del negocio no encontrado.');
+    }
+    if (!owner.cashRegisterPin) {
+      throw new BadRequestException(
+        'El dueño del negocio aún no ha configurado la clave de caja. Debe configurarla en el módulo de Control de Caja.',
+      );
     }
 
-    const isMatch = await bcrypt.compare(password, owner.password);
-    if (!isMatch) {
+    if (password !== owner.cashRegisterPin) {
       throw new BadRequestException(
-        'Contraseña del dueño del negocio incorrecta.',
+        'La contraseña ingresada para abrir caja es incorrecta',
       );
     }
 
@@ -140,21 +147,31 @@ export class CashShiftService {
     if (!isCron) {
       if (!password) {
         throw new BadRequestException(
-          'Se requiere la contraseña para cerrar la caja.',
+          'Se requiere la clave de caja para cerrar el turno.',
         );
       }
 
-      const user = await this.prisma.user.findUnique({
+      const worker = await this.prisma.user.findUnique({
         where: { id: workerId },
       });
+      const owner = await this.prisma.user.findUnique({
+        where: { id: ownerId },
+      });
 
-      if (!user) {
-        throw new NotFoundException('Usuario no encontrado.');
+      if (!worker || !owner) {
+        throw new NotFoundException('Usuario o dueño del negocio no encontrado.');
       }
 
-      const isMatch = await bcrypt.compare(password, user.password);
-      if (!isMatch) {
-        throw new BadRequestException('Contraseña incorrecta.');
+      if (!owner.cashRegisterPin) {
+        throw new BadRequestException(
+          'El dueño del negocio aún no ha configurado la clave de caja. Debe configurarla en el módulo de Control de Caja.',
+        );
+      }
+
+      if (password !== owner.cashRegisterPin) {
+        throw new BadRequestException(
+          'La contraseña ingresada para cerrar caja es incorrecta',
+        );
       }
     }
 
@@ -163,17 +180,16 @@ export class CashShiftService {
     });
 
     if (!activeShift) {
-      throw new BadRequestException(
-        'No hay ninguna caja abierta para este usuario.',
-      );
+      throw new BadRequestException('No hay una caja abierta para cerrar.');
     }
 
-    const sales = await this.prisma.sale.aggregate({
+    const salesList = await this.prisma.sale.findMany({
       where: {
         cashShiftId: activeShift.id,
       },
-      _sum: {
+      select: {
         amount: true,
+        paymentMethod: true,
       },
     });
 
@@ -183,14 +199,17 @@ export class CashShiftService {
       }
     });
 
-    const grossSales = sales._sum.amount || 0;
-    const totalSales = grossSales;
+    const totalSales = salesList.reduce((acc, s) => acc + s.amount, 0);
+    const cashSales = salesList
+      .filter((s) => !s.paymentMethod || (s.paymentMethod as string) === 'CASH' || (s.paymentMethod as string) === 'EFECTIVO')
+      .reduce((acc, s) => acc + s.amount, 0);
+
     const totalAdditionalCommissions = commissionsList
       .filter((c) => c.isAdditional)
       .reduce((sum, c) => sum + c.amount, 0);
 
-    const treasuryClosingAmount = activeShift.initialBalance + totalSales - totalAdditionalCommissions;
-    const finalBalance = activeShift.initialBalance + totalSales - totalAdditionalCommissions;
+    const treasuryClosingAmount = activeShift.initialBalance + cashSales - totalAdditionalCommissions;
+    const finalBalance = activeShift.initialBalance + cashSales - totalAdditionalCommissions;
 
     return this.prisma.$transaction(async (tx) => {
       const closedShift = await tx.cashShift.update({
@@ -275,22 +294,100 @@ export class CashShiftService {
 
     if (!shift) return null;
 
-    const sales = await this.prisma.sale.aggregate({
+    const salesList = await this.prisma.sale.findMany({
       where: {
         cashShiftId: shift.id,
       },
-      _sum: {
+      select: {
         amount: true,
+        paymentMethod: true,
       },
     });
 
-    const grossSales = sales._sum.amount || 0;
-    const netSales = grossSales;
+    const totalSales = salesList.reduce((acc, s) => acc + s.amount, 0);
+    const cashSales = salesList
+      .filter((s) => !s.paymentMethod || (s.paymentMethod as string) === 'CASH' || (s.paymentMethod as string) === 'EFECTIVO')
+      .reduce((acc, s) => acc + s.amount, 0);
+    const digitalSales = totalSales - cashSales;
+    const expectedCashInBox = shift.initialBalance + cashSales;
 
     return {
       ...shift,
-      currentSales: netSales,
+      currentSales: totalSales,
+      cashSales,
+      digitalSales,
+      expectedCashInBox,
     };
+  }
+
+  async getAllActiveShifts(ownerId: string) {
+    const shifts = await this.prisma.cashShift.findMany({
+      where: {
+        status: 'OPEN',
+        user: {
+          OR: [
+            { id: ownerId },
+            { parentId: ownerId },
+          ],
+        },
+      },
+      include: {
+        branch: true,
+        user: {
+          select: {
+            id: true,
+            name: true,
+            lastName: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    return Promise.all(
+      shifts.map(async (shift) => {
+        const salesList = await this.prisma.sale.findMany({
+          where: { cashShiftId: shift.id },
+          select: { amount: true, paymentMethod: true },
+        });
+
+        const totalSales = salesList.reduce((acc, s) => acc + s.amount, 0);
+        const cashSales = salesList
+          .filter(
+            (s) =>
+              !s.paymentMethod ||
+              (s.paymentMethod as string) === 'CASH' ||
+              (s.paymentMethod as string) === 'EFECTIVO',
+          )
+          .reduce((acc, s) => acc + s.amount, 0);
+        const digitalSales = totalSales - cashSales;
+        const expectedCashInBox = shift.initialBalance + cashSales;
+
+        return {
+          ...shift,
+          currentSales: totalSales,
+          cashSales,
+          digitalSales,
+          expectedCashInBox,
+        };
+      }),
+    );
+  }
+
+  async getCashRegisterPin(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { cashRegisterPin: true },
+    });
+    return { pin: user?.cashRegisterPin || null, hasPin: !!user?.cashRegisterPin };
+  }
+
+  async setCashRegisterPin(userId: string, pin: string) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { cashRegisterPin: pin || null },
+    });
+    return { success: true, pin };
   }
 
   async getShiftHistory(userId: string) {
@@ -414,6 +511,9 @@ export class CashShiftService {
     const sales = await this.prisma.sale.findMany({
       where: {
         cashShiftId: id,
+      },
+      include: {
+        items: true,
       },
       orderBy: { date: 'asc' },
     });

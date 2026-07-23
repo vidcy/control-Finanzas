@@ -1638,14 +1638,28 @@ export default function BusinessReportsPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm text-center">
-                    <span className="text-xs font-bold text-gray-400 block mb-1">TOTAL INVERTIDO EN STOCK (COSTO)</span>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm text-center">
+                    <span className="text-[11px] font-bold text-gray-400 block mb-1 uppercase tracking-wider">Valor Real (Costo Stock)</span>
                     <span className="text-2xl font-black text-indigo-700">S/ {inventoryCostValuation.toFixed(2)}</span>
+                    <span className="text-[10px] text-gray-400 mt-1 block">Inversión actual en existencias</span>
                   </div>
-                  <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm text-center">
-                    <span className="text-xs font-bold text-gray-400 block mb-1">VALOR DE VENTA TOTAL DEL STOCK</span>
-                    <span className="text-2xl font-black text-emerald-700">S/ {inventorySaleValuation.toFixed(2)}</span>
+                  <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm text-center">
+                    <span className="text-[11px] font-bold text-gray-400 block mb-1 uppercase tracking-wider">Valor Proyectado (Venta)</span>
+                    <span className="text-2xl font-black text-blue-600">S/ {inventorySaleValuation.toFixed(2)}</span>
+                    <span className="text-[10px] text-gray-400 mt-1 block">Recaudación total estimada</span>
+                  </div>
+                  <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm text-center">
+                    <span className="text-[11px] font-bold text-gray-400 block mb-1 uppercase tracking-wider">Ganancia Est. Stock</span>
+                    <span className="text-2xl font-black text-emerald-600">S/ {Math.max(0, inventorySaleValuation - inventoryCostValuation).toFixed(2)}</span>
+                    <span className="text-[10px] text-gray-400 mt-1 block">Utilidad bruta esperada</span>
+                  </div>
+                  <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm text-center">
+                    <span className="text-[11px] font-bold text-gray-400 block mb-1 uppercase tracking-wider">Margen Est. %</span>
+                    <span className="text-2xl font-black text-purple-600">
+                      {(inventorySaleValuation > 0 ? ((inventorySaleValuation - inventoryCostValuation) / inventorySaleValuation) * 100 : 0).toFixed(1)}%
+                    </span>
+                    <span className="text-[10px] text-gray-400 mt-1 block">Rentabilidad comercial</span>
                   </div>
                 </div>
 

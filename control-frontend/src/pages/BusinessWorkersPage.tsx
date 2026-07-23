@@ -421,22 +421,24 @@ export default function BusinessWorkersPage() {
             </div>
 
             {/* Branch Assignment */}
-            <div>
-              <label className="block text-gray-700 font-extrabold mb-1.5 text-sm flex items-center gap-1.5">
-                <Building className="w-4 h-4 text-gray-400" />
-                <span>Asignar Sede / Sucursal</span>
-              </label>
-              <select
-                value={currentWorker?.branchId || ""}
-                onChange={(e) => setCurrentWorker(prev => prev ? { ...prev, branchId: e.target.value } : null)}
-                className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-indigo-500 focus:bg-white transition-all font-semibold outline-none"
-              >
-                <option value="">-- Sin sede asignada --</option>
-                {branches.map(b => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
-                ))}
-              </select>
-            </div>
+            {branches.length > 1 && (
+              <div>
+                <label className="block text-gray-700 font-extrabold mb-1.5 text-sm flex items-center gap-1.5">
+                  <Building className="w-4 h-4 text-gray-400" />
+                  <span>Asignar Sede / Sucursal</span>
+                </label>
+                <select
+                  value={currentWorker?.branchId || ""}
+                  onChange={(e) => setCurrentWorker(prev => prev ? { ...prev, branchId: e.target.value } : null)}
+                  className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-indigo-500 focus:bg-white transition-all font-semibold outline-none"
+                >
+                  <option value="">-- Sin sede asignada --</option>
+                  {branches.map(b => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* Modules Grid Checklist */}
             <div>
