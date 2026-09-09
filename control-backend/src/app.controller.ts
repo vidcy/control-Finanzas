@@ -3,7 +3,7 @@ import { PrismaService } from './prisma/prisma.service';
 
 @Controller()
 export class AppController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   @Get()
   health() {
@@ -11,15 +11,15 @@ export class AppController {
   }
 
   private async getCatalogUser(emailQuery?: string) {
-    const targetEmail = (emailQuery || 'beas.estileza@gmail.com').toLowerCase().trim();
+    const targetEmail = (emailQuery || 'beaz.estileza@gmail.com').toLowerCase().trim();
 
     // 1. Try finding user with exact email or case-variations
     const user = await this.prisma.user.findFirst({
       where: {
         OR: [
           { email: targetEmail },
-          { email: 'beas.estileza@gmail.com' },
-          { email: 'Beaz.Estileza@gmail.com' },
+          { email: 'beaz.estileza@gmail.com' },
+          { email: 'beaz.estileza@gmail.com' },
           { email: 'beaz.estileza@gmail.com' },
         ],
       },
