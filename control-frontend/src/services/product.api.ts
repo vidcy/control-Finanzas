@@ -55,6 +55,11 @@ export interface InventoryMovement {
   createdAt: string;
 }
 
+export const getCatalogProductsRequest = async (email = "beas.estileza@gmail.com"): Promise<Product[]> => {
+  const res = await API.get("/catalog/products", { params: { email } });
+  return res.data;
+};
+
 export const getProductsRequest = async (): Promise<Product[]> => {
   const res = await API.get("/products");
   return res.data;
@@ -248,6 +253,11 @@ export const updatePurchaseOrderRequest = async (
   return res.data;
 };
 
+export const getCatalogBrandsRequest = async (email = "beas.estileza@gmail.com"): Promise<any[]> => {
+  const res = await API.get("/catalog/brands", { params: { email } });
+  return res.data;
+};
+
 export const getBrandsRequest = async (): Promise<any[]> => {
   const res = await API.get("/products/brands");
   return res.data;
@@ -265,6 +275,11 @@ export const updateBrandRequest = async (id: string, data: { name: string }): Pr
 
 export const deleteBrandRequest = async (id: string): Promise<any> => {
   const res = await API.delete(`/products/brands/${id}`);
+  return res.data;
+};
+
+export const getCatalogFamiliesRequest = async (email = "beas.estileza@gmail.com"): Promise<any[]> => {
+  const res = await API.get("/catalog/families", { params: { email } });
   return res.data;
 };
 

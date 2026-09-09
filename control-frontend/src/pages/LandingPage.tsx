@@ -6,6 +6,8 @@ import {
   PieChart, LineChart, Lock, CheckCircle2,
   Mail, Phone, MapPin, Target, Users, Sparkles, Building
 } from "lucide-react";
+import VeazFloatingModal from "../components/veaz/VeazFloatingModal";
+import { VeazCrownIcon } from "../components/veaz/VeazLogo";
 
 export default function LandingPage() {
   useEffect(() => {
@@ -14,6 +16,9 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-[#fafcff] text-slate-900 font-sans selection:bg-indigo-200 selection:text-indigo-900 overflow-x-hidden">
+      {/* 👑 MODAL FLOTANTE AUTOMÁTICO VEAZ ESTILEZA */}
+      <VeazFloatingModal />
+
       {/* AURA BACKGROUND GRADIENTS */}
       <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden flex justify-center">
         <div className="absolute top-[-10%] w-[800px] h-[800px] bg-indigo-300 rounded-full mix-blend-multiply filter blur-[150px] opacity-40 animate-blob"></div>
@@ -37,6 +42,14 @@ export default function LandingPage() {
             <a href="#contact" className="hover:text-indigo-600 transition-colors">Contáctanos</a>
           </nav>
           <div className="flex items-center gap-4">
+            <Link
+              to="/veaz-estileza"
+              className="hidden sm:inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-amber-500/10 via-yellow-500/15 to-amber-500/10 border border-amber-500/35 text-amber-800 hover:bg-amber-500/20 text-xs font-cinzel font-bold tracking-wider transition-all shadow-sm group"
+            >
+              <VeazCrownIcon size={15} />
+              <span>VEAZ ESTILEZA</span>
+              <Sparkles className="w-3.5 h-3.5 text-amber-500 group-hover:rotate-12 transition-transform" />
+            </Link>
             <Link to="/login" className="text-sm font-bold text-slate-600 hover:text-indigo-600 transition-colors hidden sm:block">
               Iniciar Sesión
             </Link>
@@ -78,6 +91,45 @@ export default function LandingPage() {
           >
             Controla tu dinero, gestiona ingresos, automatiza gastos y escala tus negocios desde un solo lugar. Diseño visualmente perfecto, operatividad impecable.
           </motion.p>
+
+          {/* 👑 BOTÓN CENTRAL PROTAGONISTA: VEAZ ESTILEZA */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.25, ease: "easeOut" }}
+            className="w-full flex justify-center mb-10"
+          >
+            <Link
+              to="/veaz-estileza"
+              className="group relative inline-flex items-center justify-between gap-6 px-8 sm:px-12 py-5 rounded-full bg-gradient-to-r from-[#0E1017] via-[#161826] to-[#0E1017] border-2 border-amber-400 text-white shadow-[0_10px_40px_rgba(245,158,11,0.45)] hover:shadow-[0_15px_60px_rgba(245,158,11,0.7)] hover:scale-105 active:scale-95 transition-all duration-300"
+            >
+              {/* Pulsing ambient glow behind button */}
+              <div className="absolute inset-0 rounded-full bg-gradient-to-r from-amber-500/30 via-yellow-400/30 to-amber-600/30 blur-xl -z-10 group-hover:opacity-100 transition-opacity" />
+
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-full bg-amber-500/20 border border-amber-400/60 flex items-center justify-center text-amber-300 group-hover:scale-110 group-hover:bg-amber-400 group-hover:text-slate-950 transition-all shadow-inner">
+                  <VeazCrownIcon size={26} />
+                </div>
+                <div className="text-left">
+                  <span className="block text-[10px] sm:text-xs uppercase font-cinzel font-bold tracking-[0.28em] text-amber-300/90">
+                    Boutique Exclusiva de Calzados
+                  </span>
+                  <span className="text-xl sm:text-3xl font-cinzel font-black tracking-[0.22em] text-gold-gradient drop-shadow-md">
+                    VEAZ ESTILEZA
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pl-4 border-l border-amber-500/30">
+                <span className="hidden md:inline text-xs font-cinzel font-bold tracking-wider text-amber-200 uppercase">
+                  Ver Catálogo
+                </span>
+                <div className="w-9 h-9 rounded-full bg-amber-400 text-slate-950 flex items-center justify-center group-hover:translate-x-1.5 transition-transform">
+                  <ArrowRight className="w-4 h-4 stroke-[2.5]" />
+                </div>
+              </div>
+            </Link>
+          </motion.div>
 
           <motion.div
             initial={{ opacity: 0, y: 20 }}

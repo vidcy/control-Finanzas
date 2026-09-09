@@ -1162,7 +1162,213 @@ export default function BusinessPosPage() {
   };
 
   const printTicket = () => {
-    window.print();
+    if (!lastSale) {
+      window.print();
+      return;
+    }
+
+    const businessName = user?.businessName ? user.businessName.toUpperCase() : "THINK";
+    const businessReason = user?.businessReason ? `Razón Social: ${user.businessReason}<br/>` : "";
+    const businessRuc = user?.businessRuc ? `RUC: ${user.businessRuc}<br/>` : "";
+    const businessRubro = user?.businessRubro ? `Giro: ${user.businessRubro}<br/>` : "";
+    const compType =
+      lastSale.billingType === "BOLETA"
+        ? "BOLETA DE VENTA ELECTRÓNICA"
+        : lastSale.billingType === "FACTURA"
+        ? "FACTURA ELECTRÓNICA"
+        : lastSale.billingType === "NOTA_CREDITO"
+        ? "NOTA DE CRÉDITO ELECTRÓNICA"
+        : lastSale.billingType === "NOTA_DEBITO"
+        ? "NOTA DE DÉBITO ELECTRÓNICA"
+        : "TICKET DE VENTA";
+    const dateStr = format(lastSale.date, "dd/MM/yyyy HH:mm");
+    const numComp =
+      lastSale.billingSerie && lastSale.billingNumber
+        ? `${lastSale.billingSerie}-${lastSale.billingNumber}`
+        : (lastSale.txId?.slice(0, 8) || "0000").toUpperCase();
+    const payStr = paymentLabel[lastSale.paymentMethod] || lastSale.paymentMethod;
+
+    const itemsHtml = lastSale.items
+      .map((item: any) => {
+        const pres = item.presentations?.find((p: any) => p.id === item.presentationId);
+        const presName = pres ? pres.name : item.unit;
+        const sub = (item.quantity * item.salePrice).toFixed(2);
+        return `
+          <tr>
+            <td style="padding: 2px 0; vertical-align: top; font-weight: bold; width: 22px;">${item.quantity}x</td>
+            <td style="padding: 2px 4px; vertical-align: top;">${item.name} [${presName}]</td>
+            <td style="padding: 2px 0; vertical-align: top; text-align: right; font-weight: bold; white-space: nowrap;">S/ ${sub}</td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    const clientHtml = lastSale.clientDocumentNumber
+      ? `
+        <div style="border-top: 1px dashed #000000; margin: 4px 0; padding-top: 4px; font-size: 10px;">
+          <div><strong>Cliente:</strong> ${lastSale.clientDenomination || ""}</div>
+          <div><strong>${lastSale.clientDocumentType === "6" ? "RUC" : "DNI"}:</strong> ${lastSale.clientDocumentNumber}</div>
+          ${lastSale.clientAddress ? `<div><strong>Dir:</strong> ${lastSale.clientAddress}</div>` : ""}
+        </div>
+      `
+      : "";
+
+    const cashHtml =
+      lastSale.paymentMethod === "CASH"
+        ? `
+        <div style="border-top: 1px dashed #000000; margin: 5px 0; padding-top: 5px; font-size: 11px;">
+          <div style="display: flex; justify-content: space-between;">
+            <span>Efectivo Recibido:</span>
+            <span style="font-weight: bold;">S/ ${(lastSale.amountPaid || lastSale.total).toFixed(2)}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 12px; margin-top: 2px;">
+            <span>Vuelto:</span>
+            <span>S/ ${(lastSale.changeDue || 0).toFixed(2)}</span>
+          </div>
+        </div>
+      `
+        : "";
+
+    const ticketHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Ticket_${numComp}</title>
+          <style>
+            @page {
+              size: 80mm auto;
+              margin: 0mm;
+            }
+            * {
+              box-sizing: border-box;
+              margin: 0;
+              padding: 0;
+              color: #000000 !important;
+              background: transparent !important;
+            }
+            html, body {
+              width: 80mm;
+              margin: 0 auto;
+              padding: 3mm 2.5mm;
+              background: #ffffff !important;
+              font-family: 'Courier New', Courier, monospace;
+              font-size: 11.5px;
+              line-height: 1.25;
+              -webkit-font-smoothing: none !important;
+              text-rendering: geometricPrecision;
+            }
+            .center { text-align: center; }
+            .right { text-align: right; }
+            .bold { font-weight: bold; }
+            .line { border-top: 1px dashed #000000; margin: 5px 0; }
+            .double-line { border-top: 2px solid #000000; margin: 6px 0; }
+            table { width: 100%; border-collapse: collapse; font-size: 11px; }
+            .flex-between { display: flex; justify-content: space-between; }
+          </style>
+        </head>
+        <body>
+          <div class="center">
+            <div class="bold" style="font-size: 14px; letter-spacing: 0.5px;">${businessName}</div>
+            <div style="font-size: 9.5px; margin-top: 2px;">
+              ${businessReason}
+              ${businessRuc}
+              ${businessRubro}
+            </div>
+            <div class="bold" style="margin-top: 4px; font-size: 11px;">${compType}</div>
+          </div>
+          <div class="line"></div>
+          <div class="flex-between">
+            <span>Fecha:</span>
+            <span>${dateStr}</span>
+          </div>
+          <div class="flex-between">
+            <span>${lastSale.billingType && lastSale.billingType !== "TICKET_VENTA" ? "Comprobante:" : "Ticket #:"}</span>
+            <span class="bold">${numComp}</span>
+          </div>
+          <div class="flex-between">
+            <span>Pago:</span>
+            <span>${payStr}</span>
+          </div>
+          ${clientHtml}
+          <div class="line"></div>
+          <table>
+            <thead>
+              <tr style="border-bottom: 1px dashed #000000;">
+                <th style="text-align: left; width: 22px; padding-bottom: 2px;">CT</th>
+                <th style="text-align: left; padding-bottom: 2px;">DESCRIPCIÓN</th>
+                <th style="text-align: right; width: 65px; padding-bottom: 2px;">TOTAL</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsHtml}
+            </tbody>
+          </table>
+          <div class="double-line"></div>
+          <div class="flex-between bold" style="font-size: 13.5px;">
+            <span>TOTAL A PAGAR:</span>
+            <span>S/ ${lastSale.total.toFixed(2)}</span>
+          </div>
+          ${cashHtml}
+          <div class="line"></div>
+          <div class="center" style="font-size: 10px; margin-top: 6px;">
+            <div>¡Gracias por su preferencia!</div>
+            ${(!lastSale?.billingType || lastSale.billingType === "TICKET_VENTA") ? '<div style="font-size: 8.5px; margin-top: 2px;">Solicita tu Boleta o Factura</div>' : ''}
+            <div style="font-size: 9.5px; font-weight: bold; margin-top: 6px;">Global Ccoplex - THINK ERP</div>
+          </div>
+        </body>
+      </html>
+    `;
+
+    // Metodo 1: Ventana emergente directa de impresion 80mm
+    const printWin = window.open("", "_blank", "width=380,height=600,menubar=no,toolbar=no,location=no,status=no");
+    if (printWin) {
+      printWin.document.open();
+      printWin.document.write(ticketHtml);
+      printWin.document.close();
+      printWin.focus();
+      setTimeout(() => {
+        try {
+          printWin.print();
+          setTimeout(() => {
+            try { printWin.close(); } catch (_) {}
+          }, 1000);
+        } catch (e) {
+          console.error("Popup print error:", e);
+        }
+      }, 350);
+      return;
+    }
+
+    // Metodo 2: Iframe visible pero fuera de pantalla (sin visibility: hidden para no generar hoja en blanco en Chrome)
+    try {
+      const oldIframe = document.getElementById("thermal-receipt-iframe");
+      if (oldIframe) oldIframe.remove();
+      const iframe = document.createElement("iframe");
+      iframe.id = "thermal-receipt-iframe";
+      iframe.style.position = "fixed";
+      iframe.style.left = "0";
+      iframe.style.top = "0";
+      iframe.style.width = "80mm";
+      iframe.style.height = "100vh";
+      iframe.style.zIndex = "-999";
+      iframe.style.opacity = "0.01";
+      iframe.style.border = "none";
+      document.body.appendChild(iframe);
+      const doc = iframe.contentWindow?.document;
+      if (doc) {
+        doc.open();
+        doc.write(ticketHtml);
+        doc.close();
+        setTimeout(() => {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+        }, 300);
+      }
+    } catch (err) {
+      console.error("Thermal print error fallback:", err);
+      window.print();
+    }
   };
 
   const downloadTicketImage = async () => {
@@ -1171,7 +1377,6 @@ export default function BusinessPosPage() {
 
     try {
       const { toPng } = await import("html-to-image");
-      // Ensure element is fully visible with no clipping
       const dataUrl = await toPng(element, {
         quality: 1,
         pixelRatio: 3,
@@ -1194,40 +1399,163 @@ export default function BusinessPosPage() {
   };
 
   const downloadTicketPdf = async () => {
-    const element = ticketRef.current;
-    if (!element || !lastSale) return;
+    if (!lastSale) return;
 
     try {
-      const { toPng } = await import("html-to-image");
-      const dataUrl = await toPng(element, {
-        quality: 1,
-        pixelRatio: 3,
-        backgroundColor: "#ffffff",
-        style: {
-          overflow: "visible",
-          maxHeight: "none",
-          height: "auto",
-        },
-      });
-
       const { jsPDF } = await import("jspdf");
-      const img = new Image();
-      img.src = dataUrl;
-      await new Promise((r) => (img.onload = r));
+      const pdfW = 80; // 80mm de ancho de papel termico
+      const itemsCount = lastSale.items?.length || 1;
+      const baseHeight = 115;
+      const calculatedHeight = Math.max(130, baseHeight + itemsCount * 9 + (lastSale.clientDocumentNumber ? 20 : 0));
 
-      const pdfW = 80; // 80mm thermal printer width
-      const pdfH = (img.naturalHeight / img.naturalWidth) * pdfW;
-      const pdf = new jsPDF({
+      const doc = new jsPDF({
         orientation: "portrait",
         unit: "mm",
-        format: [pdfW, pdfH],
+        format: [pdfW, calculatedHeight],
       });
-      pdf.addImage(dataUrl, "PNG", 0, 0, pdfW, pdfH);
-      pdf.save(`Ticket_${lastSale.txId?.slice(0, 8) || Date.now()}.pdf`);
-      toast.success("PDF descargado");
+
+      const m = 4;
+      let y = 8;
+
+      // Color negro absoluto para impresion termica perfecta
+      doc.setTextColor(0, 0, 0);
+
+      // Encabezado
+      doc.setFont("courier", "bold");
+      doc.setFontSize(11);
+      const bName = user?.businessName ? user.businessName.toUpperCase() : "THINK";
+      doc.text(bName, pdfW / 2, y, { align: "center" });
+
+      y += 4.5;
+      doc.setFont("courier", "normal");
+      doc.setFontSize(7.5);
+      if (user?.businessReason) {
+        doc.text(`Razón Social: ${user.businessReason}`, pdfW / 2, y, { align: "center" });
+        y += 3.5;
+      }
+      if (user?.businessRuc) {
+        doc.text(`RUC: ${user.businessRuc}`, pdfW / 2, y, { align: "center" });
+        y += 3.5;
+      }
+      if (user?.businessRubro) {
+        doc.text(`Giro: ${user.businessRubro}`, pdfW / 2, y, { align: "center" });
+        y += 3.5;
+      }
+
+      // Tipo de Comprobante
+      doc.setFont("courier", "bold");
+      doc.setFontSize(8.5);
+      const compType =
+        lastSale.billingType === "BOLETA"
+          ? "BOLETA DE VENTA ELECTRÓNICA"
+          : lastSale.billingType === "FACTURA"
+          ? "FACTURA ELECTRÓNICA"
+          : lastSale.billingType === "NOTA_CREDITO"
+          ? "NOTA DE CRÉDITO ELECTRÓNICA"
+          : lastSale.billingType === "NOTA_DEBITO"
+          ? "NOTA DE DÉBITO ELECTRÓNICA"
+          : "TICKET DE VENTA";
+      doc.text(compType, pdfW / 2, y, { align: "center" });
+
+      y += 4;
+      doc.setLineDashPattern([1, 1], 0);
+      doc.setDrawColor(0, 0, 0);
+      doc.line(m, y, pdfW - m, y);
+
+      y += 4;
+      doc.setFont("courier", "normal");
+      doc.setFontSize(7.5);
+      doc.text(`Fecha: ${format(lastSale.date, "dd/MM/yyyy HH:mm")}`, m, y);
+      y += 3.5;
+      const numComp =
+        lastSale.billingSerie && lastSale.billingNumber
+          ? `${lastSale.billingSerie}-${lastSale.billingNumber}`
+          : (lastSale.txId?.slice(0, 8) || "").toUpperCase();
+      doc.text(`${lastSale.billingType && lastSale.billingType !== "TICKET_VENTA" ? "Comprobante:" : "Ticket #:"} ${numComp}`, m, y);
+      y += 3.5;
+      const payStr = paymentLabel[lastSale.paymentMethod] || lastSale.paymentMethod;
+      doc.text(`Pago: ${payStr}`, m, y);
+
+      if (lastSale.clientDocumentNumber) {
+        y += 3.5;
+        doc.text(`Cliente: ${lastSale.clientDenomination || ""}`, m, y);
+        y += 3.5;
+        doc.text(`${lastSale.clientDocumentType === "6" ? "RUC" : "DNI"}: ${lastSale.clientDocumentNumber}`, m, y);
+        if (lastSale.clientAddress) {
+          y += 3.5;
+          doc.text(`Dir: ${lastSale.clientAddress.slice(0, 35)}`, m, y);
+        }
+      }
+
+      y += 4;
+      doc.line(m, y, pdfW - m, y);
+
+      // Encabezado de items
+      y += 3.5;
+      doc.setFont("courier", "bold");
+      doc.setFontSize(7.5);
+      doc.text("CT", m, y);
+      doc.text("DESCRIPCIÓN", m + 8, y);
+      doc.text("TOTAL", pdfW - m, y, { align: "right" });
+
+      y += 2.5;
+      doc.line(m, y, pdfW - m, y);
+
+      // Listado de items
+      doc.setFont("courier", "normal");
+      doc.setFontSize(7);
+      lastSale.items.forEach((item: any) => {
+        y += 3.8;
+        const pres = item.presentations?.find((p: any) => p.id === item.presentationId);
+        const presName = pres ? ` [${pres.name}]` : "";
+        const lineDesc = `${item.name}${presName}`.substring(0, 24);
+        const sub = (item.quantity * item.salePrice).toFixed(2);
+        doc.text(`${item.quantity}`, m, y);
+        doc.text(lineDesc, m + 8, y);
+        doc.text(`S/ ${sub}`, pdfW - m, y, { align: "right" });
+      });
+
+      y += 4;
+      doc.line(m, y, pdfW - m, y);
+
+      // Total a pagar
+      y += 5;
+      doc.setFont("courier", "bold");
+      doc.setFontSize(10.5);
+      doc.text("TOTAL A PAGAR:", m, y);
+      doc.text(`S/ ${lastSale.total.toFixed(2)}`, pdfW - m, y, { align: "right" });
+
+      if (lastSale.paymentMethod === "CASH") {
+        y += 4.5;
+        doc.setFont("courier", "normal");
+        doc.setFontSize(7.5);
+        doc.text(`Efectivo: S/ ${(lastSale.amountPaid || lastSale.total).toFixed(2)}`, m, y);
+        y += 3.5;
+        doc.setFont("courier", "bold");
+        doc.text(`Vuelto: S/ ${(lastSale.changeDue || 0).toFixed(2)}`, m, y);
+      }
+
+      y += 6;
+      doc.line(m, y, pdfW - m, y);
+      y += 4;
+      doc.setFont("courier", "normal");
+      doc.setFontSize(7);
+      doc.text("¡Gracias por su preferencia!", pdfW / 2, y, { align: "center" });
+      if (!lastSale?.billingType || lastSale.billingType === "TICKET_VENTA") {
+        y += 3.5;
+        doc.text("Solicita tu Boleta o Factura", pdfW / 2, y, { align: "center" });
+      }
+      y += 4;
+      doc.setFont("courier", "bold");
+      doc.text("Global Ccoplex - THINK ERP", pdfW / 2, y, { align: "center" });
+
+      // Guardar PDF nativo con nombre real .pdf
+      const filename = `Ticket_${lastSale.txId?.slice(0, 8) || Date.now()}.pdf`;
+      doc.save(filename);
+      toast.success("Ticket descargado en formato PDF");
     } catch (err) {
-      console.error(err);
-      downloadTicketImage();
+      console.error("Error al exportar ticket PDF:", err);
+      toast.error("Error al generar PDF del ticket");
     }
   };
 
@@ -1254,27 +1582,57 @@ export default function BusinessPosPage() {
       {/* Print styles — applied globally during window.print() */}
       <style>{`
         @media print {
-          body > * { display: none !important; }
+          @page {
+            size: 80mm auto;
+            margin: 0mm;
+          }
+          html, body {
+            width: 80mm !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #ffffff !important;
+            color: #000000 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          body * {
+            visibility: hidden !important;
+          }
+          .print-ticket-container,
+          .print-ticket-container * {
+            visibility: visible !important;
+          }
           .print-ticket-container {
             display: block !important;
             position: fixed !important;
             top: 0 !important;
             left: 0 !important;
             width: 80mm !important;
-            background: white !important;
-            z-index: 99999 !important;
+            max-width: 80mm !important;
+            background: #ffffff !important;
+            color: #000000 !important;
+            z-index: 999999 !important;
             opacity: 1 !important;
+            margin: 0 !important;
+            padding: 2mm !important;
             pointer-events: auto !important;
           }
           #printable-ticket {
-            width: 80mm !important;
-            padding: 4mm !important;
-            margin: 0 !important;
+            width: 74mm !important;
+            max-width: 74mm !important;
+            padding: 2mm !important;
+            margin: 0 auto !important;
             border: none !important;
             box-shadow: none !important;
             overflow: visible !important;
             height: auto !important;
             max-height: none !important;
+            color: #000000 !important;
+          }
+          #printable-ticket * {
+            color: #000000 !important;
+            border-color: #000000 !important;
+            -webkit-font-smoothing: none !important;
           }
           #printable-ticket img {
             display: block !important;

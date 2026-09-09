@@ -32,6 +32,7 @@ import {
   X,
   CreditCard,
   AlertCircle,
+  Flame,
 } from "lucide-react";
 import {
   getProductsRequest,
@@ -274,6 +275,11 @@ export default function BusinessInventoryPage() {
     commissionValue: 0,
     priceWithAgent: 0,
   });
+
+  // Estados de configuración de oferta y promociones (panel autenticado)
+  const [isOfferActive, setIsOfferActive] = useState<boolean>(false);
+  const [offerDurationDays, setOfferDurationDays] = useState<number>(3);
+  const [applyOfferToSeries, setApplyOfferToSeries] = useState<boolean>(false);
 
   const [brands, setBrands] = useState<any[]>([]);
   const [families, setFamilies] = useState<any[]>([]);
@@ -928,6 +934,15 @@ export default function BusinessInventoryPage() {
   const handleOpenModal = (product?: Product | any) => {
     if (product) {
       setEditingProduct(product);
+      const hasOffer = Boolean(
+        product.adjustedPrice &&
+          Number(product.adjustedPrice) > 0 &&
+          Number(product.adjustedPrice) < Number(product.salePrice)
+      );
+      setIsOfferActive(hasOffer);
+      setOfferDurationDays(Number(localStorage.getItem("veaz_offer_days") || "3"));
+      setApplyOfferToSeries(false);
+
       setFormData({
         name: product.name,
         description: product.description || "",
@@ -949,6 +964,10 @@ export default function BusinessInventoryPage() {
       });
     } else {
       setEditingProduct(null);
+      setIsOfferActive(false);
+      setOfferDurationDays(3);
+      setApplyOfferToSeries(false);
+
       setFormData({
         name: "",
         description: "",
@@ -1168,6 +1187,33 @@ export default function BusinessInventoryPage() {
       } else {
         createdProduct = await createProductRequest(payload as any);
         toast.success("Producto creado");
+      }
+
+      // Guardar duración de la oferta y sincronizar con cuenta regresiva
+      if (isOfferActive && Number(formData.adjustedPrice) > 0) {
+        localStorage.setItem("veaz_offer_days", String(offerDurationDays));
+        const target = Date.now() + offerDurationDays * 24 * 3600 * 1000;
+        localStorage.setItem("veaz_offer_end_time", String(target));
+        window.dispatchEvent(new Event("veaz_offer_updated"));
+      }
+
+      // Sincronizar oferta a toda la serie (mismo nombre de modelo) si el usuario lo marcó
+      if (applyOfferToSeries && formData.name.trim()) {
+        const targetName = formData.name.trim().toLowerCase();
+        const siblingProducts = products.filter(
+          (p) => p.name.trim().toLowerCase() === targetName && (!editingProduct || p.id !== editingProduct.id)
+        );
+        if (siblingProducts.length > 0) {
+          const newAdj = isOfferActive ? Number(formData.adjustedPrice) : 0;
+          await Promise.all(
+            siblingProducts.map((p) =>
+              updateProductRequest(p.id, {
+                adjustedPrice: newAdj,
+              }).catch(() => null)
+            )
+          );
+          toast.success(`Oferta aplicada a toda la serie (${siblingProducts.length + 1} productos)`);
+        }
       }
 
       if (!editingProduct && isCreatingFromPlanner && createdProduct) {
@@ -4444,86 +4490,157 @@ export default function BusinessInventoryPage() {
                 className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
               />
             </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                P. Ajustado (Var) S/{" "}
-                <span className="text-xs text-gray-400 font-normal">
-                  (Opcional)
-                </span>
-              </label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={formData.adjustedPrice || ""}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    adjustedPrice: e.target.value ? Number(e.target.value) : 0,
-                  })
-                }
-                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                placeholder="Ej. 11.50"
-              />
+            {/* 🔥 CONFIGURACIÓN DE OFERTA Y PROMOCIONES (PANEL PRIVADO AUTENTICADO) */}
+            <div className="md:col-span-2 bg-gradient-to-br from-amber-50/50 via-rose-50/30 to-orange-50/40 border border-amber-200/80 rounded-2xl p-4 sm:p-5 shadow-xs">
+              <div className="flex items-center justify-between gap-4 mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-500 to-rose-600 flex items-center justify-center text-white shadow-xs">
+                    <Flame className="w-4 h-4 fill-white" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
+                      <span>Configurar Oferta / Precio de Promoción</span>
+                      {isOfferActive && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white uppercase tracking-wider animate-pulse">
+                          En Oferta
+                        </span>
+                      )}
+                    </h4>
+                    <p className="text-xs text-gray-500">
+                      Configura descuentos especiales visibles en el catálogo y punto de venta
+                    </p>
+                  </div>
+                </div>
 
-              {/* Margin Shortcuts */}
-              {formData.costPrice > 0 && (
-                <div className="flex gap-1.5 mt-1.5">
-                  {["+10%", "+20%", "+30%"].map((mStr) => {
-                    const pct = parseInt(mStr);
-                    const suggested = formData.costPrice * (1 + pct / 100);
-                    return (
-                      <button
-                        key={mStr}
-                        type="button"
-                        onClick={() =>
+                {/* Toggle Switch */}
+                <label className="relative inline-flex items-center cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={isOfferActive}
+                    onChange={(e) => {
+                      const active = e.target.checked;
+                      setIsOfferActive(active);
+                      if (!active) {
+                        setFormData({ ...formData, adjustedPrice: 0 });
+                      } else if (formData.salePrice > 0 && (!formData.adjustedPrice || formData.adjustedPrice >= formData.salePrice)) {
+                        const defOffer = Number((formData.salePrice * 0.85).toFixed(2));
+                        setFormData({ ...formData, adjustedPrice: defOffer });
+                      }
+                    }}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600"></div>
+                </label>
+              </div>
+
+              {isOfferActive && (
+                <div className="mt-4 pt-4 border-t border-amber-200/60 space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">
+                        Precio de Oferta Especial S/
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={formData.adjustedPrice || ""}
+                        onChange={(e) =>
                           setFormData({
                             ...formData,
-                            adjustedPrice: Number(suggested.toFixed(2)),
+                            adjustedPrice: e.target.value ? Number(e.target.value) : 0,
                           })
                         }
-                        className="px-2 py-0.5 text-[10px] font-bold bg-indigo-50 text-indigo-600 rounded hover:bg-indigo-100 transition-colors"
-                      >
-                        {mStr} (S/ {suggested.toFixed(2)})
-                      </button>
-                    );
-                  })}
+                        className="w-full px-4 py-2 bg-white border border-rose-300 text-rose-700 font-bold text-base rounded-xl focus:ring-2 focus:ring-rose-500 outline-none shadow-xs"
+                        placeholder="Ej. 89.90"
+                      />
+                    </div>
+
+                    {/* Quick Discount Shortcuts based on Base Sale Price */}
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">
+                        Descuentos Rápidos (sobre S/ {formData.salePrice.toFixed(2)}):
+                      </label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[10, 20, 30, 40, 50].map((pct) => {
+                          const val = Number((formData.salePrice * (1 - pct / 100)).toFixed(2));
+                          return (
+                            <button
+                              key={pct}
+                              type="button"
+                              onClick={() => setFormData({ ...formData, adjustedPrice: val })}
+                              className="px-2.5 py-1 text-xs font-bold bg-white border border-rose-200 text-rose-700 rounded-lg hover:bg-rose-600 hover:text-white transition-all cursor-pointer shadow-xs"
+                            >
+                              -{pct}% (S/ {val.toFixed(2)})
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Savings & Margin feedback */}
+                  {formData.adjustedPrice > 0 && formData.salePrice > 0 && (
+                    <div className="flex flex-wrap items-center gap-3 text-xs bg-white/80 p-2.5 rounded-xl border border-amber-200/60">
+                      <span className="font-bold text-rose-600">
+                        🏷️ Descuento: S/ {(formData.salePrice - formData.adjustedPrice).toFixed(2)} ({Math.round(((formData.salePrice - formData.adjustedPrice) / formData.salePrice) * 100)}% de rebaja)
+                      </span>
+                      {formData.costPrice > 0 && (
+                        <span className="text-gray-600">
+                          | Ganancia neta: S/ {(formData.adjustedPrice - formData.costPrice).toFixed(2)} (Margen: {Math.round(((formData.adjustedPrice - formData.costPrice) / formData.adjustedPrice) * 100)}%)
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Duration Selector */}
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5">
+                      ⏳ Duración de la Oferta (Cuenta Regresiva):
+                    </label>
+                    <div className="flex flex-wrap gap-2 items-center">
+                      {[
+                        { days: 1, label: "24 Horas" },
+                        { days: 2, label: "48 Horas" },
+                        { days: 3, label: "3 Días (Estándar)" },
+                        { days: 5, label: "5 Días" },
+                        { days: 7, label: "1 Semana" },
+                      ].map((item) => (
+                        <button
+                          key={item.days}
+                          type="button"
+                          onClick={() => setOfferDurationDays(item.days)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                            offerDurationDays === item.days
+                              ? "bg-rose-600 text-white border-rose-600 shadow-xs"
+                              : "bg-white text-gray-700 border-gray-200 hover:border-rose-300"
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Apply to entire series / model checkbox */}
+                  <label className="flex items-start gap-2.5 p-3 rounded-xl bg-white border border-amber-200/70 cursor-pointer hover:bg-amber-50/40 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={applyOfferToSeries}
+                      onChange={(e) => setApplyOfferToSeries(e.target.checked)}
+                      className="mt-0.5 rounded text-rose-600 focus:ring-rose-500 w-4 h-4 cursor-pointer"
+                    />
+                    <div className="text-xs">
+                      <span className="font-bold text-gray-900">
+                        ⚡ Aplicar esta misma oferta a todas las tallas/variantes de la serie ({formData.name ? `"${formData.name}"` : "este modelo"})
+                      </span>
+                      <p className="text-gray-500 mt-0.5">
+                        Al guardar, se asignará el mismo precio de oferta a todos los calzados registrados bajo este mismo título de modelo.
+                      </p>
+                    </div>
+                  </label>
                 </div>
               )}
-
-              {/* Recommendations/Price Analysis */}
-              {formData.adjustedPrice !== undefined &&
-                formData.adjustedPrice > 0 &&
-                formData.costPrice > 0 &&
-                (() => {
-                  const margin =
-                    ((formData.adjustedPrice - formData.costPrice) /
-                      formData.adjustedPrice) *
-                    100;
-                  if (formData.adjustedPrice <= formData.costPrice) {
-                    return (
-                      <p className="mt-1.5 text-xs font-semibold text-red-600 flex items-center gap-1">
-                        ⚠️ Peligro: El precio es menor/igual al costo (S/{" "}
-                        {formData.costPrice.toFixed(2)}). ¡Estás perdiendo
-                        dinero!
-                      </p>
-                    );
-                  } else if (margin < 10) {
-                    return (
-                      <p className="mt-1.5 text-xs font-semibold text-amber-600 flex items-center gap-1">
-                        ⚠️ Margen bajo: El margen es de {margin.toFixed(1)}%.
-                        Recomendamos subirlo.
-                      </p>
-                    );
-                  } else {
-                    return (
-                      <p className="mt-1.5 text-xs font-semibold text-green-600 flex items-center gap-1">
-                        ✅ Precio viable: Margen saludable del{" "}
-                        {margin.toFixed(1)}%.
-                      </p>
-                    );
-                  }
-                })()}
             </div>
 
             {/* CONFIGURACIÓN DE COMISIONES */}

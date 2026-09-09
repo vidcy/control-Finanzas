@@ -744,6 +744,30 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
               </button>
             );
           })}
+
+          {/* VEAZ ESTILEZA SHORTCUT */}
+          <div className="px-2 pt-3">
+            <button
+              type="button"
+              onClick={() => window.open("/veaz-estileza", "_blank")}
+              className="w-full p-3 rounded-2xl bg-gradient-to-r from-[#0F1118] to-[#181A28] border border-amber-500/40 text-white flex items-center justify-between group hover:border-amber-400 hover:shadow-lg transition-all cursor-pointer shadow-md"
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="text-lg">👑</span>
+                <div className="text-left">
+                  <span className="text-[10px] font-bold text-amber-300 uppercase tracking-wider block leading-tight">
+                    Catálogo de Calzados
+                  </span>
+                  <span className="text-xs font-black tracking-wider text-white group-hover:text-amber-300 transition-colors">
+                    VEAZ ESTILEZA
+                  </span>
+                </div>
+              </div>
+              <span className="text-[10px] bg-amber-400 text-slate-950 font-bold px-2 py-0.5 rounded-full uppercase tracking-wider group-hover:bg-amber-300">
+                Ver
+              </span>
+            </button>
+          </div>
         </nav>
 
         {/* PROFILE */}
