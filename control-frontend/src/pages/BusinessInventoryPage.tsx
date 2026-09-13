@@ -233,7 +233,7 @@ export default function BusinessInventoryPage() {
     confirmText: "Confirmar",
     cancelText: "Cancelar",
     variant: "info" as "info" | "danger" | "warning",
-    onConfirm: () => {},
+    onConfirm: () => { },
   });
 
   // Subtab for purchase orders: pending | transit | received
@@ -675,21 +675,21 @@ export default function BusinessInventoryPage() {
   const criticalStockCount = products.filter((p) => {
     const displayStock = activeBranchId
       ? (p.branchStocks?.find((bs: any) => bs.branchId === activeBranchId)
-          ?.stock ?? 0)
+        ?.stock ?? 0)
       : p.stock;
     return displayStock <= p.minStock;
   }).length;
   const totalInventoryCost = products.reduce((acc, p) => {
     const displayStock = activeBranchId
       ? (p.branchStocks?.find((bs: any) => bs.branchId === activeBranchId)
-          ?.stock ?? 0)
+        ?.stock ?? 0)
       : p.stock;
     return acc + displayStock * p.costPrice;
   }, 0);
   const totalInventorySale = products.reduce((acc, p) => {
     const displayStock = activeBranchId
       ? (p.branchStocks?.find((bs: any) => bs.branchId === activeBranchId)
-          ?.stock ?? 0)
+        ?.stock ?? 0)
       : p.stock;
     return acc + displayStock * p.salePrice;
   }, 0);
@@ -936,8 +936,8 @@ export default function BusinessInventoryPage() {
       setEditingProduct(product);
       const hasOffer = Boolean(
         product.adjustedPrice &&
-          Number(product.adjustedPrice) > 0 &&
-          Number(product.adjustedPrice) < Number(product.salePrice)
+        Number(product.adjustedPrice) > 0 &&
+        Number(product.adjustedPrice) < Number(product.salePrice)
       );
       setIsOfferActive(hasOffer);
       setOfferDurationDays(Number(localStorage.getItem("veaz_offer_days") || "3"));
@@ -1323,54 +1323,54 @@ export default function BusinessInventoryPage() {
 
     const itemsToBuy = singlePurchaseItem
       ? [
-          (() => {
-            const presId =
-              selectedPresentations[singlePurchaseItem.id] || "base";
-            const isBase = presId === "base";
-            const pres = isBase
-              ? null
-              : singlePurchaseItem.presentations?.find((p) => p.id === presId);
-            const equivalence = pres ? pres.equivalence : 1.0;
-            const presName = pres ? pres.name : null;
-            return {
-              productId: singlePurchaseItem.id,
-              quantity:
-                customQuantities[singlePurchaseItem.id] ??
-                (singlePurchaseItem.deficit > 0
-                  ? singlePurchaseItem.deficit
-                  : 1),
-              equivalence,
-              presentationId: isBase ? undefined : presId,
-              presentationName: presName || undefined,
-              costPrice:
-                customCosts[singlePurchaseItem.id] ??
-                singlePurchaseItem.costPrice,
-            };
-          })(),
-        ]
+        (() => {
+          const presId =
+            selectedPresentations[singlePurchaseItem.id] || "base";
+          const isBase = presId === "base";
+          const pres = isBase
+            ? null
+            : singlePurchaseItem.presentations?.find((p) => p.id === presId);
+          const equivalence = pres ? pres.equivalence : 1.0;
+          const presName = pres ? pres.name : null;
+          return {
+            productId: singlePurchaseItem.id,
+            quantity:
+              customQuantities[singlePurchaseItem.id] ??
+              (singlePurchaseItem.deficit > 0
+                ? singlePurchaseItem.deficit
+                : 1),
+            equivalence,
+            presentationId: isBase ? undefined : presId,
+            presentationName: presName || undefined,
+            costPrice:
+              customCosts[singlePurchaseItem.id] ??
+              singlePurchaseItem.costPrice,
+          };
+        })(),
+      ]
       : allItems
-          .filter((item) => selectedItemIds.includes(item.id))
-          .map((item) => {
-            const presId = selectedPresentations[item.id] || "base";
-            const isBase = presId === "base";
-            const pres = isBase
-              ? null
-              : item.presentations?.find((p) => p.id === presId);
-            const equivalence = pres ? pres.equivalence : 1.0;
-            const presName = pres ? pres.name : null;
-            const qty =
-              customQuantities[item.id] ??
-              (item.deficit > 0 ? item.deficit : 1);
-            const cost = customCosts[item.id] ?? item.costPrice * equivalence;
-            return {
-              productId: item.id,
-              quantity: qty,
-              equivalence,
-              presentationId: isBase ? undefined : presId,
-              presentationName: presName || undefined,
-              costPrice: cost,
-            };
-          });
+        .filter((item) => selectedItemIds.includes(item.id))
+        .map((item) => {
+          const presId = selectedPresentations[item.id] || "base";
+          const isBase = presId === "base";
+          const pres = isBase
+            ? null
+            : item.presentations?.find((p) => p.id === presId);
+          const equivalence = pres ? pres.equivalence : 1.0;
+          const presName = pres ? pres.name : null;
+          const qty =
+            customQuantities[item.id] ??
+            (item.deficit > 0 ? item.deficit : 1);
+          const cost = customCosts[item.id] ?? item.costPrice * equivalence;
+          return {
+            productId: item.id,
+            quantity: qty,
+            equivalence,
+            presentationId: isBase ? undefined : presId,
+            presentationName: presName || undefined,
+            costPrice: cost,
+          };
+        });
 
     const totalCost = itemsToBuy.reduce(
       (sum, item) => sum + item.quantity * item.costPrice,
@@ -2313,11 +2313,10 @@ export default function BusinessInventoryPage() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`flex items-center gap-2 pb-4 pt-1 px-1 relative text-sm font-black uppercase tracking-wider transition-colors ${
-                  isActive
-                    ? "text-indigo-600 font-extrabold"
-                    : "text-gray-400 hover:text-gray-600"
-                }`}
+                className={`flex items-center gap-2 pb-4 pt-1 px-1 relative text-sm font-black uppercase tracking-wider transition-colors ${isActive
+                  ? "text-indigo-600 font-extrabold"
+                  : "text-gray-400 hover:text-gray-600"
+                  }`}
               >
                 <Icon className="w-4 h-4" />
                 {tab.label}
@@ -2610,8 +2609,8 @@ export default function BusinessInventoryPage() {
                           paginatedProducts.map((p) => {
                             const displayStock = activeBranchId
                               ? (p.branchStocks?.find(
-                                  (bs: any) => bs.branchId === activeBranchId,
-                                )?.stock ?? 0)
+                                (bs: any) => bs.branchId === activeBranchId,
+                              )?.stock ?? 0)
                               : p.stock;
                             return (
                               <div
@@ -2641,11 +2640,10 @@ export default function BusinessInventoryPage() {
                                   )}
                                   {/* Stock status badge */}
                                   <div
-                                    className={`absolute top-3 right-3 px-2.5 py-1 rounded-xl text-[9px] font-black uppercase tracking-wider shadow-sm ${
-                                      displayStock <= p.minStock
-                                        ? "bg-rose-500 text-white"
-                                        : "bg-emerald-500 text-white"
-                                    }`}
+                                    className={`absolute top-3 right-3 px-2.5 py-1 rounded-xl text-[9px] font-black uppercase tracking-wider shadow-sm ${displayStock <= p.minStock
+                                      ? "bg-rose-500 text-white"
+                                      : "bg-emerald-500 text-white"
+                                      }`}
                                   >
                                     {displayStock <= p.minStock
                                       ? "Stock bajo"
@@ -2701,23 +2699,30 @@ export default function BusinessInventoryPage() {
                                         )}
                                       </div>
                                     )}
-
+                                    {/* Presentations */}
                                     <div className="flex flex-wrap gap-1 mb-3">
                                       {p.presentations &&
-                                      p.presentations.length > 0
+                                        p.presentations.length > 0
                                         ? p.presentations
-                                            .slice(0, 3)
-                                            .map((pres) => (
-                                              <span
-                                                key={pres.id}
-                                                className="bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-lg text-[9px] font-black"
-                                                title={`Equivale a ${pres.equivalence} ${p.unit}`}
-                                              >
-                                                {pres.name}
-                                              </span>
-                                            ))
+                                          .slice(0, 3)
+                                          .map((pres) => (
+                                            <span
+                                              key={pres.id}
+                                              className="bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-lg text-[9px] font-black"
+                                              title={`Equivale a ${pres.equivalence} ${p.unit}`}
+                                            >
+                                              {pres.name}
+                                            </span>
+                                          ))
                                         : null}
+                                      <span
+                                        className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded-lg text-[9px] font-bold border border-slate-200/70"
+                                        title={p.description}
+                                      >
+                                        {p.description}
+                                      </span>
                                     </div>
+
 
                                     <div className="bg-slate-50/80 rounded-2xl p-3 mb-4 border border-slate-100 space-y-2">
                                       <div>
@@ -2737,6 +2742,7 @@ export default function BusinessInventoryPage() {
                                           </span>
                                         </div>
                                       </div>
+
                                       {user?.profiles?.includes("BUSINESS_BRANCHES") && p.branchStocks &&
                                         p.branchStocks.length > 0 && (
                                           <div className="border-t border-slate-200/60 pt-2 space-y-1">
@@ -2751,11 +2757,10 @@ export default function BusinessInventoryPage() {
                                                 return (
                                                   <div
                                                     key={bs.id}
-                                                    className={`flex justify-between items-center text-[10px] py-0.5 ${
-                                                      isSelected
-                                                        ? "text-indigo-600 font-black bg-indigo-50 px-1.5 rounded-lg"
-                                                        : "text-gray-600 font-medium px-0.5"
-                                                    }`}
+                                                    className={`flex justify-between items-center text-[10px] py-0.5 ${isSelected
+                                                      ? "text-indigo-600 font-black bg-indigo-50 px-1.5 rounded-lg"
+                                                      : "text-gray-600 font-medium px-0.5"
+                                                      }`}
                                                   >
                                                     <span
                                                       className="truncate max-w-[120px]"
@@ -3006,11 +3011,11 @@ export default function BusinessInventoryPage() {
                                   type="checkbox"
                                   checked={
                                     selectedItemIds.length ===
-                                      plannerItems.length +
-                                        extraPlannerItems.length &&
                                     plannerItems.length +
-                                      extraPlannerItems.length >
-                                      0
+                                    extraPlannerItems.length &&
+                                    plannerItems.length +
+                                    extraPlannerItems.length >
+                                    0
                                   }
                                   onChange={(e) => {
                                     if (e.target.checked) {
@@ -3132,7 +3137,7 @@ export default function BusinessInventoryPage() {
                                             {item.sku || "Sin SKU"}
                                           </div>
                                           {item.pendingOrderQty &&
-                                          item.pendingOrderQty > 0 ? (
+                                            item.pendingOrderQty > 0 ? (
                                             <div className="text-[10px] text-amber-600 font-black mt-0.5 flex items-center gap-1 bg-amber-50 px-1.5 py-0.5 rounded-lg w-max border border-amber-100">
                                               <span>
                                                 🚚 {item.pendingOrderQty}{" "}
@@ -3161,7 +3166,7 @@ export default function BusinessInventoryPage() {
                                     </td>
                                     <td className="py-3.5 px-4 text-center">
                                       {item.presentations &&
-                                      item.presentations.length > 0 ? (
+                                        item.presentations.length > 0 ? (
                                         <select
                                           value={
                                             selectedPresentations[item.id] ||
@@ -3460,14 +3465,14 @@ export default function BusinessInventoryPage() {
                         Por Pagar
                         {purchaseOrders.filter((o) => o.status === "PENDING")
                           .length > 0 && (
-                          <span className="bg-amber-100 text-amber-800 text-[10px] px-2 py-0.5 rounded-full font-black">
-                            {
-                              purchaseOrders.filter(
-                                (o) => o.status === "PENDING",
-                              ).length
-                            }
-                          </span>
-                        )}
+                            <span className="bg-amber-100 text-amber-800 text-[10px] px-2 py-0.5 rounded-full font-black">
+                              {
+                                purchaseOrders.filter(
+                                  (o) => o.status === "PENDING",
+                                ).length
+                              }
+                            </span>
+                          )}
                       </button>
                       <button
                         type="button"
@@ -3477,13 +3482,13 @@ export default function BusinessInventoryPage() {
                         En Tránsito
                         {purchaseOrders.filter((o) => o.status === "PAID")
                           .length > 0 && (
-                          <span className="bg-indigo-100 text-indigo-800 text-[10px] px-2 py-0.5 rounded-full font-black">
-                            {
-                              purchaseOrders.filter((o) => o.status === "PAID")
-                                .length
-                            }
-                          </span>
-                        )}
+                            <span className="bg-indigo-100 text-indigo-800 text-[10px] px-2 py-0.5 rounded-full font-black">
+                              {
+                                purchaseOrders.filter((o) => o.status === "PAID")
+                                  .length
+                              }
+                            </span>
+                          )}
                       </button>
                       <button
                         type="button"
@@ -3493,14 +3498,14 @@ export default function BusinessInventoryPage() {
                         Compras
                         {purchaseOrders.filter((o) => o.status === "RECEIVED")
                           .length > 0 && (
-                          <span className="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-black">
-                            {
-                              purchaseOrders.filter(
-                                (o) => o.status === "RECEIVED",
-                              ).length
-                            }
-                          </span>
-                        )}
+                            <span className="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-black">
+                              {
+                                purchaseOrders.filter(
+                                  (o) => o.status === "RECEIVED",
+                                ).length
+                              }
+                            </span>
+                          )}
                       </button>
                     </div>
                   </div>
@@ -3637,7 +3642,7 @@ export default function BusinessInventoryPage() {
                                       } catch (err: any) {
                                         toast.error(
                                           err?.response?.data?.message ||
-                                            "Error al eliminar",
+                                          "Error al eliminar",
                                         );
                                       }
                                     },
@@ -4610,11 +4615,10 @@ export default function BusinessInventoryPage() {
                           key={item.days}
                           type="button"
                           onClick={() => setOfferDurationDays(item.days)}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
-                            offerDurationDays === item.days
-                              ? "bg-rose-600 text-white border-rose-600 shadow-xs"
-                              : "bg-white text-gray-700 border-gray-200 hover:border-rose-300"
-                          }`}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${offerDurationDays === item.days
+                            ? "bg-rose-600 text-white border-rose-600 shadow-xs"
+                            : "bg-white text-gray-700 border-gray-200 hover:border-rose-300"
+                            }`}
                         >
                           {item.label}
                         </button>
@@ -4912,10 +4916,10 @@ export default function BusinessInventoryPage() {
                 Stock Actual:{" "}
                 {restockProduct
                   ? formatStock(
-                      restockProduct.stock,
-                      restockProduct.unit,
-                      restockProduct.presentations,
-                    )
+                    restockProduct.stock,
+                    restockProduct.unit,
+                    restockProduct.presentations,
+                  )
                   : ""}
               </p>
             </div>
@@ -5111,11 +5115,10 @@ export default function BusinessInventoryPage() {
           <div className="flex border-b border-slate-100 gap-6">
             <button
               onClick={() => setStockMgmtTab("adjust")}
-              className={`pb-3 text-xs font-black uppercase tracking-wider transition-colors relative ${
-                stockMgmtTab === "adjust"
-                  ? "text-indigo-600"
-                  : "text-gray-400 hover:text-gray-600"
-              }`}
+              className={`pb-3 text-xs font-black uppercase tracking-wider transition-colors relative ${stockMgmtTab === "adjust"
+                ? "text-indigo-600"
+                : "text-gray-400 hover:text-gray-600"
+                }`}
             >
               {stockMgmtTab === "adjust" && (
                 <motion.div
@@ -5127,11 +5130,10 @@ export default function BusinessInventoryPage() {
             </button>
             <button
               onClick={() => setStockMgmtTab("transfer")}
-              className={`pb-3 text-xs font-black uppercase tracking-wider transition-colors relative ${
-                stockMgmtTab === "transfer"
-                  ? "text-indigo-600"
-                  : "text-gray-400 hover:text-gray-600"
-              }`}
+              className={`pb-3 text-xs font-black uppercase tracking-wider transition-colors relative ${stockMgmtTab === "transfer"
+                ? "text-indigo-600"
+                : "text-gray-400 hover:text-gray-600"
+                }`}
             >
               {stockMgmtTab === "transfer" && (
                 <motion.div
@@ -5378,39 +5380,39 @@ export default function BusinessInventoryPage() {
             <div className="max-h-32 overflow-y-auto space-y-1 pr-1">
               {singlePurchaseItem
                 ? (() => {
-                    const qty =
-                      customQuantities[singlePurchaseItem.id] ??
-                      singlePurchaseItem.deficit;
-                    const cost =
-                      customCosts[singlePurchaseItem.id] ??
-                      singlePurchaseItem.costPrice;
+                  const qty =
+                    customQuantities[singlePurchaseItem.id] ??
+                    singlePurchaseItem.deficit;
+                  const cost =
+                    customCosts[singlePurchaseItem.id] ??
+                    singlePurchaseItem.costPrice;
+                  return (
+                    <div className="flex justify-between">
+                      <span>
+                        • {qty} x {singlePurchaseItem.name}
+                      </span>
+                      <span className="font-black">
+                        S/ {(qty * cost).toFixed(2)}
+                      </span>
+                    </div>
+                  );
+                })()
+                : plannerItems
+                  .filter((item) => selectedItemIds.includes(item.id))
+                  .map((item) => {
+                    const qty = customQuantities[item.id] ?? item.deficit;
+                    const cost = customCosts[item.id] ?? item.costPrice;
                     return (
-                      <div className="flex justify-between">
+                      <div key={item.id} className="flex justify-between">
                         <span>
-                          • {qty} x {singlePurchaseItem.name}
+                          • {qty} x {item.name}
                         </span>
                         <span className="font-black">
                           S/ {(qty * cost).toFixed(2)}
                         </span>
                       </div>
                     );
-                  })()
-                : plannerItems
-                    .filter((item) => selectedItemIds.includes(item.id))
-                    .map((item) => {
-                      const qty = customQuantities[item.id] ?? item.deficit;
-                      const cost = customCosts[item.id] ?? item.costPrice;
-                      return (
-                        <div key={item.id} className="flex justify-between">
-                          <span>
-                            • {qty} x {item.name}
-                          </span>
-                          <span className="font-black">
-                            S/ {(qty * cost).toFixed(2)}
-                          </span>
-                        </div>
-                      );
-                    })}
+                  })}
             </div>
             <div className="border-t border-indigo-200/50 pt-2 flex justify-between font-black text-sm">
               <span>Total Estimado:</span>
@@ -5418,22 +5420,22 @@ export default function BusinessInventoryPage() {
                 S/{" "}
                 {singlePurchaseItem
                   ? (() => {
-                      const qty =
-                        customQuantities[singlePurchaseItem.id] ??
-                        singlePurchaseItem.deficit;
-                      const cost =
-                        customCosts[singlePurchaseItem.id] ??
-                        singlePurchaseItem.costPrice;
-                      return (qty * cost).toFixed(2);
-                    })()
+                    const qty =
+                      customQuantities[singlePurchaseItem.id] ??
+                      singlePurchaseItem.deficit;
+                    const cost =
+                      customCosts[singlePurchaseItem.id] ??
+                      singlePurchaseItem.costPrice;
+                    return (qty * cost).toFixed(2);
+                  })()
                   : plannerItems
-                      .filter((item) => selectedItemIds.includes(item.id))
-                      .reduce((sum, item) => {
-                        const qty = customQuantities[item.id] ?? item.deficit;
-                        const cost = customCosts[item.id] ?? item.costPrice;
-                        return sum + qty * cost;
-                      }, 0)
-                      .toFixed(2)}
+                    .filter((item) => selectedItemIds.includes(item.id))
+                    .reduce((sum, item) => {
+                      const qty = customQuantities[item.id] ?? item.deficit;
+                      const cost = customCosts[item.id] ?? item.costPrice;
+                      return sum + qty * cost;
+                    }, 0)
+                    .toFixed(2)}
               </span>
             </div>
           </div>
@@ -5598,21 +5600,21 @@ export default function BusinessInventoryPage() {
           {(() => {
             const totalCost = singlePurchaseItem
               ? (() => {
-                  const qty =
-                    customQuantities[singlePurchaseItem.id] ??
-                    singlePurchaseItem.deficit;
-                  const cost =
-                    customCosts[singlePurchaseItem.id] ??
-                    singlePurchaseItem.costPrice;
-                  return qty * cost;
-                })()
+                const qty =
+                  customQuantities[singlePurchaseItem.id] ??
+                  singlePurchaseItem.deficit;
+                const cost =
+                  customCosts[singlePurchaseItem.id] ??
+                  singlePurchaseItem.costPrice;
+                return qty * cost;
+              })()
               : plannerItems
-                  .filter((item) => selectedItemIds.includes(item.id))
-                  .reduce((sum, item) => {
-                    const qty = customQuantities[item.id] ?? item.deficit;
-                    const cost = customCosts[item.id] ?? item.costPrice;
-                    return sum + qty * cost;
-                  }, 0);
+                .filter((item) => selectedItemIds.includes(item.id))
+                .reduce((sum, item) => {
+                  const qty = customQuantities[item.id] ?? item.deficit;
+                  const cost = customCosts[item.id] ?? item.costPrice;
+                  return sum + qty * cost;
+                }, 0);
 
             const hasInsufficientLiquidity =
               bulkPurchaseData.receiveImmediately &&
@@ -5666,21 +5668,21 @@ export default function BusinessInventoryPage() {
               disabled={(() => {
                 const totalCost = singlePurchaseItem
                   ? (() => {
-                      const qty =
-                        customQuantities[singlePurchaseItem.id] ??
-                        singlePurchaseItem.deficit;
-                      const cost =
-                        customCosts[singlePurchaseItem.id] ??
-                        singlePurchaseItem.costPrice;
-                      return qty * cost;
-                    })()
+                    const qty =
+                      customQuantities[singlePurchaseItem.id] ??
+                      singlePurchaseItem.deficit;
+                    const cost =
+                      customCosts[singlePurchaseItem.id] ??
+                      singlePurchaseItem.costPrice;
+                    return qty * cost;
+                  })()
                   : plannerItems
-                      .filter((item) => selectedItemIds.includes(item.id))
-                      .reduce((sum, item) => {
-                        const qty = customQuantities[item.id] ?? item.deficit;
-                        const cost = customCosts[item.id] ?? item.costPrice;
-                        return sum + qty * cost;
-                      }, 0);
+                    .filter((item) => selectedItemIds.includes(item.id))
+                    .reduce((sum, item) => {
+                      const qty = customQuantities[item.id] ?? item.deficit;
+                      const cost = customCosts[item.id] ?? item.costPrice;
+                      return sum + qty * cost;
+                    }, 0);
                 return (
                   bulkPurchaseData.receiveImmediately &&
                   treasuryLiquidity !== null &&
@@ -5741,8 +5743,8 @@ export default function BusinessInventoryPage() {
                                     const pres = isBase
                                       ? null
                                       : prod.presentations?.find(
-                                          (p) => p.id === val,
-                                        );
+                                        (p) => p.id === val,
+                                      );
                                     const equivalence = pres
                                       ? pres.equivalence
                                       : 1.0;
@@ -5941,10 +5943,10 @@ export default function BusinessInventoryPage() {
                         (p.sku || "").toLowerCase().includes(search)
                       );
                     }).length === 0 && (
-                      <div className="py-3 text-center text-xs text-gray-400 italic">
-                        No se encontraron productos
-                      </div>
-                    )}
+                        <div className="py-3 text-center text-xs text-gray-400 italic">
+                          No se encontraron productos
+                        </div>
+                      )}
                   </div>
                 )}
               </div>
@@ -6561,12 +6563,11 @@ export default function BusinessInventoryPage() {
                 treasuryLiquidity !== null &&
                 payingOrderTotal > treasuryLiquidity
               }
-              className={`flex-1 px-4 py-3 text-white font-extrabold rounded-2xl text-sm flex items-center justify-center gap-2 transition-all ${
-                treasuryLiquidity !== null &&
+              className={`flex-1 px-4 py-3 text-white font-extrabold rounded-2xl text-sm flex items-center justify-center gap-2 transition-all ${treasuryLiquidity !== null &&
                 payingOrderTotal > treasuryLiquidity
-                  ? "bg-gray-300 cursor-not-allowed opacity-60"
-                  : "bg-indigo-600 hover:bg-indigo-700 active:scale-95 shadow-sm"
-              }`}
+                ? "bg-gray-300 cursor-not-allowed opacity-60"
+                : "bg-indigo-600 hover:bg-indigo-700 active:scale-95 shadow-sm"
+                }`}
             >
               <CreditCard className="w-4 h-4" />
               Confirmar Pago
@@ -6655,11 +6656,11 @@ export default function BusinessInventoryPage() {
                 (p.sku || "").toLowerCase().includes(search)
               );
             }).length === 0 && (
-              <div className="py-8 text-center text-gray-400">
-                <Package className="w-10 h-10 mx-auto mb-2 opacity-30" />
-                <p className="text-sm font-bold">No se encontraron productos</p>
-              </div>
-            )}
+                <div className="py-8 text-center text-gray-400">
+                  <Package className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                  <p className="text-sm font-bold">No se encontraron productos</p>
+                </div>
+              )}
           </div>
 
           <div className="pt-2 border-t border-gray-100">

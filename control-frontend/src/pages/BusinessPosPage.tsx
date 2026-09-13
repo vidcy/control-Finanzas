@@ -2049,6 +2049,11 @@ export default function BusinessPosPage() {
                             {activeShift?.branchId ? "Sede: " : ""}
                             {formatStock(availableStock, p.unit, p.presentations)}
                           </span>
+                          <span
+                            className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full inline-block mt-1 ${p.description && p.description.length > 0 ? "bg-slate-50 text-slate-600" : "bg-rose-50 text-rose-600"}`}
+                          >
+                            {p.description}
+                          </span>
                         </div>
                         <p className="text-base font-black text-gray-900 mt-2">
                           S/ {p.salePrice.toFixed(2)}
