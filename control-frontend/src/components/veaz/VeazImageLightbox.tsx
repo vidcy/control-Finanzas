@@ -107,7 +107,7 @@ export default function VeazImageLightbox({
   const handleResetZoom = () => setZoomLevel(1);
 
   // WhatsApp order link
-  const whatsappNumber = "51984398565";
+  const whatsappNumber = "51929962458";
   const finalPrice = (currentOfferPrice || currentSalePrice).toFixed(2);
   const offerTag = isOfferActive ? ` (¡Oferta Especial!)` : "";
   const whatsappMsg = encodeURIComponent(
@@ -263,8 +263,8 @@ export default function VeazImageLightbox({
 
               {/* Price Display */}
               <div className={`p-4 rounded-2xl mb-6 border ${isOfferActive
-                  ? "bg-gradient-to-br from-rose-50 via-amber-50/50 to-rose-50 border-rose-200/90 shadow-sm"
-                  : "bg-[#FAF7F2] border-[#E8DCBE]"
+                ? "bg-gradient-to-br from-rose-50 via-amber-50/50 to-rose-50 border-rose-200/90 shadow-sm"
+                : "bg-[#FAF7F2] border-[#E8DCBE]"
                 }`}>
                 <div className="flex items-center justify-between mb-1">
                   <div>

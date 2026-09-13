@@ -87,7 +87,7 @@ export default function VeazShoeCard({ shoe, onOpenLightbox }: VeazShoeCardProps
 
   const handleWhatsAppInquiry = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const phone = "51984398565"; // beas.estileza phone
+    const phone = "51929962458"; // beaz.estileza phone
     const finalPrice = (currentOfferPrice || currentSalePrice).toFixed(2);
     const offerTag = isOfferActive ? ` ¡PRECIO DE LOCURA (Oferta)!` : "";
     const text = `Hola *VEAZ ESTILEZA*, deseo consultar el modelo *${shoe.name}* (Marca: ${shoe.brandName}, SKU: ${shoe.sku}) en Talla *${selectedSize || "37"}*, Color: *${shoe.color}*, ${shoe.heelHeight}. Precio: S/ ${finalPrice}${offerTag}.`;
@@ -102,8 +102,8 @@ export default function VeazShoeCard({ shoe, onOpenLightbox }: VeazShoeCardProps
       viewport={{ once: true }}
       transition={{ duration: 0.35 }}
       className={`group relative rounded-2xl sm:rounded-3xl overflow-hidden bg-white border transition-all duration-400 flex flex-col justify-between shadow-sm hover:shadow-xl hover:-translate-y-1 ${isOfferActive
-          ? "border-rose-300 hover:border-rose-400 hover:shadow-rose-500/15"
-          : "border-slate-200 hover:border-amber-400 hover:shadow-amber-500/15"
+        ? "border-rose-300 hover:border-rose-400 hover:shadow-rose-500/15"
+        : "border-slate-200 hover:border-amber-400 hover:shadow-amber-500/15"
         }`}
       style={{
         boxShadow: isOfferActive
@@ -294,10 +294,10 @@ export default function VeazShoeCard({ shoe, onOpenLightbox }: VeazShoeCardProps
                     type="button"
                     onClick={() => setSelectedSize(size)}
                     className={`h-7 min-w-[36px] px-1.5 rounded-lg font-cinzel font-bold text-[10px] tracking-wider transition-all cursor-pointer flex items-center justify-center gap-0.5 border ${isSelected
-                        ? "bg-slate-900 text-white border-slate-900 shadow-xs"
-                        : hasStock
-                          ? "bg-white text-slate-800 border-slate-200 hover:border-amber-400 hover:bg-amber-50/50"
-                          : "bg-slate-100 text-slate-400 border-slate-200 line-through opacity-50 cursor-not-allowed"
+                      ? "bg-slate-900 text-white border-slate-900 shadow-xs"
+                      : hasStock
+                        ? "bg-white text-slate-800 border-slate-200 hover:border-amber-400 hover:bg-amber-50/50"
+                        : "bg-slate-100 text-slate-400 border-slate-200 line-through opacity-50 cursor-not-allowed"
                       }`}
                     title={`Talla ${size}: ${hasStock ? `${variant?.stock || 0} pares` : "Agotada"}`}
                   >

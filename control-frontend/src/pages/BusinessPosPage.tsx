@@ -233,7 +233,7 @@ export default function BusinessPosPage() {
 
   // Mobile responsive view tab state
   const [mobileTab, setMobileTab] = useState<"catalog" | "cart">("catalog");
-  
+
   // Sales list pagination state
   const [salesPage, setSalesPage] = useState(1);
 
@@ -304,7 +304,7 @@ export default function BusinessPosPage() {
   const applyAdvisorToCart = (advId: string, currentCart?: any[]) => {
     const targetCart = currentCart || cart;
     const adv = advId ? advisors.find(a => a.id === advId) : null;
-    
+
     const newCart = targetCart.map((item) => {
       if (item.isCustom) return item;
       const pres = item.presentationId
@@ -598,11 +598,11 @@ export default function BusinessPosPage() {
     setIsSalesListOpen(false); // Close history list modal first
     const ticketItems = (sale.items && sale.items.length > 0)
       ? sale.items.map((i: any) => ({
-          quantity: i.quantity,
-          name: i.name || i.product?.name || "Producto",
-          salePrice: i.price,
-          unit: i.product?.unit || "UNIDAD",
-        }))
+        quantity: i.quantity,
+        name: i.name || i.product?.name || "Producto",
+        salePrice: i.price,
+        unit: i.product?.unit || "UNIDAD",
+      }))
       : parseDescription(sale.description || "");
 
     setLastSale({
@@ -733,7 +733,7 @@ export default function BusinessPosPage() {
             c.name.toLowerCase().includes("negocio") ||
             c.name.toLowerCase().includes("venta")
         ) || allIncomeCats[0];
-        
+
         setSelectedCategory(priority.id);
         const subCaja = priority.children?.find((s: any) =>
           s.name.toLowerCase().includes("caja")
@@ -799,14 +799,14 @@ export default function BusinessPosPage() {
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
       const oscillator = audioCtx.createOscillator();
       const gainNode = audioCtx.createGain();
-      
+
       oscillator.connect(gainNode);
       gainNode.connect(audioCtx.destination);
-      
+
       oscillator.type = "sine";
       oscillator.frequency.value = 850;
       gainNode.gain.setValueAtTime(0.08, audioCtx.currentTime);
-      
+
       oscillator.start();
       oscillator.stop(audioCtx.currentTime + 0.08);
     } catch (err) {
@@ -817,13 +817,13 @@ export default function BusinessPosPage() {
   const handleBarcodeScanned = (code: string) => {
     const cleanCode = code.trim().toLowerCase();
     setScanTestResult(code);
-    
+
     const match = products.find((p) => {
       const matchesSku = p.sku && p.sku.trim().toLowerCase() === cleanCode;
       const matchesCodeRaw = (p as any).customCode && String((p as any).customCode).trim() === cleanCode;
       const matchesCodePadded = (p as any).customCode && String((p as any).customCode).trim().padStart(4, "0") === cleanCode;
       const matchesId = p.id && p.id.toLowerCase() === cleanCode;
-      const matchesPres = p.presentations?.some((pres: any) => 
+      const matchesPres = p.presentations?.some((pres: any) =>
         (pres.sku && pres.sku.trim().toLowerCase() === cleanCode) ||
         (pres.code && String(pres.code).trim().toLowerCase() === cleanCode)
       );
@@ -1175,12 +1175,12 @@ export default function BusinessPosPage() {
       lastSale.billingType === "BOLETA"
         ? "BOLETA DE VENTA ELECTRÓNICA"
         : lastSale.billingType === "FACTURA"
-        ? "FACTURA ELECTRÓNICA"
-        : lastSale.billingType === "NOTA_CREDITO"
-        ? "NOTA DE CRÉDITO ELECTRÓNICA"
-        : lastSale.billingType === "NOTA_DEBITO"
-        ? "NOTA DE DÉBITO ELECTRÓNICA"
-        : "TICKET DE VENTA";
+          ? "FACTURA ELECTRÓNICA"
+          : lastSale.billingType === "NOTA_CREDITO"
+            ? "NOTA DE CRÉDITO ELECTRÓNICA"
+            : lastSale.billingType === "NOTA_DEBITO"
+              ? "NOTA DE DÉBITO ELECTRÓNICA"
+              : "TICKET DE VENTA";
     const dateStr = format(lastSale.date, "dd/MM/yyyy HH:mm");
     const numComp =
       lastSale.billingSerie && lastSale.billingNumber
@@ -1331,7 +1331,7 @@ export default function BusinessPosPage() {
         try {
           printWin.print();
           setTimeout(() => {
-            try { printWin.close(); } catch (_) {}
+            try { printWin.close(); } catch (_) { }
           }, 1000);
         } catch (e) {
           console.error("Popup print error:", e);
@@ -1449,12 +1449,12 @@ export default function BusinessPosPage() {
         lastSale.billingType === "BOLETA"
           ? "BOLETA DE VENTA ELECTRÓNICA"
           : lastSale.billingType === "FACTURA"
-          ? "FACTURA ELECTRÓNICA"
-          : lastSale.billingType === "NOTA_CREDITO"
-          ? "NOTA DE CRÉDITO ELECTRÓNICA"
-          : lastSale.billingType === "NOTA_DEBITO"
-          ? "NOTA DE DÉBITO ELECTRÓNICA"
-          : "TICKET DE VENTA";
+            ? "FACTURA ELECTRÓNICA"
+            : lastSale.billingType === "NOTA_CREDITO"
+              ? "NOTA DE CRÉDITO ELECTRÓNICA"
+              : lastSale.billingType === "NOTA_DEBITO"
+                ? "NOTA DE DÉBITO ELECTRÓNICA"
+                : "TICKET DE VENTA";
       doc.text(compType, pdfW / 2, y, { align: "center" });
 
       y += 4;
@@ -1718,12 +1718,12 @@ export default function BusinessPosPage() {
                 {lastSale.billingType === "BOLETA"
                   ? "BOLETA DE VENTA ELECTRÓNICA"
                   : lastSale.billingType === "FACTURA"
-                  ? "FACTURA ELECTRÓNICA"
-                  : lastSale.billingType === "NOTA_CREDITO"
-                  ? "NOTA DE CRÉDITO ELECTRÓNICA"
-                  : lastSale.billingType === "NOTA_DEBITO"
-                  ? "NOTA DE DÉBITO ELECTRÓNICA"
-                  : "TICKET DE VENTA"}
+                    ? "FACTURA ELECTRÓNICA"
+                    : lastSale.billingType === "NOTA_CREDITO"
+                      ? "NOTA DE CRÉDITO ELECTRÓNICA"
+                      : lastSale.billingType === "NOTA_DEBITO"
+                        ? "NOTA DE DÉBITO ELECTRÓNICA"
+                        : "TICKET DE VENTA"}
               </div>
               <div
                 style={{ borderBottom: "1px dashed #ccc", margin: "8px 0" }}
@@ -2455,12 +2455,12 @@ export default function BusinessPosPage() {
                   {lastSale.billingType === "BOLETA"
                     ? "BOLETA DE VENTA ELECTRÓNICA"
                     : lastSale.billingType === "FACTURA"
-                    ? "FACTURA ELECTRÓNICA"
-                    : lastSale.billingType === "NOTA_CREDITO"
-                    ? "NOTA DE CRÉDITO ELECTRÓNICA"
-                    : lastSale.billingType === "NOTA_DEBITO"
-                    ? "NOTA DE DÉBITO ELECTRÓNICA"
-                    : "TICKET DE VENTA"}
+                      ? "FACTURA ELECTRÓNICA"
+                      : lastSale.billingType === "NOTA_CREDITO"
+                        ? "NOTA DE CRÉDITO ELECTRÓNICA"
+                        : lastSale.billingType === "NOTA_DEBITO"
+                          ? "NOTA DE DÉBITO ELECTRÓNICA"
+                          : "TICKET DE VENTA"}
                 </div>
                 <div className="border-b border-dashed border-gray-300 my-3"></div>
                 <div className="flex justify-between text-[10px] mb-1">
@@ -2662,7 +2662,7 @@ export default function BusinessPosPage() {
                     options.forEach(o => {
                       if (o > total && !items.includes(o)) items.push(o);
                     });
-                    return items.sort((a,b)=>a-b).slice(0, 4).map((opt) => (
+                    return items.sort((a, b) => a - b).slice(0, 4).map((opt) => (
                       <button
                         key={opt}
                         type="button"
@@ -2852,11 +2852,10 @@ export default function BusinessPosPage() {
                       setBillingType(opt.id);
                       setClientDocumentType(opt.id === "FACTURA" ? "6" : "1");
                     }}
-                    className={`py-2.5 px-3 rounded-xl border text-xs font-black uppercase transition-all ${
-                      billingType === opt.id
-                        ? "bg-emerald-600 text-white border-emerald-600 shadow-md"
-                        : "bg-white text-gray-500 border-gray-200 hover:border-emerald-300"
-                    }`}
+                    className={`py-2.5 px-3 rounded-xl border text-xs font-black uppercase transition-all ${billingType === opt.id
+                      ? "bg-emerald-600 text-white border-emerald-600 shadow-md"
+                      : "bg-white text-gray-500 border-gray-200 hover:border-emerald-300"
+                      }`}
                   >
                     {opt.label}
                   </button>
@@ -2962,11 +2961,10 @@ export default function BusinessPosPage() {
               type="button"
               onClick={handleCheckout}
               disabled={isProcessing || (paymentMethod === "CASH" && (Number(amountPaid) || 0) < total)}
-              className={`px-6 py-3 text-white font-black rounded-xl transition-all text-sm flex items-center gap-2 shadow-lg ${
-                paymentMethod === "CASH" && (Number(amountPaid) || 0) < total
-                  ? "bg-gray-300 text-gray-500 cursor-not-allowed shadow-none"
-                  : "bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200 hover:-translate-y-0.5 active:scale-95"
-              }`}
+              className={`px-6 py-3 text-white font-black rounded-xl transition-all text-sm flex items-center gap-2 shadow-lg ${paymentMethod === "CASH" && (Number(amountPaid) || 0) < total
+                ? "bg-gray-300 text-gray-500 cursor-not-allowed shadow-none"
+                : "bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200 hover:-translate-y-0.5 active:scale-95"
+                }`}
             >
               {isProcessing ? (
                 <>
@@ -3051,222 +3049,222 @@ export default function BusinessPosPage() {
               <>
                 <div className="overflow-x-auto max-h-[50vh] custom-scrollbar">
                   <table className="w-full text-sm">
-                  <thead className="bg-gray-50 text-gray-500 uppercase text-[10px] font-bold tracking-wider">
-                    <tr>
-                      <th className="px-4 py-3 text-left">Fecha/Hora</th>
-                      {user?.role === "ADMIN" && <th className="px-4 py-3 text-left">Vendedor</th>}
-                      <th className="px-4 py-3 text-left">
-                        Detalle de Productos
-                      </th>
-                      <th className="px-4 py-3 text-center">Método</th>
-                      <th className="px-4 py-3 text-right">Monto</th>
-                      {user?.hasElectronicBilling && <th className="px-4 py-3 text-left">Comprobante SUNAT</th>}
-                      <th className="px-4 py-3 text-center">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {sales.slice((salesPage - 1) * 6, salesPage * 6).map((sale) => (
-                      <tr
-                        key={sale.id}
-                        className="hover:bg-gray-50 transition-colors"
-                      >
-                        <td className="px-4 py-3 text-gray-500 whitespace-nowrap text-xs font-medium">
-                          {format(new Date(sale.date), "dd/MM/yyyy HH:mm")}
-                        </td>
-                        {user?.role === "ADMIN" && (
-                          <td className="px-4 py-3 text-gray-600 whitespace-nowrap text-xs font-bold">
-                            {sale.user ? `${sale.user.name} ${sale.user.lastName || ""}`.trim() : "N/A"}
-                          </td>
-                        )}
-                        <td className="px-4 py-3">
-                          <p
-                            className="font-semibold text-gray-800 text-xs truncate max-w-xs"
-                            title={
-                              sale.items && sale.items.length > 0
-                                ? sale.items.map((i: any) => `${i.quantity}x ${i.name}`).join(", ")
-                                : sale.description?.replace("Venta en POS: ", "") || "Venta POS"
-                            }
-                          >
-                            {sale.items && sale.items.length > 0
-                              ? sale.items.map((i: any) => `${i.quantity}x ${i.name}`).join(", ")
-                              : sale.description?.replace("Venta en POS: ", "") || "Venta POS"}
-                          </p>
-                          {sale.receiptUrl && (
-                            <a
-                              href={
-                                getReceiptAbsoluteUrl(sale.receiptUrl) || "#"
-                              }
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-indigo-500 text-[10px] font-bold block mt-0.5 hover:underline"
-                            >
-                              📎 Ver comprobante adjunto
-                            </a>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <span className="text-[10px] font-bold bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md">
-                            {paymentLabel[sale.paymentMethod] ||
-                              sale.paymentMethod}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-right font-black text-emerald-600 text-xs">
-                          S/ {Number(sale.amount).toFixed(2)}
-                        </td>
-                        {user?.hasElectronicBilling && (
-                          <td className="px-4 py-3 text-xs">
-                            {sale.billingType === "TICKET_VENTA" ? (
-                              <span className="text-gray-400 font-bold">Ticket de Venta</span>
-                            ) : (
-                              <div className="space-y-1">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="font-extrabold text-gray-800">
-                                    {sale.billingType === "BOLETA" ? "Boleta" : sale.billingType === "FACTURA" ? "Factura" : sale.billingType === "NOTA_CREDITO" ? "N. Crédito" : "N. Débito"}
-                                  </span>
-                                  {sale.billingSerie && sale.billingNumber && (
-                                    <span className="font-mono text-gray-500 font-semibold bg-gray-100 px-1.5 py-0.5 rounded">
-                                      {sale.billingSerie}-{sale.billingNumber}
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  {sale.billingStatus === "SUCCESS" && (
-                                    <>
-                                      <span className="text-[9px] bg-emerald-50 text-emerald-700 font-black border border-emerald-200 px-1.5 py-0.5 rounded uppercase">
-                                        Aceptado
-                                      </span>
-                                      {sale.billingPdfUrl && (
-                                        <a href={sale.billingPdfUrl} target="_blank" rel="noreferrer" className="text-indigo-650 hover:text-indigo-850" title="Ver PDF">
-                                          <FileText className="w-3.5 h-3.5" />
-                                        </a>
-                                      )}
-                                      {sale.billingXmlUrl && (
-                                        <a href={sale.billingXmlUrl} target="_blank" rel="noreferrer" className="text-amber-650 hover:text-amber-850" title="Ver XML">
-                                          <FileCode className="w-3.5 h-3.5" />
-                                        </a>
-                                      )}
-                                      {sale.billingCdrUrl && (
-                                        <a href={sale.billingCdrUrl} target="_blank" rel="noreferrer" className="text-teal-650 hover:text-teal-850" title="Ver CDR">
-                                          <FileCheck className="w-3.5 h-3.5" />
-                                        </a>
-                                      )}
-                                    </>
-                                  )}
-                                  {sale.billingStatus === "ERROR" && (
-                                    <div className="flex flex-col gap-1">
-                                      <div className="flex items-center gap-1">
-                                        <span className="text-[9px] bg-red-50 text-red-700 font-black border border-red-200 px-1.5 py-0.5 rounded uppercase" title={sale.billingError}>
-                                          Error SUNAT
-                                        </span>
-                                        <button
-                                          onClick={async () => {
-                                            const loading = toast.loading("Reintentando envío a SUNAT...");
-                                            try {
-                                              await retrySaleBillingRequest(sale.id);
-                                              toast.dismiss(loading);
-                                              toast.success("Envío completado");
-                                              loadData();
-                                            } catch (err: any) {
-                                              toast.dismiss(loading);
-                                              toast.error(err.message || "Error al reintentar");
-                                            }
-                                          }}
-                                          className="p-0.5 bg-gray-50 hover:bg-gray-150 border border-gray-200 rounded text-gray-650 hover:text-gray-950 transition-colors animate-pulse"
-                                          title="Reintentar Facturación"
-                                        >
-                                          <RefreshCw className="w-3 h-3" />
-                                        </button>
-                                      </div>
-                                      <p className="text-[9px] text-red-500 font-medium max-w-[150px] truncate" title={sale.billingError}>
-                                        {sale.billingError}
-                                      </p>
-                                    </div>
-                                  )}
-                                  {sale.billingStatus === "PENDING" && (
-                                    <span className="text-[9px] bg-amber-50 text-amber-700 font-black border border-amber-200 px-1.5 py-0.5 rounded uppercase">
-                                      Enviando...
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-                          </td>
-                        )}
-                        <td className="px-4 py-3">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              onClick={() => handleDownloadPastTicket(sale)}
-                              className="p-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors"
-                              title="Reconstruir y Descargar Ticket"
-                            >
-                              <Printer className="w-3.5 h-3.5" />
-                            </button>
-                            {user?.hasElectronicBilling && sale.billingStatus === "SUCCESS" && (sale.billingType === "BOLETA" || sale.billingType === "FACTURA") && (
-                              <>
-                                <button
-                                  onClick={() => {
-                                    setSelectedSaleForNote(sale);
-                                    setNoteType("CREDIT");
-                                    setNoteReasonCode(1);
-                                    setNoteReasonText("");
-                                    setIsNoteModalOpen(true);
-                                  }}
-                                  className="p-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-lg transition-colors"
-                                  title="Emitir Nota de Crédito (Anular/Descontar)"
-                                >
-                                  <MinusCircle className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setSelectedSaleForNote(sale);
-                                    setNoteType("DEBIT");
-                                    setNoteReasonCode(1);
-                                    setNoteReasonText("");
-                                    setIsNoteModalOpen(true);
-                                  }}
-                                  className="p-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg transition-colors"
-                                  title="Emitir Nota de Débito (Aumento de valor)"
-                                >
-                                  <PlusCircle className="w-3.5 h-3.5" />
-                                </button>
-                              </>
-                            )}
-                            {(sale.billingType === "TICKET_VENTA" || !sale.billingStatus || sale.billingStatus === "ERROR") && (
-                              <>
-                                <button
-                                  onClick={() => handleEditSale(sale)}
-                                  className="p-1.5 bg-amber-50 text-amber-705 hover:bg-amber-100 rounded-lg transition-colors"
-                                  title="Editar Venta (Cargar al Carrito)"
-                                >
-                                  <Edit className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteSale(sale)}
-                                  className="p-1.5 bg-red-50 text-red-650 hover:bg-red-100 rounded-lg transition-colors"
-                                  title="Eliminar / Anular Venta"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </td>
+                    <thead className="bg-gray-50 text-gray-500 uppercase text-[10px] font-bold tracking-wider">
+                      <tr>
+                        <th className="px-4 py-3 text-left">Fecha/Hora</th>
+                        {user?.role === "ADMIN" && <th className="px-4 py-3 text-left">Vendedor</th>}
+                        <th className="px-4 py-3 text-left">
+                          Detalle de Productos
+                        </th>
+                        <th className="px-4 py-3 text-center">Método</th>
+                        <th className="px-4 py-3 text-right">Monto</th>
+                        {user?.hasElectronicBilling && <th className="px-4 py-3 text-left">Comprobante SUNAT</th>}
+                        <th className="px-4 py-3 text-center">Acciones</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {sales.length > 0 && (
-                <Pagination
-                  currentPage={salesPage}
-                  totalItems={sales.length}
-                  pageSize={6}
-                  onPageChange={(page) => setSalesPage(page)}
-                  className="border-t border-gray-100 bg-gray-50 px-4 py-3"
-                />
-              )}
-            </>
-          )}
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {sales.slice((salesPage - 1) * 6, salesPage * 6).map((sale) => (
+                        <tr
+                          key={sale.id}
+                          className="hover:bg-gray-50 transition-colors"
+                        >
+                          <td className="px-4 py-3 text-gray-500 whitespace-nowrap text-xs font-medium">
+                            {format(new Date(sale.date), "dd/MM/yyyy HH:mm")}
+                          </td>
+                          {user?.role === "ADMIN" && (
+                            <td className="px-4 py-3 text-gray-600 whitespace-nowrap text-xs font-bold">
+                              {sale.user ? `${sale.user.name} ${sale.user.lastName || ""}`.trim() : "N/A"}
+                            </td>
+                          )}
+                          <td className="px-4 py-3">
+                            <p
+                              className="font-semibold text-gray-800 text-xs truncate max-w-xs"
+                              title={
+                                sale.items && sale.items.length > 0
+                                  ? sale.items.map((i: any) => `${i.quantity}x ${i.name}`).join(", ")
+                                  : sale.description?.replace("Venta en POS: ", "") || "Venta POS"
+                              }
+                            >
+                              {sale.items && sale.items.length > 0
+                                ? sale.items.map((i: any) => `${i.quantity}x ${i.name}`).join(", ")
+                                : sale.description?.replace("Venta en POS: ", "") || "Venta POS"}
+                            </p>
+                            {sale.receiptUrl && (
+                              <a
+                                href={
+                                  getReceiptAbsoluteUrl(sale.receiptUrl) || "#"
+                                }
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-indigo-500 text-[10px] font-bold block mt-0.5 hover:underline"
+                              >
+                                📎 Ver comprobante adjunto
+                              </a>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <span className="text-[10px] font-bold bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md">
+                              {paymentLabel[sale.paymentMethod] ||
+                                sale.paymentMethod}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right font-black text-emerald-600 text-xs">
+                            S/ {Number(sale.amount).toFixed(2)}
+                          </td>
+                          {user?.hasElectronicBilling && (
+                            <td className="px-4 py-3 text-xs">
+                              {sale.billingType === "TICKET_VENTA" ? (
+                                <span className="text-gray-400 font-bold">Ticket de Venta</span>
+                              ) : (
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-extrabold text-gray-800">
+                                      {sale.billingType === "BOLETA" ? "Boleta" : sale.billingType === "FACTURA" ? "Factura" : sale.billingType === "NOTA_CREDITO" ? "N. Crédito" : "N. Débito"}
+                                    </span>
+                                    {sale.billingSerie && sale.billingNumber && (
+                                      <span className="font-mono text-gray-500 font-semibold bg-gray-100 px-1.5 py-0.5 rounded">
+                                        {sale.billingSerie}-{sale.billingNumber}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    {sale.billingStatus === "SUCCESS" && (
+                                      <>
+                                        <span className="text-[9px] bg-emerald-50 text-emerald-700 font-black border border-emerald-200 px-1.5 py-0.5 rounded uppercase">
+                                          Aceptado
+                                        </span>
+                                        {sale.billingPdfUrl && (
+                                          <a href={sale.billingPdfUrl} target="_blank" rel="noreferrer" className="text-indigo-650 hover:text-indigo-850" title="Ver PDF">
+                                            <FileText className="w-3.5 h-3.5" />
+                                          </a>
+                                        )}
+                                        {sale.billingXmlUrl && (
+                                          <a href={sale.billingXmlUrl} target="_blank" rel="noreferrer" className="text-amber-650 hover:text-amber-850" title="Ver XML">
+                                            <FileCode className="w-3.5 h-3.5" />
+                                          </a>
+                                        )}
+                                        {sale.billingCdrUrl && (
+                                          <a href={sale.billingCdrUrl} target="_blank" rel="noreferrer" className="text-teal-650 hover:text-teal-850" title="Ver CDR">
+                                            <FileCheck className="w-3.5 h-3.5" />
+                                          </a>
+                                        )}
+                                      </>
+                                    )}
+                                    {sale.billingStatus === "ERROR" && (
+                                      <div className="flex flex-col gap-1">
+                                        <div className="flex items-center gap-1">
+                                          <span className="text-[9px] bg-red-50 text-red-700 font-black border border-red-200 px-1.5 py-0.5 rounded uppercase" title={sale.billingError}>
+                                            Error SUNAT
+                                          </span>
+                                          <button
+                                            onClick={async () => {
+                                              const loading = toast.loading("Reintentando envío a SUNAT...");
+                                              try {
+                                                await retrySaleBillingRequest(sale.id);
+                                                toast.dismiss(loading);
+                                                toast.success("Envío completado");
+                                                loadData();
+                                              } catch (err: any) {
+                                                toast.dismiss(loading);
+                                                toast.error(err.message || "Error al reintentar");
+                                              }
+                                            }}
+                                            className="p-0.5 bg-gray-50 hover:bg-gray-150 border border-gray-200 rounded text-gray-650 hover:text-gray-950 transition-colors animate-pulse"
+                                            title="Reintentar Facturación"
+                                          >
+                                            <RefreshCw className="w-3 h-3" />
+                                          </button>
+                                        </div>
+                                        <p className="text-[9px] text-red-500 font-medium max-w-[150px] truncate" title={sale.billingError}>
+                                          {sale.billingError}
+                                        </p>
+                                      </div>
+                                    )}
+                                    {sale.billingStatus === "PENDING" && (
+                                      <span className="text-[9px] bg-amber-50 text-amber-700 font-black border border-amber-200 px-1.5 py-0.5 rounded uppercase">
+                                        Enviando...
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </td>
+                          )}
+                          <td className="px-4 py-3">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                onClick={() => handleDownloadPastTicket(sale)}
+                                className="p-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors"
+                                title="Reconstruir y Descargar Ticket"
+                              >
+                                <Printer className="w-3.5 h-3.5" />
+                              </button>
+                              {user?.hasElectronicBilling && sale.billingStatus === "SUCCESS" && (sale.billingType === "BOLETA" || sale.billingType === "FACTURA") && (
+                                <>
+                                  <button
+                                    onClick={() => {
+                                      setSelectedSaleForNote(sale);
+                                      setNoteType("CREDIT");
+                                      setNoteReasonCode(1);
+                                      setNoteReasonText("");
+                                      setIsNoteModalOpen(true);
+                                    }}
+                                    className="p-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-lg transition-colors"
+                                    title="Emitir Nota de Crédito (Anular/Descontar)"
+                                  >
+                                    <MinusCircle className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setSelectedSaleForNote(sale);
+                                      setNoteType("DEBIT");
+                                      setNoteReasonCode(1);
+                                      setNoteReasonText("");
+                                      setIsNoteModalOpen(true);
+                                    }}
+                                    className="p-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg transition-colors"
+                                    title="Emitir Nota de Débito (Aumento de valor)"
+                                  >
+                                    <PlusCircle className="w-3.5 h-3.5" />
+                                  </button>
+                                </>
+                              )}
+                              {(sale.billingType === "TICKET_VENTA" || !sale.billingStatus || sale.billingStatus === "ERROR") && (
+                                <>
+                                  <button
+                                    onClick={() => handleEditSale(sale)}
+                                    className="p-1.5 bg-amber-50 text-amber-705 hover:bg-amber-100 rounded-lg transition-colors"
+                                    title="Editar Venta (Cargar al Carrito)"
+                                  >
+                                    <Edit className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteSale(sale)}
+                                    className="p-1.5 bg-red-50 text-red-650 hover:bg-red-100 rounded-lg transition-colors"
+                                    title="Eliminar / Anular Venta"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {sales.length > 0 && (
+                  <Pagination
+                    currentPage={salesPage}
+                    totalItems={sales.length}
+                    pageSize={6}
+                    onPageChange={(page) => setSalesPage(page)}
+                    className="border-t border-gray-100 bg-gray-50 px-4 py-3"
+                  />
+                )}
+              </>
+            )}
           </div>
           <div className="flex justify-end pt-2">
             <button
@@ -3398,9 +3396,8 @@ export default function BusinessPosPage() {
                 type="button"
                 disabled={isSubmittingNote || !noteReasonText.trim()}
                 onClick={handleSubmitNote}
-                className={`px-4 py-2 text-white rounded-xl font-black text-xs shadow-sm transition-all flex items-center gap-1.5 ${
-                  noteType === "CREDIT" ? "bg-rose-600 hover:bg-rose-700" : "bg-blue-600 hover:bg-blue-700"
-                } disabled:opacity-50`}
+                className={`px-4 py-2 text-white rounded-xl font-black text-xs shadow-sm transition-all flex items-center gap-1.5 ${noteType === "CREDIT" ? "bg-rose-600 hover:bg-rose-700" : "bg-blue-600 hover:bg-blue-700"
+                  } disabled:opacity-50`}
               >
                 {isSubmittingNote && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 <span>Emitir Nota</span>
@@ -3423,11 +3420,10 @@ export default function BusinessPosPage() {
               </p>
               <p className="text-xs text-gray-500 font-medium">
                 {cart[adjustingCartIndex].presentationId
-                  ? `Presentación seleccionada: ${
-                      cart[adjustingCartIndex].presentations?.find(
-                        (p: any) => p.id === cart[adjustingCartIndex].presentationId
-                      )?.name || "N/A"
-                    }`
+                  ? `Presentación seleccionada: ${cart[adjustingCartIndex].presentations?.find(
+                    (p: any) => p.id === cart[adjustingCartIndex].presentationId
+                  )?.name || "N/A"
+                  }`
                   : `Presentación por defecto: ${cart[adjustingCartIndex].unit}`}
               </p>
             </div>
@@ -3438,8 +3434,8 @@ export default function BusinessPosPage() {
                 <span className="font-bold text-gray-800">
                   S/ {(cart[adjustingCartIndex].presentationId
                     ? (cart[adjustingCartIndex].presentations?.find(
-                        (p: any) => p.id === cart[adjustingCartIndex].presentationId
-                      )?.price || cart[adjustingCartIndex].originalSalePrice)
+                      (p: any) => p.id === cart[adjustingCartIndex].presentationId
+                    )?.price || cart[adjustingCartIndex].originalSalePrice)
                     : cart[adjustingCartIndex].originalSalePrice
                   ).toFixed(2)}
                 </span>

@@ -20,6 +20,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Check,
+  Navigation,
+  Compass,
+  ExternalLink,
 } from "lucide-react";
 import { FaInstagram, FaFacebookF, FaTiktok } from "react-icons/fa6";
 import VeazLogo, { VeazCrownIcon } from "../components/veaz/VeazLogo";
@@ -279,10 +282,8 @@ export default function VeazEstilezaPage() {
     const leftZone = width * 0.30;
 
     if (x > rightZone) {
-      // Proportional speed as cursor moves closer to right edge
       railVelocity.current = ((x - rightZone) / (width - rightZone)) * 14;
     } else if (x < leftZone) {
-      // Proportional speed as cursor moves closer to left edge
       railVelocity.current = -((leftZone - x) / leftZone) * 14;
     } else {
       railVelocity.current = 0;
@@ -340,7 +341,6 @@ export default function VeazEstilezaPage() {
       ────────────────────────────────────────────────────────── */}
       <header className="fixed top-0 inset-x-0 z-50 bg-white/90 backdrop-blur-xl border-b border-[#EDE2D4] shadow-[0_4px_30px_rgba(0,0,0,0.03)] transition-all">
         <div className="w-full px-4 sm:px-8 lg:px-12 2xl:px-16 h-20 md:h-24 flex items-center justify-between gap-4">
-          {/* Brand Logo with Crown over VE */}
           <div
             onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
             className="cursor-pointer group flex items-center"
@@ -348,7 +348,6 @@ export default function VeazEstilezaPage() {
             <VeazLogo size="md" showSubtitle={true} />
           </div>
 
-          {/* Center Navigation Links */}
           <nav className="hidden xl:flex items-center gap-8 font-cinzel text-xs font-bold tracking-[0.2em] text-slate-700 uppercase">
             <button
               onClick={scrollToCatalog}
@@ -367,6 +366,15 @@ export default function VeazEstilezaPage() {
             </button>
             <button
               onClick={() => {
+                const el = document.getElementById("ubicacion-section");
+                el?.scrollIntoView({ behavior: "smooth" });
+              }}
+              className="hover:text-amber-800 transition-colors cursor-pointer"
+            >
+              Ubicación Boutique
+            </button>
+            <button
+              onClick={() => {
                 setSelectedBrand("TODAS");
                 setOnlyOffers(true);
                 scrollToCatalog();
@@ -378,9 +386,7 @@ export default function VeazEstilezaPage() {
             </button>
           </nav>
 
-          {/* Right Controls: Quick Search & Direct Actions */}
           <div className="flex items-center gap-3">
-            {/* Quick Search Input (Desktop) */}
             <div className="relative hidden md:block w-48 lg:w-64">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-amber-700" />
               <input
@@ -400,9 +406,8 @@ export default function VeazEstilezaPage() {
               )}
             </div>
 
-            {/* VIP WhatsApp Inquiry Button */}
             <a
-              href="https://wa.me/51984398565?text=Hola%20VEAZ%20ESTILEZA,%20deseo%20asesor%C3%ADa%20personalizada%20de%20calzados"
+              href="https://wa.me/51929962458?text=Hola%20VEAZ%20ESTILEZA,%20deseo%20asesor%C3%ADa%20personalizada%20de%20calzados"
               target="_blank"
               rel="noopener noreferrer"
               className="hidden sm:flex items-center gap-2 px-4 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-cinzel text-xs font-bold tracking-wider shadow-sm hover:shadow-md transition-all cursor-pointer"
@@ -411,7 +416,6 @@ export default function VeazEstilezaPage() {
               <span>WhatsApp</span>
             </a>
 
-            {/* Return to THINK System */}
             <Link
               to="/dashboard"
               className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-white border border-slate-200 text-slate-700 hover:bg-slate-900 hover:text-white hover:border-slate-900 font-outfit text-xs font-semibold transition-all shadow-xs"
@@ -425,7 +429,7 @@ export default function VeazEstilezaPage() {
       </header>
 
       {/* ──────────────────────────────────────────────────────────
-          2. HORIZONTAL HERO SLIDER (EDGE-TO-EDGE FULL WIDTH)
+          2. HORIZONTAL HERO SLIDER
       ────────────────────────────────────────────────────────── */}
       <div className="pt-20 md:pt-24 w-full">
         <VeazHeroSlider
@@ -472,11 +476,9 @@ export default function VeazEstilezaPage() {
       </div>
 
       {/* ──────────────────────────────────────────────────────────
-          4. MAIN CATALOG: PROTAGONIST POSITION (DIRECTLY AFTER TICKER)
-             WITH MODERN CURADURÍA FILTER STUDIO
+          4. MAIN CATALOG
       ────────────────────────────────────────────────────────── */}
       <section ref={catalogRef} className="py-16 sm:py-20 w-full px-4 sm:px-8 lg:px-12 2xl:px-16">
-        {/* SECTION HEADER */}
         <div className="text-center max-w-3xl mx-auto mb-12 sm:mb-14">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white border border-amber-300 text-amber-900 text-xs font-cinzel font-bold tracking-[0.25em] uppercase mb-4 shadow-xs">
             <VeazCrownIcon size={14} />
@@ -493,13 +495,9 @@ export default function VeazEstilezaPage() {
           </p>
         </div>
 
-        {/* ══════════════════════════════════════════════════════════
-            MODERN CURADURÍA & FILTER STUDIO (FULL WIDTH)
-        ══════════════════════════════════════════════════════════ */}
+        {/* CURADURÍA & FILTER STUDIO */}
         <div className="bg-white border border-[#EDE2D4] rounded-3xl p-5 sm:p-8 mb-10 shadow-[0_4px_35px_rgba(0,0,0,0.04)]">
-          {/* TOP BAR: UNIFIED SEARCH, ACTION BUTTONS & SORT */}
           <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4 pb-6 border-b border-slate-100">
-            {/* Search Input */}
             <div className="relative w-full lg:w-[420px]">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-amber-800" />
               <input
@@ -519,21 +517,17 @@ export default function VeazEstilezaPage() {
               )}
             </div>
 
-            {/* ACTION BUTTONS & SORT DROPDOWN */}
             <div className="flex flex-wrap items-center gap-2.5 justify-end">
-              {/* PDF EXPORT BUTTON: LOOKBOOK EDITORIAL */}
               <button
                 type="button"
                 onClick={handleExportPdf}
                 disabled={isExportingPdf}
                 className="px-5 py-3 rounded-2xl bg-gradient-to-r from-amber-600 via-amber-700 to-amber-900 hover:from-amber-700 hover:to-amber-950 text-white text-xs font-cinzel font-bold flex items-center gap-2.5 transition-all shadow-sm hover:shadow-md cursor-pointer disabled:opacity-50 tracking-wider"
-                title="Descargar Catálogo Editorial Lookbook en PDF organizado por marcas"
               >
                 <FileDown className="w-4 h-4" />
                 <span>{isExportingPdf ? "Generando Lookbook PDF..." : "Descargar Catálogo PDF"}</span>
               </button>
 
-              {/* Sort Dropdown */}
               <div className="flex items-center gap-2 bg-[#FAF7F2] px-4 py-2.5 rounded-2xl border border-[#E8DCBE]">
                 <SlidersHorizontal className="w-3.5 h-3.5 text-amber-800" />
                 <select
@@ -548,12 +542,10 @@ export default function VeazEstilezaPage() {
                 </select>
               </div>
 
-              {/* Reset Filters Button */}
               {hasActiveFilters && (
                 <button
                   onClick={clearAllFilters}
                   className="px-4 py-2.5 rounded-2xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-outfit font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
-                  title="Restablecer todos los filtros"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                   <span>Limpiar Todo</span>
@@ -562,18 +554,16 @@ export default function VeazEstilezaPage() {
             </div>
           </div>
 
-          {/* QUICK FILTER CHIPS (OFERTAS, EN STOCK, ESTILOS RÁPIDOS) */}
           <div className="py-4 border-b border-slate-100 flex flex-wrap items-center gap-2">
             <span className="text-[11px] font-cinzel font-bold tracking-widest text-slate-500 uppercase mr-1">
               Filtro Rápido:
             </span>
 
-            {/* Toggle Solo Ofertas */}
             <button
               onClick={() => setOnlyOffers(!onlyOffers)}
               className={`px-3.5 py-1.5 rounded-full text-xs font-outfit font-bold flex items-center gap-1.5 transition-all cursor-pointer border ${onlyOffers
-                  ? "bg-rose-600 text-white border-rose-600 shadow-sm"
-                  : "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100"
+                ? "bg-rose-600 text-white border-rose-600 shadow-sm"
+                : "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100"
                 }`}
             >
               <Flame className="w-3.5 h-3.5" />
@@ -581,19 +571,17 @@ export default function VeazEstilezaPage() {
               {onlyOffers && <Check className="w-3 h-3" />}
             </button>
 
-            {/* Toggle En Stock */}
             <button
               onClick={() => setOnlyInStock(!onlyInStock)}
               className={`px-3.5 py-1.5 rounded-full text-xs font-outfit font-bold flex items-center gap-1.5 transition-all cursor-pointer border ${onlyInStock
-                  ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
-                  : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
                 }`}
             >
               <Check className="w-3.5 h-3.5" />
               <span>En Stock Disponible</span>
             </button>
 
-            {/* Quick Family Shortcuts */}
             {availableFamilies.map((fam) => {
               const isSelected = selectedFamily.toLowerCase() === fam.toLowerCase();
               return (
@@ -601,8 +589,8 @@ export default function VeazEstilezaPage() {
                   key={fam}
                   onClick={() => setSelectedFamily(isSelected ? "TODAS" : fam)}
                   className={`px-3 py-1.5 rounded-full text-xs font-outfit font-medium transition-all cursor-pointer border ${isSelected
-                      ? "bg-amber-800 text-white border-amber-800 shadow-xs"
-                      : "bg-[#FAF8F5] text-slate-700 border-[#EDE2D4] hover:border-amber-400 hover:bg-amber-50"
+                    ? "bg-amber-800 text-white border-amber-800 shadow-xs"
+                    : "bg-[#FAF8F5] text-slate-700 border-[#EDE2D4] hover:border-amber-400 hover:bg-amber-50"
                     }`}
                 >
                   <span>{fam}</span>
@@ -614,7 +602,6 @@ export default function VeazEstilezaPage() {
             })}
           </div>
 
-          {/* BRAND RAIL (HORIZONTAL SCROLLABLE CAROUSEL WITH LOGOS & COUNTS) */}
           <div className="py-4 border-b border-slate-100 relative">
             <div className="flex items-center justify-between mb-2.5">
               <span className="text-[11px] font-cinzel font-bold tracking-widest text-slate-700 uppercase flex items-center gap-2">
@@ -625,14 +612,12 @@ export default function VeazEstilezaPage() {
                 <button
                   onClick={() => scrollBrandRail("left")}
                   className="w-7 h-7 rounded-full bg-[#FAF7F2] border border-[#E8DCBE] text-slate-700 hover:bg-amber-100 flex items-center justify-center transition-colors cursor-pointer"
-                  title="Anterior"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
                 </button>
                 <button
                   onClick={() => scrollBrandRail("right")}
                   className="w-7 h-7 rounded-full bg-[#FAF7F2] border border-[#E8DCBE] text-slate-700 hover:bg-amber-100 flex items-center justify-center transition-colors cursor-pointer"
-                  title="Siguiente"
                 >
                   <ChevronRight className="w-3.5 h-3.5" />
                 </button>
@@ -643,13 +628,12 @@ export default function VeazEstilezaPage() {
               ref={brandRailRef}
               className="flex items-center gap-3 overflow-x-auto pb-2 scrollbar-none scroll-smooth"
             >
-              {/* TODAS */}
               <button
                 type="button"
                 onClick={() => setSelectedBrand("TODAS")}
                 className={`shrink-0 px-4 py-2.5 rounded-2xl text-xs font-cinzel font-bold tracking-wider uppercase transition-all cursor-pointer border flex items-center gap-2 ${selectedBrand === "TODAS"
-                    ? "bg-slate-900 text-white border-slate-900 shadow-md scale-102"
-                    : "bg-[#FAF8F5] text-slate-700 border-slate-200 hover:border-amber-500 hover:bg-amber-50"
+                  ? "bg-slate-900 text-white border-slate-900 shadow-md scale-102"
+                  : "bg-[#FAF8F5] text-slate-700 border-slate-200 hover:border-amber-500 hover:bg-amber-50"
                   }`}
               >
                 <span>Todas</span>
@@ -658,7 +642,6 @@ export default function VeazEstilezaPage() {
                 </span>
               </button>
 
-              {/* INDIVIDUAL BRANDS */}
               {availableBrands.map((brand) => {
                 const isSelected = selectedBrand.toLowerCase() === brand.toLowerCase();
                 const count = brandCounts[brand.toUpperCase()] || 0;
@@ -668,8 +651,8 @@ export default function VeazEstilezaPage() {
                     type="button"
                     onClick={() => setSelectedBrand(brand)}
                     className={`shrink-0 px-4 py-2 rounded-2xl transition-all cursor-pointer border flex items-center gap-2.5 ${isSelected
-                        ? "bg-amber-50 border-amber-500 ring-2 ring-amber-400/50 shadow-md scale-102"
-                        : "bg-[#FAF8F5] border-slate-200 hover:border-amber-300 hover:bg-white"
+                      ? "bg-amber-50 border-amber-500 ring-2 ring-amber-400/50 shadow-md scale-102"
+                      : "bg-[#FAF8F5] border-slate-200 hover:border-amber-300 hover:bg-white"
                       }`}
                   >
                     <VeazBrandLogo brandName={brand} size="sm" showTagline={false} />
@@ -682,7 +665,6 @@ export default function VeazEstilezaPage() {
             </div>
           </div>
 
-          {/* COMPACT SIZE MATRIX (TALLAS DISPONIBLES EN SERIE) */}
           <div className="pt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-[11px] font-cinzel font-bold tracking-widest text-slate-700 uppercase mr-1">
@@ -691,8 +673,8 @@ export default function VeazEstilezaPage() {
               <button
                 onClick={() => setSelectedSize("TODAS")}
                 className={`h-8 px-3.5 rounded-xl text-xs font-cinzel font-bold tracking-wider transition-all cursor-pointer border ${selectedSize === "TODAS"
-                    ? "bg-slate-900 text-white border-slate-900 shadow-xs"
-                    : "bg-[#FAF8F5] text-slate-700 border-slate-200 hover:border-amber-500"
+                  ? "bg-slate-900 text-white border-slate-900 shadow-xs"
+                  : "bg-[#FAF8F5] text-slate-700 border-slate-200 hover:border-amber-500"
                   }`}
               >
                 Todas
@@ -702,8 +684,8 @@ export default function VeazEstilezaPage() {
                   key={size}
                   onClick={() => setSelectedSize(size)}
                   className={`h-8 min-w-[46px] px-2.5 rounded-xl text-xs font-cinzel font-bold tracking-wider transition-all cursor-pointer border flex items-center justify-center gap-1 ${selectedSize === size
-                      ? "bg-amber-700 text-white border-amber-700 shadow-sm scale-105"
-                      : "bg-[#FAF8F5] text-slate-800 border-[#E8DCBE] hover:border-amber-500 hover:bg-amber-50"
+                    ? "bg-amber-700 text-white border-amber-700 shadow-sm scale-105"
+                    : "bg-[#FAF8F5] text-slate-800 border-[#E8DCBE] hover:border-amber-500 hover:bg-amber-50"
                     }`}
                   title={`${count} modelos disponibles en talla ${size}`}
                 >
@@ -713,7 +695,6 @@ export default function VeazEstilezaPage() {
               ))}
             </div>
 
-            {/* RESULTS COUNT */}
             <div className="text-right shrink-0">
               <span className="text-xs font-cinzel uppercase tracking-widest text-slate-600 font-bold">
                 Mostrando <span className="text-amber-800 font-black">{filteredShoes.length}</span> modelos
@@ -722,7 +703,6 @@ export default function VeazEstilezaPage() {
           </div>
         </div>
 
-        {/* ACTIVE FILTER BREADCRUMBS (TAGS) */}
         {hasActiveFilters && (
           <div className="flex flex-wrap items-center gap-2 mb-8 px-2">
             <span className="text-xs text-slate-500 font-outfit">Filtros aplicados:</span>
@@ -783,7 +763,6 @@ export default function VeazEstilezaPage() {
           </div>
         )}
 
-        {/* SHOE GRID (RESPONSIVE FULL WIDTH) */}
         {filteredShoes.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-5 sm:gap-6">
             {filteredShoes.map((shoe) => (
@@ -795,7 +774,6 @@ export default function VeazEstilezaPage() {
             ))}
           </div>
         ) : (
-          /* EMPTY STATE */
           <div className="py-24 text-center bg-white border border-[#EDE2D4] rounded-3xl p-8 shadow-sm">
             <div className="w-16 h-16 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-800 mx-auto mb-4">
               <VeazCrownIcon size={28} />
@@ -817,7 +795,7 @@ export default function VeazEstilezaPage() {
       </section>
 
       {/* ──────────────────────────────────────────────────────────
-          5. PASARELA EDITORIAL DE ALTA MODA (PLACED BELOW CATALOG)
+          5. PASARELA EDITORIAL DE ALTA MODA
       ────────────────────────────────────────────────────────── */}
       <div id="pasarela-section">
         <VeazModelGallery
@@ -827,7 +805,158 @@ export default function VeazEstilezaPage() {
       </div>
 
       {/* ──────────────────────────────────────────────────────────
-          6. LIGHTBOX MODAL FOR HIGH-RES ZOOM
+          6. NUEVA SECCIÓN MODERNA E INTERACTIVA DE DIRECCIÓN Y SHOWROOM
+      ────────────────────────────────────────────────────────── */}
+      <section id="ubicacion-section" className="py-20 w-full px-4 sm:px-8 lg:px-12 2xl:px-16 bg-gradient-to-b from-[#FAF8F5] via-[#F4EDE2] to-[#FAF8F5] border-y border-[#EDE2D4] relative overflow-hidden">
+        {/* Decorative background glows */}
+        <div className="absolute -top-32 -left-32 w-96 h-96 bg-amber-200/30 rounded-full blur-3xl pointer-events-none"></div>
+        <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-amber-300/20 rounded-full blur-3xl pointer-events-none"></div>
+
+        <div className="max-w-6xl mx-auto relative z-10">
+          {/* Section Header */}
+          <div className="text-center max-w-2xl mx-auto mb-14">
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white border border-amber-300 text-amber-900 text-xs font-cinzel font-bold tracking-[0.25em] uppercase mb-4 shadow-xs">
+              <Compass className="w-3.5 h-3.5 text-amber-700 animate-spin" style={{ animationDuration: "12s" }} />
+              <span>SHOWROOM & BOUTIQUE EXCLUSIVA</span>
+              <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+            </div>
+            <h2 className="font-playfair text-3xl sm:text-5xl font-black text-slate-900 tracking-tight">
+              Visita Nuestro <span className="bg-gradient-to-r from-amber-800 to-amber-600 bg-clip-text text-transparent">Salón de Exhibición</span>
+            </h2>
+            <p className="font-outfit text-sm sm:text-base text-slate-600 mt-3">
+              Vive la experiencia de alta costura en persona. Te esperamos en nuestro local principal en Puerto Maldonado.
+            </p>
+          </div>
+
+          {/* Grid Layout: Address Card + Interactive Map Card */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+
+            {/* Left Box: Detailed Address & Landmarks (7 Cols) */}
+            <div className="lg:col-span-7 bg-white/90 backdrop-blur-md border border-[#E8DCBE] rounded-3xl p-8 sm:p-10 shadow-[0_10px_40px_rgba(0,0,0,0.05)]">
+              <div className="flex items-center gap-3.5 mb-6">
+                <div className="w-12 h-12 rounded-2xl bg-amber-900 text-amber-100 flex items-center justify-center shadow-md">
+                  <MapPin className="w-6 h-6 text-amber-300" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-cinzel font-bold tracking-[0.25em] text-amber-800 uppercase block">
+                    Ubicación Oficial
+                  </span>
+                  <h3 className="font-playfair text-xl sm:text-2xl font-bold text-slate-900">
+                    Puerto Maldonado, Madre de Dios
+                  </h3>
+                </div>
+              </div>
+
+              {/* Main Address Highlight */}
+              <div className="p-4 sm:p-5 rounded-2xl bg-[#FAF7F2] border border-[#E8DCBE] mb-6">
+                <p className="font-playfair text-lg sm:text-xl font-bold text-slate-900 leading-snug">
+                  Av. Madre de Dios, Con Pasaje Fonavi
+                </p>
+                <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-amber-200/60">
+                  <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-900 font-outfit text-xs font-semibold">
+                    📍 Frente a Proversa
+                  </span>
+                  <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-900 font-outfit text-xs font-semibold">
+                    🔥 Al costado de Pollería Todo a Leña
+                  </span>
+                </div>
+              </div>
+
+              {/* Horarios & Atencion details */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+                <div className="flex items-start gap-3 p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+                  <Clock className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="font-cinzel text-xs font-bold text-slate-900 uppercase">Horario de Atención</h4>
+                    <p className="font-outfit text-xs text-slate-600 mt-0.5">Domingo a Viernes: 8:00 am - 9:30 pm</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+                  <ShieldCheck className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="font-cinzel text-xs font-bold text-slate-900 uppercase">Asesoría Personalizada</h4>
+                    <p className="font-outfit text-xs text-slate-600 mt-0.5">Prueba de tallas y series completas</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap items-center gap-4">
+                <a
+                  href="https://maps.app.goo.gl/p9uX1yW7n2FgFj9bA"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 min-w-[200px] px-6 py-3.5 rounded-2xl bg-gradient-to-r from-amber-700 to-amber-900 hover:from-amber-800 hover:to-amber-950 text-white font-cinzel text-xs font-bold tracking-wider uppercase flex items-center justify-center gap-2.5 shadow-lg hover:shadow-xl transition-all cursor-pointer group"
+                >
+                  <Navigation className="w-4 h-4 text-amber-300 group-hover:rotate-45 transition-transform" />
+                  <span>Abrir en Google Maps</span>
+                  <ExternalLink className="w-3.5 h-3.5 opacity-70" />
+                </a>
+
+                <a
+                  href="https://wa.me/51929962458?text=Hola%20VEAZ%20ESTILEZA,%20deseo%20coordinar%20una%20visita%20a%20su%20showroom%20en%20Av.%20Madre%20de%20Dios"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-6 py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-cinzel text-xs font-bold tracking-wider uppercase flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer"
+                >
+                  <MessageCircle className="w-4 h-4 fill-white text-emerald-600" />
+                  <span>Coordinar Visita</span>
+                </a>
+              </div>
+            </div>
+
+            {/* Right Box: Visual Map / Interactive Card (5 Cols) */}
+            <div className="lg:col-span-5">
+              <div className="relative rounded-3xl overflow-hidden border-2 border-amber-300/60 shadow-2xl bg-slate-900 group aspect-4/3 sm:aspect-square flex items-center justify-center">
+                {/* Background image mockup simulating Puerto Maldonado boutique location */}
+                <img
+                  src="https://images.unsplash.com/photo-1524758631624-e2822e304c36?q=80&w=800&auto=format&fit=crop"
+                  alt="Showroom VEAZ ESTILEZA"
+                  className="w-full h-full object-cover opacity-60 group-hover:scale-105 transition-transform duration-700"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent"></div>
+
+                {/* Floating Map Badge */}
+                <div className="absolute top-4 left-4 right-4 flex items-center justify-between">
+                  <span className="px-3 py-1.5 rounded-full bg-white/90 backdrop-blur-md text-[10px] font-cinzel font-bold tracking-widest text-slate-900 uppercase shadow-md flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-rose-600 animate-bounce" />
+                    <span>Madre de Dios, Perú</span>
+                  </span>
+                  <div className="w-9 h-9 rounded-full bg-amber-500 text-slate-950 flex items-center justify-center font-bold shadow-lg">
+                    <VeazCrownIcon size={16} />
+                  </div>
+                </div>
+
+                {/* Center Content / Quick Interactive Trigger */}
+                <div className="absolute inset-x-6 bottom-6 text-center text-white">
+                  <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl p-5 shadow-2xl">
+                    <h4 className="font-playfair text-lg font-bold mb-1">
+                      ¿Cómo llegar al Showroom?
+                    </h4>
+                    <p className="font-outfit text-xs text-slate-200 mb-4">
+                      Toca el botón para trazar tu ruta exacta desde tu ubicación actual.
+                    </p>
+                    <a
+                      href="https://maps.app.goo.gl/p9uX1yW7n2FgFj9bA"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-cinzel text-xs font-bold tracking-wider uppercase shadow-md transition-all cursor-pointer"
+                    >
+                      <Navigation className="w-3.5 h-3.5" />
+                      <span>Iniciar Navegación GPS</span>
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      {/* ──────────────────────────────────────────────────────────
+          7. LIGHTBOX MODAL FOR HIGH-RES ZOOM
       ────────────────────────────────────────────────────────── */}
       <VeazImageLightbox
         shoe={activeLightboxShoe}
@@ -836,11 +965,11 @@ export default function VeazEstilezaPage() {
       />
 
       {/* ──────────────────────────────────────────────────────────
-          7. FLOATING WHATSAPP VIP BUTTON
+          8. FLOATING WHATSAPP VIP BUTTON
       ────────────────────────────────────────────────────────── */}
       <div className="fixed bottom-6 right-6 z-40 flex items-center gap-3">
         <a
-          href="https://wa.me/51984398565?text=Hola%20VEAZ%20ESTILEZA,%20deseo%20consultar%20disponibilidad%20de%20calzados"
+          href="https://wa.me/51929962458?text=Hola%20VEAZ%20ESTILEZA,%20deseo%20consultar%20disponibilidad%20de%20calzados"
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-2.5 px-5 py-3.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-cinzel text-xs font-bold tracking-wider shadow-2xl hover:scale-105 active:scale-95 transition-all cursor-pointer group"
@@ -852,10 +981,9 @@ export default function VeazEstilezaPage() {
       </div>
 
       {/* ──────────────────────────────────────────────────────────
-          8. HAUTE COUTURE LUXURY LIGHT FOOTER WITH DYNAMIC HOVER RAIL
+          9. HAUTE COUTURE LUXURY LIGHT FOOTER WITH DYNAMIC HOVER RAIL
       ────────────────────────────────────────────────────────── */}
-      <footer className="bg-white border-t border-[#EDE2D4] pt-16 pb-12 px-4 sm:px-8 lg:px-12 2xl:px-16 mt-28 relative">
-        {/* 8.1. TOP INTERACTIVE RAIL: DYNAMIC CURSOR HOVER SCROLL */}
+      <footer className="bg-white border-t border-[#EDE2D4] pt-16 pb-12 px-4 sm:px-8 lg:px-12 2xl:px-16 relative">
         <div className="mb-16 pb-12 border-b border-slate-100">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
             <div>
@@ -874,21 +1002,18 @@ export default function VeazEstilezaPage() {
               <button
                 onClick={() => scrollFooterRail("left")}
                 className="w-9 h-9 rounded-full bg-[#FAF7F2] border border-[#E8DCBE] text-slate-700 hover:bg-amber-100 flex items-center justify-center transition-all cursor-pointer shadow-xs"
-                title="Desplazar a la izquierda"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
               <button
                 onClick={() => scrollFooterRail("right")}
                 className="w-9 h-9 rounded-full bg-[#FAF7F2] border border-[#E8DCBE] text-slate-700 hover:bg-amber-100 flex items-center justify-center transition-all cursor-pointer shadow-xs"
-                title="Desplazar a la derecha"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
           </div>
 
-          {/* DYNAMIC SCROLL CONTAINER: REACTS TO MOUSE PROXIMITY TO EDGES */}
           <div
             ref={footerRailRef}
             onMouseMove={handleFooterRailMouseMove}
@@ -963,9 +1088,7 @@ export default function VeazEstilezaPage() {
           </div>
         </div>
 
-        {/* 8.2. CLEAN 4-COLUMN FOOTER BODY */}
         <div className="w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12 mb-16">
-          {/* Brand Info & Mission */}
           <div className="flex flex-col gap-4">
             <VeazLogo size="md" showSubtitle={true} />
             <p className="text-xs sm:text-sm text-slate-600 font-outfit font-normal leading-relaxed mt-2">
@@ -1000,7 +1123,7 @@ export default function VeazEstilezaPage() {
                 <FaTiktok className="w-4 h-4" />
               </a>
               <a
-                href="https://wa.me/51984398565"
+                href="https://wa.me/51929962458"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="w-10 h-10 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-700 hover:bg-emerald-600 hover:text-white flex items-center justify-center transition-all"
@@ -1011,7 +1134,6 @@ export default function VeazEstilezaPage() {
             </div>
           </div>
 
-          {/* Quick Categories */}
           <div>
             <h4 className="font-cinzel text-xs uppercase tracking-[0.25em] text-amber-900 font-bold mb-5">
               Líneas Exclusivas
@@ -1060,7 +1182,6 @@ export default function VeazEstilezaPage() {
             </ul>
           </div>
 
-          {/* Customer Care & Policies */}
           <div>
             <h4 className="font-cinzel text-xs uppercase tracking-[0.25em] text-amber-900 font-bold mb-5">
               Atención Personalizada
@@ -1080,12 +1201,11 @@ export default function VeazEstilezaPage() {
               </li>
               <li className="flex items-center gap-2">
                 <MapPin className="w-4 h-4 text-amber-700 shrink-0" />
-                <span>Boutique Showroom Exclusivo</span>
+                <span>Av. Madre de Dios, Pasaje Fonavi</span>
               </li>
             </ul>
           </div>
 
-          {/* Return to THINK System & Internal Connection */}
           <div>
             <h4 className="font-cinzel text-xs uppercase tracking-[0.25em] text-amber-900 font-bold mb-5">
               Conexión THINK ERP
@@ -1103,7 +1223,6 @@ export default function VeazEstilezaPage() {
           </div>
         </div>
 
-        {/* BOTTOM COPYRIGHT */}
         <div className="w-full pt-8 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
           <p className="text-xs text-slate-500 font-outfit">
             © {new Date().getFullYear()} VEAZ ESTILEZA. Todos los derechos reservados.
