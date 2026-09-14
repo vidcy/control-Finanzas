@@ -49,7 +49,7 @@ export default function BusinessFinancePage() {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [type, setType] = useState<"INCOME" | "EXPENSE">("EXPENSE");
-  
+
   // Edit & Revert States
   const [editingTransaction, setEditingTransaction] = useState<any>(null);
 
@@ -85,6 +85,7 @@ export default function BusinessFinancePage() {
     receiptUrl: null as string | File | null,
     currency: "PEN" as "PEN" | "USD",
     exchangeRate: 1,
+    date: new Date().toISOString().split("T")[0],
     branchId: "",
     justified: false,
     programmed: false,
@@ -203,6 +204,7 @@ export default function BusinessFinancePage() {
           description: "",
           receiptUrl: null,
           currency: "PEN",
+          date: "",
           exchangeRate: 1,
           branchId: "",
           justified: false,
@@ -236,6 +238,7 @@ export default function BusinessFinancePage() {
       receiptUrl: t.receiptUrl || null,
       currency: t.currency || "PEN",
       exchangeRate: t.exchangeRate || 1,
+      date: t.date?.split("T")[0] || new Date().toISOString().split("T")[0],
       branchId: t.branchId || "",
       justified: t.justified || false,
       programmed: t.programmed || false,
@@ -313,27 +316,27 @@ export default function BusinessFinancePage() {
     // Header Banner
     doc.setFillColor(79, 70, 229);
     doc.rect(0, 0, 297, 24, "F");
-    
+
     doc.setTextColor(255, 255, 255);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(14);
     doc.text(`REGISTRO DE TESORERÍA - ${businessName.toUpperCase()}`, 14, 10);
-    
+
     doc.setFontSize(8.5);
     doc.setFont("helvetica", "normal");
-    
+
     const branchLabel = filterBranch ? (branches.find(b => b.id === filterBranch)?.name || "Sede") : "Todas";
     const categoryLabel = filterCategory ? (categories.find(c => c.id === filterCategory)?.name || "Categoría") : "Todas";
     const typeLabel = filterType === "ALL" ? "Todos" : filterType === "INCOME" ? "Ingresos" : "Egresos";
     const filterText = `Sede: ${branchLabel} | Categoría: ${categoryLabel} | Tipo: ${typeLabel}`;
-    
+
     doc.text(`Filtros: ${filterText} | Rango: ${dateFrom || "Inicio"} al ${dateTo || "Hoy"}`, 14, 16);
     doc.text(`Generado: ${format(new Date(), "dd/MM/yyyy HH:mm")}`, 14, 21);
 
     // Summary Box
     doc.setFillColor(243, 244, 246);
     doc.roundedRect(14, 28, 269, 14, 2, 2, "F");
-    
+
     const totals = filteredTransactions.reduce((acc, t) => {
       const amt = t.currency === "USD" ? t.amount * (t.exchangeRate || 1) : t.amount;
       if (t.type === "INCOME" && t.status === "PAID") acc.income += amt;
@@ -344,7 +347,7 @@ export default function BusinessFinancePage() {
     doc.setTextColor(55, 65, 81);
     doc.setFontSize(8);
     doc.setFont("helvetica", "bold");
-    
+
     doc.text("INGRESOS (S/) *", 18, 33);
     doc.setFontSize(11);
     doc.setTextColor(16, 185, 129);
@@ -423,18 +426,18 @@ export default function BusinessFinancePage() {
 
       doc.setTextColor(55, 65, 81);
       doc.text(format(new Date(t.date), "yyyy-MM-dd"), 16, y + 5);
-      
+
       const concepto = t.name || t.description || "Movimiento";
       doc.text(concepto.substring(0, 32), 38, y + 5);
-      
+
       const branchName = t.branch?.name || "Sede Central";
       doc.text(branchName.substring(0, 18), 95, y + 5);
-      
+
       const cat = t.category?.name || "Sin Categoría";
       doc.text(cat.substring(0, 22), 130, y + 5);
-      
+
       doc.text(t.paymentMethod || "CASH", 170, y + 5);
-      
+
       doc.setFont("helvetica", "bold");
       if (t.type === "INCOME") {
         doc.setTextColor(16, 124, 65);
@@ -448,7 +451,7 @@ export default function BusinessFinancePage() {
 
       doc.text(`${t.currency || "PEN"} ${t.amount.toFixed(2)}`, 217, y + 5);
       doc.text(`S/ ${totalSoles.toFixed(2)}`, 242, y + 5);
-      
+
       const statusText = t.status === "CANCELLED" ? "Anulado" : t.status === "PENDING" ? "Pendiente" : "Finalizado";
       doc.text(statusText, 267, y + 5);
 
@@ -495,6 +498,7 @@ export default function BusinessFinancePage() {
     (c) => c.id === formData.categoryId,
   );
   const subcategories = selectedCategoryObj?.children || [];
+
 
   const paymentLabel: Record<string, string> = {
     CASH: "Efectivo",
@@ -599,11 +603,10 @@ export default function BusinessFinancePage() {
               </div>
 
               {/* Liquidez Card */}
-              <div className={`group p-6 rounded-3xl shadow-md border transition-all duration-300 relative overflow-hidden ${
-                liquidCash >= 0
-                  ? "bg-gradient-to-br from-indigo-50/90 via-sky-50/80 to-blue-50/90 border-indigo-100 text-indigo-950 shadow-indigo-100/50"
-                  : "bg-gradient-to-br from-amber-50/90 via-orange-50/80 to-rose-50/90 border-rose-100 text-rose-950 shadow-rose-100/50"
-              }`}>
+              <div className={`group p-6 rounded-3xl shadow-md border transition-all duration-300 relative overflow-hidden ${liquidCash >= 0
+                ? "bg-gradient-to-br from-indigo-50/90 via-sky-50/80 to-blue-50/90 border-indigo-100 text-indigo-950 shadow-indigo-100/50"
+                : "bg-gradient-to-br from-amber-50/90 via-orange-50/80 to-rose-50/90 border-rose-100 text-rose-950 shadow-rose-100/50"
+                }`}>
                 <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/5 rounded-bl-full transition-all group-hover:scale-110"></div>
                 <div className="flex items-center gap-4">
                   <div className="p-3.5 bg-white text-indigo-600 rounded-2xl border border-indigo-100 shadow-xs">
@@ -675,11 +678,10 @@ export default function BusinessFinancePage() {
                         key={t}
                         type="button"
                         onClick={() => setFilterType(t)}
-                        className={`flex-1 py-1.5 px-2 rounded-xl text-[11px] font-black transition-all ${
-                          filterType === t
-                            ? "bg-white text-indigo-600 shadow-xs"
-                            : "text-slate-500 hover:text-slate-700"
-                        }`}
+                        className={`flex-1 py-1.5 px-2 rounded-xl text-[11px] font-black transition-all ${filterType === t
+                          ? "bg-white text-indigo-600 shadow-xs"
+                          : "text-slate-500 hover:text-slate-700"
+                          }`}
                       >
                         {t === "ALL" ? "Todos" : t === "INCOME" ? "Ingresos" : "Egresos"}
                       </button>
@@ -828,11 +830,10 @@ export default function BusinessFinancePage() {
                             {/* Tipo */}
                             <td className="py-4 px-4 text-center whitespace-nowrap">
                               <span
-                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider ${
-                                  t.type === "INCOME"
-                                    ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
-                                    : "bg-rose-50 text-rose-700 border border-rose-100"
-                                }`}
+                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider ${t.type === "INCOME"
+                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
+                                  : "bg-rose-50 text-rose-700 border border-rose-100"
+                                  }`}
                               >
                                 {t.type === "INCOME" ? (
                                   <>
@@ -871,9 +872,8 @@ export default function BusinessFinancePage() {
                             <td className="py-4 px-6 text-right whitespace-nowrap">
                               <div className="space-y-0.5">
                                 <p
-                                  className={`text-sm font-black ${
-                                    t.type === "INCOME" ? "text-emerald-600" : "text-rose-600"
-                                  }`}
+                                  className={`text-sm font-black ${t.type === "INCOME" ? "text-emerald-600" : "text-rose-600"
+                                    }`}
                                 >
                                   {t.type === "INCOME" ? "+" : "-"} S/{" "}
                                   {(t.currency === "USD" ? t.amount * (t.exchangeRate || 1) : t.amount).toLocaleString(
@@ -892,19 +892,18 @@ export default function BusinessFinancePage() {
                             {/* Estado */}
                             <td className="py-4 px-4 text-center whitespace-nowrap">
                               <span
-                                className={`px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider ${
-                                  t.status === "CANCELLED"
-                                    ? "bg-rose-100 text-rose-700 border border-rose-200"
-                                    : t.status === "PENDING"
+                                className={`px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider ${t.status === "CANCELLED"
+                                  ? "bg-rose-100 text-rose-700 border border-rose-200"
+                                  : t.status === "PENDING"
                                     ? "bg-amber-100 text-amber-700 border border-amber-200"
                                     : "bg-emerald-100 text-emerald-700 border border-emerald-200"
-                                }`}
+                                  }`}
                               >
                                 {t.status === "CANCELLED"
                                   ? "Anulado"
                                   : t.status === "PENDING"
-                                  ? "Pendiente"
-                                  : "Finalizado"}
+                                    ? "Pendiente"
+                                    : "Finalizado"}
                               </span>
                             </td>
 
@@ -1020,6 +1019,7 @@ export default function BusinessFinancePage() {
             paymentMethod: "CASH",
             description: "",
             receiptUrl: null,
+            date: "",
             currency: "PEN",
             exchangeRate: 1,
             branchId: "",
@@ -1037,20 +1037,17 @@ export default function BusinessFinancePage() {
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Left Column: Classification, Branch, and Switches */}
-            <div className={`p-5 rounded-[2.5rem] border space-y-5 shadow-sm ${
-              type === "INCOME" 
-                ? "bg-emerald-50/20 border-emerald-100/40" 
-                : "bg-rose-50/20 border-rose-100/40"
-            }`}>
+            <div className={`p-5 rounded-[2.5rem] border space-y-5 shadow-sm ${type === "INCOME"
+              ? "bg-emerald-50/20 border-emerald-100/40"
+              : "bg-rose-50/20 border-rose-100/40"
+              }`}>
               <div className="flex items-center gap-2 pb-1 border-b border-gray-100/10">
-                <div className={`p-1.5 rounded-xl ${
-                  type === "INCOME" ? "bg-emerald-100 text-emerald-600" : "bg-rose-100 text-rose-600"
-                }`}>
+                <div className={`p-1.5 rounded-xl ${type === "INCOME" ? "bg-emerald-100 text-emerald-600" : "bg-rose-100 text-rose-600"
+                  }`}>
                   <Tag className="w-3.5 h-3.5" />
                 </div>
-                <span className={`text-[10px] font-black uppercase tracking-widest ${
-                  type === "INCOME" ? "text-emerald-900" : "text-rose-900"
-                }`}>
+                <span className={`text-[10px] font-black uppercase tracking-widest ${type === "INCOME" ? "text-emerald-900" : "text-rose-900"
+                  }`}>
                   Clasificación & Ubicación
                 </span>
               </div>
@@ -1065,9 +1062,8 @@ export default function BusinessFinancePage() {
                   onChange={(e) =>
                     setFormData({ ...formData, name: e.target.value })
                   }
-                  className={`w-full px-4 py-3 bg-white border border-gray-100 rounded-2xl outline-none focus:ring-4 transition-all text-sm font-bold text-gray-700 shadow-sm ${
-                    type === "INCOME" ? "focus:ring-emerald-500/10 focus:border-emerald-500" : "focus:ring-rose-500/10 focus:border-rose-500"
-                  }`}
+                  className={`w-full px-4 py-3 bg-white border border-gray-100 rounded-2xl outline-none focus:ring-4 transition-all text-sm font-bold text-gray-700 shadow-sm ${type === "INCOME" ? "focus:ring-emerald-500/10 focus:border-emerald-500" : "focus:ring-rose-500/10 focus:border-rose-500"
+                    }`}
                   placeholder={
                     type === "INCOME"
                       ? "Ej. Préstamo Reactiva, Aporte Socio A"
@@ -1088,9 +1084,8 @@ export default function BusinessFinancePage() {
                       onChange={(e) =>
                         setFormData({ ...formData, branchId: e.target.value })
                       }
-                      className={`w-full px-4 py-3 bg-white border border-gray-100 rounded-2xl outline-none focus:ring-4 transition-all text-sm font-bold text-gray-700 appearance-none shadow-sm cursor-pointer ${
-                        type === "INCOME" ? "focus:ring-emerald-500/10 focus:border-emerald-500" : "focus:ring-rose-500/10 focus:border-rose-500"
-                      }`}
+                      className={`w-full px-4 py-3 bg-white border border-gray-100 rounded-2xl outline-none focus:ring-4 transition-all text-sm font-bold text-gray-700 appearance-none shadow-sm cursor-pointer ${type === "INCOME" ? "focus:ring-emerald-500/10 focus:border-emerald-500" : "focus:ring-rose-500/10 focus:border-rose-500"
+                        }`}
                     >
                       <option value="">Sede Principal</option>
                       {branches.map((b) => (
@@ -1115,9 +1110,8 @@ export default function BusinessFinancePage() {
                     onChange={(e) =>
                       setFormData({ ...formData, categoryId: e.target.value })
                     }
-                    className={`w-full px-4 py-3 bg-white border border-gray-100 rounded-2xl outline-none focus:ring-4 transition-all text-sm font-bold text-gray-700 appearance-none shadow-sm cursor-pointer ${
-                      type === "INCOME" ? "focus:ring-emerald-500/10 focus:border-emerald-500" : "focus:ring-rose-500/10 focus:border-rose-500"
-                    }`}
+                    className={`w-full px-4 py-3 bg-white border border-gray-100 rounded-2xl outline-none focus:ring-4 transition-all text-sm font-bold text-gray-700 appearance-none shadow-sm cursor-pointer ${type === "INCOME" ? "focus:ring-emerald-500/10 focus:border-emerald-500" : "focus:ring-rose-500/10 focus:border-rose-500"
+                      }`}
                   >
                     <option value="">Selecciona una categoría...</option>
                     {filteredCategories.map((c) => (
@@ -1146,9 +1140,8 @@ export default function BusinessFinancePage() {
                       onChange={(e) =>
                         setFormData({ ...formData, subCategoryId: e.target.value })
                       }
-                      className={`w-full px-4 py-3 bg-white border border-gray-100 rounded-2xl outline-none focus:ring-4 transition-all text-sm font-bold text-gray-700 appearance-none shadow-sm cursor-pointer ${
-                        type === "INCOME" ? "focus:ring-emerald-500/10 focus:border-emerald-500" : "focus:ring-rose-500/10 focus:border-rose-500"
-                      }`}
+                      className={`w-full px-4 py-3 bg-white border border-gray-100 rounded-2xl outline-none focus:ring-4 transition-all text-sm font-bold text-gray-700 appearance-none shadow-sm cursor-pointer ${type === "INCOME" ? "focus:ring-emerald-500/10 focus:border-emerald-500" : "focus:ring-rose-500/10 focus:border-rose-500"
+                        }`}
                     >
                       <option value="">Selecciona una subcategoría...</option>
                       {subcategories.map((sub: any) => (
@@ -1161,6 +1154,11 @@ export default function BusinessFinancePage() {
                   </div>
                 </div>
               )}
+
+              {/*fecha*/}
+              <div className="">
+                {new Date().toLocaleString()}
+              </div>
 
               {/* Flags/Switches Group */}
               <div className="bg-white/40 p-4 rounded-2xl border border-white/60 space-y-3 shadow-inner">
@@ -1257,6 +1255,19 @@ export default function BusinessFinancePage() {
                     <ChevronDown className="w-4 h-4 text-gray-300 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                   </div>
                 </div>
+                <div>
+                  <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                    Fecha
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.date}
+                    onChange={(e) =>
+                      setFormData({ ...formData, date: e.target.value })
+                    }
+                    className="w-full px-3 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-sm font-bold text-gray-700 appearance-none shadow-sm cursor-pointer"
+                  />
+                </div>
 
                 <div className="space-y-1.5">
                   <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">
@@ -1270,11 +1281,10 @@ export default function BusinessFinancePage() {
                     onChange={(e) =>
                       setFormData({ ...formData, exchangeRate: Number(e.target.value) })
                     }
-                    className={`w-full px-3 py-3 border rounded-xl outline-none focus:ring-4 transition-all text-sm font-black shadow-sm ${
-                      formData.currency === "USD"
-                        ? "bg-blue-50 border-blue-200 text-blue-700 focus:ring-blue-500/10 focus:border-blue-500"
-                        : "bg-gray-50 border-gray-100 text-gray-400"
-                    }`}
+                    className={`w-full px-3 py-3 border rounded-xl outline-none focus:ring-4 transition-all text-sm font-black shadow-sm ${formData.currency === "USD"
+                      ? "bg-blue-50 border-blue-200 text-blue-700 focus:ring-blue-500/10 focus:border-blue-500"
+                      : "bg-gray-50 border-gray-100 text-gray-400"
+                      }`}
                   />
                 </div>
 
@@ -1291,9 +1301,8 @@ export default function BusinessFinancePage() {
                     onChange={(e) =>
                       setFormData({ ...formData, amount: Number(e.target.value) })
                     }
-                    className={`w-full px-3 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 transition-all text-sm font-black shadow-sm ${
-                      type === "INCOME" ? "focus:ring-emerald-500/10 focus:border-emerald-500" : "focus:ring-rose-500/10 focus:border-rose-500"
-                    }`}
+                    className={`w-full px-3 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 transition-all text-sm font-black shadow-sm ${type === "INCOME" ? "focus:ring-emerald-500/10 focus:border-emerald-500" : "focus:ring-rose-500/10 focus:border-rose-500"
+                      }`}
                   />
                 </div>
               </div>
@@ -1319,11 +1328,10 @@ export default function BusinessFinancePage() {
                           paymentMethod: method.id as any,
                         })
                       }
-                      className={`py-3 rounded-2xl text-[9px] font-black uppercase tracking-tighter border transition-all ${
-                        formData.paymentMethod === method.id 
-                          ? "bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-200/50 scale-[1.03]" 
-                          : "bg-white text-gray-400 border-gray-100 hover:border-indigo-200 hover:text-gray-600"
-                      }`}
+                      className={`py-3 rounded-2xl text-[9px] font-black uppercase tracking-tighter border transition-all ${formData.paymentMethod === method.id
+                        ? "bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-200/50 scale-[1.03]"
+                        : "bg-white text-gray-400 border-gray-100 hover:border-indigo-200 hover:text-gray-600"
+                        }`}
                     >
                       {method.label}
                     </button>
@@ -1373,6 +1381,7 @@ export default function BusinessFinancePage() {
                   paymentMethod: "CASH",
                   description: "",
                   receiptUrl: null,
+                  date: "",
                   currency: "PEN",
                   exchangeRate: 1,
                   branchId: "",
@@ -1387,11 +1396,10 @@ export default function BusinessFinancePage() {
             <button
               type="submit"
               disabled={filteredCategories.length === 0}
-              className={`px-6 py-3 text-white font-black uppercase tracking-wider text-xs rounded-xl transition-all shadow-md ${
-                type === "INCOME" 
-                  ? "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200/50 hover:shadow-lg hover:shadow-emerald-200" 
-                  : "bg-rose-600 hover:bg-rose-700 shadow-rose-200/50 hover:shadow-lg hover:shadow-rose-200"
-              }`}
+              className={`px-6 py-3 text-white font-black uppercase tracking-wider text-xs rounded-xl transition-all shadow-md ${type === "INCOME"
+                ? "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200/50 hover:shadow-lg hover:shadow-emerald-200"
+                : "bg-rose-600 hover:bg-rose-700 shadow-rose-200/50 hover:shadow-lg hover:shadow-rose-200"
+                }`}
             >
               {editingTransaction ? "Guardar Cambios" : "Guardar Movimiento"}
             </button>

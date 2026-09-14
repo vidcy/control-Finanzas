@@ -2012,30 +2012,58 @@ export default function BusinessPosPage() {
                       }}
                       className={`bg-white rounded-2xl border hover:border-indigo-300 hover:shadow-lg transition-all cursor-pointer group flex flex-col overflow-hidden shadow-sm relative ${availableStock <= 0 ? "opacity-50 cursor-not-allowed" : ""}`}
                     >
-                      {/* Product image */}
-                      <div className="w-full h-24 bg-gradient-to-br from-gray-50 to-indigo-50 overflow-hidden relative">
+
+                      {/* Contenedor de la Imagen del Producto */}
+                      <div className="w-full h-28 bg-gradient-to-br from-slate-100 via-indigo-50/30 to-slate-200/50 overflow-hidden relative group rounded-2xl border border-slate-200/60 shadow-sm hover:shadow-indigo-500/10 transition-all duration-300">
+
+                        {/* 1. Botón Indicador de Color (Parte Superior Derecha) */}
                         {p.color && (
                           <div
-                            className="absolute top-2 right-2 w-4 h-4 rounded-full border border-white shadow-sm z-10 animate-pulse"
-                            style={{ backgroundColor: p.color }}
-                            title={`Color del producto`}
-                          />
+                            className="absolute top-2.5 right-2.5 z-20 flex items-center justify-center transition-transform duration-300 group-hover:scale-110"
+                            title="Color del producto"
+                          >
+                            <span
+                              className="absolute inline-flex h-4 w-4 animate-ping rounded-full opacity-40"
+                              style={{ backgroundColor: p.color }}
+                            />
+                            <span
+                              className="relative inline-flex h-3.5 w-3.5 rounded-full border-2 border-white shadow-md ring-1 ring-black/5"
+                              style={{ backgroundColor: p.color }}
+                            />
+                          </div>
                         )}
+
+                        {/* 2. Etiqueta SKU Resaltada (Parte Superior Izquierda) */}
+                        {p.sku && p.sku.length > 0 && (
+                          <div className="absolute top-2.5 left-2.5 z-20 transition-all duration-300">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-black tracking-widest uppercase bg-white/85 backdrop-blur-md text-slate-800 border border-white/80 shadow-[0_4px_12px_rgba(0,0,0,0.08)] group-hover:bg-white group-hover:shadow-[0_4px_16px_rgba(99,102,241,0.2)] group-hover:scale-105 transition-all duration-300 max-w-[120px]">
+                              {/* Punto indicador de nitidez */}
+                              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse flex-shrink-0" />
+                              <span className="bg-gradient-to-r from-slate-900 to-indigo-950 bg-clip-text text-transparent font-extrabold truncate">
+                                {p.sku}
+                              </span>
+                            </span>
+                          </div>
+                        )}
+
+                        {/* 3. Imagen del Producto con Zoom Suave y Filtro de Nitidez */}
                         {p.imageUrl ? (
                           <img
                             src={getReceiptAbsoluteUrl(p.imageUrl) || p.imageUrl}
                             alt={p.name}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 ease-out"
                             onError={(e) => {
-                              (e.target as HTMLImageElement).style.display =
-                                "none";
+                              (e.target as HTMLImageElement).style.display = "none";
                             }}
                           />
                         ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <Package className="w-8 h-8 text-indigo-200" />
+                          <div className="w-full h-full flex items-center justify-center bg-slate-50/80">
+                            <Package className="w-8 h-8 text-indigo-300/80 stroke-[1.5]" />
                           </div>
                         )}
+
+                        {/* 4. Degradado de Protección y Viñeta para resalte de contenido */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-black/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
                       </div>
 
                       <div className="p-3 flex-1 flex flex-col justify-between">
@@ -2049,11 +2077,13 @@ export default function BusinessPosPage() {
                             {activeShift?.branchId ? "Sede: " : ""}
                             {formatStock(availableStock, p.unit, p.presentations)}
                           </span>
+
                           <span
                             className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full inline-block mt-1 ${p.description && p.description.length > 0 ? "bg-slate-50 text-slate-600" : "bg-rose-50 text-rose-600"}`}
                           >
                             {p.description}
                           </span>
+
                         </div>
                         <p className="text-base font-black text-gray-900 mt-2">
                           S/ {p.salePrice.toFixed(2)}

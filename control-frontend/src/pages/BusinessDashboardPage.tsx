@@ -185,17 +185,17 @@ export default function BusinessDashboardPage() {
           const hasCustomBanner = !!(user?.businessBanner);
           const bannerStyle = hasCustomBanner
             ? {
-                backgroundImage: `url(${getReceiptAbsoluteUrl(user.businessBanner)})`,
-                backgroundSize: "cover",
-                backgroundPosition: "center",
-              }
+              backgroundImage: `url(${getReceiptAbsoluteUrl(user.businessBanner)})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+            }
             : {};
 
           // Dynamic light, vivid, animated gradients based on profit margin
           let gradientClass = "bg-gradient-to-br from-indigo-100 via-purple-100 to-slate-200 border-indigo-200 shadow-xl shadow-indigo-100/40 animate-banner-gradient text-slate-800";
           let badgeText = "Análisis Operativo";
           let badgeColor = "bg-indigo-500/10 text-indigo-800 border-indigo-300/40";
-          
+
           if (!hasCustomBanner) {
             if (profitMargin >= 30) {
               gradientClass = "bg-gradient-to-tr from-emerald-100 via-teal-100 to-sky-200 border-emerald-200/60 shadow-xl shadow-emerald-100/40 animate-banner-gradient text-slate-800";
@@ -215,9 +215,8 @@ export default function BusinessDashboardPage() {
           return (
             <div
               style={bannerStyle}
-              className={`border rounded-[2rem] p-8 shadow-sm relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-all duration-700 ${
-                hasCustomBanner ? "text-white border-transparent" : gradientClass
-              }`}
+              className={`border rounded-[2rem] p-8 shadow-sm relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-all duration-700 ${hasCustomBanner ? "text-white border-transparent" : gradientClass
+                }`}
             >
               {hasCustomBanner ? (
                 <div className="absolute inset-0 bg-gradient-to-r from-gray-950/80 via-gray-900/60 to-transparent backdrop-blur-[2px] z-0"></div>
@@ -227,7 +226,7 @@ export default function BusinessDashboardPage() {
                   <div className="absolute -left-10 -bottom-10 w-72 h-72 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none"></div>
                 </>
               )}
-              
+
               <div className="relative z-10 flex items-center gap-6">
                 {user?.businessLogo ? (
                   <div className="relative group">
@@ -315,7 +314,7 @@ export default function BusinessDashboardPage() {
 
             {/* GRID PRINCIPAL DE MÉTRICAS */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-              
+
               {/* LIQUIDEZ / DINERO DISPONIBLE */}
               <div className="bg-gradient-to-br from-emerald-50/90 via-white to-teal-50/60 p-6 rounded-[2rem] shadow-sm border border-emerald-100/80 flex flex-col justify-between relative overflow-hidden group hover:shadow-xl hover:shadow-emerald-500/10 hover:-translate-y-1 transition-all duration-300">
                 <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-200/40 rounded-full opacity-60 blur-xl transform translate-x-4 -translate-y-4 group-hover:scale-110 transition-transform"></div>
@@ -488,7 +487,7 @@ export default function BusinessDashboardPage() {
 
             {/* SECCIÓN DIVIDIDA: INTELIGENCIA + ÚLTIMAS VENTAS */}
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-              
+
               {/* ADVISOR DE IA (Izquierda) */}
               <div className="lg:col-span-3 flex flex-col justify-between">
                 <BusinessAiAdvisor
@@ -536,7 +535,7 @@ export default function BusinessDashboardPage() {
                     )}
                   </div>
                 </div>
-                
+
                 <Link
                   to="/business-history"
                   className="mt-4 w-full py-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-black text-center rounded-2xl transition-colors block"
