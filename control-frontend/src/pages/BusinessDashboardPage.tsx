@@ -4,6 +4,7 @@ import { useAuth } from "../auth/AuthContext";
 import { getReceiptAbsoluteUrl } from "../components/ui/ImageUploader";
 import { getTransactionsRequest } from "../services/transaction.api";
 import { getProductsRequest } from "../services/product.api";
+import { getSalesRequest } from "../services/sale.api";
 import {
   TrendingUp,
   Package,
@@ -61,9 +62,10 @@ export default function BusinessDashboardPage() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [txs, prods] = await Promise.all([
+      const [txs, prods, rawSales] = await Promise.all([
         getTransactionsRequest({ workspace: "BUSINESS" }),
         getProductsRequest(),
+        getSalesRequest().catch(() => []),
       ]);
 
       const safeTx = txs.filter((t: any) => t.status === "PAID");
@@ -85,18 +87,31 @@ export default function BusinessDashboardPage() {
         return acc;
       }, { CASH: 0, TRANSFER: 0, CARD: 0, YAPE: 0, PLIN: 0 });
 
-      // Daily and Monthly Sales
+      // Daily and Monthly Sales from real POS Sales
       const now = new Date();
       const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-      const dailySales = safeTx
-        .filter((t: any) => t.type === "INCOME" && t.name === "Venta en Caja" && new Date(t.date) >= todayStart)
-        .reduce((acc: number, t: any) => acc + t.amount, 0);
+      const validSales = (rawSales || []).filter(
+        (s: any) => s.billingStatus !== "ANNULLED" && s.status !== "CANCELLED"
+      );
 
-      const monthlySales = safeTx
-        .filter((t: any) => t.type === "INCOME" && t.name === "Venta en Caja" && new Date(t.date) >= monthStart)
+      // Fallback check if sales exist in transactions as well
+      const txDailySales = safeTx
+        .filter((t: any) => t.type === "INCOME" && (t.name === "Venta en Caja" || t.category === "Ventas") && new Date(t.date) >= todayStart)
         .reduce((acc: number, t: any) => acc + t.amount, 0);
+      const posDailySales = validSales
+        .filter((s: any) => new Date(s.date) >= todayStart)
+        .reduce((acc: number, s: any) => acc + (Number(s.amount) || 0), 0);
+      const dailySales = posDailySales > 0 ? posDailySales : txDailySales;
+
+      const txMonthlySales = safeTx
+        .filter((t: any) => t.type === "INCOME" && (t.name === "Venta en Caja" || t.category === "Ventas") && new Date(t.date) >= monthStart)
+        .reduce((acc: number, t: any) => acc + t.amount, 0);
+      const posMonthlySales = validSales
+        .filter((s: any) => new Date(s.date) >= monthStart)
+        .reduce((acc: number, s: any) => acc + (Number(s.amount) || 0), 0);
+      const monthlySales = posMonthlySales > 0 ? posMonthlySales : txMonthlySales;
 
       // Inventory valuation (Cost vs. Projected Sale)
       const inventoryCostValuation = prods.reduce(
@@ -131,20 +146,47 @@ export default function BusinessDashboardPage() {
         subDays(new Date(), 13 - i),
       );
       const chartDataMapped = last14Days.map((date) => {
-        const dayTxs = safeTx.filter(
-          (t: any) => t.type === "INCOME" && t.name === "Venta en Caja" && isSameDay(parseISO(t.date), date)
-        );
+        const dayPosSales = validSales
+          .filter((s: any) => isSameDay(parseISO(s.date), date))
+          .reduce((acc: number, s: any) => acc + (Number(s.amount) || 0), 0);
+        const dayTxs = safeTx
+          .filter((t: any) => t.type === "INCOME" && (t.name === "Venta en Caja" || t.category === "Ventas") && isSameDay(parseISO(t.date), date))
+          .reduce((acc: number, t: any) => acc + t.amount, 0);
+
         return {
           date: format(date, "dd MMM", { locale: es }),
-          ventas: dayTxs.reduce((acc: number, t: any) => acc + t.amount, 0),
+          ventas: dayPosSales > 0 ? dayPosSales : dayTxs,
         };
       });
 
       // Recent Sales List
-      const recentSales = safeTx
-        .filter((t: any) => t.type === "INCOME" && t.name === "Venta en Caja")
-        .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
-        .slice(0, 5);
+      let recentSales: any[] = [];
+      if (validSales.length > 0) {
+        recentSales = [...validSales]
+          .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
+          .slice(0, 6)
+          .map((s: any) => ({
+            id: s.id,
+            description: s.clientDenomination
+              ? `Venta a ${s.clientDenomination}`
+              : (s.billingSerie && s.billingNumber ? `${s.billingType || "Venta"} ${s.billingSerie}-${s.billingNumber}` : "Venta Mostrador POS"),
+            date: s.date,
+            amount: Number(s.amount) || 0,
+            paymentMethod: s.paymentMethod || "CASH",
+          }));
+      } else {
+        recentSales = safeTx
+          .filter((t: any) => t.type === "INCOME")
+          .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
+          .slice(0, 6)
+          .map((t: any) => ({
+            id: t.id,
+            description: t.name || t.description || "Venta General",
+            date: t.date,
+            amount: t.amount,
+            paymentMethod: t.paymentMethod || "CASH",
+          }));
+      }
 
       setLowStockProducts(lowStockList);
       setMetrics({

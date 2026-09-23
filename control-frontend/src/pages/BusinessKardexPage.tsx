@@ -160,8 +160,8 @@ export default function BusinessKardexPage() {
           m.unitCost !== undefined && m.unitCost !== null
             ? m.unitCost
             : isEntry
-            ? dbProd?.costPrice || 0
-            : runningCPP;
+              ? dbProd?.costPrice || 0
+              : runningCPP;
         const totalCost =
           m.totalCost !== undefined && m.totalCost !== null
             ? m.totalCost
@@ -485,7 +485,7 @@ export default function BusinessKardexPage() {
     setIsExporting(true);
     try {
       const XLSX = await import("xlsx");
-      
+
       const rows = filteredMovements.map((m) => {
         const isEntry = m.type === "IN";
         return {
@@ -495,10 +495,10 @@ export default function BusinessKardexPage() {
             m.reason === "SALE"
               ? "Venta"
               : m.reason === "PURCHASE"
-              ? "Compra"
-              : m.reason === "REVERT_PURCHASE"
-              ? "Reversión Compra"
-              : m.reason || "Ajuste",
+                ? "Compra"
+                : m.reason === "REVERT_PURCHASE"
+                  ? "Reversión Compra"
+                  : m.reason || "Ajuste",
           "Entradas Cantidad": isEntry ? m.quantity : "",
           "Entradas Costo Unitario": isEntry ? m.computedUnitCost.toFixed(2) : "",
           "Entradas Total": isEntry ? m.computedTotalCost.toFixed(2) : "",
@@ -558,17 +558,17 @@ export default function BusinessKardexPage() {
       // Header Banner
       doc.setFillColor(15, 118, 110); // Teal-700
       doc.rect(0, 0, 297, 24, "F");
-      
+
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(14);
       doc.setFont("helvetica", "bold");
       const branchLabel = selectedBranchId === "ALL" ? "CONSOLIDADO GLOBAL" : (branches.find(b => b.id === selectedBranchId)?.name || "").toUpperCase();
       doc.text(`KARDEX VALORADO (CPP) - ${branchLabel}`, 14, 10);
-      
+
       doc.setFontSize(9);
       doc.setFont("helvetica", "normal");
       doc.text(`Generado: ${format(new Date(), "dd/MM/yyyy HH:mm")}`, 14, 17);
-      
+
       // Selected Product details
       if (selectedProductId !== "ALL") {
         const prod = products.find(p => p.id === selectedProductId);
@@ -582,11 +582,11 @@ export default function BusinessKardexPage() {
       // Summary Totals Banner
       doc.setFillColor(243, 244, 246);
       doc.roundedRect(14, 28, 269, 14, 2, 2, "F");
-      
+
       doc.setTextColor(55, 65, 81);
       doc.setFontSize(8);
       doc.setFont("helvetica", "bold");
-      
+
       doc.text("VALORACIÓN TOTAL", 18, 33);
       doc.setFontSize(11);
       doc.setTextColor(15, 118, 110);
@@ -614,27 +614,27 @@ export default function BusinessKardexPage() {
 
       // Table Draw
       const startY = 48;
-      
+
       // Secondary Multiheader Draw
       doc.setFillColor(15, 118, 110);
       doc.rect(14, startY, 269, 10, "F");
-      
+
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(7);
       doc.setFont("helvetica", "bold");
-      
+
       doc.text("Fecha", 16, startY + 6);
       doc.text("Producto", 40, startY + 6);
       doc.text("Detalle", 74, startY + 6);
-      
+
       // Entradas block
       doc.text("ENTRADAS", 92, startY + 3);
       doc.text("Cant.  |  Costo  |  Total", 92, startY + 8);
-      
+
       // Salidas block
       doc.text("SALIDAS", 164, startY + 3);
       doc.text("Cant.  |  Costo  |  Total", 164, startY + 8);
-      
+
       // Saldo Resultante block
       doc.text("SALDO RESULTANTE (CPP)", 236, startY + 3);
       doc.text("Cant.  |  CPP    |  Total", 236, startY + 8);
@@ -661,7 +661,7 @@ export default function BusinessKardexPage() {
           doc.text("Cant.  |  Costo  |  Total", 164, 22);
           doc.text("SALDO RESULTANTE (CPP)", 236, 17);
           doc.text("Cant.  |  CPP    |  Total", 236, 22);
-          
+
           y = 24;
           doc.setFont("helvetica", "normal");
           doc.setFontSize(6.5);
@@ -676,7 +676,7 @@ export default function BusinessKardexPage() {
         const dateStr = format(new Date(m.createdAt), "dd/MM/yy HH:mm");
         const prodName = (m.product?.name || "—").substring(0, 18);
         const reasonStr = m.reason === "SALE" ? "Venta POS" : m.reason === "PURCHASE" ? "Compra" : m.reason === "REVERT_PURCHASE" ? "Reversión" : "Ajuste";
-        
+
         doc.setTextColor(31, 41, 55);
         doc.text(dateStr, 15, y + 4.5);
         doc.text(prodName, 40, y + 4.5);
@@ -702,7 +702,7 @@ export default function BusinessKardexPage() {
           doc.text("—", 92, y + 4.5);
           doc.text("—", 108, y + 4.5);
           doc.text("—", 126, y + 4.5);
-          
+
           doc.setTextColor(185, 28, 28); // Red exits
           doc.text(`${m.quantity}`, 164, y + 4.5);
           doc.text(`${costStr}`, 180, y + 4.5);
@@ -724,7 +724,7 @@ export default function BusinessKardexPage() {
         doc.setPage(i);
         doc.setFontSize(7);
         doc.setTextColor(156, 163, 175);
-        doc.text(`Global Ccoplex – THINK Sistema de Kardex Valorado – Pág. ${i} de ${totalPages}`, 14, 202);
+        doc.text(`Corporación Ccoplex – THINK Sistema de Kardex Valorado – Pág. ${i} de ${totalPages}`, 14, 202);
       }
 
       doc.save(`Kardex_Valorado_${format(new Date(), "yyyyMMdd_HHmm")}.pdf`);
@@ -746,7 +746,7 @@ export default function BusinessKardexPage() {
   return (
     <Appshell>
       <div className="space-y-6">
-        
+
         {/* HEADER SECTION */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-white/60 backdrop-blur-md p-6 rounded-3xl border border-white/80 shadow-sm animate-fade-in">
           <div>
@@ -827,7 +827,7 @@ export default function BusinessKardexPage() {
 
         {/* METRICS DASHBOARD GRID */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          
+
           {/* Card 1: Valuation */}
           <div className="bg-gradient-to-br from-teal-500 to-emerald-600 text-white p-5 rounded-3xl shadow-lg relative overflow-hidden group hover:scale-[1.02] transition-transform duration-300">
             <div className="absolute right-[-10px] top-[-10px] w-24 h-24 bg-white/10 rounded-full blur-xl group-hover:scale-125 transition-transform duration-500"></div>
@@ -864,23 +864,19 @@ export default function BusinessKardexPage() {
           </div>
 
           {/* Card 3: Alert low stock */}
-          <div className={`p-5 rounded-3xl border shadow-sm relative overflow-hidden group hover:scale-[1.02] transition-transform duration-300 ${
-            metrics.lowStockCount > 0 ? "bg-red-50/50 border-red-100" : "bg-white border-gray-100"
-          }`}>
+          <div className={`p-5 rounded-3xl border shadow-sm relative overflow-hidden group hover:scale-[1.02] transition-transform duration-300 ${metrics.lowStockCount > 0 ? "bg-red-50/50 border-red-100" : "bg-white border-gray-100"
+            }`}>
             <div className="flex items-center justify-between">
-              <span className={`text-[10px] font-black uppercase tracking-wider ${
-                metrics.lowStockCount > 0 ? "text-red-500" : "text-gray-400"
-              }`}>Alertas de Reposición</span>
-              <div className={`p-2 rounded-xl ${
-                metrics.lowStockCount > 0 ? "bg-red-100 text-red-600" : "bg-gray-50 text-gray-400"
-              }`}>
+              <span className={`text-[10px] font-black uppercase tracking-wider ${metrics.lowStockCount > 0 ? "text-red-500" : "text-gray-400"
+                }`}>Alertas de Reposición</span>
+              <div className={`p-2 rounded-xl ${metrics.lowStockCount > 0 ? "bg-red-100 text-red-600" : "bg-gray-50 text-gray-400"
+                }`}>
                 <AlertTriangle className="w-4 h-4" />
               </div>
             </div>
             <div className="mt-4">
-              <h3 className={`text-2xl font-black leading-tight ${
-                metrics.lowStockCount > 0 ? "text-red-700" : "text-gray-800"
-              }`}>
+              <h3 className={`text-2xl font-black leading-tight ${metrics.lowStockCount > 0 ? "text-red-700" : "text-gray-800"
+                }`}>
                 {metrics.lowStockCount}
               </h3>
               <p className="text-gray-400 text-[10px] mt-1">
@@ -917,7 +913,7 @@ export default function BusinessKardexPage() {
 
         {/* DETAILED ANALYSIS VISUALIZATION */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
+
           {/* Charts/Viz */}
           <div className="lg:col-span-2 bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-4">
             <div className="flex items-center justify-between">
@@ -956,8 +952,8 @@ export default function BusinessKardexPage() {
                     <Bar dataKey="valor" fill="url(#colorVal)" radius={[4, 4, 0, 0]} />
                     <defs>
                       <linearGradient id="colorVal" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#0d9488" stopOpacity={0.8}/>
-                        <stop offset="95%" stopColor="#0d9488" stopOpacity={0.2}/>
+                        <stop offset="5%" stopColor="#0d9488" stopOpacity={0.8} />
+                        <stop offset="95%" stopColor="#0d9488" stopOpacity={0.2} />
                       </linearGradient>
                     </defs>
                   </BarChart>
@@ -975,8 +971,8 @@ export default function BusinessKardexPage() {
                     <Area type="monotone" dataKey="stock" stroke="#0f766e" strokeWidth={2} fillOpacity={1} fill="url(#colorStock)" name="Stock Uds" />
                     <defs>
                       <linearGradient id="colorStock" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#0f766e" stopOpacity={0.4}/>
-                        <stop offset="95%" stopColor="#0f766e" stopOpacity={0.0}/>
+                        <stop offset="5%" stopColor="#0f766e" stopOpacity={0.4} />
+                        <stop offset="95%" stopColor="#0f766e" stopOpacity={0.0} />
                       </linearGradient>
                     </defs>
                   </AreaChart>
@@ -1024,14 +1020,13 @@ export default function BusinessKardexPage() {
                     <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">
                       Stock {selectedBranchId === "ALL" ? "Global" : "en Sede"}
                     </p>
-                    <p className={`text-sm font-black mt-1 ${
-                      (() => {
+                    <p className={`text-sm font-black mt-1 ${(() => {
                         const stock = selectedBranchId === "ALL"
                           ? selectedProductDetail.stock
                           : (selectedProductDetail.branchStocks?.find((bs: any) => bs.branchId === selectedBranchId)?.stock ?? 0);
                         return stock <= selectedProductDetail.minStock ? "text-red-650" : "text-emerald-600";
                       })()
-                    }`}>
+                      }`}>
                       {selectedBranchId === "ALL"
                         ? selectedProductDetail.stock
                         : (selectedProductDetail.branchStocks?.find((bs: any) => bs.branchId === selectedBranchId)?.stock ?? 0)}{" "}
@@ -1080,7 +1075,7 @@ export default function BusinessKardexPage() {
           </div>
 
           <div className={`grid grid-cols-1 sm:grid-cols-2 ${(user?.profiles?.includes("BUSINESS_BRANCHES") && branches.length > 1) ? "lg:grid-cols-8" : "lg:grid-cols-7"} gap-3`}>
-            
+
             {/* Search query */}
             <div className="space-y-1">
               <label className="block text-[10px] font-bold text-gray-400 uppercase">Buscar Detalle</label>
@@ -1207,10 +1202,10 @@ export default function BusinessKardexPage() {
 
         {/* MAIN KARDEX VALORADO DATA TABLE */}
         <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
-          
+
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
-              
+
               {/* Header Blocks Row 1 */}
               <thead>
                 <tr className="bg-teal-700 text-white text-[10px] font-black uppercase tracking-wider text-center border-b border-teal-800">
@@ -1219,7 +1214,7 @@ export default function BusinessKardexPage() {
                   <th colSpan={3} className="px-4 py-3.5 border-r border-teal-800 bg-rose-900/10">SALIDAS (RETIROS DE ALMACÉN)</th>
                   <th colSpan={3} className="px-4 py-3.5 bg-teal-800/20">SALDOS RESULTANTES (VALORACIÓN CPP)</th>
                 </tr>
-                
+
                 {/* Header Sub-columns Row 2 */}
                 <tr className="bg-teal-600/90 text-white text-[9px] font-black uppercase tracking-wider text-center border-b border-gray-100">
                   <th className="px-4 py-2.5 text-left border-r border-teal-700/50">Fecha y Hora</th>
@@ -1228,17 +1223,17 @@ export default function BusinessKardexPage() {
                   )}
                   <th className="px-4 py-2.5 text-left border-r border-teal-700/50">Producto / Item</th>
                   <th className="px-4 py-2.5 text-left border-r border-teal-700/50">Motivo / Operación</th>
-                  
+
                   {/* Entradas */}
                   <th className="px-4 py-2.5 bg-teal-800/20 border-r border-teal-700/30">Cant.</th>
                   <th className="px-4 py-2.5 bg-teal-800/20 border-r border-teal-700/30">Costo Unit.</th>
                   <th className="px-4 py-2.5 bg-teal-800/20 border-r border-teal-700/50">Total</th>
-                  
+
                   {/* Salidas */}
                   <th className="px-4 py-2.5 bg-rose-950/10 border-r border-teal-700/30">Cant.</th>
                   <th className="px-4 py-2.5 bg-rose-950/10 border-r border-teal-700/30">Costo Unit.</th>
                   <th className="px-4 py-2.5 bg-rose-950/10 border-r border-teal-700/50">Total</th>
-                  
+
                   {/* Saldos */}
                   <th className="px-4 py-2.5 bg-teal-800/10 border-r border-teal-700/30">Cant.</th>
                   <th className="px-4 py-2.5 bg-teal-800/10 border-r border-teal-700/30">CPP Unit.</th>
@@ -1309,7 +1304,7 @@ export default function BusinessKardexPage() {
                     const isPurchase = m.reason === "PURCHASE";
                     const isSale = m.reason === "SALE";
                     const isRevert = m.reason === "REVERT_PURCHASE";
-                    
+
                     return (
                       <tr
                         key={m.id}
@@ -1345,15 +1340,14 @@ export default function BusinessKardexPage() {
 
                         {/* Motivo / Badge */}
                         <td className="px-4 py-3 text-left border-r border-gray-100">
-                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider shadow-sm ${
-                            isPurchase
+                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider shadow-sm ${isPurchase
                               ? "bg-teal-50 text-teal-700 border border-teal-100"
                               : isSale
-                              ? "bg-blue-50 text-blue-700 border border-blue-100"
-                              : isRevert
-                              ? "bg-rose-50 text-rose-700 border border-rose-100"
-                              : "bg-amber-50 text-amber-700 border border-amber-100"
-                          }`}>
+                                ? "bg-blue-50 text-blue-700 border border-blue-100"
+                                : isRevert
+                                  ? "bg-rose-50 text-rose-700 border border-rose-100"
+                                  : "bg-amber-50 text-amber-700 border border-amber-100"
+                            }`}>
                             {isPurchase && <ShoppingCart className="w-3 h-3 text-teal-600" />}
                             {isSale && <ProfitIcon className="w-3 h-3 text-blue-600" />}
                             {isRevert && <RotateCcw className="w-3 h-3 text-rose-600" />}
@@ -1362,12 +1356,12 @@ export default function BusinessKardexPage() {
                               {isPurchase
                                 ? "Compra"
                                 : isSale
-                                ? "Venta"
-                                : isRevert
-                                ? "Reversión"
-                                : m.reason === "ADJUSTMENT"
-                                ? "Ajuste"
-                                : m.reason || "Ajuste"}
+                                  ? "Venta"
+                                  : isRevert
+                                    ? "Reversión"
+                                    : m.reason === "ADJUSTMENT"
+                                      ? "Ajuste"
+                                      : m.reason || "Ajuste"}
                             </span>
                           </span>
                         </td>
@@ -1376,7 +1370,7 @@ export default function BusinessKardexPage() {
                         <td className="px-4 py-3 bg-teal-50/10 border-r border-gray-100 font-bold text-teal-700">
                           {isEntry ? `+${m.quantity}` : "—"}
                         </td>
-                        
+
                         {/* ENTRADAS - Costo Unitario */}
                         <td className="px-4 py-3 bg-teal-50/10 border-r border-gray-100 text-teal-600 font-mono">
                           {isEntry ? `S/ ${m.computedUnitCost.toFixed(2)}` : "—"}
@@ -1391,7 +1385,7 @@ export default function BusinessKardexPage() {
                         <td className="px-4 py-3 bg-rose-50/10 border-r border-gray-100 font-bold text-rose-600">
                           {!isEntry ? `-${m.quantity}` : "—"}
                         </td>
-                        
+
                         {/* SALIDAS - Costo Unitario */}
                         <td className="px-4 py-3 bg-rose-50/10 border-r border-gray-100 text-rose-500 font-mono">
                           {!isEntry ? `S/ ${m.computedUnitCost.toFixed(2)}` : "—"}
@@ -1406,7 +1400,7 @@ export default function BusinessKardexPage() {
                         <td className="px-4 py-3 bg-teal-50/5 border-r border-gray-100 font-bold text-gray-800">
                           {m.computedStockResult}
                         </td>
-                        
+
                         {/* SALDOS - CPP Costo Unitario */}
                         <td className="px-4 py-3 bg-teal-50/5 border-r border-gray-100 text-teal-800 font-bold font-mono">
                           S/ {m.computedRunningCPP.toFixed(2)}
@@ -1457,7 +1451,7 @@ export default function BusinessKardexPage() {
           title="🔧 Ajuste Manual de Inventario"
         >
           <form onSubmit={handleSaveAdjustmentSubmit} className="space-y-4">
-            
+
             <div className="p-3 bg-amber-50 rounded-2xl border border-amber-100 text-[11px] text-amber-800 leading-normal flex items-start gap-2">
               <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
               <div>
@@ -1508,25 +1502,23 @@ export default function BusinessKardexPage() {
             )}
 
             <div className="grid grid-cols-2 gap-4">
-              
+
               <div className="space-y-1">
                 <label className="block text-[10px] font-black text-gray-400 uppercase">Tipo de Ajuste</label>
                 <div className="flex bg-gray-100 p-1 rounded-xl gap-1">
                   <button
                     type="button"
                     onClick={() => setAdjustType("IN")}
-                    className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                      adjustType === "IN" ? "bg-white text-teal-700 shadow-sm" : "text-gray-500"
-                    }`}
+                    className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${adjustType === "IN" ? "bg-white text-teal-700 shadow-sm" : "text-gray-500"
+                      }`}
                   >
                     Entrada (+)
                   </button>
                   <button
                     type="button"
                     onClick={() => setAdjustType("OUT")}
-                    className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                      adjustType === "OUT" ? "bg-white text-rose-700 shadow-sm" : "text-gray-500"
-                    }`}
+                    className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${adjustType === "OUT" ? "bg-white text-rose-700 shadow-sm" : "text-gray-500"
+                      }`}
                   >
                     Salida (-)
                   </button>
@@ -1631,13 +1623,12 @@ export default function BusinessKardexPage() {
         >
           {selectedMovementForDetail && (
             <div className="space-y-6">
-              
+
               {/* Type Header Badge */}
-              <div className={`p-4 rounded-2xl border flex items-center justify-between ${
-                selectedMovementForDetail.type === "IN"
+              <div className={`p-4 rounded-2xl border flex items-center justify-between ${selectedMovementForDetail.type === "IN"
                   ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white border-emerald-400/30"
                   : "bg-gradient-to-r from-rose-500 to-red-600 text-white border-rose-400/30"
-              }`}>
+                }`}>
                 <div className="flex items-center gap-3">
                   <div className="p-2.5 bg-white/10 rounded-xl">
                     {selectedMovementForDetail.reason === "PURCHASE" ? (
@@ -1658,12 +1649,12 @@ export default function BusinessKardexPage() {
                       {selectedMovementForDetail.reason === "PURCHASE"
                         ? "Abastecimiento de Stock (Compra)"
                         : selectedMovementForDetail.reason === "SALE"
-                        ? "Venta en Punto de Venta (POS)"
-                        : selectedMovementForDetail.reason === "REVERT_PURCHASE"
-                        ? "Reversión de Compra / Devolución"
-                        : selectedMovementForDetail.reason === "ADJUSTMENT"
-                        ? "Ajuste de Inventario"
-                        : selectedMovementForDetail.reason || "Ajuste de Inventario"}
+                          ? "Venta en Punto de Venta (POS)"
+                          : selectedMovementForDetail.reason === "REVERT_PURCHASE"
+                            ? "Reversión de Compra / Devolución"
+                            : selectedMovementForDetail.reason === "ADJUSTMENT"
+                              ? "Ajuste de Inventario"
+                              : selectedMovementForDetail.reason || "Ajuste de Inventario"}
                     </h3>
                   </div>
                 </div>
@@ -1677,7 +1668,7 @@ export default function BusinessKardexPage() {
 
               {/* Grid 2 Column details */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                
+
                 {/* Item Details */}
                 <div className="p-4 bg-gray-50/50 rounded-2xl border border-gray-100 space-y-2.5">
                   <h4 className="font-bold text-gray-500 uppercase text-[10px] tracking-wider">Detalles del Item</h4>
@@ -1758,15 +1749,14 @@ export default function BusinessKardexPage() {
                   <BarChart3 className="w-4 h-4 text-teal-600" />
                   Cálculo de Valoración (CPP)
                 </h4>
-                
+
                 <div className="grid grid-cols-3 gap-3 text-center">
-                  
+
                   {/* Transaction info */}
                   <div className="bg-white p-2.5 rounded-xl border border-teal-100/30">
                     <span className="text-gray-400 block text-[9px] font-bold uppercase">Impacto Cantidad</span>
-                    <span className={`text-base font-black ${
-                      selectedMovementForDetail.type === "IN" ? "text-emerald-600" : "text-rose-600"
-                    }`}>
+                    <span className={`text-base font-black ${selectedMovementForDetail.type === "IN" ? "text-emerald-600" : "text-rose-600"
+                      }`}>
                       {selectedMovementForDetail.type === "IN" ? "+" : "-"}{selectedMovementForDetail.quantity}
                     </span>
                   </div>

@@ -18,6 +18,7 @@ export interface Product {
   adjustedPrice?: number;
   customCode?: number;
   stock: number;
+  size?: string;
   minStock: number;
   unit: string;
   imageUrl?: string;
@@ -82,6 +83,11 @@ export const updateProductRequest = async (
 
 export const deleteProductRequest = async (id: string) => {
   const res = await API.delete(`/products/${id}`);
+  return res.data;
+};
+
+export const bulkDeleteProductsRequest = async (ids: string[]): Promise<{ deletedCount: number; deletedIds: string[] }> => {
+  const res = await API.post("/products/bulk-delete", { ids });
   return res.data;
 };
 
@@ -324,6 +330,11 @@ export const payPurchaseOrderRequest = async (
  */
 export const cancelPurchaseOrderRequest = async (id: string): Promise<PurchaseOrder> => {
   const res = await API.patch(`/products/purchase-orders/${id}/cancel`);
+  return res.data;
+};
+
+export const loadProducts = async (): Promise<any[]> => {
+  const res = await API.get("/products/load");
   return res.data;
 };
 

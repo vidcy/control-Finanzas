@@ -33,12 +33,15 @@ import {
   CreditCard,
   AlertCircle,
   Flame,
+  Layers,
+  Share2,
 } from "lucide-react";
 import {
   getProductsRequest,
   createProductRequest,
   updateProductRequest,
   deleteProductRequest,
+  bulkDeleteProductsRequest,
   restockProductRequest,
   getLowStockAnalysisRequest,
   createPurchaseOrderRequest,
@@ -80,6 +83,20 @@ import {
   uploadProductImageFile,
 } from "../components/ui/ImageUploader";
 import { format } from "date-fns";
+import SeriesConfigurator from "../components/inventory/SeriesConfigurator";
+import {
+  decodeSeriesMetadata,
+  encodeSeriesMetadata,
+  cleanDescriptionForDisplay,
+  cleanModelName,
+  computeSeriesStockSummary,
+  extractSizeFromProduct,
+  extractTacoFromProduct,
+  calculateCurveTotalUnits,
+  buildEditSeriesConfig,
+  type SeriesConfig,
+} from "../utils/seriesUtils";
+import { shareProductOfferViaWhatsApp } from "../utils/whatsappUtils";
 
 // Helper dynamically loading CDN scripts to bypass React 19 dependency conflict issues
 const loadHtml5Qrcode = (): Promise<any> => {
@@ -167,14 +184,21 @@ export const playScannerBeep = (freq = 800, duration = 0.08) => {
   }
 };
 
-const CURATED_COLORS = [
-  { name: "Navy Blue", value: "#1E3A8A" },
-  { name: "Emerald", value: "#10B981" },
-  { name: "Ruby", value: "#DC2626" },
-  { name: "Matte Black", value: "#1F2937" },
-  { name: "Amber", value: "#F59E0B" },
-  { name: "Violet", value: "#7C3AED" },
-  { name: "Slate", value: "#64748B" },
+export const FOOTWEAR_COLORS = [
+  { name: "Negro", hex: "#111827" },
+  { name: "Blanco", hex: "#FFFFFF", border: true },
+  { name: "Beige", hex: "#F5F5DC" },
+  { name: "Nude", hex: "#E8C5B0" },
+  { name: "Marrón", hex: "#78350F" },
+  { name: "Camel", hex: "#C19A6B" },
+  { name: "Suela", hex: "#996515" },
+  { name: "Azul Marino", hex: "#1E3A8A" },
+  { name: "Rojo", hex: "#DC2626" },
+  { name: "Vino", hex: "#581845" },
+  { name: "Palo Rosa", hex: "#D8A47F" },
+  { name: "Dorado", hex: "#D4AF37" },
+  { name: "Plateado", hex: "#C0C0C0" },
+  { name: "Verde", hex: "#15803D" },
 ];
 
 export default function BusinessInventoryPage() {
@@ -201,6 +225,29 @@ export default function BusinessInventoryPage() {
   // Modals States
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [editScope, setEditScope] = useState<"SINGLE" | "SERIES">("SERIES");
+
+  const editingSiblings = useMemo(() => {
+    if (!editingProduct) return [];
+    const seriesMeta = decodeSeriesMetadata(editingProduct.description);
+    const cleanTarget = cleanModelName(editingProduct.name).toLowerCase();
+    return products.filter((p) => {
+      if (seriesMeta?.seriesId) {
+        const pMeta = decodeSeriesMetadata(p.description);
+        if (pMeta?.seriesId && pMeta.seriesId === seriesMeta.seriesId) return true;
+      }
+      return (
+        cleanModelName(p.name).toLowerCase() === cleanTarget &&
+        (p.brandId || "") === (editingProduct.brandId || "")
+      );
+    });
+  }, [editingProduct, products]);
+
+  const isSeriesEligible = useMemo(() => {
+    if (!editingProduct) return false;
+    const seriesMeta = decodeSeriesMetadata(editingProduct.description);
+    return editingProduct.unit === "Serie" || Boolean(seriesMeta) || editingSiblings.length > 1;
+  }, [editingProduct, editingSiblings]);
   const [isRestockModalOpen, setIsRestockModalOpen] = useState(false);
   const [restockProduct, setRestockProduct] = useState<Product | null>(null);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -243,7 +290,7 @@ export default function BusinessInventoryPage() {
 
   // Pagination states
   const [productPage, setProductPage] = useState(1);
-  const [productPageSize, setProductPageSize] = useState(6);
+  const [productPageSize, setProductPageSize] = useState(8);
   const [orderPage, setOrderPage] = useState(1);
   const orderPageSize = 6;
 
@@ -275,6 +322,34 @@ export default function BusinessInventoryPage() {
     commissionValue: 0,
     priceWithAgent: 0,
   });
+
+  // Configuración de Serie para calzados y curvas de tallas
+  const defaultSeriesConfig: SeriesConfig = {
+    unitsPerSeries: 6,
+    curve: [
+      { size: "34", ratio: 1 },
+      { size: "35", ratio: 1 },
+      { size: "36", ratio: 1 },
+      { size: "37", ratio: 1 },
+      { size: "38", ratio: 1 },
+      { size: "39", ratio: 1 },
+    ],
+    seriesStock: 1, // Inicializar siempre en 1 serie (no 5)
+    costPricePerSeries: 0,
+    salePricePerSeries: 0,
+    costPricePerUnit: 0,
+    salePricePerUnit: 0,
+  };
+  const [seriesConfig, setSeriesConfig] = useState<SeriesConfig>(defaultSeriesConfig);
+  const [standaloneTaco, setStandaloneTaco] = useState<string>("");
+
+  // Series deletion modal state
+  const [isSeriesDeleteModalOpen, setIsSeriesDeleteModalOpen] = useState(false);
+  const [seriesSiblingsToDelete, setSeriesSiblingsToDelete] = useState<Product[]>([]);
+  const [productToDelete, setProductToDelete] = useState<Product | null>(null);
+
+  // Print all catalog showcase labels mode (1 por modelo)
+  const [isCatalogShowcaseMode, setIsCatalogShowcaseMode] = useState(false);
 
   // Estados de configuración de oferta y promociones (panel autenticado)
   const [isOfferActive, setIsOfferActive] = useState<boolean>(false);
@@ -499,9 +574,10 @@ export default function BusinessInventoryPage() {
   // Barcode Printing States
   const [ticketProductId, setTicketProductId] = useState("");
   const [codeType, setCodeType] = useState<"qr" | "barcode">("qr");
-  const [ticketQuantity, setTicketQuantity] = useState(12);
+  const [ticketQuantity, setTicketQuantity] = useState(1);
+  const [labelPrintMode, setLabelPrintMode] = useState<"catalog_single" | "all_stock" | "single" | "curve" | "stock" | "custom">("curve");
   const [ticketBusinessName, setTicketBusinessName] = useState(
-    user?.businessName || "Think",
+    user?.businessName || "TIENDA",
   );
   const [labelSearchTerm, setLabelSearchTerm] = useState("");
   const [labelFilterBrandId, setLabelFilterBrandId] = useState("");
@@ -527,6 +603,164 @@ export default function BusinessInventoryPage() {
       return matchesSearch && matchesBrand && matchesFamily;
     });
   }, [products, labelSearchTerm, labelFilterBrandId, labelFilterFamilyId]);
+
+  const selectedLabelProduct = useMemo(() => {
+    return products.find((p) => p.id === ticketProductId);
+  }, [products, ticketProductId]);
+
+  const isSelectedLabelSeries = useMemo(() => {
+    return (
+      selectedLabelProduct?.unit === "Serie" ||
+      !!decodeSeriesMetadata(selectedLabelProduct?.description)
+    );
+  }, [selectedLabelProduct]);
+
+  const labelSiblings = useMemo(() => {
+    if (!selectedLabelProduct) return [];
+    if (!isSelectedLabelSeries) return [selectedLabelProduct];
+
+    const cleanTarget = cleanModelName(selectedLabelProduct.name).toLowerCase();
+    return products
+      .filter(
+        (p) =>
+          cleanModelName(p.name).toLowerCase() === cleanTarget &&
+          (p.brandId || "") === (selectedLabelProduct.brandId || "")
+      )
+      .sort((a, b) => {
+        const na = parseFloat(extractSizeFromProduct(a));
+        const nb = parseFloat(extractSizeFromProduct(b));
+        if (!isNaN(na) && !isNaN(nb)) return na - nb;
+        return extractSizeFromProduct(a).localeCompare(extractSizeFromProduct(b));
+      });
+  }, [selectedLabelProduct, isSelectedLabelSeries, products]);
+
+  const labelItemsToPrint = useMemo(() => {
+    // MODO 1: Catálogo Completo (1 sola etiqueta por cada código único/modelo, sin importar marcas o tallas)
+    if (labelPrintMode === "catalog_single" || isCatalogShowcaseMode) {
+      const seenCodes = new Set<string>();
+      const items: any[] = [];
+      labelFilteredProducts.forEach((p) => {
+        const codeKey = p.customCode ? String(p.customCode).padStart(4, "0") : (p.sku || cleanModelName(p.name));
+        if (!seenCodes.has(codeKey)) {
+          seenCodes.add(codeKey);
+          items.push({
+            product: p,
+            modelName: cleanModelName(p.name),
+            brandName: p.brand?.name || "",
+            size: p.unit === "Serie" ? "SERIE" : (extractSizeFromProduct(p) || "STD"),
+            codeText: p.sku || String((p as any).customCode || 0).padStart(4, "0"),
+            price: p.salePrice,
+            color: p.color || "",
+          });
+        }
+      });
+      return items;
+    }
+
+    // MODO 2: Todo el Inventario según Stock Real (todas las unidades físicas de todos los productos y tallas)
+    if (labelPrintMode === "all_stock") {
+      const items: any[] = [];
+      labelFilteredProducts.forEach((p) => {
+        const count = Math.max(0, Math.round(Number(p.stock) || 0));
+        for (let i = 0; i < count; i++) {
+          items.push({
+            product: p,
+            modelName: cleanModelName(p.name),
+            brandName: p.brand?.name || "",
+            size: extractSizeFromProduct(p) || "STD",
+            codeText: p.sku || String((p as any).customCode || 0).padStart(4, "0"),
+            price: p.salePrice,
+            color: p.color || "",
+          });
+        }
+      });
+      return items;
+    }
+
+    if (!selectedLabelProduct) return [];
+
+    if (labelPrintMode === "single" || !isSelectedLabelSeries) {
+      let copies = 1;
+      if (labelPrintMode === "custom") {
+        copies = ticketQuantity;
+      } else if (labelPrintMode === "stock") {
+        copies = Math.max(1, Math.round(Number(selectedLabelProduct.stock) || 0));
+      } else {
+        copies = 1;
+      }
+      const items: any[] = [];
+      for (let i = 0; i < copies; i++) {
+        items.push({
+          product: selectedLabelProduct,
+          modelName: cleanModelName(selectedLabelProduct.name),
+          brandName: selectedLabelProduct.brand?.name || "",
+          size: isSelectedLabelSeries ? "SERIE" : extractSizeFromProduct(selectedLabelProduct),
+          codeText:
+            selectedLabelProduct.sku ||
+            String((selectedLabelProduct as any).customCode || 0).padStart(4, "0"),
+          price: selectedLabelProduct.salePrice,
+          color: selectedLabelProduct.color,
+        });
+      }
+      return items;
+    }
+
+    if (labelPrintMode === "curve") {
+      return labelSiblings.map((sib) => ({
+        product: sib,
+        modelName: cleanModelName(sib.name),
+        brandName: sib.brand?.name || selectedLabelProduct.brand?.name || "",
+        size: extractSizeFromProduct(sib),
+        codeText: sib.sku || String((sib as any).customCode || 0).padStart(4, "0"),
+        price: sib.salePrice,
+        color: sib.color,
+      }));
+    }
+
+    if (labelPrintMode === "stock") {
+      const items: any[] = [];
+      labelSiblings.forEach((sib) => {
+        const count = Math.max(1, Math.round(Number(sib.stock) || 0));
+        for (let i = 0; i < count; i++) {
+          items.push({
+            product: sib,
+            modelName: cleanModelName(sib.name),
+            brandName: sib.brand?.name || selectedLabelProduct.brand?.name || "",
+            size: extractSizeFromProduct(sib),
+            codeText: sib.sku || String((sib as any).customCode || 0).padStart(4, "0"),
+            price: sib.salePrice,
+            color: sib.color,
+          });
+        }
+      });
+      return items;
+    }
+
+    const items: any[] = [];
+    labelSiblings.forEach((sib) => {
+      for (let i = 0; i < ticketQuantity; i++) {
+        items.push({
+          product: sib,
+          modelName: cleanModelName(sib.name),
+          brandName: sib.brand?.name || selectedLabelProduct.brand?.name || "",
+          size: extractSizeFromProduct(sib),
+          codeText: sib.sku || String((sib as any).customCode || 0).padStart(4, "0"),
+          price: sib.salePrice,
+          color: sib.color,
+        });
+      }
+    });
+    return items;
+  }, [
+    isCatalogShowcaseMode,
+    labelFilteredProducts,
+    activeBranchId,
+    selectedLabelProduct,
+    isSelectedLabelSeries,
+    labelSiblings,
+    labelPrintMode,
+    ticketQuantity,
+  ]);
 
   // Physical Barcode Scanner Configurations
   const [isScannerConfigOpen, setIsScannerConfigOpen] = useState(false);
@@ -805,19 +1039,18 @@ export default function BusinessInventoryPage() {
 
   // Render QR Codes or Barcodes in the ticket print preview sheet
   useEffect(() => {
-    if (activeTab === "labels" && ticketProductId) {
-      const prod = products.find((p) => p.id === ticketProductId);
-      if (prod) {
-        const codeText =
-          prod.sku || String(prod.customCode || 0).padStart(4, "0");
-        if (codeType === "qr") {
-          loadQrCodeGenerator().then((QRCodeObj) => {
-            setTimeout(() => {
-              const canvases = document.querySelectorAll(".qr-preview-canvas");
-              canvases.forEach((canvas) => {
+    if (activeTab === "labels" && labelItemsToPrint.length > 0) {
+      if (codeType === "qr") {
+        loadQrCodeGenerator().then((QRCodeObj) => {
+          setTimeout(() => {
+            labelItemsToPrint.forEach((item, idx) => {
+              const canvas = document.getElementById(
+                `ticket-canvas-${idx}`,
+              ) as HTMLCanvasElement;
+              if (canvas) {
                 try {
-                  QRCodeObj.toCanvas(canvas, codeText, {
-                    width: 60,
+                  QRCodeObj.toCanvas(canvas, item.codeText, {
+                    width: 70,
                     margin: 1,
                     color: {
                       dark: "#000000",
@@ -827,17 +1060,19 @@ export default function BusinessInventoryPage() {
                 } catch (err) {
                   console.error("QRCode rendering error", err);
                 }
-              });
-            }, 50);
-          });
-        } else {
-          setTimeout(() => {
-            const canvases = document.querySelectorAll(
-              ".barcode-preview-canvas",
-            );
-            canvases.forEach((canvas) => {
+              }
+            });
+          }, 80);
+        });
+      } else {
+        setTimeout(() => {
+          labelItemsToPrint.forEach((item, idx) => {
+            const canvas = document.getElementById(
+              `ticket-canvas-${idx}`,
+            ) as HTMLCanvasElement;
+            if (canvas) {
               try {
-                JsBarcode(canvas, codeText, {
+                JsBarcode(canvas, item.codeText, {
                   format: "CODE128",
                   width: 1.2,
                   height: 35,
@@ -848,12 +1083,12 @@ export default function BusinessInventoryPage() {
               } catch (err) {
                 console.error("Barcode rendering error", err);
               }
-            });
-          }, 50);
-        }
+            }
+          });
+        }, 80);
       }
     }
-  }, [activeTab, ticketProductId, ticketQuantity, products, codeType]);
+  }, [activeTab, labelItemsToPrint, codeType]);
 
   // Webcam Scanner Effect
   useEffect(() => {
@@ -936,24 +1171,64 @@ export default function BusinessInventoryPage() {
       setEditingProduct(product);
       const hasOffer = Boolean(
         product.adjustedPrice &&
-        Number(product.adjustedPrice) > 0 &&
-        Number(product.adjustedPrice) < Number(product.salePrice)
+        Number(product.adjustedPrice) > 0
       );
       setIsOfferActive(hasOffer);
       setOfferDurationDays(Number(localStorage.getItem("veaz_offer_days") || "3"));
       setApplyOfferToSeries(false);
 
+      // Cargar configuración de serie si aplica
+      const seriesMeta = decodeSeriesMetadata(product.description);
+      const cleanTarget = cleanModelName(product.name).toLowerCase();
+      const seriesId = seriesMeta?.seriesId;
+      const siblings = products.filter((p) => {
+        if (seriesId) {
+          const pMeta = decodeSeriesMetadata(p.description);
+          if (pMeta?.seriesId && pMeta.seriesId === seriesId) return true;
+        }
+        return (
+          cleanModelName(p.name).toLowerCase() === cleanTarget &&
+          (p.brandId || "") === (product.brandId || "")
+        );
+      });
+
+      const isSeries = product.unit === "Serie" || Boolean(seriesMeta) || siblings.length > 1;
+      let editConfig = defaultSeriesConfig;
+
+      if (isSeries) {
+        editConfig = buildEditSeriesConfig(product, siblings);
+        setStandaloneTaco(editConfig.taco || "");
+        setSeriesConfig(editConfig);
+        setEditScope("SERIES");
+      } else {
+        const currentTaco = extractTacoFromProduct(product) || "";
+        setStandaloneTaco(currentTaco);
+        setSeriesConfig(defaultSeriesConfig);
+        setEditScope("SINGLE");
+      }
+
+      const initialCost = isSeries && editConfig.costPricePerUnit > 0
+        ? editConfig.costPricePerUnit
+        : product.costPrice;
+      const initialSale = isSeries && editConfig.salePricePerUnit > 0
+        ? editConfig.salePricePerUnit
+        : product.salePrice;
+
       setFormData({
-        name: product.name,
-        description: product.description || "",
-        sku: product.sku || "",
+        name: isSeries ? cleanModelName(product.name) : product.name,
+        description: cleanDescriptionForDisplay(product.description) || "",
+        sku: product.sku
+          ? (isSeries
+            ? product.sku.replace(/[-_/\s]+(3[0-9]|4[0-5])$/i, "")
+            : product.sku)
+          : "",
         color: product.color || "",
-        costPrice: product.costPrice,
-        salePrice: product.salePrice,
-        adjustedPrice: product.adjustedPrice || 0,
+        costPrice: initialCost,
+        salePrice: initialSale,
+        adjustedPrice: product.adjustedPrice ? Number(product.adjustedPrice) : 0,
         stock: product.stock,
         minStock: product.minStock,
-        unit: product.unit || "Unidad",
+        unit: isSeries ? "Serie" : (product.unit || "Unidad"),
         imageUrl: product.imageUrl || "",
         presentations: product.presentations || [],
         brandId: product.brandId || "",
@@ -964,9 +1239,12 @@ export default function BusinessInventoryPage() {
       });
     } else {
       setEditingProduct(null);
+      setEditScope("SINGLE");
       setIsOfferActive(false);
       setOfferDurationDays(3);
       setApplyOfferToSeries(false);
+      setStandaloneTaco("");
+      setSeriesConfig(defaultSeriesConfig);
 
       setFormData({
         name: "",
@@ -989,6 +1267,32 @@ export default function BusinessInventoryPage() {
       });
     }
     setIsModalOpen(true);
+  };
+
+  const handleSelectEditScope = (scope: "SINGLE" | "SERIES") => {
+    setEditScope(scope);
+    if (!editingProduct) return;
+
+    if (scope === "SINGLE") {
+      setFormData((prev) => ({
+        ...prev,
+        name: editingProduct.name,
+        stock: editingProduct.stock,
+        salePrice: editingProduct.salePrice,
+        costPrice: editingProduct.costPrice,
+        sku: editingProduct.sku || "",
+        unit: editingProduct.unit || "Unidad",
+      }));
+    } else {
+      setFormData((prev) => ({
+        ...prev,
+        name: cleanModelName(editingProduct.name),
+        sku: editingProduct.sku ? editingProduct.sku.replace(/[-_/\s]+(3[0-9]|4[0-5])$/i, "") : "",
+        unit: "Serie",
+        costPrice: seriesConfig.costPricePerUnit > 0 ? seriesConfig.costPricePerUnit : editingProduct.costPrice,
+        salePrice: seriesConfig.salePricePerUnit > 0 ? seriesConfig.salePricePerUnit : editingProduct.salePrice,
+      }));
+    }
   };
 
   const handleClone = (product: Product | any) => {
@@ -1176,75 +1480,328 @@ export default function BusinessInventoryPage() {
         }
       }
 
-      const payload = {
-        ...formData,
-        imageUrl: finalImageUrl || undefined,
-      };
-      let createdProduct = null;
-      if (editingProduct) {
-        await updateProductRequest(editingProduct.id, payload as any);
-        toast.success("Producto actualizado");
-      } else {
-        createdProduct = await createProductRequest(payload as any);
-        toast.success("Producto creado");
-      }
+      // CASO 1: EDICIÓN AISLADA DE SOLO ESTE REGISTRO / TALLA
+      if (editingProduct && editScope === "SINGLE") {
+        const cleanDesc = cleanDescriptionForDisplay(formData.description);
+        const currentMetaTag = editingProduct.description?.match(/\[SERIE:[\s\S]*?\]/)?.[0] || "";
+        const finalDesc = `${cleanDesc} ${currentMetaTag}`.trim();
 
-      // Guardar duración de la oferta y sincronizar con cuenta regresiva
-      if (isOfferActive && Number(formData.adjustedPrice) > 0) {
-        localStorage.setItem("veaz_offer_days", String(offerDurationDays));
-        const target = Date.now() + offerDurationDays * 24 * 3600 * 1000;
-        localStorage.setItem("veaz_offer_end_time", String(target));
-        window.dispatchEvent(new Event("veaz_offer_updated"));
-      }
+        const singlePayload = {
+          name: formData.name.trim(),
+          description: finalDesc,
+          sku: formData.sku?.trim() || null,
+          color: formData.color?.trim() || null,
+          costPrice: Number(formData.costPrice || 0),
+          salePrice: Number(formData.salePrice || 0),
+          adjustedPrice: isOfferActive && Number(formData.adjustedPrice) > 0 ? Number(formData.adjustedPrice) : null,
+          stock: Number(formData.stock || 0),
+          minStock: Number(formData.minStock || 5),
+          unit: formData.unit || editingProduct.unit || "Unidad",
+          imageUrl: finalImageUrl || null,
+          brandId: formData.brandId || null,
+          familyId: formData.familyId || null,
+          commissionType: formData.commissionType || "PERCENT",
+          commissionValue: Number(formData.commissionValue || 0),
+          priceWithAgent: Number(formData.priceWithAgent || 0) || null,
+          presentations: (formData.presentations || [])
+            .filter((p: any) => p && p.name && p.name.trim() !== "" && Number(p.equivalence) > 0)
+            .map((p: any) => ({
+              id: p.id || undefined,
+              name: p.name.trim(),
+              equivalence: Number(p.equivalence),
+              price: Number(p.price || 0),
+            })),
+        };
 
-      // Sincronizar oferta a toda la serie (mismo nombre de modelo) si el usuario lo marcó
-      if (applyOfferToSeries && formData.name.trim()) {
-        const targetName = formData.name.trim().toLowerCase();
-        const siblingProducts = products.filter(
-          (p) => p.name.trim().toLowerCase() === targetName && (!editingProduct || p.id !== editingProduct.id)
-        );
-        if (siblingProducts.length > 0) {
-          const newAdj = isOfferActive ? Number(formData.adjustedPrice) : 0;
+        await updateProductRequest(editingProduct.id, singlePayload as any);
+
+        if (applyOfferToSeries && editingSiblings.length > 1) {
+          const offerPrice = isOfferActive && Number(formData.adjustedPrice) > 0 ? Number(formData.adjustedPrice) : null;
           await Promise.all(
-            siblingProducts.map((p) =>
-              updateProductRequest(p.id, {
-                adjustedPrice: newAdj,
-              }).catch(() => null)
+            editingSiblings.filter(s => s.id !== editingProduct.id).map(sib =>
+              updateProductRequest(sib.id, { adjustedPrice: offerPrice } as any)
             )
           );
-          toast.success(`Oferta aplicada a toda la serie (${siblingProducts.length + 1} productos)`);
+        }
+
+        toast.success("Registro / Talla actualizada correctamente");
+        setIsModalOpen(false);
+        setEditingProduct(null);
+        await loadData();
+        return;
+      }
+
+      // CASO 2: GESTIÓN DE SERIE (ÚNICAMENTE si la unidad seleccionada es Serie O si es edición de serie en alcance SERIES)
+      const isSeriesAction = formData.unit === "Serie" || (Boolean(editingProduct) && editScope === "SERIES" && isSeriesEligible);
+      if (isSeriesAction) {
+        const cleanName = cleanModelName(formData.name.trim());
+        const cleanDesc = cleanDescriptionForDisplay(formData.description);
+        const totalUnits = calculateCurveTotalUnits(seriesConfig.curve) || 6;
+        const seriesId = editingProduct
+          ? decodeSeriesMetadata(editingProduct.description)?.seriesId || `SERIE-${Date.now()}`
+          : `SERIE-${Date.now()}`;
+
+        const costUnit = seriesConfig.costPricePerUnit > 0
+          ? seriesConfig.costPricePerUnit
+          : (seriesConfig.costPricePerSeries > 0 ? Number((seriesConfig.costPricePerSeries / totalUnits).toFixed(2)) : Number(formData.costPrice || 0));
+
+        const saleUnit = seriesConfig.salePricePerUnit > 0
+          ? seriesConfig.salePricePerUnit
+          : (seriesConfig.salePricePerSeries > 0 ? Number((seriesConfig.salePricePerSeries / totalUnits).toFixed(2)) : Number(formData.salePrice || 0));
+
+        const saleSeries = seriesConfig.salePricePerSeries > 0
+          ? seriesConfig.salePricePerSeries
+          : Number((saleUnit * totalUnits).toFixed(2));
+
+        const seriesMetaTag = encodeSeriesMetadata({
+          seriesId,
+          unitsPerSeries: totalUnits,
+          curve: seriesConfig.curve.map((item) => ({ size: item.size, ratio: item.ratio })),
+          pricePerSeries: saleSeries,
+          pricePerUnit: saleUnit,
+          taco: seriesConfig.taco || standaloneTaco || undefined,
+        });
+        const finalDesc = `${cleanDesc} ${seriesMetaTag}`.trim();
+
+        if (!editingProduct) {
+          // Registrar serie nueva
+          const createPromises = seriesConfig.curve.map(async (item) => {
+            const sizeStock = item.stock !== undefined
+              ? Math.max(0, Number(item.stock))
+              : (seriesConfig.seriesStock || 0) * (item.ratio || 1);
+            const sizeSku = formData.sku ? `${formData.sku.trim()}-${item.size}` : undefined;
+            const sizeName = `${cleanName} - Talla ${item.size}`;
+
+            const presList: Presentation[] = [
+              {
+                name: `Serie Completa (${totalUnits} pares)`,
+                equivalence: totalUnits,
+                price: saleSeries,
+              },
+              {
+                name: `Par (Talla ${item.size})`,
+                equivalence: 1,
+                price: saleUnit,
+              },
+            ];
+
+            return createProductRequest({
+              name: sizeName,
+              description: finalDesc,
+              sku: sizeSku,
+              color: formData.color || undefined,
+              costPrice: costUnit,
+              salePrice: saleUnit,
+              adjustedPrice: isOfferActive && Number(formData.adjustedPrice) > 0 ? Number(formData.adjustedPrice) : undefined,
+              stock: sizeStock,
+              minStock: formData.minStock || 5,
+              unit: "Serie",
+              imageUrl: finalImageUrl || undefined,
+              presentations: presList,
+              brandId: formData.brandId || undefined,
+              familyId: formData.familyId || undefined,
+              commissionType: formData.commissionType,
+              commissionValue: formData.commissionValue,
+              priceWithAgent: formData.priceWithAgent,
+            } as any);
+          });
+
+          await Promise.all(createPromises);
+          toast.success(
+            `Serie registrada: ${seriesConfig.seriesStock} series (${totalUnits * seriesConfig.seriesStock} pares en ${seriesConfig.curve.length} tallas)`
+          );
+        } else {
+          // ACTUALIZAR TODA LA SERIE (Sincronización integral de curvas y stocks por talla)
+          const seriesMeta = decodeSeriesMetadata(editingProduct.description);
+          const seriesId = seriesMeta?.seriesId;
+          const targetCleanName = cleanModelName(editingProduct.name).toLowerCase();
+          const matchedSiblings = products.filter((p) => {
+            if (seriesId) {
+              const pMeta = decodeSeriesMetadata(p.description);
+              if (pMeta?.seriesId && pMeta.seriesId === seriesId) return true;
+            }
+            return (
+              cleanModelName(p.name).toLowerCase() === targetCleanName &&
+              (p.brandId || "") === (editingProduct.brandId || "")
+            );
+          });
+          const siblings = matchedSiblings.length > 0 ? matchedSiblings : [editingProduct];
+          const finalAdjustedPrice = isOfferActive && Number(formData.adjustedPrice) > 0 ? Number(formData.adjustedPrice) : null;
+
+          // 1. Actualizar cada talla existente con su stock definido en la curva
+          await Promise.all(
+            siblings.map((sibling) => {
+              const sibSize = extractSizeFromProduct(sibling);
+              const sibCurveItem = seriesConfig.curve.find((c) => String(c.size).trim() === String(sibSize).trim());
+
+              // Stock exacto definido en el configurador o conservado
+              const finalSibStock = sibCurveItem && sibCurveItem.stock !== undefined
+                ? Math.max(0, Number(sibCurveItem.stock))
+                : (Number(sibling.stock) || 0);
+
+              const sizeSku = formData.sku ? `${formData.sku.trim()}-${sibSize}` : sibling.sku;
+
+              const existingCompletePres = sibling.presentations?.find(
+                (pr: any) => pr.equivalence === totalUnits || pr.name?.toLowerCase().includes("serie")
+              );
+              const existingUnitPres = sibling.presentations?.find(
+                (pr: any) => pr.equivalence === 1 || pr.name?.toLowerCase().includes("par") || pr.name?.toLowerCase().includes("talla")
+              );
+
+              return updateProductRequest(sibling.id, {
+                name: `${cleanName} - Talla ${sibSize}`,
+                sku: sizeSku || undefined,
+                imageUrl: finalImageUrl || undefined,
+                brandId: formData.brandId || undefined,
+                familyId: formData.familyId || undefined,
+                color: formData.color || undefined,
+                costPrice: costUnit,
+                salePrice: saleUnit,
+                stock: finalSibStock,
+                minStock: formData.minStock || 5,
+                adjustedPrice: finalAdjustedPrice,
+                unit: "Serie",
+                description: finalDesc,
+                presentations: [
+                  {
+                    id: existingCompletePres?.id,
+                    name: `Serie Completa (${totalUnits} pares)`,
+                    equivalence: totalUnits,
+                    price: saleSeries,
+                  },
+                  {
+                    id: existingUnitPres?.id,
+                    name: `Par (Talla ${sibSize})`,
+                    equivalence: 1,
+                    price: saleUnit,
+                  },
+                ],
+              } as any);
+            })
+          );
+
+          // 2. Crear tallas nuevas añadidas a la curva
+          const existingSizes = new Set(siblings.map((s) => extractSizeFromProduct(s).trim()));
+          const newCurveItems = seriesConfig.curve.filter((c) => !existingSizes.has(String(c.size).trim()));
+          if (newCurveItems.length > 0) {
+            await Promise.all(
+              newCurveItems.map((item) => {
+                const sizeStock = item.stock !== undefined
+                  ? Math.max(0, Number(item.stock))
+                  : ((seriesConfig.seriesStock > 0 ? seriesConfig.seriesStock : 1) * (item.ratio || 1));
+                const sizeSku = formData.sku ? `${formData.sku.trim()}-${item.size}` : undefined;
+                return createProductRequest({
+                  name: `${cleanName} - Talla ${item.size}`,
+                  description: finalDesc,
+                  sku: sizeSku,
+                  color: formData.color || undefined,
+                  costPrice: costUnit,
+                  salePrice: saleUnit,
+                  adjustedPrice: finalAdjustedPrice,
+                  stock: sizeStock,
+                  minStock: formData.minStock || 5,
+                  unit: "Serie",
+                  imageUrl: finalImageUrl || undefined,
+                  presentations: [
+                    {
+                      name: `Serie Completa (${totalUnits} pares)`,
+                      equivalence: totalUnits,
+                      price: saleSeries,
+                    },
+                    {
+                      name: `Par (Talla ${item.size})`,
+                      equivalence: 1,
+                      price: saleUnit,
+                    },
+                  ],
+                  brandId: formData.brandId || undefined,
+                  familyId: formData.familyId || undefined,
+                } as any);
+              })
+            );
+          }
+
+          toast.success(`Serie actualizada con éxito: ${siblings.length} tallas sincronizadas.`);
+        }
+
+        setIsModalOpen(false);
+        setEditingProduct(null);
+        await loadData();
+        return;
+      }
+
+      // CASO 3: MULTIRUBRO INDIVIDUAL (Ferretería, Bodegas, Abarrotes, Ropa, etc.)
+      const cleanDesc = cleanDescriptionForDisplay(formData.description);
+      const validPresentations = (formData.presentations || [])
+        .filter((p: any) => p && p.name && p.name.trim() !== "" && Number(p.equivalence) > 0)
+        .map((p: any) => ({
+          id: p.id || undefined,
+          name: p.name.trim(),
+          equivalence: Number(p.equivalence),
+          price: Number(p.price || 0),
+        }));
+
+      const standalonePayload = {
+        name: formData.name.trim(),
+        description: cleanDesc,
+        sku: formData.sku?.trim() || null,
+        color: formData.color?.trim() || null,
+        costPrice: Number(formData.costPrice || 0),
+        salePrice: Number(formData.salePrice || 0),
+        adjustedPrice: isOfferActive && Number(formData.adjustedPrice) > 0 ? Number(formData.adjustedPrice) : null,
+        stock: Number(formData.stock || 0),
+        minStock: Number(formData.minStock || 5),
+        unit: formData.unit || "Unidad",
+        imageUrl: finalImageUrl || null,
+        brandId: formData.brandId || null,
+        familyId: formData.familyId || null,
+        commissionType: formData.commissionType || "PERCENT",
+        commissionValue: Number(formData.commissionValue || 0),
+        priceWithAgent: Number(formData.priceWithAgent || 0) || null,
+        presentations: validPresentations,
+      };
+
+      if (editingProduct) {
+        await updateProductRequest(editingProduct.id, standalonePayload as any);
+        toast.success("Producto actualizado con éxito");
+      } else {
+        const createdProduct = await createProductRequest(standalonePayload as any);
+        toast.success("Producto creado con éxito");
+
+        if (isCreatingFromPlanner && createdProduct) {
+          const newItem = {
+            ...createdProduct,
+            soldQty: 0,
+            deficit: 0,
+            isNew: true,
+          };
+          setExtraPlannerItems((prev) => [...prev, newItem]);
+          setSelectedItemIds((prev) => [...prev, createdProduct.id]);
+          setCustomQuantities((prev) => ({
+            ...prev,
+            [createdProduct.id]: customPlannerQty || 1,
+          }));
+          setCustomCosts((prev) => ({
+            ...prev,
+            [createdProduct.id]: createdProduct.costPrice,
+          }));
+
+          setIsCreatingFromPlanner(false);
+          setCustomPlannerQty(1);
         }
       }
 
-      if (!editingProduct && isCreatingFromPlanner && createdProduct) {
-        const newItem = {
-          ...createdProduct,
-          soldQty: 0,
-          deficit: 0,
-          isNew: true,
-        };
-        setExtraPlannerItems((prev) => [...prev, newItem]);
-        setSelectedItemIds((prev) => [...prev, createdProduct.id]);
-        setCustomQuantities((prev) => ({
-          ...prev,
-          [createdProduct.id]: customPlannerQty || 1,
-        }));
-        setCustomCosts((prev) => ({
-          ...prev,
-          [createdProduct.id]: createdProduct.costPrice,
-        }));
-
-        setIsCreatingFromPlanner(false);
-        setCustomPlannerQty(1);
-      }
-
       setIsModalOpen(false);
-      loadData();
+      setEditingProduct(null);
+      await loadData();
       if (activeTab === "planner") loadPlannerData();
     } catch (error: any) {
-      toast.error(
-        error?.response?.data?.message || "Error al guardar producto",
-      );
+      const errMsg =
+        error?.response?.data?.message ||
+        error?.response?.data?.error?.message ||
+        error?.message ||
+        "Error al guardar producto";
+      toast.error(errMsg);
     }
   };
 
@@ -2222,6 +2779,117 @@ export default function BusinessInventoryPage() {
     toast.success("Inventario exportado a PDF");
   };
 
+  const exportLabelsToPdf = async () => {
+    if (labelItemsToPrint.length === 0) {
+      toast.error("No hay etiquetas para exportar");
+      return;
+    }
+
+    const exportToast = toast.loading("Generando PDF para imprenta...");
+    try {
+      const { jsPDF } = await import("jspdf");
+      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+
+      const cols = 4;
+      const rows = 6;
+      const labelsPerPage = cols * rows;
+      const marginX = 8;
+      const marginY = 10;
+      const labelW = (210 - marginX * 2) / cols; // ~48.5 mm
+      const labelH = (297 - marginY * 2) / rows; // ~46.1 mm
+
+      for (let i = 0; i < labelItemsToPrint.length; i++) {
+        const indexInPage = i % labelsPerPage;
+
+        if (i > 0 && indexInPage === 0) {
+          doc.addPage();
+        }
+
+        const col = indexInPage % cols;
+        const row = Math.floor(indexInPage / cols);
+        const x = marginX + col * labelW;
+        const y = marginY + row * labelH;
+
+        const item = labelItemsToPrint[i];
+
+        // Recuadro punteado para corte de etiqueta
+        doc.setDrawColor(210, 215, 225);
+        doc.setLineDashPattern([1.5, 1.5], 0);
+        doc.roundedRect(x + 1, y + 1, labelW - 2, labelH - 2, 2, 2, "S");
+        doc.setLineDashPattern([], 0);
+
+        // Header: Nombre comercial
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(7);
+        doc.setTextColor(79, 70, 229);
+        const headerText = (ticketBusinessName || item.brandName || "TIENDA").toUpperCase();
+        doc.text(headerText.slice(0, 22), x + labelW / 2, y + 5.5, { align: "center" });
+
+        // Nombre del Calzado / Modelo
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8);
+        doc.setTextColor(30, 41, 59);
+        const truncatedName = item.modelName.length > 20 ? item.modelName.slice(0, 19) + "..." : item.modelName;
+        doc.text(truncatedName, x + labelW / 2, y + 9.5, { align: "center" });
+
+        // TALLA DESTACADA (Caja Negra de Alto Contraste)
+        doc.setFillColor(15, 23, 42); // slate-900
+        doc.roundedRect(x + labelW / 2 - 14, y + 11.5, 28, 6.5, 1.5, 1.5, "F");
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(8.5);
+        doc.setFont("helvetica", "bold");
+        doc.text(`TALLA: ${item.size}`, x + labelW / 2, y + 16, { align: "center" });
+
+        // Precio
+        doc.setTextColor(217, 119, 6); // amber-600
+        doc.setFontSize(8);
+        doc.setFont("helvetica", "bold");
+        doc.text(`S/ ${Number(item.price).toFixed(2)}`, x + labelW / 2, y + 21.5, { align: "center" });
+
+        // Código QR / Código de Barras desde el canvas
+        const canvas = document.getElementById(`ticket-canvas-${i}`) as HTMLCanvasElement;
+        if (canvas) {
+          try {
+            const imgData = canvas.toDataURL("image/png");
+            if (codeType === "qr") {
+              const qrSize = 16;
+              doc.addImage(imgData, "PNG", x + labelW / 2 - qrSize / 2, y + 22.5, qrSize, qrSize);
+            } else {
+              const bcW = labelW - 8;
+              const bcH = 11;
+              doc.addImage(imgData, "PNG", x + 4, y + 22.5, bcW, bcH);
+            }
+          } catch (e) {
+            console.warn("Canvas to image error", e);
+          }
+        }
+
+        // Footer SKU / Código
+        doc.setTextColor(100, 116, 139);
+        doc.setFontSize(6.5);
+        doc.setFont("helvetica", "normal");
+        if (item.color || item.taco) {
+          doc.setFontSize(6);
+          doc.setTextColor(100, 116, 139);
+          doc.text([item.color, item.taco].filter(Boolean).join(" • ").slice(0, 24), x + labelW / 2, y + 21, { align: "center" });
+        }
+        doc.setFontSize(6.5);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(79, 70, 229);
+        doc.text(`SKU: ${item.codeText}`, x + labelW / 2, y + labelH - 2.5, { align: "center" });
+      }
+
+      const safeName = selectedLabelProduct?.name.replace(/[^a-zA-Z0-9]/g, "_") || "Etiquetas";
+      doc.save(`Etiquetas_Imprenta_${safeName}_${Date.now()}.pdf`);
+      toast.dismiss(exportToast);
+      toast.success(`✅ PDF con ${labelItemsToPrint.length} etiquetas listo para llevar a la imprenta`);
+    } catch (err: any) {
+      toast.dismiss(exportToast);
+      console.error("PDF export error", err);
+      toast.error("Error al generar PDF de etiquetas");
+    }
+  };
+
   const selectedPres = restockProduct?.presentations?.find(
     (p) => p.id === restockData.presentationId,
   );
@@ -2236,27 +2904,27 @@ export default function BusinessInventoryPage() {
           <style
             dangerouslySetInnerHTML={{
               __html: `
-              @media print {
-                body * {
-                  visibility: hidden !important;
+                @media print {
+                  body * {
+                    visibility: hidden !important;
+                  }
+                  #print-area, #print-area * {
+                    visibility: visible !important;
+                  }
+                  #print-area {
+                    position: absolute !important;
+                    left: 0 !important;
+                    top: 0 !important;
+                    width: 100% !important;
+                    background: white !important;
+                    padding: 0 !important;
+                    margin: 0 !important;
+                  }
+                  .no-print {
+                    display: none !important;
+                  }
                 }
-                #print-area, #print-area * {
-                  visibility: visible !important;
-                }
-                #print-area {
-                  position: absolute !important;
-                  left: 0 !important;
-                  top: 0 !important;
-                  width: 100% !important;
-                  background: white !important;
-                  padding: 0 !important;
-                  margin: 0 !important;
-                }
-                .no-print {
-                  display: none !important;
-                }
-              }
-            `,
+              `,
             }}
           />
         )}
@@ -2612,10 +3280,44 @@ export default function BusinessInventoryPage() {
                                 (bs: any) => bs.branchId === activeBranchId,
                               )?.stock ?? 0)
                               : p.stock;
+
+                            const seriesMeta = decodeSeriesMetadata(p.description);
+                            const isSeries = p.unit === "Serie" || !!seriesMeta;
+
+                            // Curva y balance de series para este modelo
+                            const cleanTarget = cleanModelName(p.name).toLowerCase();
+                            const siblings = isSeries
+                              ? products.filter(
+                                (s) =>
+                                  cleanModelName(s.name).toLowerCase() === cleanTarget &&
+                                  (s.brandId || "") === (p.brandId || "")
+                              )
+                              : [];
+
+                            const curveItems = seriesMeta?.curve || (
+                              siblings.length > 0
+                                ? siblings.map((s) => ({ size: extractSizeFromProduct(s), ratio: 1 }))
+                                : [{ size: extractSizeFromProduct(p), ratio: 1 }]
+                            );
+
+                            const seriesSummary = isSeries
+                              ? computeSeriesStockSummary(
+                                siblings.map((s) => ({
+                                  size: extractSizeFromProduct(s),
+                                  stock: activeBranchId
+                                    ? (s.branchStocks?.find((bs: any) => bs.branchId === activeBranchId)?.stock ?? 0)
+                                    : s.stock,
+                                  ratio: curveItems.find((c) => c.size === extractSizeFromProduct(s))?.ratio || 1,
+                                })),
+                                curveItems
+                              )
+                              : null;
+
                             return (
                               <div
                                 key={p.id}
-                                className="bg-white rounded-3xl border border-gray-100 shadow-sm hover:shadow-xl hover:border-indigo-100 transition-all duration-300 group overflow-hidden flex flex-col relative"
+                                className={`bg-white rounded-3xl border shadow-sm hover:shadow-xl transition-all duration-300 group overflow-hidden flex flex-col relative ${isSeries ? "border-amber-200/80 hover:border-amber-400" : "border-gray-100 hover:border-indigo-100"
+                                  }`}
                               >
                                 {/* Product Image */}
                                 <div className="relative w-full h-36 bg-gradient-to-br from-gray-50 to-indigo-50 overflow-hidden">
@@ -2638,17 +3340,33 @@ export default function BusinessInventoryPage() {
                                       <Package className="w-12 h-12 text-indigo-100" />
                                     </div>
                                   )}
+
                                   {/* Stock status badge */}
-                                  <div
-                                    className={`absolute top-3 right-3 px-2.5 py-1 rounded-xl text-[9px] font-black uppercase tracking-wider shadow-sm ${displayStock <= p.minStock
-                                      ? "bg-rose-500 text-white"
-                                      : "bg-emerald-500 text-white"
-                                      }`}
-                                  >
-                                    {displayStock <= p.minStock
-                                      ? "Stock bajo"
-                                      : "En Stock"}
-                                  </div>
+                                  {isSeries && seriesSummary ? (
+                                    <div
+                                      className={`absolute top-3 right-3 px-2.5 py-1 rounded-xl text-[9px] font-black uppercase tracking-wider shadow-sm flex items-center gap-1 ${seriesSummary.completeSeries === 0
+                                        ? "bg-amber-500 text-white"
+                                        : "bg-indigo-600 text-white"
+                                        }`}
+                                    >
+                                      {seriesSummary.completeSeries === 0 ? (
+                                        <>⚠️ Curva Incompleta</>
+                                      ) : (
+                                        <>📦 {seriesSummary.completeSeries} {seriesSummary.completeSeries === 1 ? "Serie" : "Series"}</>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <div
+                                      className={`absolute top-3 right-3 px-2.5 py-1 rounded-xl text-[9px] font-black uppercase tracking-wider shadow-sm ${displayStock <= p.minStock
+                                        ? "bg-rose-500 text-white"
+                                        : "bg-emerald-500 text-white"
+                                        }`}
+                                    >
+                                      {displayStock <= p.minStock
+                                        ? "Stock bajo"
+                                        : "En Stock"}
+                                    </div>
+                                  )}
                                 </div>
 
                                 {/* Card Info */}
@@ -2678,32 +3396,39 @@ export default function BusinessInventoryPage() {
                                       )}
                                     </div>
 
-                                    {/* Brand / Family Badges */}
-                                    {(p.brand || p.family) && (
-                                      <div className="flex flex-wrap gap-1 mb-2">
-                                        {p.brand && (
-                                          <span
-                                            className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded-lg text-[9px] font-black border border-blue-100/70"
-                                            title="Marca"
-                                          >
-                                            {p.brand.name}
-                                          </span>
-                                        )}
-                                        {p.family && (
-                                          <span
-                                            className="px-2 py-0.5 bg-purple-50 text-purple-600 rounded-lg text-[9px] font-black border border-purple-100/70"
-                                            title="Familia"
-                                          >
-                                            {p.family.name}
-                                          </span>
-                                        )}
-                                      </div>
-                                    )}
-                                    {/* Presentations */}
+                                    {/* Brand / Family / Serie Badges */}
+                                    <div className="flex flex-wrap gap-1 mb-2">
+                                      {isSeries && seriesSummary && (
+                                        <span
+                                          className="px-2 py-0.5 bg-amber-50 text-amber-800 rounded-lg text-[9px] font-black border border-amber-200 flex items-center gap-1"
+                                          title="Unidad Serie con curva de tallas configurable"
+                                        >
+                                          📦 SERIE ({seriesSummary.unitsPerSeries} pares)
+                                        </span>
+                                      )}
+                                      {p.brand && (
+                                        <span
+                                          className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded-lg text-[9px] font-black border border-blue-100/70"
+                                          title="Marca"
+                                        >
+                                          {p.brand.name}
+                                        </span>
+                                      )}
+                                      {p.family && (
+                                        <span
+                                          className="px-2 py-0.5 bg-purple-50 text-purple-600 rounded-lg text-[9px] font-black border border-purple-100/70"
+                                          title="Familia"
+                                        >
+                                          {p.family.name}
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {/* Presentations and Clean Description */}
                                     <div className="flex flex-wrap gap-1 mb-3">
                                       {p.presentations &&
-                                        p.presentations.length > 0
-                                        ? p.presentations
+                                        p.presentations.length > 0 &&
+                                        p.presentations
                                           .slice(0, 3)
                                           .map((pres) => (
                                             <span
@@ -2713,90 +3438,193 @@ export default function BusinessInventoryPage() {
                                             >
                                               {pres.name}
                                             </span>
-                                          ))
-                                        : null}
-                                      <span
-                                        className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded-lg text-[9px] font-bold border border-slate-200/70"
-                                        title={p.description}
-                                      >
-                                        {p.description}
-                                      </span>
+                                          ))}
+                                      {cleanDescriptionForDisplay(p.description) ? (
+                                        <span
+                                          className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded-lg text-[9px] font-bold border border-slate-200/70"
+                                          title={cleanDescriptionForDisplay(p.description)}
+                                        >
+                                          {cleanDescriptionForDisplay(p.description)}
+                                        </span>
+                                      ) : null}
                                     </div>
 
-
-                                    <div className="bg-slate-50/80 rounded-2xl p-3 mb-4 border border-slate-100 space-y-2">
-                                      <div>
-                                        <div className="text-[9px] text-gray-400 font-extrabold uppercase tracking-widest mb-0.5">
-                                          Stock total disponible
-                                        </div>
-                                        <div className="font-black text-gray-900 text-xs flex items-baseline gap-1">
-                                          <span className="text-sm font-extrabold">
-                                            {formatStock(
-                                              p.stock,
-                                              p.unit,
-                                              p.presentations,
+                                    {/* Stock Display Section */}
+                                    {isSeries && seriesSummary ? (
+                                      <div className="bg-gradient-to-br from-amber-50/70 via-orange-50/40 to-slate-50 rounded-2xl p-3 mb-4 border border-amber-200/70 space-y-2">
+                                        <div>
+                                          <div className="flex items-center justify-between">
+                                            <span className="text-[9px] text-amber-800 font-extrabold uppercase tracking-widest flex items-center gap-1">
+                                              📦 Stock en Almacén
+                                            </span>
+                                            <span className="text-[10px] font-mono font-bold text-amber-700">
+                                              {seriesSummary.totalUnits} pares totales
+                                            </span>
+                                          </div>
+                                          <div className="mt-1 flex items-baseline gap-2">
+                                            <span className="text-base font-black text-amber-950">
+                                              {seriesSummary.completeSeries}{" "}
+                                              <span className="text-xs font-bold text-amber-800">
+                                                {seriesSummary.completeSeries === 1 ? "Serie completa" : "Series completas"}
+                                              </span>
+                                            </span>
+                                            {seriesSummary.looseUnits > 0 ? (
+                                              <span className="text-[11px] font-black text-orange-700 bg-orange-100/80 px-2 py-0.5 rounded-lg border border-orange-200">
+                                                +{seriesSummary.looseUnits} {seriesSummary.looseUnits === 1 ? "par suelto" : "pares sueltos"}
+                                              </span>
+                                            ) : (
+                                              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-lg border border-emerald-100">
+                                                Curva balanceada
+                                              </span>
                                             )}
-                                          </span>
-                                          <span className="text-[10px] text-gray-400 font-medium">
-                                            ({p.stock} base • min: {p.minStock})
-                                          </span>
+                                          </div>
                                         </div>
-                                      </div>
 
-                                      {user?.profiles?.includes("BUSINESS_BRANCHES") && p.branchStocks &&
-                                        p.branchStocks.length > 0 && (
-                                          <div className="border-t border-slate-200/60 pt-2 space-y-1">
-                                            <div className="text-[8px] text-indigo-500 font-black uppercase tracking-wider">
-                                              Distribución por Sede
-                                            </div>
-                                            <div className="max-h-[75px] overflow-y-auto pr-0.5 space-y-1">
-                                              {p.branchStocks.map((bs: any) => {
-                                                const isSelected =
-                                                  activeBranchId ===
-                                                  bs.branchId;
-                                                return (
-                                                  <div
-                                                    key={bs.id}
-                                                    className={`flex justify-between items-center text-[10px] py-0.5 ${isSelected
-                                                      ? "text-indigo-600 font-black bg-indigo-50 px-1.5 rounded-lg"
-                                                      : "text-gray-600 font-medium px-0.5"
-                                                      }`}
-                                                  >
-                                                    <span
-                                                      className="truncate max-w-[120px]"
-                                                      title={bs.branch?.name}
-                                                    >
-                                                      {bs.branch?.name}
-                                                    </span>
-                                                    <span className="font-bold font-mono">
-                                                      {bs.stock} {p.unit}
-                                                    </span>
-                                                  </div>
-                                                );
-                                              })}
+                                        {/* Curva de tallas breakdown */}
+                                        <div className="pt-2 border-t border-amber-200/50">
+                                          <div className="flex justify-between items-center text-[9px] font-bold text-amber-800 mb-1.5">
+                                            <span>Curva de Tallas:</span>
+                                            {seriesSummary.sizes.some((s) => s.isLimiting && seriesSummary.completeSeries > 0) && (
+                                              <span className="text-[8px] text-amber-600 font-medium">
+                                                ● Talla limitante
+                                              </span>
+                                            )}
+                                          </div>
+                                          <div className="flex flex-wrap gap-1">
+                                            {seriesSummary.sizes.map((s) => (
+                                              <span
+                                                key={s.size}
+                                                className={`text-[10px] px-2 py-0.5 rounded-lg border flex items-center gap-1 font-bold ${s.stock === 0
+                                                  ? "bg-rose-50 text-rose-700 border-rose-200"
+                                                  : s.isLimiting && seriesSummary.completeSeries > 0
+                                                    ? "bg-amber-100/90 text-amber-900 border-amber-300 ring-1 ring-amber-400/40"
+                                                    : "bg-white text-gray-800 border-gray-200 shadow-2xs"
+                                                  }`}
+                                                title={`Talla ${s.size}: ${s.stock} pares en stock (Ratio: ${s.ratio} por serie)`}
+                                              >
+                                                <span className="text-gray-500 font-normal">T.{s.size}:</span>
+                                                <span className="font-black font-mono">{s.stock}</span>
+                                                {s.ratio > 1 && (
+                                                  <span className="text-[8px] text-indigo-600 font-bold bg-indigo-50 px-1 rounded">
+                                                    x{s.ratio}
+                                                  </span>
+                                                )}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        </div>
+
+                                        {user?.profiles?.includes("BUSINESS_BRANCHES") && p.branchStocks && p.branchStocks.length > 0 && (
+                                          <div className="border-t border-amber-200/50 pt-1.5">
+                                            <div className="text-[8px] text-amber-700 font-black uppercase tracking-wider">
+                                              Sede: {activeBranchId ? p.branchStocks.find((bs: any) => bs.branchId === activeBranchId)?.branch?.name || "Todas" : "Global"}
                                             </div>
                                           </div>
                                         )}
-                                    </div>
+                                      </div>
+                                    ) : (
+                                      <div className="bg-slate-50/80 rounded-2xl p-3 mb-4 border border-slate-100 space-y-2">
+                                        <div>
+                                          <div className="text-[9px] text-gray-400 font-extrabold uppercase tracking-widest mb-0.5">
+                                            Stock total disponible
+                                          </div>
+                                          <div className="font-black text-gray-900 text-xs flex items-baseline gap-1">
+                                            <span className="text-sm font-extrabold">
+                                              {formatStock(
+                                                p.stock,
+                                                p.unit,
+                                                p.presentations,
+                                              )}
+                                            </span>
+                                            <span className="text-[10px] text-gray-400 font-medium">
+                                              ({p.stock} base • min: {p.minStock})
+                                            </span>
+                                          </div>
+                                        </div>
 
-                                    <div className="grid grid-cols-2 gap-4 border-t border-slate-100 pt-3">
-                                      <div>
-                                        <div className="text-[9px] text-gray-400 font-extrabold uppercase tracking-widest">
-                                          Costo
+                                        {user?.profiles?.includes("BUSINESS_BRANCHES") && p.branchStocks &&
+                                          p.branchStocks.length > 0 && (
+                                            <div className="border-t border-slate-200/60 pt-2 space-y-1">
+                                              <div className="text-[8px] text-indigo-500 font-black uppercase tracking-wider">
+                                                Distribución por Sede
+                                              </div>
+                                              <div className="max-h-[75px] overflow-y-auto pr-0.5 space-y-1">
+                                                {p.branchStocks.map((bs: any) => {
+                                                  const isSelected =
+                                                    activeBranchId ===
+                                                    bs.branchId;
+                                                  return (
+                                                    <div
+                                                      key={bs.id}
+                                                      className={`flex justify-between items-center text-[10px] py-0.5 ${isSelected
+                                                        ? "text-indigo-600 font-black bg-indigo-50 px-1.5 rounded-lg"
+                                                        : "text-gray-600 font-medium px-0.5"
+                                                        }`}
+                                                    >
+                                                      <span
+                                                        className="truncate max-w-[120px]"
+                                                        title={bs.branch?.name}
+                                                      >
+                                                        {bs.branch?.name}
+                                                      </span>
+                                                      <span className="font-bold font-mono">
+                                                        {bs.stock} {p.unit}
+                                                      </span>
+                                                    </div>
+                                                  );
+                                                })}
+                                              </div>
+                                            </div>
+                                          )}
+                                      </div>
+                                    )}
+
+                                    {/* Pricing Section */}
+                                    {isSeries && seriesSummary ? (
+                                      <div className="grid grid-cols-2 gap-3 border-t border-slate-100 pt-3">
+                                        <div>
+                                          <div className="text-[9px] text-gray-400 font-extrabold uppercase tracking-widest">
+                                            Par Suelto
+                                          </div>
+                                          <div className="text-sm font-black text-indigo-600">
+                                            S/ {p.salePrice.toFixed(2)}
+                                          </div>
+                                          <div className="text-[9px] text-gray-400 font-medium">
+                                            Costo: S/ {p.costPrice.toFixed(2)}
+                                          </div>
                                         </div>
-                                        <div className="text-sm font-bold text-gray-700">
-                                          S/ {p.costPrice.toFixed(2)}
+                                        <div>
+                                          <div className="text-[9px] text-amber-700 font-extrabold uppercase tracking-widest">
+                                            Serie Completa
+                                          </div>
+                                          <div className="text-sm font-black text-amber-700">
+                                            S/ {(seriesMeta?.pricePerSeries || (p.salePrice * seriesSummary.unitsPerSeries)).toFixed(2)}
+                                          </div>
+                                          <div className="text-[9px] text-amber-600/80 font-medium">
+                                            Costo: S/ {(p.costPrice * seriesSummary.unitsPerSeries).toFixed(2)}
+                                          </div>
                                         </div>
                                       </div>
-                                      <div>
-                                        <div className="text-[9px] text-gray-400 font-extrabold uppercase tracking-widest">
-                                          Venta
+                                    ) : (
+                                      <div className="grid grid-cols-2 gap-4 border-t border-slate-100 pt-3">
+                                        <div>
+                                          <div className="text-[9px] text-gray-400 font-extrabold uppercase tracking-widest">
+                                            Costo
+                                          </div>
+                                          <div className="text-sm font-bold text-gray-700">
+                                            S/ {p.costPrice.toFixed(2)}
+                                          </div>
                                         </div>
-                                        <div className="text-sm font-black text-indigo-600">
-                                          S/ {p.salePrice.toFixed(2)}
+                                        <div>
+                                          <div className="text-[9px] text-gray-400 font-extrabold uppercase tracking-widest">
+                                            Venta
+                                          </div>
+                                          <div className="text-sm font-black text-indigo-600">
+                                            S/ {p.salePrice.toFixed(2)}
+                                          </div>
                                         </div>
                                       </div>
-                                    </div>
+                                    )}
                                   </div>
 
                                   {/* Card Actions */}
@@ -2848,10 +3676,64 @@ export default function BusinessInventoryPage() {
                                     </button>
                                     <button
                                       onClick={() => {
-                                        setProductIdToDelete(p.id);
-                                        setIsDeleteConfirmOpen(true);
+                                        setTicketProductId(p.id);
+                                        setActiveTab("labels");
+                                        window.scrollTo({ top: 0, behavior: "smooth" });
                                       }}
-                                      className="px-2.5 py-2 bg-rose-50 text-rose-600 rounded-xl hover:bg-rose-100 transition-colors flex items-center justify-center"
+                                      className="px-2.5 py-2 bg-amber-50 text-amber-700 rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-amber-100 transition-colors flex items-center justify-center"
+                                      title="Diseñar Etiquetas / QR / Código de Barras para Imprenta"
+                                    >
+                                      <BarcodeIcon className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        const isSeries = p.unit === "Serie" || Boolean(decodeSeriesMetadata(p.description));
+                                        const pMeta = decodeSeriesMetadata(p.description);
+                                        const targetClean = cleanModelName(p.name).toLowerCase();
+                                        const siblings = isSeries
+                                          ? products.filter((item) => {
+                                              const itemMeta = decodeSeriesMetadata(item.description);
+                                              if (pMeta?.seriesId && itemMeta?.seriesId) return pMeta.seriesId === itemMeta.seriesId;
+                                              return cleanModelName(item.name).toLowerCase() === targetClean;
+                                            })
+                                          : [];
+                                        const sizes = siblings.length > 0
+                                          ? siblings.map((s) => extractSizeFromProduct(s)).filter(Boolean)
+                                          : (extractSizeFromProduct(p) ? [extractSizeFromProduct(p)] : undefined);
+                                        shareProductOfferViaWhatsApp(p, sizes);
+                                      }}
+                                      className="px-2.5 py-2 bg-emerald-50 text-emerald-700 rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-emerald-100 transition-colors flex items-center justify-center cursor-pointer shadow-2xs"
+                                      title="Compartir Producto u Oferta por WhatsApp"
+                                    >
+                                      <Share2 className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        const isSeries = p.unit === "Serie" || Boolean(decodeSeriesMetadata(p.description));
+                                        const pMeta = decodeSeriesMetadata(p.description);
+                                        const targetClean = cleanModelName(p.name).toLowerCase();
+                                        const siblings = isSeries
+                                          ? products.filter(
+                                            (item) => {
+                                              const itemMeta = decodeSeriesMetadata(item.description);
+                                              if (pMeta?.seriesId && itemMeta?.seriesId) {
+                                                return pMeta.seriesId === itemMeta.seriesId;
+                                              }
+                                              return cleanModelName(item.name).toLowerCase() === targetClean;
+                                            }
+                                          )
+                                          : [];
+
+                                        setProductToDelete(p);
+                                        if (siblings.length > 1) {
+                                          setSeriesSiblingsToDelete(siblings);
+                                          setIsSeriesDeleteModalOpen(true);
+                                        } else {
+                                          setProductIdToDelete(p.id);
+                                          setIsDeleteConfirmOpen(true);
+                                        }
+                                      }}
+                                      className="px-2.5 py-2 bg-rose-50 text-rose-600 rounded-xl hover:bg-rose-100 transition-colors flex items-center justify-center cursor-pointer"
                                       title="Eliminar"
                                     >
                                       <Trash2 className="w-3.5 h-3.5" />
@@ -4006,28 +4888,49 @@ export default function BusinessInventoryPage() {
               <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 space-y-6">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-gray-100 pb-5 no-print">
                   <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-100">
+                        🏷️ Imprenta & Tickets
+                      </span>
+                      {isSelectedLabelSeries && (
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-50 text-amber-800 border border-amber-200">
+                          👟 Serie ({labelSiblings.length} tallas)
+                        </span>
+                      )}
+                    </div>
                     <h2 className="text-xl font-black text-gray-900">
-                      Impresión de Tickets y Código de Barras
+                      Diseñador de Etiquetas & Código QR / Barras
                     </h2>
                     <p className="text-sm text-gray-500 font-medium">
-                      Genera boletines de tickets adhesivos para pegar en tus
-                      zapatillas, electrodomésticos u otros artículos.
+                      Genera boletines de tickets adhesivos para pegar en tus cajas de zapatillas o vitrinas. Exporta a PDF listo para llevar a la imprenta con líneas de corte y tallas en alto contraste.
                     </p>
                   </div>
-                  <button
-                    disabled={!ticketProductId}
-                    onClick={() => window.print()}
-                    className="bg-indigo-600 disabled:opacity-50 hover:bg-indigo-700 text-white px-5 py-3 rounded-2xl font-black text-sm flex items-center gap-2 transition-all active:scale-95 shadow-md shadow-indigo-500/20"
-                  >
-                    <Printer className="w-4 h-4" />
-                    Imprimir Boletín
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <button
+                      disabled={labelItemsToPrint.length === 0}
+                      onClick={exportLabelsToPdf}
+                      className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 disabled:opacity-40 text-white px-5 py-3 rounded-2xl font-black text-sm flex items-center gap-2 transition-all active:scale-95 shadow-md shadow-emerald-600/20 cursor-pointer"
+                      title="Generar PDF tamaño A4 en cuadrícula 4x6 con líneas de corte para la imprenta"
+                    >
+                      <FileText className="w-4 h-4" />
+                      📄 Exportar PDF Imprenta ({labelItemsToPrint.length})
+                    </button>
+                    <button
+                      disabled={labelItemsToPrint.length === 0}
+                      onClick={() => window.print()}
+                      className="bg-indigo-600 disabled:opacity-40 hover:bg-indigo-700 text-white px-5 py-3 rounded-2xl font-black text-sm flex items-center gap-2 transition-all active:scale-95 shadow-md shadow-indigo-600/20 cursor-pointer"
+                      title="Imprimir directamente en tu impresora"
+                    >
+                      <Printer className="w-4 h-4" />
+                      🖨️ Imprimir ({labelItemsToPrint.length})
+                    </button>
+                  </div>
                 </div>
 
                 {/* FILTERS FOR LABEL GENERATOR */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50 p-5 rounded-2xl border border-gray-100 no-print">
                   <div>
-                    <label className="block text-[10px] font-black uppercase text-gray-550 mb-1.5">
+                    <label className="block text-[10px] font-black uppercase text-gray-500 mb-1.5">
                       Buscar Producto
                     </label>
                     <input
@@ -4035,18 +4938,18 @@ export default function BusinessInventoryPage() {
                       placeholder="Nombre, SKU o Cód..."
                       value={labelSearchTerm}
                       onChange={(e) => setLabelSearchTerm(e.target.value)}
-                      className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-xs font-bold text-gray-750 shadow-sm placeholder-gray-400"
+                      className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-xs font-bold text-gray-700 shadow-sm placeholder-gray-400"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-black uppercase text-gray-555 mb-1.5">
+                    <label className="block text-[10px] font-black uppercase text-gray-500 mb-1.5">
                       Filtrar por Marca
                     </label>
                     <select
                       value={labelFilterBrandId}
                       onChange={(e) => setLabelFilterBrandId(e.target.value)}
-                      className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-xs font-bold text-gray-750 shadow-sm"
+                      className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-xs font-bold text-gray-700 shadow-sm"
                     >
                       <option value="">Todas las Marcas</option>
                       {brands.map((b) => (
@@ -4058,13 +4961,13 @@ export default function BusinessInventoryPage() {
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-black uppercase text-gray-555 mb-1.5">
+                    <label className="block text-[10px] font-black uppercase text-gray-500 mb-1.5">
                       Filtrar por Familia
                     </label>
                     <select
                       value={labelFilterFamilyId}
                       onChange={(e) => setLabelFilterFamilyId(e.target.value)}
-                      className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-xs font-bold text-gray-750 shadow-sm"
+                      className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-xs font-bold text-gray-700 shadow-sm"
                     >
                       <option value="">Todas las Familias</option>
                       {families.map((f) => (
@@ -4076,15 +4979,30 @@ export default function BusinessInventoryPage() {
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-black uppercase text-gray-555 mb-1.5">
-                      Producto a Etiquetar
-                    </label>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-[10px] font-black uppercase text-gray-500">
+                        Producto a Etiquetar
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setIsCatalogShowcaseMode(!isCatalogShowcaseMode)}
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-black border transition-all cursor-pointer ${
+                          isCatalogShowcaseMode
+                            ? "bg-indigo-600 text-white border-indigo-600 shadow-xs ring-1 ring-indigo-300"
+                            : "bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200"
+                        }`}
+                        title="Imprime 1 etiqueta por cada modelo único visible para rotular vitrina de exhibición"
+                      >
+                        {isCatalogShowcaseMode ? "✨ Modo Vitrina Activo" : "🏷️ Modo Vitrina"}
+                      </button>
+                    </div>
                     <select
                       value={ticketProductId}
+                      disabled={isCatalogShowcaseMode}
                       onChange={(e) => setTicketProductId(e.target.value)}
-                      className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-xs font-bold text-gray-755 shadow-sm"
+                      className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-xs font-bold text-gray-750 shadow-sm disabled:bg-gray-100 disabled:text-gray-400"
                     >
-                      <option value="">-- Selecciona un Producto --</option>
+                      <option value="">{isCatalogShowcaseMode ? "-- Vitrina: Todos los Modelos --" : "-- Selecciona un Producto --"}</option>
                       {labelFilteredProducts.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.name} (
@@ -4097,39 +5015,128 @@ export default function BusinessInventoryPage() {
                   </div>
                 </div>
 
+                {/* SHOWCASE MODE BANNER */}
+                {isCatalogShowcaseMode && (
+                  <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-indigo-950 no-print animate-fade-in">
+                    <div className="flex items-center gap-2 font-black uppercase tracking-wide">
+                      <Sparkles className="w-4 h-4 text-indigo-600" />
+                      <span>Modo Vitrina / Exhibición Activo: Generando 1 etiqueta por cada modelo del catálogo visible</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsCatalogShowcaseMode(false)}
+                      className="px-3 py-1 bg-white border border-indigo-200 hover:bg-indigo-50 text-indigo-700 font-bold rounded-xl text-xs transition-colors cursor-pointer"
+                    >
+                      Desactivar Vitrina
+                    </button>
+                  </div>
+                )}
+
+                {/* SERIE SUMMARY BANNER IF DETECTED */}
+                {isSelectedLabelSeries && selectedLabelProduct && (
+                  <div className="bg-amber-50/70 border border-amber-200/80 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-amber-900 no-print animate-fade-in">
+                    <div>
+                      <div className="font-black flex items-center gap-2 uppercase tracking-wide">
+                        <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
+                        Serie de Calzado: {cleanModelName(selectedLabelProduct.name)} ({labelSiblings.length} tallas distintas)
+                      </div>
+                      <div className="text-[11px] text-amber-800/90 font-medium mt-1 flex flex-wrap gap-1.5">
+                        {labelSiblings.map((s) => (
+                          <span
+                            key={s.id}
+                            className="px-2 py-0.5 bg-white border border-amber-200 rounded-md font-bold text-[10px]"
+                          >
+                            T.{extractSizeFromProduct(s)}: <strong className="text-amber-950 font-black">{s.stock} pares</strong>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="bg-amber-200/80 text-amber-950 font-black px-3 py-1.5 rounded-xl text-xs shrink-0">
+                      {labelSiblings.reduce((acc, s) => acc + (s.stock || 0), 0)} pares totales en stock
+                    </div>
+                  </div>
+                )}
+
                 {/* FORM CONTROLS */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-slate-50/50 p-5 rounded-2xl border border-gray-100 no-print animate-fade-in">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50/50 p-5 rounded-2xl border border-gray-100 no-print animate-fade-in">
+                  {/* PRINT MODE */}
                   <div>
-                    <label className="block text-xs font-black uppercase text-gray-500 mb-2">
-                      Cantidad de Tickets (Copia)
+                    <label className="block text-xs font-black uppercase text-gray-600 mb-2">
+                      Modo de Impresión
+                    </label>
+                    <select
+                      value={labelPrintMode}
+                      onChange={(e) => setLabelPrintMode(e.target.value as any)}
+                      className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-xs font-bold text-gray-800 shadow-sm"
+                    >
+                      {isSelectedLabelSeries ? (
+                        <>
+                          <option value="curve">
+                            📏 1 por cada talla ({labelSiblings.length} tickets)
+                          </option>
+                          <option value="stock">
+                            📦 Según stock en almacén (para cajas)
+                          </option>
+                          <option value="single">
+                            🏷️ 1 sola del modelo (Serie general)
+                          </option>
+                          <option value="custom">
+                            🔢 Copias personalizadas por talla
+                          </option>
+                        </>
+                      ) : (
+                        <>
+                          <option value="single">
+                            🏷️ 1 sola etiqueta del producto
+                          </option>
+                          <option value="stock">
+                            📦 Según stock disponible ({selectedLabelProduct?.stock || 1} tickets)
+                          </option>
+                          <option value="custom">
+                            🔢 Cantidad personalizada
+                          </option>
+                        </>
+                      )}
+                    </select>
+                  </div>
+
+                  {/* COPIES QUANTITY */}
+                  <div>
+                    <label className="block text-xs font-black uppercase text-gray-600 mb-2">
+                      {labelPrintMode === "custom" || labelPrintMode === "single"
+                        ? "Copias por Etiqueta"
+                        : "Copias (Modo Automático)"}
                     </label>
                     <input
                       type="number"
                       min="1"
                       max="100"
+                      disabled={labelPrintMode === "stock" || (labelPrintMode === "curve" && isSelectedLabelSeries)}
                       value={ticketQuantity}
                       onChange={(e) =>
                         setTicketQuantity(Math.max(1, Number(e.target.value)))
                       }
-                      className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-bold text-gray-700 shadow-sm"
+                      className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-xs font-bold text-gray-800 shadow-sm disabled:bg-gray-100 disabled:text-gray-400"
                     />
                   </div>
 
+                  {/* BUSINESS NAME */}
                   <div>
-                    <label className="block text-xs font-black uppercase text-gray-500 mb-2">
-                      Nombre Comercial del Ticket
+                    <label className="block text-xs font-black uppercase text-gray-600 mb-2">
+                      Nombre Comercial / Encabezado
                     </label>
                     <input
                       type="text"
                       value={ticketBusinessName}
                       onChange={(e) => setTicketBusinessName(e.target.value)}
                       placeholder="Nombre de tienda"
-                      className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-bold text-gray-700 shadow-sm"
+                      className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-xs font-bold text-gray-800 shadow-sm"
                     />
                   </div>
 
+                  {/* CODE TYPE */}
                   <div>
-                    <label className="block text-xs font-black uppercase text-gray-500 mb-2">
+                    <label className="block text-xs font-black uppercase text-gray-600 mb-2">
                       Tipo de Código
                     </label>
                     <select
@@ -4137,10 +5144,10 @@ export default function BusinessInventoryPage() {
                       onChange={(e) =>
                         setCodeType(e.target.value as "qr" | "barcode")
                       }
-                      className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-bold text-gray-700 shadow-sm"
+                      className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-xs font-bold text-gray-800 shadow-sm"
                     >
-                      <option value="qr">Código QR</option>
-                      <option value="barcode">Código de Barras</option>
+                      <option value="qr">📱 Código QR (Escaneo Rápido)</option>
+                      <option value="barcode">📊 Código de Barras (CODE128)</option>
                     </select>
                   </div>
                 </div>
@@ -4156,42 +5163,63 @@ export default function BusinessInventoryPage() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    <h3 className="text-sm font-bold text-gray-500 uppercase tracking-widest no-print">
-                      Vista previa de impresión
-                    </h3>
+                    <div className="flex items-center justify-between no-print">
+                      <h3 className="text-sm font-black text-gray-600 uppercase tracking-widest">
+                        Vista previa de impresión ({labelItemsToPrint.length} etiquetas listas)
+                      </h3>
+                      <span className="text-xs text-gray-400 font-medium">
+                        Configurado para adhesivos tamaño estándar o corte para imprenta
+                      </span>
+                    </div>
+
                     <div
                       id="print-area"
                       className="bg-white border border-gray-200 rounded-3xl p-6"
                     >
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                        {Array.from({ length: ticketQuantity }).map(
-                          (_, index) => {
-                            const prod = products.find(
-                              (p) => p.id === ticketProductId,
-                            );
-                            return (
-                              <div
-                                key={index}
-                                className="border-2 border-dashed border-gray-300 bg-white p-3 rounded-2xl flex flex-col justify-between items-center text-center w-full aspect-[4/3] min-h-[140px] shadow-sm select-none"
-                              >
-                                <div className="text-[8px] font-black uppercase text-indigo-600 tracking-wider w-full truncate">
-                                  {ticketBusinessName}
-                                </div>
-                                <div className="text-[10px] font-extrabold text-gray-900 leading-tight w-full truncate px-1">
-                                  {prod?.name}
-                                </div>
-                                <div className="text-xs font-black text-slate-800 my-0.5">
-                                  S/ {prod?.salePrice.toFixed(2)}
-                                </div>
-                                {codeType === "qr" ? (
-                                  <canvas className="qr-preview-canvas w-16 h-16 my-1"></canvas>
-                                ) : (
-                                  <canvas className="barcode-preview-canvas max-w-full h-10 my-1"></canvas>
-                                )}
-                              </div>
-                            );
-                          },
-                        )}
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+                        {labelItemsToPrint.map((item, index) => (
+                          <div
+                            key={index}
+                            className="border-2 border-dashed border-gray-300 bg-white p-3 rounded-2xl flex flex-col justify-between items-center text-center w-full min-h-[165px] shadow-sm select-none relative group hover:border-indigo-400 transition-colors"
+                          >
+                            <span className="absolute top-1 right-2 text-[8px] font-mono text-gray-300 font-bold no-print">
+                              #{index + 1}
+                            </span>
+
+                            {/* Nombre Comercial */}
+                            <div className="text-[8px] font-black uppercase text-indigo-600 tracking-wider w-full truncate px-1">
+                              {ticketBusinessName || item.brandName || "TIENDA"}
+                            </div>
+
+                            {/* Nombre Modelo */}
+                            <div className="text-[10px] font-black text-gray-900 leading-tight w-full truncate px-1 mt-0.5">
+                              {item.modelName}
+                            </div>
+
+                            {/* TALLA DESTACADA EN ALTO CONTRASTE */}
+                            <div className="my-1.5 px-3 py-0.5 bg-slate-900 text-white rounded-md text-[11px] font-black tracking-wider shadow-xs">
+                              TALLA: {item.size}
+                            </div>
+
+                            {/* PRECIO */}
+                            <div className="text-xs font-black text-amber-600">
+                              S/ {Number(item.price).toFixed(2)}
+                            </div>
+
+                            {/* CÓDIGO QR / BARRAS CANVAS */}
+                            <div className="flex items-center justify-center my-1 w-full min-h-[50px]">
+                              <canvas
+                                id={`ticket-canvas-${index}`}
+                                className="max-w-full"
+                              ></canvas>
+                            </div>
+
+                            {/* SKU / CÓDIGO */}
+                            <div className="text-[8px] font-bold text-gray-400 font-mono">
+                              {item.codeText}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   </div>
@@ -4206,13 +5234,72 @@ export default function BusinessInventoryPage() {
       <Modal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
+        maxWidth="max-w-4xl lg:max-w-5xl"
         title={
           editingProduct
-            ? `Editar Producto: Cód #${String((editingProduct as any).customCode || 0).padStart(4, "0")}`
-            : "Nuevo Producto"
+            ? `Editar Producto: SKU ${editingProduct.sku || 'S/SKU'} (Cód #${String((editingProduct as any).customCode || 0).padStart(4, "0")})`
+            : "Nuevo Producto / Calzado"
         }
       >
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* SELECTOR DE ALCANCE: SOLO ESTE REGISTRO/TALLA VS TODA LA SERIE */}
+          {editingProduct && isSeriesEligible && (
+            <div className="bg-gradient-to-r from-slate-100 to-indigo-50/50 p-2.5 rounded-2xl border-2 border-indigo-100 space-y-2">
+              <div className="flex items-center justify-between px-1">
+                <span className="text-[11px] font-black uppercase tracking-wider text-indigo-950 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                  Alcance de la Edición
+                </span>
+                <span className="text-[10px] font-bold text-gray-500">
+                  Elige cómo aplicar tus modificaciones
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleSelectEditScope("SERIES")}
+                  className={`p-3 rounded-xl text-left transition-all border cursor-pointer flex items-center justify-between ${
+                    editScope === "SERIES"
+                      ? "bg-indigo-600 text-white border-indigo-600 shadow-md ring-2 ring-indigo-300 scale-[1.01]"
+                      : "bg-white text-gray-700 border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/30"
+                  }`}
+                >
+                  <div>
+                    <div className="text-xs font-black flex items-center gap-1.5">
+                      <Layers className="w-4 h-4" />
+                      Actualizar TODA la Serie
+                    </div>
+                    <div className={`text-[10px] font-medium mt-0.5 ${editScope === "SERIES" ? "text-indigo-100" : "text-gray-500"}`}>
+                      Sincroniza modelo, curva, precios y stock de cada talla (${editingSiblings.length} tallas)
+                    </div>
+                  </div>
+                  {editScope === "SERIES" && <Check className="w-4 h-4 shrink-0" />}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSelectEditScope("SINGLE")}
+                  className={`p-3 rounded-xl text-left transition-all border cursor-pointer flex items-center justify-between ${
+                    editScope === "SINGLE"
+                      ? "bg-amber-600 text-white border-amber-600 shadow-md ring-2 ring-amber-300 scale-[1.01]"
+                      : "bg-white text-gray-700 border-gray-200 hover:border-amber-300 hover:bg-amber-50/30"
+                  }`}
+                >
+                  <div>
+                    <div className="text-xs font-black flex items-center gap-1.5">
+                      <Package className="w-4 h-4" />
+                      Modificar SOLO este Registro / Talla
+                    </div>
+                    <div className={`text-[10px] font-medium mt-0.5 ${editScope === "SINGLE" ? "text-amber-100" : "text-gray-500"}`}>
+                      Cambia únicamente Talla ${extractSizeFromProduct(editingProduct)} (su stock individual, precio o SKU)
+                    </div>
+                  </div>
+                  {editScope === "SINGLE" && <Check className="w-4 h-4 shrink-0" />}
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* IMAGEN DEL PRODUCTO */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
@@ -4231,7 +5318,7 @@ export default function BusinessInventoryPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="md:col-span-2">
               <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Nombre *
+                Nombre del Modelo / Producto *
               </label>
               <input
                 type="text"
@@ -4241,7 +5328,7 @@ export default function BusinessInventoryPage() {
                   setFormData({ ...formData, name: e.target.value })
                 }
                 className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                placeholder='Ej. Zapatillas Nike Air Max, Licuadora Oster, Smart TV 55"'
+                placeholder='Ej. Stiletto Charol, Sandalia Romana, Bota Cuero'
               />
             </div>
             <div className="md:col-span-2">
@@ -4255,32 +5342,13 @@ export default function BusinessInventoryPage() {
                   setFormData({ ...formData, description: e.target.value })
                 }
                 className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                placeholder="Ej. Talla 41, Color Negro, Motor 800W, etc."
+                placeholder="Ej. Cuero legítimo, suela antideslizante, etc."
               />
             </div>
-            {editingProduct && (
-              <div className="md:col-span-2">
-                <label className="block text-sm font-semibold text-gray-500 mb-1">
-                  Código Autoincrementable
-                </label>
-                <input
-                  type="text"
-                  disabled
-                  readOnly
-                  value={
-                    `Cód: #` +
-                    String((editingProduct as any).customCode || 0).padStart(
-                      4,
-                      "0",
-                    )
-                  }
-                  className="w-full px-4 py-2 bg-gray-100 border border-gray-200 rounded-xl text-gray-500 outline-none cursor-not-allowed font-semibold"
-                />
-              </div>
-            )}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                SKU / Código de Barras
+              <label className="block text-sm font-semibold text-gray-700 mb-1 flex items-center justify-between">
+                <span>SKU / Código del Modelo *</span>
+                <span className="text-[11px] font-bold text-indigo-600">(Identificador Principal)</span>
               </label>
               <input
                 type="text"
@@ -4288,8 +5356,8 @@ export default function BusinessInventoryPage() {
                 onChange={(e) =>
                   setFormData({ ...formData, sku: e.target.value })
                 }
-                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
-                placeholder="Ej. 1912509111, NIK-41-NEG"
+                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-mono font-bold text-gray-800"
+                placeholder="Ej. VZ-ST-01, MOD-105"
               />
             </div>
             <div>
@@ -4301,90 +5369,190 @@ export default function BusinessInventoryPage() {
                 onChange={(e) =>
                   setFormData({ ...formData, unit: e.target.value })
                 }
-                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-gray-800"
               >
-                <option value="Unidad">Unidad</option>
-                <option value="Kg">Kg</option>
-                <option value="Litro">Litro</option>
-                <option value="Metro">Metro</option>
-                <option value="Par">Par</option>
-                <option value="Caja">Caja</option>
-                <option value="Rollo">Rollo</option>
-                <option value="Saco">Saco</option>
-                <option value="Bolsa">Bolsa</option>
+                <optgroup label="Unidades Universales (Bodegas, Ferreterías, Tiendas, etc.)">
+                  <option value="Unidad">Unidad (Estándar)</option>
+                  <option value="Paquete">Paquete</option>
+                  <option value="Caja">Caja</option>
+                  <option value="Docena">Docena</option>
+                  <option value="Pack">Pack</option>
+                  <option value="Set">Set / Kit</option>
+                  <option value="Bolsa">Bolsa</option>
+                  <option value="Saco">Saco</option>
+                </optgroup>
+                <optgroup label="Medidas / Peso / Granel">
+                  <option value="Kg">Kilogramo (Kg)</option>
+                  <option value="Gramo">Gramo (g)</option>
+                  <option value="Litro">Litro (L)</option>
+                  <option value="Galón">Galón</option>
+                  <option value="Metro">Metro (m)</option>
+                  <option value="Rollo">Rollo</option>
+                </optgroup>
+                <optgroup label="Calzado & Moda Especializada">
+                  <option value="Serie">Serie (Curva de Tallas)</option>
+                  <option value="Par">Par (Calzado)</option>
+                  <option value="Talla">Talla Individual</option>
+                </optgroup>
               </select>
             </div>
-            <div className="md:col-span-2">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Color del Producto (Opcional)
-              </label>
-              <div className="flex flex-wrap items-center gap-3">
-                {CURATED_COLORS.map((curColor) => (
-                  <button
-                    key={curColor.value}
-                    type="button"
-                    onClick={() =>
-                      setFormData({ ...formData, color: curColor.value })
-                    }
-                    className="w-8 h-8 rounded-full border-2 transition-all hover:scale-110 flex items-center justify-center cursor-pointer shadow-sm"
-                    style={{
-                      backgroundColor: curColor.value,
-                      borderColor:
-                        formData.color === curColor.value
-                          ? "#4F46E5"
-                          : "transparent",
-                    }}
-                    title={curColor.name}
-                  >
-                    {formData.color === curColor.value && (
-                      <span className="w-2.5 h-2.5 bg-white rounded-full"></span>
-                    )}
-                  </button>
-                ))}
-                <div className="flex items-center gap-2 border border-gray-200 rounded-xl px-3 py-1 bg-white shadow-sm">
-                  <input
-                    type="color"
-                    value={
-                      formData.color && formData.color.startsWith("#")
-                        ? formData.color
-                        : "#ffffff"
-                    }
-                    onChange={(e) =>
-                      setFormData({ ...formData, color: e.target.value })
-                    }
-                    className="w-8 h-8 rounded-lg cursor-pointer border border-gray-200 p-0"
-                  />
-                  <span className="text-xs font-bold text-gray-600">
-                    Personalizado
+
+            {/* COLOR DEL PRODUCTO (OPCIONAL) */}
+            <div className="md:col-span-2 space-y-2 bg-slate-50/70 p-3 rounded-2xl border border-gray-200">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-black text-gray-700 uppercase tracking-wider">
+                  Color del Producto (Opcional)
+                </label>
+                {formData.color && (
+                  <span className="text-xs font-black text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-200">
+                    Seleccionado: {formData.color}
                   </span>
-                </div>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {FOOTWEAR_COLORS.map((curColor) => {
+                  const isSelected = (formData.color || "").trim().toLowerCase() === curColor.name.toLowerCase();
+                  return (
+                    <button
+                      key={curColor.name}
+                      type="button"
+                      onClick={() => setFormData({ ...formData, color: curColor.name })}
+                      className={`px-2.5 py-1 rounded-xl border text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs ${isSelected
+                        ? "bg-indigo-600 text-white border-indigo-600 ring-2 ring-indigo-300 scale-105"
+                        : "bg-white text-gray-700 border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/40"
+                        }`}
+                    >
+                      <span
+                        className={`w-2.5 h-2.5 rounded-full shrink-0 ${curColor.border ? "border border-gray-300" : ""}`}
+                        style={{ backgroundColor: curColor.hex }}
+                      />
+                      <span>{curColor.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="text"
+                  value={formData.color || ""}
+                  onChange={(e) => setFormData({ ...formData, color: e.target.value })}
+                  placeholder="O escribe nombre del color (ej. Negro Mate, Azul Rey, Blanco, Madera, Acero...)"
+                  className="flex-1 px-3 py-1.5 text-xs font-bold border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-gray-800"
+                />
                 {formData.color && (
                   <button
                     type="button"
                     onClick={() => setFormData({ ...formData, color: "" })}
-                    className="text-xs font-bold text-red-500 hover:text-red-750 underline ml-2 cursor-pointer"
+                    className="px-2.5 py-1.5 text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-xl transition-colors cursor-pointer"
                   >
-                    Quitar color
+                    Limpiar
                   </button>
                 )}
               </div>
             </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Stock Inicial ({formData.unit})
-              </label>
-              <input
-                type="number"
-                required
-                min="0"
-                step="any"
-                value={formData.stock}
-                onChange={(e) =>
-                  setFormData({ ...formData, stock: Number(e.target.value) })
-                }
-                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-              />
-            </div>
+
+            {/* TACO PARA CALZADO (Solo si es par/talla o tiene taco configurado) */}
+            {(formData.unit === "Par" || formData.unit === "Talla" || Boolean(standaloneTaco)) && (
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1 flex items-center gap-1">
+                  👠 Taco / Altura de Taco (Calzado)
+                </label>
+                <select
+                  value={standaloneTaco}
+                  onChange={(e) => setStandaloneTaco(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-xs font-bold text-gray-800"
+                >
+                  <option value="">-- Sin Taco / Flat / No aplica --</option>
+                  <option value="Sin Taco / Flat">Sin Taco / Flat (Plano)</option>
+                  <option value="Taco 3">Taco 3 (~3cm)</option>
+                  <option value="Taco 5">Taco 5 (~5cm)</option>
+                  <option value="Taco 7">Taco 7 (~7cm)</option>
+                  <option value="Taco 9">Taco 9 (~9cm)</option>
+                  <option value="Taco 12">Taco 12 (~12cm)</option>
+                  <option value="Plataforma">Plataforma</option>
+                  <option value="Cuña / Wedge">Cuña / Wedge</option>
+                  <option value="Aguja / Stiletto">Aguja / Stiletto</option>
+                </select>
+              </div>
+            )}
+
+            {/* CONFIGURACIÓN ESPECIAL DE SERIE (CURVA DE TALLAS) */}
+            {((formData.unit === "Serie" && (!editingProduct || editScope === "SERIES")) || (editingProduct && isSeriesEligible && editScope === "SERIES")) && (
+              <div className="md:col-span-2">
+                <SeriesConfigurator
+                  seriesConfig={seriesConfig}
+                  onChange={(newCfg) => {
+                    setSeriesConfig(newCfg);
+                    if (newCfg.salePricePerUnit > 0) {
+                      setFormData((prev) => ({
+                        ...prev,
+                        salePrice: newCfg.salePricePerUnit,
+                        costPrice: newCfg.costPricePerUnit > 0 ? newCfg.costPricePerUnit : prev.costPrice,
+                      }));
+                    }
+                  }}
+                  isEditing={Boolean(editingProduct)}
+                />
+              </div>
+            )}
+
+            {/* STOCK INDIVIDUAL (Para cualquier producto no-serie o en modo SOLO ESTA TALLA) */}
+            {(!isSeriesEligible || editScope === "SINGLE" || (formData.unit !== "Serie" && !editingProduct)) && (
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1 flex items-center justify-between">
+                  <span>
+                    {editingProduct && editScope === "SINGLE"
+                      ? `Stock Físico Talla ${extractSizeFromProduct(editingProduct)} *`
+                      : `Stock Físico / Inicial (${formData.unit}) *`}
+                  </span>
+                  {editingProduct && editScope === "SINGLE" && (
+                    <span className="text-[10px] font-black text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                      Modificando solo este par
+                    </span>
+                  )}
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        stock: Math.max(0, Number(prev.stock || 0) - 1),
+                      }))
+                    }
+                    className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-rose-500 hover:text-white font-black text-base flex items-center justify-center transition-colors cursor-pointer border border-slate-200"
+                    title="Bajar 1 unidad (-1)"
+                  >
+                    -
+                  </button>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    step="any"
+                    value={formData.stock}
+                    onChange={(e) =>
+                      setFormData({ ...formData, stock: Number(e.target.value) })
+                    }
+                    className="flex-1 px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-black text-center text-base"
+                    placeholder="0"
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        stock: Number(prev.stock || 0) + 1,
+                      }))
+                    }
+                    className="w-10 h-10 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-base flex items-center justify-center transition-colors cursor-pointer"
+                    title="Aumentar 1 unidad (+1)"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+            )}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">
                 Stock Mínimo (Alerta)
@@ -4457,44 +5625,48 @@ export default function BusinessInventoryPage() {
                 ))}
               </select>
             </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                P. Compra (Costo Base) S/
-              </label>
-              <input
-                type="number"
-                required
-                min="0"
-                step="0.01"
-                value={formData.costPrice}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    costPrice: Number(e.target.value),
-                  })
-                }
-                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                P. Venta (Base) S/
-              </label>
-              <input
-                type="number"
-                required
-                min="0"
-                step="0.01"
-                value={formData.salePrice}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    salePrice: Number(e.target.value),
-                  })
-                }
-                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-              />
-            </div>
+            {(formData.unit !== "Serie" || (editingProduct && editScope === "SINGLE")) && (
+              <>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    P. Compra (Costo Individual) S/
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    step="0.01"
+                    value={formData.costPrice}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        costPrice: Number(e.target.value),
+                      })
+                    }
+                    className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    P. Venta (Individual) S/
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    step="0.01"
+                    value={formData.salePrice}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        salePrice: Number(e.target.value),
+                      })
+                    }
+                    className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-indigo-700"
+                  />
+                </div>
+              </>
+            )}
             {/* 🔥 CONFIGURACIÓN DE OFERTA Y PROMOCIONES (PANEL PRIVADO AUTENTICADO) */}
             <div className="md:col-span-2 bg-gradient-to-br from-amber-50/50 via-rose-50/30 to-orange-50/40 border border-amber-200/80 rounded-2xl p-4 sm:p-5 shadow-xs">
               <div className="flex items-center justify-between gap-4 mb-3">
@@ -4561,42 +5733,85 @@ export default function BusinessInventoryPage() {
                       />
                     </div>
 
-                    {/* Quick Discount Shortcuts based on Base Sale Price */}
+                    {/* Quick Discount Shortcuts based on Base Sale Price or Series Unit Price */}
                     <div>
-                      <label className="block text-xs font-bold text-gray-700 mb-1">
-                        Descuentos Rápidos (sobre S/ {formData.salePrice.toFixed(2)}):
-                      </label>
-                      <div className="flex flex-wrap gap-1.5">
-                        {[10, 20, 30, 40, 50].map((pct) => {
-                          const val = Number((formData.salePrice * (1 - pct / 100)).toFixed(2));
-                          return (
-                            <button
-                              key={pct}
-                              type="button"
-                              onClick={() => setFormData({ ...formData, adjustedPrice: val })}
-                              className="px-2.5 py-1 text-xs font-bold bg-white border border-rose-200 text-rose-700 rounded-lg hover:bg-rose-600 hover:text-white transition-all cursor-pointer shadow-xs"
-                            >
-                              -{pct}% (S/ {val.toFixed(2)})
-                            </button>
-                          );
-                        })}
-                      </div>
+                      {(() => {
+                        const totalUnits = calculateCurveTotalUnits(seriesConfig.curve) || 1;
+                        const effectiveBasePrice = Number(
+                          (formData.salePrice > 0
+                            ? formData.salePrice
+                            : seriesConfig.salePricePerUnit > 0
+                            ? seriesConfig.salePricePerUnit
+                            : seriesConfig.salePricePerSeries > 0 && totalUnits > 0
+                            ? seriesConfig.salePricePerSeries / totalUnits
+                            : 0
+                          ).toFixed(2)
+                        );
+                        return (
+                          <div>
+                            <label className="block text-xs font-bold text-gray-700 mb-1">
+                              Descuentos Rápidos (sobre S/ {effectiveBasePrice.toFixed(2)}):
+                            </label>
+                            <div className="flex flex-wrap gap-1.5">
+                              {[10, 20, 30, 40, 50].map((pct) => {
+                                const val = effectiveBasePrice > 0
+                                  ? Number((effectiveBasePrice * (1 - pct / 100)).toFixed(2))
+                                  : 0;
+                                return (
+                                  <button
+                                    key={pct}
+                                    type="button"
+                                    onClick={() => {
+                                      if (effectiveBasePrice > 0) {
+                                        setFormData((prev) => ({
+                                          ...prev,
+                                          salePrice: prev.salePrice > 0 ? prev.salePrice : effectiveBasePrice,
+                                          adjustedPrice: val,
+                                        }));
+                                      } else {
+                                        toast.error("Ingresa primero el precio de venta para calcular descuentos");
+                                      }
+                                    }}
+                                    className="px-2.5 py-1 text-xs font-bold bg-white border border-rose-200 text-rose-700 rounded-lg hover:bg-rose-600 hover:text-white transition-all cursor-pointer shadow-xs active:scale-95"
+                                  >
+                                    -{pct}% {effectiveBasePrice > 0 ? `(S/ ${val.toFixed(2)})` : ""}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
 
                   {/* Savings & Margin feedback */}
-                  {formData.adjustedPrice > 0 && formData.salePrice > 0 && (
-                    <div className="flex flex-wrap items-center gap-3 text-xs bg-white/80 p-2.5 rounded-xl border border-amber-200/60">
-                      <span className="font-bold text-rose-600">
-                        🏷️ Descuento: S/ {(formData.salePrice - formData.adjustedPrice).toFixed(2)} ({Math.round(((formData.salePrice - formData.adjustedPrice) / formData.salePrice) * 100)}% de rebaja)
-                      </span>
-                      {formData.costPrice > 0 && (
-                        <span className="text-gray-600">
-                          | Ganancia neta: S/ {(formData.adjustedPrice - formData.costPrice).toFixed(2)} (Margen: {Math.round(((formData.adjustedPrice - formData.costPrice) / formData.adjustedPrice) * 100)}%)
+                  {formData.adjustedPrice > 0 && (() => {
+                    const totalUnits = calculateCurveTotalUnits(seriesConfig.curve) || 1;
+                    const base = formData.salePrice > 0
+                      ? formData.salePrice
+                      : seriesConfig.salePricePerUnit > 0
+                      ? seriesConfig.salePricePerUnit
+                      : (seriesConfig.salePricePerSeries > 0 ? seriesConfig.salePricePerSeries / totalUnits : 0);
+                    const cost = formData.costPrice > 0
+                      ? formData.costPrice
+                      : seriesConfig.costPricePerUnit > 0
+                      ? seriesConfig.costPricePerUnit
+                      : (seriesConfig.costPricePerSeries > 0 ? seriesConfig.costPricePerSeries / totalUnits : 0);
+                    if (base <= 0) return null;
+                    return (
+                      <div className="flex flex-wrap items-center gap-3 text-xs bg-white/80 p-2.5 rounded-xl border border-amber-200/60">
+                        <span className="font-bold text-rose-600">
+                          🏷️ Descuento: S/ {(base - formData.adjustedPrice).toFixed(2)} ({Math.round(((base - formData.adjustedPrice) / base) * 100)}% de rebaja)
                         </span>
-                      )}
-                    </div>
-                  )}
+                        {cost > 0 && (
+                          <span className="text-gray-600">
+                            | Ganancia neta: S/ {(formData.adjustedPrice - cost).toFixed(2)} (Margen: {Math.round(((formData.adjustedPrice - cost) / formData.adjustedPrice) * 100)}%)
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Duration Selector */}
                   <div>
@@ -4735,120 +5950,122 @@ export default function BusinessInventoryPage() {
               </div>
             </div>
 
-            {/* PRESENTATIONS */}
-            <div className="md:col-span-2 border-t border-gray-100 pt-4">
-              <div className="flex justify-between items-center mb-3">
-                <h3 className="text-sm font-bold text-gray-700">
-                  Presentaciones / Empaques
-                </h3>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setFormData({
-                      ...formData,
-                      presentations: [
-                        ...formData.presentations,
-                        { name: "", equivalence: 1, price: formData.salePrice },
-                      ],
-                    })
-                  }
-                  className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-bold hover:bg-indigo-100"
-                >
-                  + Agregar Presentación
-                </button>
-              </div>
-
-              {formData.presentations.length === 0 ? (
-                <p className="text-xs text-gray-400 italic bg-gray-50 p-3 rounded-xl">
-                  Sin presentaciones adicionales. Se venderá por {formData.unit}
-                  .
-                </p>
-              ) : (
-                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                  {formData.presentations.map((pres, index) => (
-                    <div
-                      key={index}
-                      className="flex gap-2 items-center bg-gray-50 p-2 rounded-xl border border-gray-100"
-                    >
-                      <input
-                        type="text"
-                        required
-                        placeholder="Ej. Caja, Par, etc."
-                        value={pres.name}
-                        onChange={(e) => {
-                          const newPres = [...formData.presentations];
-                          newPres[index] = {
-                            ...newPres[index],
-                            name: e.target.value,
-                          };
-                          setFormData({ ...formData, presentations: newPres });
-                        }}
-                        className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
-                      />
-                      <div className="flex items-center gap-1 text-xs">
-                        <span className="text-gray-400 text-[10px]">= </span>
-                        <input
-                          type="number"
-                          required
-                          min="0.001"
-                          step="any"
-                          value={pres.equivalence}
-                          onChange={(e) => {
-                            const newPres = [...formData.presentations];
-                            newPres[index] = {
-                              ...newPres[index],
-                              equivalence: Number(e.target.value),
-                            };
-                            setFormData({
-                              ...formData,
-                              presentations: newPres,
-                            });
-                          }}
-                          className="w-14 px-2 py-1.5 border border-gray-200 rounded-lg outline-none text-center focus:ring-1 focus:ring-indigo-500 bg-white text-xs"
-                        />
-                        <span className="text-gray-500 font-bold text-[10px]">
-                          {formData.unit}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1 text-xs">
-                        <span className="text-gray-400 text-[10px]">S/</span>
-                        <input
-                          type="number"
-                          required
-                          min="0"
-                          step="0.01"
-                          value={pres.price}
-                          onChange={(e) => {
-                            const newPres = [...formData.presentations];
-                            newPres[index] = {
-                              ...newPres[index],
-                              price: Number(e.target.value),
-                            };
-                            setFormData({
-                              ...formData,
-                              presentations: newPres,
-                            });
-                          }}
-                          className="w-18 px-2 py-1.5 border border-gray-200 rounded-lg outline-none text-right focus:ring-1 focus:ring-indigo-500 bg-white text-xs"
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const newPres = formData.presentations.filter(
-                            (_, i) => i !== index,
-                          );
-                          setFormData({ ...formData, presentations: newPres });
-                        }}
-                        className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  ))}
+            {/* PRESENTATIONS (Solo para unidades estándar, ya que Serie configura sus presentaciones automáticamente) */}
+            {formData.unit !== "Serie" && (
+              <div className="md:col-span-2 border-t border-gray-100 pt-4">
+                <div className="flex justify-between items-center mb-3">
+                  <h3 className="text-sm font-bold text-gray-700">
+                    Presentaciones / Empaques
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFormData({
+                        ...formData,
+                        presentations: [
+                          ...formData.presentations,
+                          { name: "", equivalence: 1, price: formData.salePrice },
+                        ],
+                      })
+                    }
+                    className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-bold hover:bg-indigo-100"
+                  >
+                    + Agregar Presentación
+                  </button>
                 </div>
-              )}
-            </div>
+
+                {formData.presentations.length === 0 ? (
+                  <p className="text-xs text-gray-400 italic bg-gray-50 p-3 rounded-xl">
+                    Sin presentaciones adicionales. Se venderá por {formData.unit}
+                    .
+                  </p>
+                ) : (
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                    {formData.presentations.map((pres, index) => (
+                      <div
+                        key={index}
+                        className="flex gap-2 items-center bg-gray-50 p-2 rounded-xl border border-gray-100"
+                      >
+                        <input
+                          type="text"
+                          required
+                          placeholder="Ej. Caja, Par, etc."
+                          value={pres.name}
+                          onChange={(e) => {
+                            const newPres = [...formData.presentations];
+                            newPres[index] = {
+                              ...newPres[index],
+                              name: e.target.value,
+                            };
+                            setFormData({ ...formData, presentations: newPres });
+                          }}
+                          className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                        />
+                        <div className="flex items-center gap-1 text-xs">
+                          <span className="text-gray-400 text-[10px]">= </span>
+                          <input
+                            type="number"
+                            required
+                            min="0.001"
+                            step="any"
+                            value={pres.equivalence}
+                            onChange={(e) => {
+                              const newPres = [...formData.presentations];
+                              newPres[index] = {
+                                ...newPres[index],
+                                equivalence: Number(e.target.value),
+                              };
+                              setFormData({
+                                ...formData,
+                                presentations: newPres,
+                              });
+                            }}
+                            className="w-14 px-2 py-1.5 border border-gray-200 rounded-lg outline-none text-center focus:ring-1 focus:ring-indigo-500 bg-white text-xs"
+                          />
+                          <span className="text-gray-500 font-bold text-[10px]">
+                            {formData.unit}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1 text-xs">
+                          <span className="text-gray-400 text-[10px]">S/</span>
+                          <input
+                            type="number"
+                            required
+                            min="0"
+                            step="0.01"
+                            value={pres.price}
+                            onChange={(e) => {
+                              const newPres = [...formData.presentations];
+                              newPres[index] = {
+                                ...newPres[index],
+                                price: Number(e.target.value),
+                              };
+                              setFormData({
+                                ...formData,
+                                presentations: newPres,
+                              });
+                            }}
+                            className="w-18 px-2 py-1.5 border border-gray-200 rounded-lg outline-none text-right focus:ring-1 focus:ring-indigo-500 bg-white text-xs"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newPres = formData.presentations.filter(
+                              (_, i) => i !== index,
+                            );
+                            setFormData({ ...formData, presentations: newPres });
+                          }}
+                          className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {isCreatingFromPlanner && (
@@ -4879,9 +6096,18 @@ export default function BusinessInventoryPage() {
             </button>
             <button
               type="submit"
-              className="px-5 py-2.5 bg-indigo-600 text-white font-medium rounded-xl hover:bg-indigo-700 shadow-sm shadow-indigo-500/30"
+              className="px-6 py-2.5 bg-indigo-600 text-white font-black text-xs uppercase tracking-wider rounded-xl hover:bg-indigo-700 shadow-md shadow-indigo-500/30 flex items-center gap-2 cursor-pointer transition-all"
             >
-              Guardar Producto
+              <Check className="w-4 h-4" />
+              {editingProduct ? (
+                editScope === "SINGLE"
+                  ? `Guardar Solo Talla ${extractSizeFromProduct(editingProduct)}`
+                  : `Actualizar Toda la Serie (${editingSiblings.length} tallas)`
+              ) : formData.unit === "Serie" ? (
+                `Registrar Serie Completa (${calculateCurveTotalUnits(seriesConfig.curve)} pares)`
+              ) : (
+                "Guardar Producto"
+              )}
             </button>
           </div>
         </form>
@@ -6310,6 +7536,134 @@ export default function BusinessInventoryPage() {
               type="button"
               onClick={() => setIsScannerOpen(false)}
               className="px-5 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 font-bold text-xs"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* MODAL ELIMINAR SERIE / REGISTRO INDIVIDUAL */}
+      <Modal
+        isOpen={isSeriesDeleteModalOpen}
+        onClose={() => {
+          setIsSeriesDeleteModalOpen(false);
+          setProductToDelete(null);
+          setSeriesSiblingsToDelete([]);
+        }}
+        title="⚠️ Opciones de Eliminación de Serie"
+        maxWidth="max-w-md"
+      >
+        <div className="space-y-4">
+          <div className="p-4 bg-rose-50 border border-rose-100 rounded-2xl flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-rose-600 mt-0.5 shrink-0" />
+            <div className="text-xs text-rose-900 leading-relaxed">
+              <p className="font-extrabold text-sm mb-1 text-rose-950">
+                {productToDelete ? cleanModelName(productToDelete.name) : "Producto Serie"}
+              </p>
+              <p>
+                Este producto pertenece a una <strong>Serie con {seriesSiblingsToDelete.length} tallas registradas</strong>.
+                ¿Cómo deseas proceder?
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-2.5 pt-2">
+            {/* OPCIÓN 1: ELIMINAR SOLO ESTE REGISTRO / TALLA */}
+            <button
+              type="button"
+              onClick={async () => {
+                if (!productToDelete) return;
+                const idDel = productToDelete.id;
+                setIsSeriesDeleteModalOpen(false);
+                setProductToDelete(null);
+                setSeriesSiblingsToDelete([]);
+                await handleDelete(idDel);
+              }}
+              className="w-full p-3.5 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 rounded-2xl text-left transition-all flex items-center justify-between group cursor-pointer"
+            >
+              <div>
+                <div className="text-xs font-black text-amber-950 flex items-center gap-1.5">
+                  <Trash2 className="w-4 h-4 text-amber-600 group-hover:scale-110 transition-transform" />
+                  Eliminar Solo Este Registro / Talla ({productToDelete ? `Talla ${extractSizeFromProduct(productToDelete)}` : "Esta Talla"})
+                </div>
+                <div className="text-[11px] text-amber-700/80 font-semibold mt-0.5">
+                  Se eliminará únicamente esta talla y su stock. Las demás tallas de la serie seguirán activas en el inventario.
+                </div>
+              </div>
+            </button>
+
+            {/* OPCIÓN 2: ELIMINAR TODA LA SERIE */}
+            <button
+              type="button"
+              onClick={async () => {
+                // 1. Obtener la lista completa de elementos que componen la serie
+                const rawToDel = seriesSiblingsToDelete.length > 0
+                  ? seriesSiblingsToDelete
+                  : (productToDelete ? [productToDelete] : []);
+
+                if (!rawToDel.length) return;
+
+                // 2. Deduplicar por ID único para evitar enviar peticiones repetidas al mismo registro
+                const uniqueMap = new Map();
+                rawToDel.forEach((item) => {
+                  if (item && item.id !== undefined && item.id !== null) {
+                    uniqueMap.set(String(item.id), item);
+                  }
+                });
+
+                const toDel = Array.from(uniqueMap.values());
+                const idsAEliminarSet = new Set(toDel.map((item) => String(item.id)));
+
+                // 3. Cerrar modales e iniciar notificación
+                setIsSeriesDeleteModalOpen(false);
+                setProductToDelete(null);
+                setSeriesSiblingsToDelete([]);
+
+                const toastId = toast.loading(`Eliminando serie (${toDel.length} registros)...`);
+
+                try {
+                  const idsToDel = toDel.map((item) => item.id);
+                  await bulkDeleteProductsRequest(idsToDel);
+
+                  if (typeof setProducts === "function") {
+                    setProducts((prevProducts: any[]) =>
+                      prevProducts.filter((p) => !idsAEliminarSet.has(String(p?.id)))
+                    );
+                  }
+
+                  toast.dismiss(toastId);
+                  toast.success(`Serie completa eliminada con éxito (${idsToDel.length} registros)`);
+                } catch (err: any) {
+                  toast.dismiss(toastId);
+                  toast.error(err?.response?.data?.message || "Ocurrió un detalle al procesar la eliminación");
+                } finally {
+                  await loadData();
+                }
+              }}
+              className="w-full p-3.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-900 rounded-2xl text-left transition-all flex items-center justify-between group cursor-pointer"
+            >
+              <div>
+                <div className="text-xs font-black text-rose-950 flex items-center gap-1.5">
+                  <Trash2 className="w-4 h-4 text-rose-600 group-hover:scale-110 transition-transform" />
+                  Eliminar TODA la Serie ({seriesSiblingsToDelete.length} tallas)
+                </div>
+                <div className="text-[11px] text-rose-700/80 font-semibold mt-0.5">
+                  Se eliminarán permanentemente todas las tallas y variantes asociadas a este modelo.
+                </div>
+              </div>
+            </button>
+          </div>
+
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setIsSeriesDeleteModalOpen(false);
+                setProductToDelete(null);
+                setSeriesSiblingsToDelete([]);
+              }}
+              className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black text-xs rounded-xl transition-colors text-center cursor-pointer"
             >
               Cancelar
             </button>

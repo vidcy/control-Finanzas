@@ -293,11 +293,10 @@ export default function RegisterPage() {
                   {/* PERSONAL PROFILE */}
                   <div
                     onClick={() => toggleProfile("PERSONAL")}
-                    className={`cursor-pointer p-6 rounded-2xl border-2 transition-all duration-300 relative overflow-hidden ${
-                      selectedProfiles.includes("PERSONAL")
+                    className={`cursor-pointer p-6 rounded-2xl border-2 transition-all duration-300 relative overflow-hidden ${selectedProfiles.includes("PERSONAL")
                         ? "border-blue-500 bg-blue-50 shadow-md shadow-blue-500/10"
                         : "border-gray-200 bg-white hover:border-blue-200 hover:bg-slate-50"
-                    }`}
+                      }`}
                   >
                     {selectedProfiles.includes("PERSONAL") && (
                       <div className="absolute top-4 right-4 text-blue-600">
@@ -305,11 +304,10 @@ export default function RegisterPage() {
                       </div>
                     )}
                     <div
-                      className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 transition-colors ${
-                        selectedProfiles.includes("PERSONAL")
+                      className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 transition-colors ${selectedProfiles.includes("PERSONAL")
                           ? "bg-blue-600 text-white"
                           : "bg-blue-100 text-blue-600"
-                      }`}
+                        }`}
                     >
                       <User className="w-6 h-6" />
                     </div>
@@ -325,11 +323,10 @@ export default function RegisterPage() {
                   {/* BUSINESS PROFILE */}
                   <div
                     onClick={() => toggleProfile("BUSINESS")}
-                    className={`cursor-pointer p-6 rounded-2xl border-2 transition-all duration-300 relative overflow-hidden ${
-                      selectedProfiles.includes("BUSINESS")
+                    className={`cursor-pointer p-6 rounded-2xl border-2 transition-all duration-300 relative overflow-hidden ${selectedProfiles.includes("BUSINESS")
                         ? "border-purple-500 bg-purple-50 shadow-md shadow-purple-500/10"
                         : "border-gray-200 bg-white hover:border-purple-200 hover:bg-slate-50"
-                    }`}
+                      }`}
                   >
                     {selectedProfiles.includes("BUSINESS") && (
                       <div className="absolute top-4 right-4 text-purple-600">
@@ -337,11 +334,10 @@ export default function RegisterPage() {
                       </div>
                     )}
                     <div
-                      className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 transition-colors ${
-                        selectedProfiles.includes("BUSINESS")
+                      className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 transition-colors ${selectedProfiles.includes("BUSINESS")
                           ? "bg-purple-600 text-white"
                           : "bg-purple-100 text-purple-600"
-                      }`}
+                        }`}
                     >
                       <Briefcase className="w-6 h-6" />
                     </div>
@@ -415,7 +411,7 @@ export default function RegisterPage() {
           </Link>
         </p>
         <p className="text-center text-[11px] text-gray-400 mt-6 font-medium">
-          &copy; {new Date().getFullYear()} Think - Global Ccoplex. Todos los
+          &copy; {new Date().getFullYear()} Think - Corporación Ccoplex. Todos los
           derechos reservados.
         </p>
       </div>

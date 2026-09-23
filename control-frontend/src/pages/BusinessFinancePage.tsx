@@ -42,6 +42,12 @@ import ImageUploader, { getReceiptAbsoluteUrl, uploadReceiptFile } from "../comp
 import Pagination from "../components/ui/Pagination";
 import DateRangePicker from "../components/ui/DateRangePicker";
 import { cancelPurchaseOrderRequest } from "../services/product.api";
+import {
+  getPeruTodayInputStr,
+  utcToPeruInputDate,
+  peruInputDateToUtcISO,
+  formatPeruDate,
+} from "../utils/date.utils";
 
 export default function BusinessFinancePage() {
   const [transactions, setTransactions] = useState<any[]>([]);
@@ -85,7 +91,7 @@ export default function BusinessFinancePage() {
     receiptUrl: null as string | File | null,
     currency: "PEN" as "PEN" | "USD",
     exchangeRate: 1,
-    date: new Date().toISOString().split("T")[0],
+    date: getPeruTodayInputStr(),
     branchId: "",
     justified: false,
     programmed: false,
@@ -160,6 +166,11 @@ export default function BusinessFinancePage() {
           }
         }
 
+        const isoDate = peruInputDateToUtcISO(
+          formData.date || getPeruTodayInputStr(),
+          editingTransaction?.date
+        );
+
         const txPayload = {
           name:
             formData.name ||
@@ -172,7 +183,7 @@ export default function BusinessFinancePage() {
           receiptUrl: (finalReceiptUrl || null) as any,
           currency: formData.currency,
           exchangeRate: formData.currency === "USD" ? formData.exchangeRate : 1,
-          date: editingTransaction ? new Date(editingTransaction.date) : new Date(),
+          date: isoDate,
           branchId: formData.branchId || null,
           ignoreLiquidity,
           justified: formData.justified,
@@ -188,7 +199,7 @@ export default function BusinessFinancePage() {
             type,
             status: "PAID",
             workspace: "BUSINESS",
-            date: txPayload.date.toISOString(),
+            date: isoDate,
           } as any);
           toast.success("Operación registrada con éxito");
         }
@@ -204,7 +215,7 @@ export default function BusinessFinancePage() {
           description: "",
           receiptUrl: null,
           currency: "PEN",
-          date: "",
+          date: getPeruTodayInputStr(),
           exchangeRate: 1,
           branchId: "",
           justified: false,
@@ -238,7 +249,7 @@ export default function BusinessFinancePage() {
       receiptUrl: t.receiptUrl || null,
       currency: t.currency || "PEN",
       exchangeRate: t.exchangeRate || 1,
-      date: t.date?.split("T")[0] || new Date().toISOString().split("T")[0],
+      date: utcToPeruInputDate(t.date) || getPeruTodayInputStr(),
       branchId: t.branchId || "",
       justified: t.justified || false,
       programmed: t.programmed || false,
@@ -794,10 +805,19 @@ export default function BusinessFinancePage() {
                             className="hover:bg-indigo-50/20 transition-colors group"
                           >
                             {/* Fecha */}
-                            <td className="py-4 px-6 whitespace-nowrap text-slate-500 font-bold">
-                              <div className="flex items-center gap-2">
-                                <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                <span>{format(new Date(t.date), "dd MMM, yyyy")}</span>
+                            <td className="py-4 px-6 whitespace-nowrap text-slate-600 font-bold">
+                              <div className="flex items-center gap-2.5">
+                                <div className="p-1.5 rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-100/60 shadow-xs">
+                                  <Calendar className="w-3.5 h-3.5" />
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-xs font-black text-slate-800">
+                                    {formatPeruDate(t.date)}
+                                  </span>
+                                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">
+                                    Fecha de Pago
+                                  </span>
+                                </div>
                               </div>
                             </td>
 
@@ -1155,9 +1175,33 @@ export default function BusinessFinancePage() {
                 </div>
               )}
 
-              {/*fecha*/}
-              <div className="">
-                {new Date().toLocaleString()}
+              {/* Fecha de Pago Efectuado */}
+              <div className="space-y-1.5">
+                <label className="text-[9px] font-black text-gray-500 uppercase tracking-widest ml-1 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+                  Fecha de Pago / Operación Efectuada (Límite: Hoy)
+                </label>
+                <input
+                  required
+                  type="date"
+                  max={getPeruTodayInputStr()}
+                  value={formData.date}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val > getPeruTodayInputStr()) {
+                      toast.error("No se permiten fechas futuras para operaciones de tesorería. Si es a futuro, corresponde a Cuentas por Cobrar o Cuentas por Pagar (Pendientes).");
+                      return;
+                    }
+                    setFormData({ ...formData, date: val });
+                  }}
+                  className={`w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl outline-none focus:ring-4 transition-all text-sm font-bold text-gray-700 shadow-sm ${type === "INCOME"
+                    ? "focus:ring-emerald-500/10 focus:border-emerald-500"
+                    : "focus:ring-rose-500/10 focus:border-rose-500"
+                    }`}
+                />
+                <p className="text-[10px] text-gray-400 font-medium ml-1">
+                  * Registra la fecha en que se efectuó el pago (hasta hoy). Operaciones futuras deben registrarse en Pendientes.
+                </p>
               </div>
 
               {/* Flags/Switches Group */}
@@ -1255,19 +1299,7 @@ export default function BusinessFinancePage() {
                     <ChevronDown className="w-4 h-4 text-gray-300 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                   </div>
                 </div>
-                <div>
-                  <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">
-                    Fecha
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.date}
-                    onChange={(e) =>
-                      setFormData({ ...formData, date: e.target.value })
-                    }
-                    className="w-full px-3 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-sm font-bold text-gray-700 appearance-none shadow-sm cursor-pointer"
-                  />
-                </div>
+
 
                 <div className="space-y-1.5">
                   <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">

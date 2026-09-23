@@ -21,6 +21,24 @@ API.interceptors.request.use((config) => {
   return config;
 });
 
+// 🔔 INTERCEPTOR DE RESPUESTA: Normalización de mensajes de error
+API.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const errorData = error.response?.data;
+    if (errorData) {
+      const extractedMessage =
+        errorData?.error?.message ||
+        errorData?.message ||
+        (typeof errorData?.error === "string" ? errorData.error : null);
+      if (extractedMessage) {
+        errorData.message = extractedMessage;
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 /**
  * 👇 Exportamos por DEFAULT
  * Esto permite importarlo así:

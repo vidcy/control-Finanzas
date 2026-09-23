@@ -382,7 +382,7 @@ export default function ExpensesPage() {
             description: t.description ?? "",
             amount: t.amount,
             date: t.date,
-            paidAt: t.paidAt ?? undefined,
+            paidAt: t.paidAt || t.date,
             category: t.category?.name ?? "Otros",
             categoryId: t.categoryId,
             subCategory: t.subCategory?.name ?? "",
@@ -472,34 +472,26 @@ export default function ExpensesPage() {
     setIsModalOpen(true);
   };
 
-  const [, setDateError] = useState<string>("");
   const [paidAtError, setPaidAtError] = useState<string>("");
 
-  const validateDates = (dateVal: string, paidAtVal: string) => {
+  const validatePaymentDate = (paidAtVal: string) => {
     const todayPeruStr = getPeruTodayInputStr();
-    let valid = true;
-
-    if (dateVal > todayPeruStr) {
-      setDateError("La fecha no puede ser mayor a hoy");
-      valid = false;
-    } else {
-      setDateError("");
+    if (!paidAtVal) {
+      setPaidAtError("La fecha de pago efectuado es requerida");
+      return false;
     }
-
     if (paidAtVal > todayPeruStr) {
-      setPaidAtError("La fecha de pago no puede ser mayor a hoy");
-      valid = false;
-    } else {
-      setPaidAtError("");
+      setPaidAtError("Límite superado: No se puede registrar un pago en días posteriores a hoy (debe ir a Cuentas Pendientes).");
+      return false;
     }
-
-    return valid;
+    setPaidAtError("");
+    return true;
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validateDates(formData.date, formData.paidAt)) {
-      toast.error("Fecha inválida");
+    if (!validatePaymentDate(formData.paidAt)) {
+      toast.error("La fecha no puede ser posterior al día actual");
       return;
     }
     if (!selectedCategoryId) return toast.error("Selecciona una categoría");
@@ -534,7 +526,7 @@ export default function ExpensesPage() {
 
         const payload = {
           ...formData,
-          date: peruInputDateToUtcISO(formData.date, originalItem?.date),
+          date: peruInputDateToUtcISO(formData.paidAt, originalItem?.date || originalItem?.paidAt),
           paidAt: peruInputDateToUtcISO(formData.paidAt, originalItem?.paidAt),
           name: formData.name || "Egreso",
           description: formData.description || "Egreso",
@@ -1164,24 +1156,28 @@ export default function ExpensesPage() {
                   )}
                   <div className="grid grid-cols-1 gap-4">
                     <div className="space-y-1.5">
-                      <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">
-                        Fecha de Pago
+                      <label className="text-[9px] font-black text-gray-500 uppercase tracking-widest ml-1">
+                        Fecha de Pago Efectuado (Límite: Hoy)
                       </label>
                       <input
                         required
                         type="date"
                         max={localDate}
-                        className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-rose-500/10 focus:border-rose-500 transition-all text-sm font-bold text-gray-700 shadow-sm"
+                        className={`w-full px-4 py-3 bg-white border rounded-xl outline-none focus:ring-4 transition-all text-sm font-bold text-gray-700 shadow-sm ${paidAtError ? "border-rose-400 focus:ring-rose-500/10 focus:border-rose-500" : "border-gray-100 focus:ring-rose-500/10 focus:border-rose-500"}`}
                         value={formData.paidAt}
                         onChange={(e) => {
                           const value = e.target.value;
-                          setFormData({ ...formData, paidAt: value });
-                          validateDates(formData.date, value);
+                          setFormData({ ...formData, date: value, paidAt: value });
+                          validatePaymentDate(value);
                         }}
                       />
-                      {paidAtError && (
+                      {paidAtError ? (
                         <p className="text-xs font-bold text-rose-500 mt-1">
                           {paidAtError}
+                        </p>
+                      ) : (
+                        <p className="text-[10px] text-gray-400 font-medium ml-1">
+                          * Solo fecha del pago efectuado (hasta hoy). Pagos posteriores van a Cuentas Pendientes.
                         </p>
                       )}
                     </div>

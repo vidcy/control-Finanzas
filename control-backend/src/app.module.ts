@@ -1,3 +1,4 @@
+﻿import { LeadsModule } from './leads/leads.module';
 import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AuthModule } from './auth/auth.module';
@@ -27,7 +28,7 @@ import { SalesModule } from './sales/sales.module';
 
 @Module({
   imports: [
-    PassportModule.register({ defaultStrategy: 'jwt' }), // 👈 CLAVE
+    PassportModule.register({ defaultStrategy: 'jwt' }), // ðŸ‘ˆ CLAVE
     AuthModule,
     PendingTransactionModule,
     TransactionsModule,
@@ -46,6 +47,7 @@ import { SalesModule } from './sales/sales.module';
     AdvisorsModule,
     CommissionModelsModule,
     SalesModule,
+    LeadsModule,
     ConfigModule.forRoot({
       isGlobal: true,
     }),
@@ -60,6 +62,6 @@ import { SalesModule } from './sales/sales.module';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(TimezoneMiddleware).forRoutes('*'); // ← se aplica a TODAS las rutas
+    consumer.apply(TimezoneMiddleware).forRoutes('*'); // â† se aplica a TODAS las rutas
   }
 }

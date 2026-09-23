@@ -24,6 +24,7 @@ import BusinessBranchesPage from "../pages/BusinessBranchesPage";
 import BusinessWorkersPage from "../pages/BusinessWorkersPage";
 import BusinessAdvisorsPage from "../pages/BusinessAdvisorsPage";
 import BusinessCommissionsPage from "../pages/BusinessCommissionsPage";
+import BusinessLeadsPage from "../pages/BusinessLeadsPage";
 
 import LandingPage from "../pages/LandingPage";
 import VeazEstilezaPage from "../pages/VeazEstilezaPage";
@@ -149,6 +150,14 @@ export default function AppRoutes() {
         element={
           <ProtectedRoute>
             <BusinessCommissionsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/business-leads"
+        element={
+          <ProtectedRoute>
+            <BusinessLeadsPage />
           </ProtectedRoute>
         }
       />

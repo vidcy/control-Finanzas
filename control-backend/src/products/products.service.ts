@@ -21,23 +21,37 @@ export class ProductsService {
   async create(userId: string, data: any) {
     const { presentations, unit, ...productData } = data;
 
-    // Standardize stock and minStock to float
-    const stock = parseFloat(productData.stock || 0);
-    const minStock = parseFloat(productData.minStock || 5);
-    const costPrice = parseFloat(productData.costPrice || 0);
-    const salePrice = parseFloat(productData.salePrice || 0);
-    const priceWithAgent = productData.priceWithAgent !== undefined && productData.priceWithAgent !== null ? parseFloat(productData.priceWithAgent) : null;
-    const commissionValue = parseFloat(productData.commissionValue || 0);
+    // Standardize numeric fields
+    const stock = parseFloat(productData.stock || 0) || 0;
+    const minStock = parseFloat(productData.minStock || 5) || 5;
+    const costPrice = parseFloat(productData.costPrice || 0) || 0;
+    const salePrice = parseFloat(productData.salePrice || 0) || 0;
+    const adjustedPrice =
+      productData.adjustedPrice !== undefined &&
+      productData.adjustedPrice !== null &&
+      !isNaN(parseFloat(productData.adjustedPrice))
+        ? parseFloat(productData.adjustedPrice)
+        : null;
+    const priceWithAgent =
+      productData.priceWithAgent !== undefined &&
+      productData.priceWithAgent !== null &&
+      !isNaN(parseFloat(productData.priceWithAgent))
+        ? parseFloat(productData.priceWithAgent)
+        : null;
+    const commissionValue = parseFloat(productData.commissionValue || 0) || 0;
 
-    // Validate presentations
-    const presentationsList = presentations || [];
+    // Filter valid presentations (ignore empty/dummy rows)
+    const presentationsList = (presentations || []).filter(
+      (p: any) => p && p.name && String(p.name).trim() !== '' && Number(p.equivalence) > 0,
+    );
+
     for (const pres of presentationsList) {
-      if (pres.equivalence <= 0) {
+      if (Number(pres.equivalence) <= 0) {
         throw new BadRequestException(
           'La equivalencia de la presentación debe ser mayor a cero.',
         );
       }
-      if (pres.price < 0) {
+      if (Number(pres.price) < 0) {
         throw new BadRequestException(
           'El precio de la presentación no puede ser negativo.',
         );
@@ -45,8 +59,8 @@ export class ProductsService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      const brandId = productData.brandId ? productData.brandId : null;
-      const familyId = productData.familyId ? productData.familyId : null;
+      const brandId = productData.brandId ? String(productData.brandId) : null;
+      const familyId = productData.familyId ? String(productData.familyId) : null;
 
       // Find the maximum customCode for this user
       const maxProduct = await tx.product.findFirst({
@@ -64,7 +78,10 @@ export class ProductsService {
 
       const product = await tx.product.create({
         data: {
-          ...productData,
+          name: String(productData.name || '').trim(),
+          description: productData.description || null,
+          sku: productData.sku ? String(productData.sku).trim() : null,
+          color: productData.color ? String(productData.color).trim() : null,
           customCode: nextCode,
           brandId,
           familyId,
@@ -72,10 +89,12 @@ export class ProductsService {
           minStock,
           costPrice,
           salePrice,
+          adjustedPrice,
           priceWithAgent,
           commissionValue,
           commissionType: productData.commissionType || 'PERCENT',
           unit: unit || 'UNIDAD',
+          imageUrl: productData.imageUrl || null,
           userId,
         },
       });
@@ -124,9 +143,9 @@ export class ProductsService {
         for (const pres of presentationsList) {
           await tx.presentation.create({
             data: {
-              name: pres.name,
+              name: String(pres.name).trim(),
               equivalence: parseFloat(pres.equivalence),
-              price: parseFloat(pres.price),
+              price: parseFloat(pres.price || 0),
               productId: product.id,
             },
           });
@@ -189,93 +208,127 @@ export class ProductsService {
   async update(userId: string, id: string, data: any) {
     const product = await this.findOne(userId, id);
 
-    const { presentations, unit, ...productData } = data;
+    const {
+      presentations,
+      unit,
+      branchId,
+      branchStocks,
+      brand,
+      family,
+      saleItems,
+      movements,
+      purchaseOrderItems,
+      user,
+      ...productData
+    } = data;
 
-    // Cast floats
-    const updateData: any = { ...productData };
-    if (updateData.stock !== undefined)
-      updateData.stock = parseFloat(updateData.stock);
-    if (updateData.minStock !== undefined)
-      updateData.minStock = parseFloat(updateData.minStock);
-    if (updateData.costPrice !== undefined)
-      updateData.costPrice = parseFloat(updateData.costPrice);
-    if (updateData.salePrice !== undefined)
-      updateData.salePrice = parseFloat(updateData.salePrice);
-    if (updateData.priceWithAgent !== undefined)
-      updateData.priceWithAgent = updateData.priceWithAgent !== null ? parseFloat(updateData.priceWithAgent) : null;
-    if (updateData.commissionValue !== undefined)
-      updateData.commissionValue = parseFloat(updateData.commissionValue || 0);
+    // Strictly whitelist and sanitize scalar Product columns
+    const updateData: any = {};
+    if (productData.name !== undefined) updateData.name = String(productData.name).trim();
+    if (productData.description !== undefined) updateData.description = productData.description || null;
+    if (productData.sku !== undefined) updateData.sku = productData.sku ? String(productData.sku).trim() : null;
+    if (productData.color !== undefined) updateData.color = productData.color ? String(productData.color).trim() : null;
+    if (productData.stock !== undefined) updateData.stock = parseFloat(productData.stock || 0) || 0;
+    if (productData.minStock !== undefined) updateData.minStock = parseFloat(productData.minStock || 0) || 0;
+    if (productData.costPrice !== undefined) updateData.costPrice = parseFloat(productData.costPrice || 0) || 0;
+    if (productData.salePrice !== undefined) updateData.salePrice = parseFloat(productData.salePrice || 0) || 0;
+    if (productData.adjustedPrice !== undefined) {
+      updateData.adjustedPrice =
+        productData.adjustedPrice !== null && !isNaN(parseFloat(productData.adjustedPrice))
+          ? parseFloat(productData.adjustedPrice)
+          : null;
+    }
+    if (productData.priceWithAgent !== undefined) {
+      updateData.priceWithAgent =
+        productData.priceWithAgent !== null && !isNaN(parseFloat(productData.priceWithAgent))
+          ? parseFloat(productData.priceWithAgent)
+          : null;
+    }
+    if (productData.commissionType !== undefined) updateData.commissionType = productData.commissionType;
+    if (productData.commissionValue !== undefined) updateData.commissionValue = parseFloat(productData.commissionValue || 0) || 0;
+    if (productData.imageUrl !== undefined) updateData.imageUrl = productData.imageUrl || null;
     if (unit !== undefined) updateData.unit = unit;
 
-    if (updateData.brandId !== undefined) {
-      updateData.brandId = updateData.brandId ? updateData.brandId : null;
+    if (productData.brandId !== undefined) {
+      updateData.brandId = productData.brandId ? String(productData.brandId) : null;
     }
-    if (updateData.familyId !== undefined) {
-      updateData.familyId = updateData.familyId ? updateData.familyId : null;
+    if (productData.familyId !== undefined) {
+      updateData.familyId = productData.familyId ? String(productData.familyId) : null;
     }
 
     return this.prisma.$transaction(async (tx) => {
-      // If presentations are provided, manage upserts/deletions
+      // If presentations are provided, manage upserts/deletions safely
       if (presentations !== undefined) {
-        const presentationsList = presentations || [];
+        const presentationsList = (presentations || []).filter(
+          (p: any) => p && p.name && String(p.name).trim() !== '' && Number(p.equivalence) > 0,
+        );
+
         for (const pres of presentationsList) {
-          if (pres.equivalence <= 0) {
+          if (Number(pres.equivalence) <= 0) {
             throw new BadRequestException(
               'La equivalencia de la presentación debe ser mayor a cero.',
             );
           }
-          if (pres.price < 0) {
+          if (Number(pres.price) < 0) {
             throw new BadRequestException(
               'El precio de la presentación no puede ser negativo.',
             );
           }
         }
 
-        // Handle deletions of omitted presentations
-        const existingPres = product.presentations;
-        const incomingIds = presentationsList
-          .map((p: any) => p.id)
-          .filter(Boolean);
-        const toDelete = existingPres.filter(
-          (p) => !incomingIds.includes(p.id),
-        );
+        const existingPres = product.presentations || [];
+        const existingPresMap = new Map(existingPres.map((p) => [p.id, p]));
+        const matchedExistingIds = new Set();
 
-        for (const p of toDelete) {
-          // Verify if presentation has movements in DB
-          const movementsCount = await tx.inventoryMovement.count({
-            where: { presentationId: p.id },
-          });
-          if (movementsCount > 0) {
-            throw new BadRequestException(
-              `No se puede eliminar la presentación "${p.name}" porque está asociada a movimientos de inventario.`,
+        // Match incoming presentations without id to existing ones by name or equivalence
+        for (const incoming of presentationsList) {
+          if (!incoming.id || !existingPresMap.has(incoming.id)) {
+            const match = existingPres.find(
+              (ep) =>
+                !matchedExistingIds.has(ep.id) &&
+                (ep.name.trim().toLowerCase() === (incoming.name || '').trim().toLowerCase() ||
+                  Math.abs(Number(ep.equivalence) - Number(incoming.equivalence)) < 0.001),
             );
+            if (match) {
+              incoming.id = match.id;
+              matchedExistingIds.add(match.id);
+            } else {
+              delete incoming.id;
+            }
+          } else {
+            matchedExistingIds.add(incoming.id);
           }
         }
 
-        // Delete the presentations not present in incoming list
-        if (toDelete.length > 0) {
-          await tx.presentation.deleteMany({
-            where: { id: { in: toDelete.map((p) => p.id) } },
+        const incomingIds = presentationsList.map((p) => p.id).filter(Boolean);
+        const toDelete = existingPres.filter((p) => !incomingIds.includes(p.id));
+
+        for (const p of toDelete) {
+          const movementsCount = await tx.inventoryMovement.count({
+            where: { presentationId: p.id },
           });
+          if (movementsCount === 0) {
+            await tx.presentation.delete({ where: { id: p.id } }).catch(() => null);
+          }
         }
 
-        // Upsert incoming presentations
+        // Upsert incoming presentations safely
         for (const pres of presentationsList) {
-          if (pres.id) {
+          if (pres.id && existingPresMap.has(pres.id)) {
             await tx.presentation.update({
               where: { id: pres.id },
               data: {
-                name: pres.name,
+                name: String(pres.name).trim(),
                 equivalence: parseFloat(pres.equivalence),
-                price: parseFloat(pres.price),
+                price: parseFloat(pres.price || 0),
               },
             });
           } else {
             await tx.presentation.create({
               data: {
-                name: pres.name,
+                name: String(pres.name).trim(),
                 equivalence: parseFloat(pres.equivalence),
-                price: parseFloat(pres.price),
+                price: parseFloat(pres.price || 0),
                 productId: id,
               },
             });
@@ -292,8 +345,7 @@ export class ProductsService {
         const type = diff > 0 ? 'IN' : 'OUT';
         const quantity = Math.abs(diff);
 
-        // Find or create the target branch (Matrix by default or explicit branchId)
-        let targetBranchId = updateData.branchId;
+        let targetBranchId = data.branchId;
 
         let firstBranch = await tx.branch.findFirst({
           where: { userId },
@@ -313,7 +365,6 @@ export class ProductsService {
           targetBranchId = firstBranch.id;
         }
 
-        // Find or create BranchStock record for targetBranchId
         const branchStock = await tx.branchStock.findUnique({
           where: { productId_branchId: { productId: id, branchId: targetBranchId } },
         });
@@ -321,7 +372,7 @@ export class ProductsService {
         const initialBranchStock = branchStock
           ? branchStock.stock
           : (targetBranchId === firstBranch.id ? product.stock : 0);
-        const newBranchStockValue = initialBranchStock + diff;
+        const newBranchStockValue = Math.max(0, initialBranchStock + diff);
 
         if (branchStock) {
           await tx.branchStock.update({
@@ -333,7 +384,7 @@ export class ProductsService {
             data: {
               productId: id,
               branchId: targetBranchId,
-              stock: Math.max(0, newBranchStockValue),
+              stock: newBranchStockValue,
             },
           });
         }
@@ -345,11 +396,11 @@ export class ProductsService {
             type,
             reason: 'ADJUSTMENT',
             presentationId: null,
-            presentationName: product.unit,
+            presentationName: updateData.unit || product.unit || 'UNIDAD',
             presentationQty: quantity,
             userId,
-            unitCost: product.costPrice,
-            totalCost: quantity * product.costPrice,
+            unitCost: updateData.costPrice !== undefined ? updateData.costPrice : product.costPrice,
+            totalCost: quantity * (updateData.costPrice !== undefined ? updateData.costPrice : product.costPrice),
             stockResult: newBranchStockValue,
             branchId: targetBranchId,
           },
@@ -361,7 +412,7 @@ export class ProductsService {
         updateData.imageUrl !== product.imageUrl &&
         product.imageUrl
       ) {
-        await this.filesService.deleteFile(product.imageUrl);
+        await this.filesService.deleteFile(product.imageUrl).catch(() => null);
       }
 
       await tx.product.update({
@@ -385,21 +436,88 @@ export class ProductsService {
     });
   }
 
+  
+  async bulkDelete(userId: string, productIds: string[]) {
+    if (!productIds || productIds.length === 0) return { deletedCount: 0 };
+    const uniqueIds = Array.from(new Set(productIds));
+
+    return this.prisma.$transaction(async (tx) => {
+      const validProducts = await tx.product.findMany({
+        where: { id: { in: uniqueIds }, userId },
+        select: { id: true, imageUrl: true },
+      });
+      const validIds = validProducts.map((p) => p.id);
+      if (validIds.length === 0) return { deletedCount: 0 };
+
+      // Desvincular ventas historicas
+      await tx.saleItem.updateMany({
+        where: { productId: { in: validIds } },
+        data: { productId: null },
+      });
+
+      // Eliminar movimientos de inventario/kardex
+      await tx.inventoryMovement.deleteMany({
+        where: { productId: { in: validIds } },
+      });
+
+      // Eliminar ordenes de compra relacionadas
+      await tx.purchaseOrderItem.deleteMany({
+        where: { productId: { in: validIds } },
+      });
+
+      // Eliminar stocks por sucursal
+      await tx.branchStock.deleteMany({
+        where: { productId: { in: validIds } },
+      });
+
+      // Eliminar presentaciones
+      await tx.presentation.deleteMany({
+        where: { productId: { in: validIds } },
+      });
+
+      // Eliminar productos fisicamente
+      const deleteRes = await tx.product.deleteMany({
+        where: { id: { in: validIds } },
+      });
+
+      return { deletedCount: deleteRes.count, deletedIds: validIds };
+    });
+  }
+
   async remove(userId: string, id: string) {
     const product = await this.findOne(userId, id);
 
-    // Prevent deleting products with movements
-    const movementsCount = await this.prisma.inventoryMovement.count({
-      where: { productId: id },
-    });
-    if (movementsCount > 0) {
-      throw new BadRequestException(
-        `No se puede eliminar el producto "${product.name}" porque tiene movimientos de inventario registrados.`,
-      );
-    }
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Unlink sales so historical sales are preserved
+      await tx.saleItem.updateMany({
+        where: { productId: id },
+        data: { productId: null },
+      });
 
-    const result = await this.prisma.product.delete({
-      where: { id },
+      // Delete inventory movements associated with this product
+      await tx.inventoryMovement.deleteMany({
+        where: { productId: id },
+      });
+
+      // Delete purchase order items associated with this product
+      await tx.purchaseOrderItem.deleteMany({
+        where: { productId: id },
+      });
+
+      // Delete branch stocks
+      await tx.branchStock.deleteMany({
+        where: { productId: id },
+      });
+
+      // Delete presentations
+      await tx.presentation.deleteMany({
+        where: { productId: id },
+      });
+
+      // Finally delete the product
+      return tx.product.delete({
+        where: { id },
+      });
     });
 
     if (product.imageUrl) {

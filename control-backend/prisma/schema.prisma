@@ -331,7 +331,7 @@ model Commission {
 model Product {
   id            String  @id @default(uuid())
   name          String
-  description   String?
+  description   String? @db.Text
   sku           String?
   customCode    Int     @default(0)
   color         String? // Color opcional del producto
@@ -588,4 +588,34 @@ model CommissionModel {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// =========================
+// CRM / LEADS & CITAS (NUEVO)
+// =========================
+enum LeadStatus {
+  NEW
+  CONTACTED
+  SCHEDULED
+  WON
+  LOST
+}
+
+model Lead {
+  id                 String     @id @default(uuid())
+  name               String
+  phone              String
+  email              String?
+  businessName       String?
+  businessType       String?
+  interestType       String     @default("DEMO")
+  status             LeadStatus @default(NEW)
+  appointmentDate    String?
+  appointmentTime    String?
+  notes              String?    @db.Text
+  monthlySalesVolume String?
+  utmSource          String?
+  utmCampaign        String?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
 }

@@ -31,6 +31,7 @@ import {
   Smartphone,
   Share2,
   PlusSquare,
+  Zap,
 } from "lucide-react";
 
 import { toast } from "react-hot-toast";
@@ -166,7 +167,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (isProfileModalOpen && user) {
       // Force sync with the backend in case admin deactivated permissions in the background
-      syncProfile().catch(() => {});
+      syncProfile().catch(() => { });
 
       setProfileName(user.name || "");
       setProfileLastName(user.lastName || "");
@@ -352,7 +353,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
 
         const isSubBlocked = requiredSubmodule ? blocked.includes(requiredSubmodule) : false;
         const hasBusinessAccess = profiles.includes("BUSINESS");
-        
+
         // They have access if they explicitly have the sub-module OR if they have BUSINESS and it's not explicitly blocked
         const hasSubAccess = profiles.includes(requiredSubmodule as string) || (hasBusinessAccess && !isSubBlocked);
 
@@ -563,38 +564,46 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
     ...((!user?.parentId && user?.profiles?.includes("BUSINESS_WORKERS")) ||
       (user?.parentId && user?.profiles?.includes("BUSINESS_WORKERS"))
       ? [
-          {
-            name: "Personal / Roles",
-            path: "/business-workers",
-            icon: Users,
-            color: "from-indigo-500 to-blue-600",
-            bgActive: "bg-indigo-50 text-indigo-700",
-            profile: "BUSINESS_WORKERS",
-          },
-          {
-            name: user?.agentRolePlural || "Asesores",
-            path: "/business-advisors",
-            icon: Users,
-            color: "from-indigo-500 to-blue-600",
-            bgActive: "bg-indigo-50 text-indigo-700",
-            profile: "BUSINESS_WORKERS",
-          },
-          {
-            name: "Comisiones",
-            path: "/business-commissions",
-            icon: TrendingUp,
-            color: "from-emerald-500 to-teal-600",
-            bgActive: "bg-emerald-50 text-emerald-700",
-            profile: "BUSINESS_WORKERS",
-          }
-        ] : []),
+        {
+          name: "Personal / Roles",
+          path: "/business-workers",
+          icon: Users,
+          color: "from-indigo-500 to-blue-600",
+          bgActive: "bg-indigo-50 text-indigo-700",
+          profile: "BUSINESS_WORKERS",
+        },
+        {
+          name: user?.agentRolePlural || "Asesores",
+          path: "/business-advisors",
+          icon: Users,
+          color: "from-indigo-500 to-blue-600",
+          bgActive: "bg-indigo-50 text-indigo-700",
+          profile: "BUSINESS_WORKERS",
+        },
+        {
+          name: "Comisiones",
+          path: "/business-commissions",
+          icon: TrendingUp,
+          color: "from-emerald-500 to-teal-600",
+          bgActive: "bg-emerald-50 text-emerald-700",
+          profile: "BUSINESS_WORKERS",
+        }
+      ] : []),
+    {
+      name: "Prospectos & Citas",
+      path: "/business-leads",
+      icon: Zap,
+      color: "from-amber-500 to-orange-600",
+      bgActive: "bg-amber-50 text-amber-700",
+      profile: "BUSINESS",
+    },
   ];
 
   const activeMenu = activeWorkspace === "BUSINESS"
     ? businessMenu.filter(item => {
-        const key = (item as any).profile;
-        return key ? user?.profiles?.includes(key) : false;
-      })
+      const key = (item as any).profile;
+      return key ? user?.profiles?.includes(key) : false;
+    })
     : menu;
 
   const handleLogout = () => {
@@ -819,7 +828,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
         {/* COPYRIGHT INFO */}
         <div className="px-6 pb-4 text-center mt-auto">
           <p className="text-[10px] text-gray-400 font-medium tracking-wide">
-            © {new Date().getFullYear()} Think - Global Ccoplex
+            © {new Date().getFullYear()} Think - Corporación Ccoplex
           </p>
           <p className="text-[9px] text-gray-400/80">
             Todos los derechos reservados.
@@ -1082,9 +1091,8 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                   type="text"
                   maxLength={11}
                   placeholder="Ej. 10203040506"
-                  className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 focus:ring-purple-500 outline-none text-sm font-bold text-gray-700 bg-white ${
-                    businessRuc && businessRuc.length !== 11 ? "border-rose-300 focus:ring-rose-500" : "border-gray-200"
-                  }`}
+                  className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 focus:ring-purple-500 outline-none text-sm font-bold text-gray-700 bg-white ${businessRuc && businessRuc.length !== 11 ? "border-rose-300 focus:ring-rose-500" : "border-gray-200"
+                    }`}
                   value={businessRuc}
                   onChange={(e) => {
                     const val = e.target.value.replace(/\D/g, "");
@@ -1335,20 +1343,20 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                         <div>
                           <h4 className="text-xs font-bold text-gray-800">
                             Módulo Negocio PRO
-                        </h4>
-                        <p className="text-[10px] text-gray-400">
-                          Gestión comercial ERP y POS
-                        </p>
+                          </h4>
+                          <p className="text-[10px] text-gray-400">
+                            Gestión comercial ERP y POS
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={activeProfiles.includes("BUSINESS")}
-                      onChange={() => handleToggleProfile("BUSINESS")}
-                      disabled={isSavingProfiles}
-                      className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                    />
-                  </label>
+                      <input
+                        type="checkbox"
+                        checked={activeProfiles.includes("BUSINESS")}
+                        onChange={() => handleToggleProfile("BUSINESS")}
+                        disabled={isSavingProfiles}
+                        className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                      />
+                    </label>
                   )}
 
                   {/* Advanced Business Sub-Modules — only visible if BUSINESS is active */}
@@ -1356,7 +1364,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                     <>
                       <div className="ml-3 pl-3 border-l-2 border-purple-100 flex flex-col gap-2">
                         <p className="text-[10px] text-purple-600 font-black uppercase tracking-wider mb-1">Módulos Avanzados</p>
-                        
+
                         {!(user?.blockedProfiles || []).includes("BUSINESS_BRANCHES") && (
                           <label className="flex items-center justify-between p-2.5 rounded-xl border border-purple-50 bg-purple-50/30 hover:bg-purple-50 cursor-pointer">
                             <div className="flex items-center gap-2">

@@ -9,6 +9,9 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: "autoUpdate",
+      workbox: {
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+      },
       includeAssets: ["favicon.svg", "logo.png", "icon-192.png", "icon-512.png"],
       manifest: {
         name: "Think - Finanzas Inteligentes",

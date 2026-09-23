@@ -1,15 +1,76 @@
 <!doctype html>
-<html lang="en">
+<html lang="es">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#863bff" />
+    <meta name="theme-color" content="#4f46e5" />
+
+    <!-- SEO Meta Tags Primarios -->
+    <title>THINK | Sistema de Gestión, POS e Inventario con Series para Calzado y Moda</title>
+    <meta name="title" content="THINK | Sistema de Gestión, POS e Inventario con Series para Calzado y Moda" />
+    <meta name="description" content="Multiplica tus ventas y controla tu negocio con THINK. Punto de Venta (POS) ultrarrápido, motor exclusivo de series de calzado (curvas 34-39), kardex en tiempo real, facturación electrónica SUNAT y diseñador de etiquetas para imprenta." />
+    <meta name="keywords" content="sistema de ventas, sistema para zapaterias, software calzado peru, punto de venta pos, control de inventario con tallas, series de calzado, kardex sunat, boletas electronicas, software para tiendas de ropa, control finanzas negocio, corporacion ccoplex" />
+    <meta name="author" content="Corporación Ccoplex S.A.C." />
+    <meta name="robots" content="index, follow" />
+
+    <!-- Open Graph / Facebook / WhatsApp -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://think.ccoplex.com/" />
+    <meta property="og:title" content="THINK | Tus Finanzas y Ventas Inteligentes - Organiza y Escala tu Negocio" />
+    <meta property="og:description" content="El software de gestión preferido por zapaterías, boutiques y comercios en crecimiento. POS táctil, series de tallas, control de deudores y más." />
+    <meta property="og:image" content="/favicon.svg" />
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:url" content="https://think.ccoplex.com/" />
+    <meta property="twitter:title" content="THINK | Finanzas & Punto de Venta Inteligente" />
+    <meta property="twitter:description" content="Controla inventario por series de calzado, vende en segundos y detén las fugas de dinero." />
+    <meta property="twitter:image" content="/favicon.svg" />
+
+    <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=Outfit:wght@300;400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900;1,400&display=swap" rel="stylesheet">
-    <title>Think - Finanzas Inteligentes</title>
+
+    <!-- Schema.org JSON-LD para Google Search & Ads -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "THINK Software Financiero & POS",
+      "operatingSystem": "Web, Android, iOS, Windows, Mac",
+      "applicationCategory": "BusinessApplication",
+      "creator": {
+        "@type": "Organization",
+        "name": "Corporación Ccoplex S.A.C.",
+        "telephone": "+51912509111",
+        "email": "soporte-think@ccoplex.com"
+      },
+      "offers": {
+        "@type": "Offer",
+        "price": "49.00",
+        "priceCurrency": "PEN"
+      },
+      "description": "Sistema de Punto de Venta, Inventario con Series de Calzado, Kardex y Cuentas por Cobrar."
+    }
+    </script>
+
+    <!-- Google Tag Manager / Google Ads dataLayer Initialization -->
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      window.trackLeadConversion = function(conversionType) {
+        if (typeof window.gtag === 'function') {
+          window.gtag('event', 'generate_lead', {
+            'event_category': 'Leads',
+            'event_label': conversionType
+          });
+        }
+      };
+    </script>
+
     <script>
       window.addEventListener('beforeinstallprompt', (e) => {
         e.preventDefault();

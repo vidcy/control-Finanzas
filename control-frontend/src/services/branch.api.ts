@@ -3,6 +3,7 @@ import API from "./axios";
 export interface Branch {
   id: string;
   name: string;
+  phone: string;
   address?: string;
   userId: string;
   createdAt: string;

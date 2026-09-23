@@ -206,8 +206,8 @@ export default function LoginPage() {
                     <div className="mt-8 text-center">
                         <p className="text-sm text-gray-600 font-medium">
                             ¿No tienes cuenta?{' '}
-                            <Link 
-                                to="/register" 
+                            <Link
+                                to="/register"
                                 className="text-indigo-600 hover:text-indigo-700 font-bold hover:underline transition-all"
                             >
                                 Regístrate aquí
@@ -217,7 +217,7 @@ export default function LoginPage() {
                 </div>
 
                 <p className="text-center text-sm text-gray-500 mt-8 font-medium">
-                    &copy; {new Date().getFullYear()} Think - Global Ccoplex. Todos los derechos reservados.
+                    &copy; {new Date().getFullYear()} Think - Corporación Ccoplex. Todos los derechos reservados.
                 </p>
             </div>
         </div>

@@ -1,5 +1,6 @@
 import type { Product } from "../../services/product.api";
 import { getReceiptAbsoluteUrl } from "../ui/ImageUploader";
+import { cleanDescriptionForDisplay } from "../../utils/seriesUtils";
 
 export interface ColorInfo {
   name: string;
@@ -150,6 +151,13 @@ export function extractShoeColor(name?: string, fallbackColor?: string): ColorIn
  */
 export function extractShoeHeel(description?: string, name?: string): string {
   const combined = `${description || ""} ${name || ""}`;
+
+  // 0. Check [TACO:...] tag from new shoe model
+  const tagMatch = combined.match(/\[TACO:([\s\S]*?)\]/i);
+  if (tagMatch && tagMatch[1]) {
+    const val = tagMatch[1].trim();
+    if (val) return val;
+  }
 
   // 1. Check after comma: e.g. "Talla 37, Taco 7" or "Talla 33, Taco 12"
   const commaMatch = combined.match(/,\s*(?:taco\s*[:\s#]?\s*([0-9]+(?:\.[0-9]+)?(?:\s*cm)?))/i);
@@ -328,7 +336,7 @@ export function groupProductsBySku(products: Product[]): GroupedShoeModel[] {
         color: colorInfo.name,
         colorHex: colorInfo.hex,
         colorBorder: colorInfo.border,
-        description: prod.description || "Calzado femenino de alta calidad con acabados finos y diseño anatómico.",
+        description: cleanDescriptionForDisplay(prod.description) || "Calzado femenino de alta calidad con acabados finos y diseño anatómico.",
         imageUrl: resolvedImage,
         minPrice: price,
         maxPrice: price,

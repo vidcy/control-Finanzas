@@ -628,7 +628,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
         {/* COPYRIGHT INFO */}
         <div className="px-6 pb-4 text-center mt-auto">
           <p className="text-[10px] text-gray-400 font-medium tracking-wide">
-            © {new Date().getFullYear()} Think - Global Ccoplex
+            © {new Date().getFullYear()} Think - Corporación Ccoplex
           </p>
           <p className="text-[9px] text-gray-400/80">
             Todos los derechos reservados.

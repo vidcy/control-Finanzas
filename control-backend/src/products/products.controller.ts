@@ -67,7 +67,8 @@ export class ProductsController {
 
   @Post(':id/restock')
   restock(@Req() req, @Param('id') id: string, @Body() body: any) {
-    return this.productsService.restock(req.user.id, id, body);
+    const ownerId = req.user.parentId || req.user.id;
+    return this.productsService.restock(ownerId, id, body);
   }
 
   @Get('brands')
@@ -120,7 +121,8 @@ export class ProductsController {
 
   @Post()
   create(@Req() req, @Body() data: any) {
-    return this.productsService.create(req.user.id, data);
+    const ownerId = req.user.parentId || req.user.id;
+    return this.productsService.create(ownerId, data);
   }
 
   @Get('low-stock-analysis')
@@ -129,8 +131,9 @@ export class ProductsController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
   ) {
+    const ownerId = req.user.parentId || req.user.id;
     return this.productsService.getLowStockAnalysis(
-      req.user.id,
+      ownerId,
       startDate,
       endDate,
     );
@@ -138,21 +141,31 @@ export class ProductsController {
 
   @Get()
   findAll(@Req() req) {
-    return this.productsService.findAll(req.user.id);
+    const ownerId = req.user.parentId || req.user.id;
+    return this.productsService.findAll(ownerId);
   }
 
   @Get(':id')
   findOne(@Req() req, @Param('id') id: string) {
-    return this.productsService.findOne(req.user.id, id);
+    const ownerId = req.user.parentId || req.user.id;
+    return this.productsService.findOne(ownerId, id);
   }
 
   @Patch(':id')
   update(@Req() req, @Param('id') id: string, @Body() data: any) {
-    return this.productsService.update(req.user.id, id, data);
+    const ownerId = req.user.parentId || req.user.id;
+    return this.productsService.update(ownerId, id, data);
+  }
+
+    @Post('bulk-delete')
+  bulkDelete(@Req() req, @Body('ids') ids: string[]) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.productsService.bulkDelete(ownerId, ids);
   }
 
   @Delete(':id')
   remove(@Req() req, @Param('id') id: string) {
-    return this.productsService.remove(req.user.id, id);
+    const ownerId = req.user.parentId || req.user.id;
+    return this.productsService.remove(ownerId, id);
   }
 }

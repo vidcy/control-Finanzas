@@ -1,4 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import QRCode from "qrcode";
+import { getBranchesRequest, type Branch } from "../services/branch.api";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { motion } from "framer-motion";
 import Appshell from "../components/layout/Appshell";
 import { useAuth } from "../auth/AuthContext";
@@ -12,6 +14,13 @@ import { getActiveCashShiftRequest } from "../services/cash-shift.api";
 import { getAdvisorsRequest } from "../services/advisor.api";
 import type { Advisor } from "../services/advisor.api";
 import {
+  cleanDescriptionForDisplay,
+  extractSizeFromProduct,
+  extractTacoFromProduct,
+  groupProductsBySeries,
+  type GroupedSeriesProduct,
+} from "../utils/seriesUtils";
+import {
   getSalesRequest,
   retrySaleBillingRequest,
   issueSaleCreditNoteRequest,
@@ -19,6 +28,7 @@ import {
   deleteSaleRequest,
 } from "../services/sale.api";
 import { queryDocumentRequest } from "../services/user.api";
+import { shareSaleReceiptViaWhatsApp } from "../utils/whatsappUtils";
 import ReceiptUploader, {
   getReceiptAbsoluteUrl,
   uploadReceiptFile,
@@ -197,14 +207,21 @@ export default function BusinessPosPage() {
   const [categories, setCategories] = useState<any[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedMarca, setSelectedMarca] = useState("");
+  const [selectedTalla, setSelectedTalla] = useState("");
+  const [selectedGrupo, setSelectedGrupo] = useState("");
+  const [selectedColor, setSelectedColor] = useState("");
+  const [selectedTaco, setSelectedTaco] = useState("");
   const [loading, setLoading] = useState(true);
   const [paymentMethod, setPaymentMethod] = useState("CASH");
   const [selectedCategory, setSelectedCategory] = useState("");
   const [selectedSubCategory, setSelectedSubCategory] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeShift, setActiveShift] = useState<any>(null);
+  const [branches, setBranches] = useState<Branch[]>([]);
   const [receiptUrl, setReceiptUrl] = useState<string | File | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [posLightboxProduct, setPosLightboxProduct] = useState<any | null>(null);
 
   // Hover Product Tooltip
   const [hoveredProduct, setHoveredProduct] = useState<Product | null>(null);
@@ -252,7 +269,7 @@ export default function BusinessPosPage() {
   const [billingType, setBillingType] = useState<"TICKET_VENTA" | "BOLETA" | "FACTURA">("TICKET_VENTA");
   const [clientDocumentType, setClientDocumentType] = useState("1"); // 1=DNI, 6=RUC
   const [clientDocumentNumber, setClientDocumentNumber] = useState("");
-  const [clientDenomination, setClientDenomination] = useState("");
+  const [clientDenomination, setClientDenomination] = useState("CLIENTES VARIOS");
   const [clientAddress, setClientAddress] = useState("");
   const [clientEmail, setClientEmail] = useState("");
 
@@ -650,6 +667,7 @@ export default function BusinessPosPage() {
     try {
       await deleteSaleRequest(sale.id);
       setCart([]);
+      setClientDenomination("CLIENTES VARIOS");
 
       const newCartItems: CartItem[] = [];
       for (const item of sale.items || []) {
@@ -709,14 +727,16 @@ export default function BusinessPosPage() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [prods, cats, shiftRes, advisorsList] = await Promise.all([
+      const [prods, cats, shiftRes, advisorsList, branchesList] = await Promise.all([
         getProductsRequest(),
         listCategoriesRequest(),
         getActiveCashShiftRequest().catch(() => null),
         getAdvisorsRequest({ isActive: true }).catch(() => []),
+        getBranchesRequest().catch(() => []),
       ]);
       setProducts(prods);
       setAdvisors(advisorsList);
+      setBranches(branchesList);
 
       const allIncomeCats = cats.filter(
         (c: any) => c.type === "INCOME" && !c.parentId,
@@ -784,13 +804,96 @@ export default function BusinessPosPage() {
         setCart(updatedCart);
       }
     } else {
-      const newItem = { ...product, quantity: 1, originalSalePrice: product.salePrice };
+      const hasOffer = Boolean(
+        product.adjustedPrice &&
+        Number(product.adjustedPrice) > 0 &&
+        Number(product.adjustedPrice) < Number(product.salePrice)
+      );
+      const effectivePrice = hasOffer ? Number(product.adjustedPrice) : product.salePrice;
+      const newItem = {
+        ...product,
+        quantity: 1,
+        salePrice: effectivePrice,
+        originalSalePrice: product.salePrice,
+      };
       const updatedCart = [...cart, newItem];
       if (selectedAdvisorId) {
         applyAdvisorToCart(selectedAdvisorId, updatedCart);
       } else {
         setCart(updatedCart);
       }
+    }
+  };
+
+  const addSeriesCurveToCart = (groupedItem: GroupedSeriesProduct) => {
+    if (groupedItem.summary.completeSeries <= 0) {
+      toast.error(
+        "Curva incompleta: no hay stock suficiente en todas las tallas para armar una serie completa. Solo venta de pares sueltos."
+      );
+      return;
+    }
+
+    const wholesaleUnitPrice =
+      groupedItem.hasOffer && groupedItem.adjustedPrice
+        ? Number(groupedItem.adjustedPrice)
+        : Number(
+          (groupedItem.salePricePerSeries / groupedItem.unitsPerSeries).toFixed(2)
+        );
+    let updatedCart = [...cart];
+
+    for (const curveItem of groupedItem.curve) {
+      const variantProd =
+        groupedItem.variants.find(
+          (v) => extractSizeFromProduct(v) === curveItem.size
+        ) || groupedItem.primaryProduct;
+      const qtyNeeded = curveItem.ratio;
+
+      const availableStock = activeShift?.branchId
+        ? variantProd.branchStocks?.find(
+          (bs: any) => bs.branchId === activeShift.branchId
+        )?.stock || 0
+        : variantProd.stock;
+
+      const existingIdx = updatedCart.findIndex(
+        (item) => item.id === variantProd.id && !item.isCustom
+      );
+
+      if (existingIdx > -1) {
+        const newQty = updatedCart[existingIdx].quantity + qtyNeeded;
+        if (newQty > availableStock) {
+          toast.error(
+            `Stock insuficiente en Talla ${curveItem.size}. Disponible: ${availableStock}`
+          );
+          return;
+        }
+        updatedCart[existingIdx] = {
+          ...updatedCart[existingIdx],
+          quantity: newQty,
+          salePrice: wholesaleUnitPrice,
+        };
+      } else {
+        updatedCart.push({
+          ...variantProd,
+          quantity: qtyNeeded,
+          salePrice: wholesaleUnitPrice,
+          originalSalePrice: variantProd.salePrice,
+        });
+      }
+    }
+
+    if (selectedAdvisorId) {
+      applyAdvisorToCart(selectedAdvisorId, updatedCart);
+    } else {
+      setCart(updatedCart);
+    }
+
+    playBeep();
+    toast.success(
+      `📦 Serie completa agregada: ${groupedItem.modelName} (${groupedItem.unitsPerSeries} pares)`,
+      { icon: "📦" }
+    );
+    if (window.innerWidth < 768) {
+      setMobileTab("cart");
     }
   };
 
@@ -1096,7 +1199,7 @@ export default function BusinessPosPage() {
         billingType,
         clientDocumentType: (billingType === 'BOLETA' || billingType === 'FACTURA') ? clientDocumentType : undefined,
         clientDocumentNumber: (billingType === 'BOLETA' || billingType === 'FACTURA') ? clientDocumentNumber : undefined,
-        clientDenomination: (billingType === 'BOLETA' || billingType === 'FACTURA') ? clientDenomination : undefined,
+        clientDenomination: clientDenomination.trim() || "CLIENTES VARIOS",
         clientAddress: (billingType === 'BOLETA' || billingType === 'FACTURA') ? clientAddress : undefined,
         clientEmail: (billingType === 'BOLETA' || billingType === 'FACTURA') ? clientEmail : undefined,
       });
@@ -1136,7 +1239,7 @@ export default function BusinessPosPage() {
         billingPdfUrl: txResult?.billing?.pdfUrl,
         clientDocumentType: (billingType === 'BOLETA' || billingType === 'FACTURA') ? clientDocumentType : undefined,
         clientDocumentNumber: (billingType === 'BOLETA' || billingType === 'FACTURA') ? clientDocumentNumber : undefined,
-        clientDenomination: (billingType === 'BOLETA' || billingType === 'FACTURA') ? clientDenomination : undefined,
+        clientDenomination: clientDenomination.trim() || "CLIENTES VARIOS",
         clientAddress: (billingType === 'BOLETA' || billingType === 'FACTURA') ? clientAddress : undefined,
       });
 
@@ -1161,16 +1264,23 @@ export default function BusinessPosPage() {
     }
   };
 
-  const printTicket = () => {
+  const printTicket = async () => {
     if (!lastSale) {
       window.print();
       return;
     }
 
-    const businessName = user?.businessName ? user.businessName.toUpperCase() : "THINK";
+    const businessName = user?.businessName ? user.businessName.toUpperCase() : "TIENDA";
     const businessReason = user?.businessReason ? `Razón Social: ${user.businessReason}<br/>` : "";
     const businessRuc = user?.businessRuc ? `RUC: ${user.businessRuc}<br/>` : "";
     const businessRubro = user?.businessRubro ? `Giro: ${user.businessRubro}<br/>` : "";
+
+    const activeBranchId = activeShift?.branchId || lastSale.branchId;
+    const branchInfo = branches.find((b: any) => b.id === activeBranchId);
+    const branchAddress = branchInfo?.address || user?.businessAddress || "";
+    const branchPhone = branchInfo?.phone || user?.businessPhone || "";
+    const branchName = branchInfo?.name || "";
+
     const compType =
       lastSale.billingType === "BOLETA"
         ? "BOLETA DE VENTA ELECTRÓNICA"
@@ -1188,16 +1298,43 @@ export default function BusinessPosPage() {
         : (lastSale.txId?.slice(0, 8) || "0000").toUpperCase();
     const payStr = paymentLabel[lastSale.paymentMethod] || lastSale.paymentMethod;
 
+    // Generate SUNAT QR code
+    let qrDataUrl = "";
+    try {
+      const qrPayload = [
+        user?.businessRuc || "00000000000",
+        lastSale.billingType === "FACTURA" ? "01" : "03",
+        lastSale.billingSerie || "B001",
+        lastSale.billingNumber || "000001",
+        "0.00",
+        Number(lastSale.total).toFixed(2),
+        format(lastSale.date, "yyyy-MM-dd"),
+        lastSale.clientDocumentType || "-",
+        lastSale.clientDocumentNumber || "-",
+      ].join("|");
+      qrDataUrl = await QRCode.toDataURL(qrPayload, {
+        width: 120,
+        margin: 1,
+        color: { dark: "#000000", light: "#ffffff" },
+      });
+    } catch (e) {
+      console.warn("QR code generation error", e);
+    }
+
     const itemsHtml = lastSale.items
       .map((item: any) => {
         const pres = item.presentations?.find((p: any) => p.id === item.presentationId);
         const presName = pres ? pres.name : item.unit;
         const sub = (item.quantity * item.salePrice).toFixed(2);
+        const skuInfo = item.sku ? `<span style="font-size: 8px; color: #555;">SKU: ${item.sku}</span><br/>` : "";
         return `
-          <tr>
-            <td style="padding: 2px 0; vertical-align: top; font-weight: bold; width: 22px;">${item.quantity}x</td>
-            <td style="padding: 2px 4px; vertical-align: top;">${item.name} [${presName}]</td>
-            <td style="padding: 2px 0; vertical-align: top; text-align: right; font-weight: bold; white-space: nowrap;">S/ ${sub}</td>
+          <tr style="border-bottom: 1px dotted #ccc;">
+            <td style="padding: 3px 0; vertical-align: top; font-weight: bold; width: 22px;">${item.quantity}x</td>
+            <td style="padding: 3px 4px; vertical-align: top;">
+              ${skuInfo}
+              <strong>${item.name}</strong> [${presName}]
+            </td>
+            <td style="padding: 3px 0; vertical-align: top; text-align: right; font-weight: bold; white-space: nowrap;">S/ ${sub}</td>
           </tr>
         `;
       })
@@ -1229,6 +1366,12 @@ export default function BusinessPosPage() {
       `
         : "";
 
+    const logoHtml = user?.businessLogo
+      ? `<div style="text-align: center; margin-bottom: 6px;">
+          <img src="${user.businessLogo}" style="max-height: 48px; max-width: 150px; object-fit: contain; margin: 0 auto; display: block;" />
+         </div>`
+      : "";
+
     const ticketHtml = `
       <!DOCTYPE html>
       <html>
@@ -1248,31 +1391,33 @@ export default function BusinessPosPage() {
               background: transparent !important;
             }
             html, body {
-              width: 80mm;
+              width: 76mm;
               margin: 0 auto;
-              padding: 3mm 2.5mm;
+              padding: 4mm 2.5mm;
               background: #ffffff !important;
-              font-family: 'Courier New', Courier, monospace;
-              font-size: 11.5px;
-              line-height: 1.25;
-              -webkit-font-smoothing: none !important;
-              text-rendering: geometricPrecision;
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Courier New", monospace;
+              font-size: 11px;
+              line-height: 1.3;
             }
             .center { text-align: center; }
             .right { text-align: right; }
             .bold { font-weight: bold; }
             .line { border-top: 1px dashed #000000; margin: 5px 0; }
             .double-line { border-top: 2px solid #000000; margin: 6px 0; }
-            table { width: 100%; border-collapse: collapse; font-size: 11px; }
+            table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
             .flex-between { display: flex; justify-content: space-between; }
           </style>
         </head>
         <body>
+          ${logoHtml}
           <div class="center">
-            <div class="bold" style="font-size: 14px; letter-spacing: 0.5px;">${businessName}</div>
+            <div class="bold" style="font-size: 13.5px; letter-spacing: 0.5px;">${businessName}</div>
             <div style="font-size: 9.5px; margin-top: 2px;">
               ${businessReason}
               ${businessRuc}
+              ${branchName ? `<div><strong>Sede:</strong> ${branchName}</div>` : ""}
+              ${branchAddress ? `<div><strong>Dir:</strong> ${branchAddress}</div>` : ""}
+              ${branchPhone ? `<div><strong>Tel:</strong> ${branchPhone}</div>` : ""}
               ${businessRubro}
             </div>
             <div class="bold" style="margin-top: 4px; font-size: 11px;">${compType}</div>
@@ -1310,17 +1455,23 @@ export default function BusinessPosPage() {
             <span>S/ ${lastSale.total.toFixed(2)}</span>
           </div>
           ${cashHtml}
+          ${qrDataUrl ? `
+            <div class="center" style="margin-top: 8px;">
+              <img src="${qrDataUrl}" style="width: 105px; height: 105px; margin: 0 auto; display: block;" />
+              <div style="font-size: 8px; color: #444; margin-top: 2px;">Representación Impresa de Comprobante Electrónico</div>
+            </div>
+          ` : ""}
           <div class="line"></div>
-          <div class="center" style="font-size: 10px; margin-top: 6px;">
+          <div class="center" style="font-size: 9.5px; margin-top: 6px;">
             <div>¡Gracias por su preferencia!</div>
             ${(!lastSale?.billingType || lastSale.billingType === "TICKET_VENTA") ? '<div style="font-size: 8.5px; margin-top: 2px;">Solicita tu Boleta o Factura</div>' : ''}
-            <div style="font-size: 9.5px; font-weight: bold; margin-top: 6px;">Global Ccoplex - THINK ERP</div>
+            <div style="font-size: 9px; font-weight: bold; margin-top: 4px;">Corporación Ccoplex - THINK ERP</div>
           </div>
         </body>
       </html>
     `;
 
-    // Metodo 1: Ventana emergente directa de impresion 80mm
+    // Direct popup or fallback iframe
     const printWin = window.open("", "_blank", "width=380,height=600,menubar=no,toolbar=no,location=no,status=no");
     if (printWin) {
       printWin.document.open();
@@ -1340,7 +1491,6 @@ export default function BusinessPosPage() {
       return;
     }
 
-    // Metodo 2: Iframe visible pero fuera de pantalla (sin visibility: hidden para no generar hoja en blanco en Chrome)
     try {
       const oldIframe = document.getElementById("thermal-receipt-iframe");
       if (oldIframe) oldIframe.remove();
@@ -1454,7 +1604,7 @@ export default function BusinessPosPage() {
               ? "NOTA DE CRÉDITO ELECTRÓNICA"
               : lastSale.billingType === "NOTA_DEBITO"
                 ? "NOTA DE DÉBITO ELECTRÓNICA"
-                : "TICKET DE VENTA";
+                : "PROFORMA DE VENTA";
       doc.text(compType, pdfW / 2, y, { align: "center" });
 
       y += 4;
@@ -1547,7 +1697,7 @@ export default function BusinessPosPage() {
       }
       y += 4;
       doc.setFont("courier", "bold");
-      doc.text("Global Ccoplex - THINK ERP", pdfW / 2, y, { align: "center" });
+      doc.text("Corporación Ccoplex - THINK ERP", pdfW / 2, y, { align: "center" });
 
       // Guardar PDF nativo con nombre real .pdf
       const filename = `Ticket_${lastSale.txId?.slice(0, 8) || Date.now()}.pdf`;
@@ -1559,15 +1709,134 @@ export default function BusinessPosPage() {
     }
   };
 
+  const marcasDisponibles = Array.from(
+    new Set(
+      products
+        .map((p) => (p as any).brand?.name || (p as any).brand || (p as any).marca)
+        .filter(Boolean)
+    )
+  );
+  const tallasDisponibles = Array.from(
+    new Set(
+      products
+        .map((p) => extractSizeFromProduct(p) || (p as any).size || (p as any).talla)
+        .filter(Boolean)
+    )
+  ).sort((a, b) => {
+    const na = parseFloat(a);
+    const nb = parseFloat(b);
+    if (!isNaN(na) && !isNaN(nb)) return na - nb;
+    return a.localeCompare(b);
+  });
+  const coloresDisponibles = Array.from(
+    new Set(
+      products
+        .map((p) => p.color?.trim())
+        .filter(Boolean)
+    )
+  ).sort() as string[];
+  const tacosDisponibles = Array.from(
+    new Set(
+      products
+        .map((p) => extractTacoFromProduct(p)?.trim())
+        .filter(Boolean)
+    )
+  ).sort() as string[];
+  const gruposDisponibles = Array.from(
+    new Set(
+      products
+        .map(
+          (p) =>
+            (p as any).group ||
+            (p as any).family?.name ||
+            (p as any).family ||
+            (p as any).grupo ||
+            (p as any).category?.name
+        )
+        .filter(Boolean)
+    )
+  );
+
   const filteredProducts = products.filter((p) => {
     const term = searchTerm.toLowerCase().trim();
-    if (!term) return true;
-    const matchesName = p.name.toLowerCase().includes(term);
-    const matchesSku = p.sku && p.sku.toLowerCase().includes(term);
-    const matchesCodeRaw = (p as any).customCode && String((p as any).customCode) === term;
-    const matchesCodePadded = (p as any).customCode && String((p as any).customCode).padStart(4, "0") === term;
-    return matchesName || matchesSku || matchesCodeRaw || matchesCodePadded;
+    const cleanTerm = term.replace(/^#/, "");
+
+    // Extraer valores para Marca, Talla, Color, Taco y Grupo/Familia
+    const pMarca = String(
+      (p as any).brand?.name || (p as any).brand || (p as any).marca || ""
+    ).toLowerCase();
+    const pTalla = String(
+      extractSizeFromProduct(p) || (p as any).size || (p as any).talla || ""
+    ).toLowerCase();
+    const pColor = String(p.color || "").toLowerCase();
+    const pTaco = String(extractTacoFromProduct(p) || "").toLowerCase();
+    const pGrupo = String(
+      (p as any).group ||
+      (p as any).family?.name ||
+      (p as any).family ||
+      (p as any).grupo ||
+      (p as any).category?.name ||
+      ""
+    ).toLowerCase();
+
+    // 1. LÓGICA DE BÚSQUEDA POR TEXTO UNIVERSAL
+    let matchesSearch = true;
+    if (term) {
+      const matchesName = p.name.toLowerCase().includes(term);
+      const matchesSku = p.sku && p.sku.toLowerCase().includes(term);
+      const matchesCodeRaw =
+        (p as any).customCode &&
+        (String((p as any).customCode) === term ||
+          String((p as any).customCode) === cleanTerm);
+      const matchesCodePadded =
+        (p as any).customCode &&
+        (String((p as any).customCode).padStart(4, "0") === term ||
+          String((p as any).customCode).padStart(4, "0") === cleanTerm);
+
+      const matchesMarcaText = pMarca.includes(term);
+      const matchesTallaText = pTalla.includes(term);
+      const matchesGrupoText = pGrupo.includes(term);
+      const matchesColorText = pColor.includes(term);
+      const matchesTacoText = pTaco.includes(term);
+
+      matchesSearch =
+        matchesName ||
+        matchesSku ||
+        matchesCodeRaw ||
+        matchesCodePadded ||
+        matchesMarcaText ||
+        matchesTallaText ||
+        matchesGrupoText ||
+        matchesColorText ||
+        matchesTacoText;
+    }
+
+    // 2. FILTROS POR DESPLEGABLE (Dropdowns)
+    const matchesSelectedMarca =
+      !selectedMarca || pMarca === selectedMarca.toLowerCase();
+    const matchesSelectedTalla =
+      !selectedTalla || pTalla === selectedTalla.toLowerCase();
+    const matchesSelectedColor =
+      !selectedColor || pColor === selectedColor.toLowerCase();
+    const matchesSelectedTaco =
+      !selectedTaco || pTaco === selectedTaco.toLowerCase();
+    const matchesSelectedGrupo =
+      !selectedGrupo || pGrupo === selectedGrupo.toLowerCase();
+
+    // Cumple la búsqueda de texto Y los desplegables seleccionados
+    return (
+      matchesSearch &&
+      matchesSelectedMarca &&
+      matchesSelectedTalla &&
+      matchesSelectedColor &&
+      matchesSelectedTaco &&
+      matchesSelectedGrupo
+    );
   });
+
+  const groupedCatalog = useMemo(() => {
+    return groupProductsBySeries(filteredProducts, activeShift?.branchId);
+  }, [filteredProducts, activeShift?.branchId]);
 
   const paymentLabel: Record<string, string> = {
     CASH: "Efectivo",
@@ -1723,7 +1992,7 @@ export default function BusinessPosPage() {
                       ? "NOTA DE CRÉDITO ELECTRÓNICA"
                       : lastSale.billingType === "NOTA_DEBITO"
                         ? "NOTA DE DÉBITO ELECTRÓNICA"
-                        : "TICKET DE VENTA"}
+                        : "PROFORMA DE VENTA"}
               </div>
               <div
                 style={{ borderBottom: "1px dashed #ccc", margin: "8px 0" }}
@@ -1893,7 +2162,7 @@ export default function BusinessPosPage() {
                   color: "#333",
                 }}
               >
-                Global Ccoplex
+                Corporación Ccoplex
               </div>
               <div style={{ fontSize: "7px", color: "#999" }}>
                 &copy; Todos los derechos reservados
@@ -1949,32 +2218,123 @@ export default function BusinessPosPage() {
             </div>
           )}
 
-          <div className="p-4 bg-gradient-to-br from-blue-50 to-indigo-50 border-b border-blue-100 flex flex-col sm:flex-row gap-3 justify-between items-center">
-            <div className="relative w-full flex gap-2">
-              <div className="relative flex-1">
-                <Search className="w-5 h-5 text-gray-400 absolute left-4 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  placeholder="Buscar producto por nombre o código..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-11 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-bold text-gray-700 shadow-sm"
-                />
+          <div className="p-4 bg-gradient-to-br from-blue-50 to-indigo-50 border-b border-blue-100 flex flex-col gap-3">
+            <div className="flex flex-col sm:flex-row gap-3 justify-between items-center">
+              <div className="relative w-full flex gap-2">
+                <div className="relative flex-1">
+                  <Search className="w-5 h-5 text-gray-400 absolute left-4 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Buscar producto por nombre o código..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-11 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-bold text-gray-700 shadow-sm"
+                  />
+                </div>
+                <button
+                  onClick={() => setIsScannerOpen(true)}
+                  className="px-4 py-3 bg-white border border-gray-200 text-gray-700 rounded-xl font-bold flex items-center justify-center hover:bg-slate-50 transition-all shadow-sm"
+                  title="Escanear Código con Cámara"
+                >
+                  <Camera className="w-5 h-5 text-indigo-500" />
+                </button>
               </div>
               <button
-                onClick={() => setIsScannerOpen(true)}
-                className="px-4 py-3 bg-white border border-gray-200 text-gray-700 rounded-xl font-bold flex items-center justify-center hover:bg-slate-50 transition-all shadow-sm"
-                title="Escanear Código con Cámara"
+                onClick={() => setIsCustomSaleOpen(true)}
+                className="px-4 py-3 bg-indigo-600 text-white rounded-xl font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all text-sm whitespace-nowrap shadow-md"
               >
-                <Camera className="w-5 h-5 text-indigo-500" />
+                <Plus className="w-4 h-4" /> Venta Libre
               </button>
             </div>
-            <button
-              onClick={() => setIsCustomSaleOpen(true)}
-              className="px-4 py-3 bg-indigo-600 text-white rounded-xl font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all text-sm whitespace-nowrap shadow-md"
-            >
-              <Plus className="w-4 h-4" /> Venta Libre
-            </button>
+
+            {/* QUICK FILTERS FOR SHOES / RETAIL */}
+            {(marcasDisponibles.length > 0 ||
+              tallasDisponibles.length > 0 ||
+              coloresDisponibles.length > 0 ||
+              tacosDisponibles.length > 0 ||
+              gruposDisponibles.length > 0) && (
+                <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-blue-100/60">
+                  {marcasDisponibles.length > 0 && (
+                    <select
+                      value={selectedMarca}
+                      onChange={(e) => setSelectedMarca(e.target.value)}
+                      className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-bold text-gray-700 shadow-2xs outline-none focus:border-indigo-500"
+                    >
+                      <option value="">Todas las Marcas</option>
+                      {marcasDisponibles.map((m: any) => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                  )}
+
+                  {tallasDisponibles.length > 0 && (
+                    <select
+                      value={selectedTalla}
+                      onChange={(e) => setSelectedTalla(e.target.value)}
+                      className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-bold text-gray-700 shadow-2xs outline-none focus:border-indigo-500"
+                    >
+                      <option value="">Todas las Tallas</option>
+                      {tallasDisponibles.map((t: any) => (
+                        <option key={t} value={t}>Talla {t}</option>
+                      ))}
+                    </select>
+                  )}
+
+                  {coloresDisponibles.length > 0 && (
+                    <select
+                      value={selectedColor}
+                      onChange={(e) => setSelectedColor(e.target.value)}
+                      className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-bold text-gray-700 shadow-2xs outline-none focus:border-indigo-500"
+                    >
+                      <option value="">Todos los Colores</option>
+                      {coloresDisponibles.map((c: any) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  )}
+
+                  {tacosDisponibles.length > 0 && (
+                    <select
+                      value={selectedTaco}
+                      onChange={(e) => setSelectedTaco(e.target.value)}
+                      className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-bold text-gray-700 shadow-2xs outline-none focus:border-indigo-500"
+                    >
+                      <option value="">Todos los Tacos</option>
+                      {tacosDisponibles.map((tc: any) => (
+                        <option key={tc} value={tc}>{tc}</option>
+                      ))}
+                    </select>
+                  )}
+
+                  {gruposDisponibles.length > 0 && (
+                    <select
+                      value={selectedGrupo}
+                      onChange={(e) => setSelectedGrupo(e.target.value)}
+                      className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-bold text-gray-700 shadow-2xs outline-none focus:border-indigo-500"
+                    >
+                      <option value="">Todos los Grupos</option>
+                      {gruposDisponibles.map((g: any) => (
+                        <option key={g} value={g}>{g}</option>
+                      ))}
+                    </select>
+                  )}
+
+                  {(selectedMarca || selectedTalla || selectedColor || selectedTaco || selectedGrupo) && (
+                    <button
+                      onClick={() => {
+                        setSelectedMarca("");
+                        setSelectedTalla("");
+                        setSelectedColor("");
+                        setSelectedTaco("");
+                        setSelectedGrupo("");
+                      }}
+                      className="px-2.5 py-1 text-[11px] font-bold text-rose-600 hover:text-rose-700 bg-rose-50 rounded-lg border border-rose-100 transition-colors cursor-pointer"
+                    >
+                      ✕ Limpiar filtros
+                    </button>
+                  )}
+                </div>
+              )}
           </div>
 
           <div className="flex-1 p-4 overflow-y-auto">
@@ -1982,19 +2342,201 @@ export default function BusinessPosPage() {
               <div className="h-full flex items-center justify-center">
                 <div className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
               </div>
-            ) : filteredProducts.length === 0 ? (
+            ) : groupedCatalog.length === 0 ? (
               <div className="text-center text-gray-500 py-10 font-medium">
                 No hay productos que coincidan.
               </div>
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-                {filteredProducts.map((p) => {
+                {groupedCatalog.map((item) => {
+                  if (item.isSeries) {
+                    // Card para Calzado en Serie
+                    return (
+                      <div
+                        key={item.groupKey}
+                        className="bg-white rounded-2xl border-2 border-amber-200/90 hover:border-amber-400 hover:shadow-lg transition-all flex flex-col justify-between overflow-hidden shadow-xs relative group h-[325px]"
+                      >
+                        {/* Contenedor de la Imagen */}
+                        <div className="w-full h-28 bg-gradient-to-br from-amber-50/60 via-slate-50 to-orange-50/40 overflow-hidden relative rounded-2xl border-b border-amber-100">
+                          {/* Badges Principales: Código Único + Serie + Taco */}
+                          <div className="absolute top-2 left-2 z-20 flex flex-wrap gap-1 items-center max-w-[75%]">
+                            {item.customCode ? (
+                              <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-slate-900/90 text-amber-300 shadow-sm border border-amber-400/40">
+                                Cód: #{String(item.customCode).padStart(4, "0")}
+                              </span>
+                            ) : null}
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-amber-600 text-white shadow-xs">
+                              📦 Serie ({item.unitsPerSeries} pares)
+                            </span>
+                            {item.taco && (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-pink-600 text-white shadow-xs">
+                                👠 {item.taco}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Color del calzado con nombre y círculo */}
+                          {item.color && (
+                            <div
+                              className="absolute top-2.5 right-2.5 z-20 flex items-center gap-1 bg-white/95 backdrop-blur-xs px-2 py-0.5 rounded-full border border-gray-200 shadow-xs"
+                              title={`Color: ${item.color}`}
+                            >
+                              <span
+                                className="inline-flex h-2.5 w-2.5 rounded-full border border-black/15 shrink-0"
+                                style={{
+                                  backgroundColor: item.color.startsWith("#") ? item.color : undefined,
+                                }}
+                              />
+                              <span className="text-[9px] font-black text-gray-800 truncate max-w-[65px]">
+                                {item.color}
+                              </span>
+                            </div>
+                          )}
+
+                          {item.imageUrl ? (
+                            <img
+                              src={getReceiptAbsoluteUrl(item.imageUrl) || item.imageUrl}
+                              alt={item.modelName}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = "none";
+                              }}
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center bg-amber-50/40">
+                              <Package className="w-8 h-8 text-amber-300 stroke-[1.5]" />
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="p-3 flex-1 flex flex-col justify-between">
+                          <div>
+                            <div className="flex items-center justify-between gap-1 mb-1">
+                              <h3
+                                className="font-black text-gray-900 line-clamp-1 text-sm leading-tight"
+                                title={item.modelName}
+                              >
+                                {item.modelName}
+                              </h3>
+                              {item.brandName && (
+                                <span className="text-[9px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-md shrink-0">
+                                  {item.brandName}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Stock Real-Time Summary */}
+                            <div className="flex items-center justify-between text-[10px] font-black px-2 py-1 bg-amber-50 text-amber-900 rounded-xl border border-amber-200/70 mb-2">
+                              <span>🏆 {item.summary.completeSeries} {item.summary.completeSeries === 1 ? "Serie" : "Series"}</span>
+                              <span className="text-amber-700 font-bold">
+                                {item.summary.looseUnits > 0 ? `+${item.summary.looseUnits} sueltos` : "Curva completa"}
+                              </span>
+                            </div>
+
+                            {/* Size Pills (Venta por Talla Suelta) */}
+                            <div className="space-y-1 mb-2">
+                              <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider flex justify-between">
+                                <span>Vender Talla Suelta:</span>
+                                {item.summary.sizes.some((s) => s.isLimiting && item.summary.completeSeries > 0) && (
+                                  <span className="text-amber-600 text-[8px]">● Limita series</span>
+                                )}
+                              </div>
+                              <div className="flex gap-1 overflow-x-auto pb-1 no-scrollbar max-w-full">
+                                {item.summary.sizes.map((s) => {
+                                  const hasStock = s.stock > 0;
+                                  return (
+                                    <button
+                                      key={s.size}
+                                      type="button"
+                                      disabled={!hasStock}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const variantProd =
+                                          item.variants.find(
+                                            (v) => extractSizeFromProduct(v) === s.size
+                                          ) || item.primaryProduct;
+                                        addToCart(variantProd);
+                                        toast.success(`🛒 Agregado: ${variantProd.name}`);
+                                        playBeep();
+                                      }}
+                                      className={`text-[10px] font-black px-2 py-1 rounded-lg border transition-all flex items-center gap-1 shadow-2xs ${hasStock
+                                        ? s.isLimiting && item.summary.completeSeries > 0
+                                          ? "bg-amber-100 hover:bg-amber-200 text-amber-950 border-amber-300"
+                                          : "bg-white hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-300 text-gray-800 border-gray-200"
+                                        : "bg-gray-100 text-gray-300 border-gray-200 cursor-not-allowed line-through"
+                                        }`}
+                                      title={
+                                        hasStock
+                                          ? `Vender 1 par Talla ${s.size} a S/ ${(item.hasOffer && item.adjustedPrice ? item.adjustedPrice : item.salePricePerUnit).toFixed(2)} (Stock: ${s.stock})`
+                                          : `Talla ${s.size} agotada`
+                                      }
+                                    >
+                                      <span>T.{s.size}</span>
+                                      <span className={`text-[9px] font-mono ${hasStock ? "text-gray-500 font-bold" : "text-gray-300"}`}>
+                                        ({s.stock})
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Precios y Botón Vender Serie Completa */}
+                          <div className="border-t border-gray-100 pt-2 mt-auto">
+                            <div className="flex items-center justify-between text-xs mb-1.5">
+                              <span className="text-[10px] text-gray-500 font-bold">Par suelto:</span>
+                              {item.hasOffer && item.adjustedPrice ? (
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[10px] line-through text-gray-400 font-bold">
+                                    S/ {item.salePricePerUnit.toFixed(2)}
+                                  </span>
+                                  <span className="font-black text-rose-600 flex items-center gap-1">
+                                    S/ {item.adjustedPrice.toFixed(2)}
+                                    <span className="text-[8px] bg-rose-100 text-rose-700 px-1 py-0.5 rounded font-black">
+                                      🔥 OFERTA
+                                    </span>
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="font-black text-indigo-600">S/ {item.salePricePerUnit.toFixed(2)}</span>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              disabled={item.summary.completeSeries <= 0}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                addSeriesCurveToCart(item);
+                              }}
+                              className={`w-full py-2 px-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-xs ${item.summary.completeSeries > 0
+                                ? "bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white active:scale-[0.98]"
+                                : "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200"
+                                }`}
+                              title={
+                                item.summary.completeSeries > 0
+                                  ? `Vender 1 Serie Completa (${item.unitsPerSeries} pares) por S/ ${item.salePricePerSeries.toFixed(2)}`
+                                  : "Stock insuficiente en alguna talla para armar una serie completa"
+                              }
+                            >
+                              <Package className="w-3.5 h-3.5" />
+                              <span>Vender Serie (S/ {item.salePricePerSeries.toFixed(2)})</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  // Producto Estándar (No Serie)
+                  const p = item.primaryProduct;
                   const availableStock = activeShift?.branchId
-                    ? (p.branchStocks?.find((bs: any) => bs.branchId === activeShift.branchId)?.stock || 0)
+                    ? p.branchStocks?.find((bs: any) => bs.branchId === activeShift.branchId)?.stock || 0
                     : p.stock;
+
                   return (
                     <div
-                      key={p.id}
+                      key={item.groupKey}
                       onClick={() => addToCart(p)}
                       onMouseEnter={(e) => {
                         setHoveredProduct(p);
@@ -2010,48 +2552,39 @@ export default function BusinessPosPage() {
                       onMouseLeave={() => {
                         setHoveredProduct(null);
                       }}
-                      className={`bg-white rounded-2xl border hover:border-indigo-300 hover:shadow-lg transition-all cursor-pointer group flex flex-col overflow-hidden shadow-sm relative ${availableStock <= 0 ? "opacity-50 cursor-not-allowed" : ""}`}
+                      className={`bg-white rounded-2xl border hover:border-indigo-300 hover:shadow-lg transition-all cursor-pointer group flex flex-col justify-between overflow-hidden shadow-sm relative h-[325px] ${availableStock <= 0 ? "opacity-50 cursor-not-allowed" : ""}`}
                     >
-
-                      {/* Contenedor de la Imagen del Producto */}
-                      <div className="w-full h-28 bg-gradient-to-br from-slate-100 via-indigo-50/30 to-slate-200/50 overflow-hidden relative group rounded-2xl border border-slate-200/60 shadow-sm hover:shadow-indigo-500/10 transition-all duration-300">
-
-                        {/* 1. Botón Indicador de Color (Parte Superior Derecha) */}
-                        {p.color && (
-                          <div
-                            className="absolute top-2.5 right-2.5 z-20 flex items-center justify-center transition-transform duration-300 group-hover:scale-110"
-                            title="Color del producto"
-                          >
-                            <span
-                              className="absolute inline-flex h-4 w-4 animate-ping rounded-full opacity-40"
-                              style={{ backgroundColor: p.color }}
-                            />
-                            <span
-                              className="relative inline-flex h-3.5 w-3.5 rounded-full border-2 border-white shadow-md ring-1 ring-black/5"
-                              style={{ backgroundColor: p.color }}
-                            />
-                          </div>
-                        )}
-
-                        {/* 2. Etiqueta SKU Resaltada (Parte Superior Izquierda) */}
-                        {p.sku && p.sku.length > 0 && (
-                          <div className="absolute top-2.5 left-2.5 z-20 transition-all duration-300">
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-black tracking-widest uppercase bg-white/85 backdrop-blur-md text-slate-800 border border-white/80 shadow-[0_4px_12px_rgba(0,0,0,0.08)] group-hover:bg-white group-hover:shadow-[0_4px_16px_rgba(99,102,241,0.2)] group-hover:scale-105 transition-all duration-300 max-w-[120px]">
-                              {/* Punto indicador de nitidez */}
-                              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse flex-shrink-0" />
-                              <span className="bg-gradient-to-r from-slate-900 to-indigo-950 bg-clip-text text-transparent font-extrabold truncate">
-                                {p.sku}
-                              </span>
+                      {/* Contenedor de Imagen */}
+                      <div
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPosLightboxProduct(p);
+                        }}
+                        className="w-full h-32 bg-slate-50/90 overflow-hidden relative group rounded-2xl border border-slate-200/60 shadow-xs hover:shadow-indigo-500/10 transition-all duration-300 flex items-center justify-center p-1 cursor-zoom-in"
+                        title="Clic en la foto para ver en detalle"
+                      >
+                        {/* Badges: Solo SKU y Taco */}
+                        <div className="absolute top-2 left-2 z-20 flex flex-wrap gap-1 items-center max-w-[75%]">
+                          {p.sku && p.sku.length > 0 ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black tracking-wider uppercase bg-slate-900/90 text-white border border-slate-700 shadow-xs truncate max-w-[120px]">
+                              SKU: {p.sku}
                             </span>
-                          </div>
-                        )}
+                          ) : null}
+                          {extractTacoFromProduct(p) ? (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-pink-600 text-white shadow-xs">
+                              👠 {extractTacoFromProduct(p)}
+                            </span>
+                          ) : null}
+                        </div>
 
-                        {/* 3. Imagen del Producto con Zoom Suave y Filtro de Nitidez */}
+                        {/* Color con nombre y círculo */}
+
+
                         {p.imageUrl ? (
                           <img
                             src={getReceiptAbsoluteUrl(p.imageUrl) || p.imageUrl}
                             alt={p.name}
-                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 ease-out"
+                            className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300 ease-out"
                             onError={(e) => {
                               (e.target as HTMLImageElement).style.display = "none";
                             }}
@@ -2061,9 +2594,6 @@ export default function BusinessPosPage() {
                             <Package className="w-8 h-8 text-indigo-300/80 stroke-[1.5]" />
                           </div>
                         )}
-
-                        {/* 4. Degradado de Protección y Viñeta para resalte de contenido */}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-black/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
                       </div>
 
                       <div className="p-3 flex-1 flex flex-col justify-between">
@@ -2078,16 +2608,31 @@ export default function BusinessPosPage() {
                             {formatStock(availableStock, p.unit, p.presentations)}
                           </span>
 
-                          <span
-                            className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full inline-block mt-1 ${p.description && p.description.length > 0 ? "bg-slate-50 text-slate-600" : "bg-rose-50 text-rose-600"}`}
-                          >
-                            {p.description}
-                          </span>
-
+                          {cleanDescriptionForDisplay(p.description) && (
+                            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full inline-block mt-1 bg-slate-50 text-slate-600">
+                              {cleanDescriptionForDisplay(p.description)}
+                            </span>
+                          )}
                         </div>
-                        <p className="text-base font-black text-gray-900 mt-2">
-                          S/ {p.salePrice.toFixed(2)}
-                        </p>
+
+                        {/* Precios: Regular vs Oferta */}
+                        {p.adjustedPrice && Number(p.adjustedPrice) > 0 && Number(p.adjustedPrice) < Number(p.salePrice) ? (
+                          <div className="flex items-baseline gap-2 mt-2">
+                            <span className="text-xs line-through text-gray-400 font-bold">
+                              S/ {p.salePrice.toFixed(2)}
+                            </span>
+                            <span className="text-base font-black text-rose-600 flex items-center gap-1">
+                              S/ {Number(p.adjustedPrice).toFixed(2)}
+                              <span className="text-[9px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded-full uppercase font-black tracking-wider">
+                                🔥 Oferta
+                              </span>
+                            </span>
+                          </div>
+                        ) : (
+                          <p className="text-base font-black text-gray-900 mt-2">
+                            S/ {p.salePrice.toFixed(2)}
+                          </p>
+                        )}
                       </div>
                     </div>
                   );
@@ -2098,8 +2643,8 @@ export default function BusinessPosPage() {
         </div>
 
         {/* RIGHT: CART */}
-        <div className={`w-full lg:w-[400px] flex flex-col bg-white rounded-[2rem] shadow-sm border border-gray-100 overflow-hidden ${mobileTab === "cart" ? "flex" : "hidden lg:flex"}`}>
-          <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-gray-50">
+        <div className={`w-full lg:w-[420px] xl:w-[460px] flex flex-col bg-white rounded-[2rem] shadow-sm border border-gray-100 overflow-hidden ${mobileTab === "cart" ? "flex" : "hidden lg:flex"}`}>
+          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-slate-50/90">
             <h2 className="text-xl font-black text-gray-900 flex items-center gap-2">
               <ShoppingCart className="w-5 h-5" /> Ticket Actual
             </h2>
@@ -2108,7 +2653,7 @@ export default function BusinessPosPage() {
             </span>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
             {cart.length === 0 ? (
               <div className="h-[200px] flex flex-col items-center justify-center text-gray-400">
                 <ShoppingCart className="w-12 h-12 mb-3 text-gray-300" />
@@ -2126,7 +2671,7 @@ export default function BusinessPosPage() {
                         getReceiptAbsoluteUrl(item.imageUrl) || item.imageUrl
                       }
                       alt={item.name}
-                      className="w-12 h-12 rounded-xl object-cover border border-gray-100 flex-shrink-0"
+                      className="w-14 h-14 rounded-xl object-contain bg-white border border-gray-100 p-0.5 flex-shrink-0"
                       onError={(e) =>
                         ((e.target as HTMLImageElement).style.display = "none")
                       }
@@ -2256,13 +2801,13 @@ export default function BusinessPosPage() {
             )}
           </div>
 
-          <div className="p-5 border-t border-gray-100 bg-gray-50 space-y-4">
+          <div className="p-3.5 border-t border-gray-100 bg-slate-50/90 space-y-2.5">
             {/* Payment Method */}
             <div>
               <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wider">
                 1. Método de Pago
               </p>
-              <div className="grid grid-cols-5 gap-1.5">
+              <div className="grid grid-cols-5 gap-1">
                 {[
                   { id: "CASH", icon: Banknote, label: "Efectivo" },
                   { id: "YAPE", icon: Smartphone, label: "Yape" },
@@ -2346,7 +2891,7 @@ export default function BusinessPosPage() {
             <button
               onClick={handleOpenCheckoutModal}
               disabled={cart.length === 0 || !activeShift}
-              className={`w-full py-4 rounded-2xl font-black text-lg flex items-center justify-center gap-2 transition-all ${cart.length === 0 || !activeShift
+              className={`w-full py-3 rounded-xl font-black text-base flex items-center justify-center gap-2 transition-all ${cart.length === 0 || !activeShift
                 ? "bg-gray-100 text-gray-400 cursor-not-allowed"
                 : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-xl shadow-indigo-200 hover:-translate-y-1"
                 }`}
@@ -2356,7 +2901,7 @@ export default function BusinessPosPage() {
 
             <button
               onClick={() => setIsSalesListOpen(true)}
-              className="w-full mt-3 py-3 border border-indigo-200 text-indigo-600 rounded-2xl font-black text-xs flex items-center justify-center gap-2 hover:bg-indigo-50 transition-all shadow-sm"
+              className="w-full mt-1.5 py-2 border border-indigo-200 text-indigo-600 rounded-xl font-black text-[11px] flex items-center justify-center gap-2 hover:bg-indigo-50 transition-all shadow-xs"
             >
               <FileText className="w-4 h-4" /> Ver Ventas Recientes (Editar/Anular/Notas F.E.)
             </button>
@@ -2495,7 +3040,7 @@ export default function BusinessPosPage() {
                         ? "NOTA DE CRÉDITO ELECTRÓNICA"
                         : lastSale.billingType === "NOTA_DEBITO"
                           ? "NOTA DE DÉBITO ELECTRÓNICA"
-                          : "TICKET DE VENTA"}
+                          : "PROFORMA DE VENTA"}
                 </div>
                 <div className="border-b border-dashed border-gray-300 my-3"></div>
                 <div className="flex justify-between text-[10px] mb-1">
@@ -2575,7 +3120,7 @@ export default function BusinessPosPage() {
                   </div>
                 )}
                 <div className="text-[8px] font-bold text-gray-700 mt-2">
-                  Global Ccoplex
+                  Corporación Ccoplex
                 </div>
                 <div className="text-[7px] text-gray-400">
                   &copy; Todos los derechos reservados
@@ -2589,6 +3134,30 @@ export default function BusinessPosPage() {
                 className="py-3 bg-gray-100 text-gray-600 font-bold rounded-xl hover:bg-gray-200 text-sm"
               >
                 Cerrar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (lastSale) {
+                    const phoneInput = prompt("Ingresa el número de WhatsApp del cliente (opcional):", "") || "";
+                    shareSaleReceiptViaWhatsApp({
+                      txId: lastSale.txId,
+                      billingType: lastSale.billingType,
+                      billingSerie: lastSale.billingSerie,
+                      billingNumber: lastSale.billingNumber,
+                      items: lastSale.items || [],
+                      total: lastSale.total,
+                      paymentMethod: lastSale.paymentMethod,
+                      clientDenomination: lastSale.clientDenomination || clientDenomination,
+                      date: lastSale.date,
+                      businessName: user?.businessName,
+                    }, phoneInput);
+                  }
+                }}
+                className="py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl flex items-center justify-center gap-1.5 text-sm shadow-sm transition-all active:scale-95 cursor-pointer"
+                title="Compartir Comprobante por WhatsApp"
+              >
+                <Smartphone className="w-4 h-4" /> WhatsApp
               </button>
               <button
                 onClick={downloadTicketImage}
@@ -2876,7 +3445,7 @@ export default function BusinessPosPage() {
               <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">Tipo de Comprobante</label>
               <div className="grid grid-cols-3 gap-2">
                 {([
-                  { id: "TICKET_VENTA", label: "Ticket de Venta" },
+                  { id: "TICKET_VENTA", label: "PROFORMA DE VENTA" },
                   { id: "BOLETA", label: "Boleta" },
                   { id: "FACTURA", label: "Factura" },
                 ] as const).map((opt) => (
@@ -2895,6 +3464,21 @@ export default function BusinessPosPage() {
                     {opt.label}
                   </button>
                 ))}
+              </div>
+
+              {/* CAMPO DE CLIENTE SIEMPRE VISIBLE */}
+              <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 space-y-2">
+                <label className="block text-[10px] font-black text-slate-700 uppercase tracking-widest flex items-center justify-between">
+                  <span>{billingType === "FACTURA" ? "Razón Social *" : "Nombre del Cliente"}</span>
+                  <span className="text-[9px] font-bold text-slate-400">Por defecto: CLIENTES VARIOS</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="CLIENTES VARIOS"
+                  value={clientDenomination}
+                  onChange={(e) => setClientDenomination(e.target.value)}
+                  className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs font-black bg-white outline-none focus:ring-2 focus:ring-emerald-400 text-slate-800"
+                />
               </div>
 
               {(billingType === "BOLETA" || billingType === "FACTURA") && (
@@ -2937,18 +3521,6 @@ export default function BusinessPosPage() {
                         </button>
                       </div>
                     </div>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-black text-emerald-800 uppercase tracking-widest mb-1">
-                      {billingType === "FACTURA" ? "Razón Social *" : "Nombre del Cliente"}
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Nombre o Razón Social"
-                      value={clientDenomination}
-                      onChange={(e) => setClientDenomination(e.target.value)}
-                      className="w-full px-3 py-2 border border-emerald-200 rounded-xl text-xs font-bold bg-white outline-none focus:ring-2 focus:ring-emerald-400"
-                    />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -3149,7 +3721,7 @@ export default function BusinessPosPage() {
                           {user?.hasElectronicBilling && (
                             <td className="px-4 py-3 text-xs">
                               {sale.billingType === "TICKET_VENTA" ? (
-                                <span className="text-gray-400 font-bold">Ticket de Venta</span>
+                                <span className="text-gray-400 font-bold">PROFORMA DE VENTA</span>
                               ) : (
                                 <div className="space-y-1">
                                   <div className="flex items-center gap-1.5">
@@ -3313,6 +3885,170 @@ export default function BusinessPosPage() {
       </Modal>
 
 
+
+      {/* MODAL: Vista Detallada de Imagen y Producto en POS */}
+      <Modal
+        isOpen={Boolean(posLightboxProduct)}
+        onClose={() => setPosLightboxProduct(null)}
+        title="Detalle del Calzado / Producto"
+      >
+        {posLightboxProduct && (
+          <div className="space-y-4">
+            {/* Foto Grande con Zoom Visual */}
+            <div className="w-full h-64 sm:h-80 bg-gradient-to-b from-gray-50 to-gray-100 rounded-3xl overflow-hidden border border-gray-200 flex items-center justify-center p-3 relative shadow-inner">
+              {posLightboxProduct.imageUrl ? (
+                <img
+                  src={getReceiptAbsoluteUrl(posLightboxProduct.imageUrl) || posLightboxProduct.imageUrl}
+                  alt={posLightboxProduct.modelName || posLightboxProduct.name}
+                  className="max-h-full max-w-full object-contain drop-shadow-md"
+                />
+              ) : (
+                <div className="text-center text-gray-300">
+                  <Package className="w-16 h-16 mx-auto mb-2 opacity-40" />
+                  <p className="text-xs font-bold">Sin Imagen Registrada</p>
+                </div>
+              )}
+              {/* Badges Flotantes sobre la Imagen */}
+              <div className="absolute top-3 left-3 flex flex-wrap gap-1.5 z-10">
+                <span className="px-2.5 py-1 rounded-lg text-xs font-black uppercase tracking-wider bg-slate-900 text-amber-300 shadow-sm border border-amber-400/40">
+                  SKU: {posLightboxProduct.sku || posLightboxProduct.primaryProduct?.sku || "Sin SKU"}
+                </span>
+                {posLightboxProduct.isSeries && (
+                  <span className="px-2.5 py-1 rounded-lg text-xs font-black uppercase tracking-wider bg-amber-600 text-white shadow-sm">
+                    📦 Serie ({posLightboxProduct.unitsPerSeries} pares)
+                  </span>
+                )}
+                {posLightboxProduct.taco && (
+                  <span className="px-2 py-1 rounded-lg text-xs font-bold bg-pink-600 text-white shadow-sm">
+                    👠 {posLightboxProduct.taco}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Ficha Técnica del Producto */}
+            <div className="bg-slate-50 p-4 rounded-2xl border border-gray-200/80 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-black text-gray-900">
+                    {posLightboxProduct.modelName || posLightboxProduct.name}
+                  </h3>
+                  <div className="flex flex-wrap gap-2 items-center text-xs font-bold text-gray-500 mt-1">
+                    {(posLightboxProduct.brandName || posLightboxProduct.brand?.name) && (
+                      <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700">
+                        {posLightboxProduct.brandName || posLightboxProduct.brand?.name}
+                      </span>
+                    )}
+                    {(posLightboxProduct.familyName || posLightboxProduct.family?.name) && (
+                      <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700">
+                        {posLightboxProduct.familyName || posLightboxProduct.family?.name}
+                      </span>
+                    )}
+                    {posLightboxProduct.color && (
+                      <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 flex items-center gap-1">
+                        <span
+                          className="w-2.5 h-2.5 rounded-full border border-black/20 shrink-0"
+                          style={{
+                            backgroundColor: posLightboxProduct.color.startsWith("#") ? posLightboxProduct.color : undefined,
+                          }}
+                        />
+                        Color: {posLightboxProduct.color}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="text-right shrink-0">
+                  <div className="text-[10px] uppercase font-bold text-gray-400">Precio</div>
+                  <div className="text-lg font-black text-indigo-600">
+                    S/ {Number(posLightboxProduct.salePricePerUnit || posLightboxProduct.salePrice || 0).toFixed(2)}
+                  </div>
+                </div>
+              </div>
+
+              {/* Si es serie, desglose interactivo de tallas para agregar al carrito */}
+              {posLightboxProduct.isSeries && posLightboxProduct.summary && (
+                <div className="border-t border-gray-200/60 pt-3">
+                  <div className="text-xs font-black text-gray-700 mb-2 flex items-center justify-between">
+                    <span>Tallas en Almacén (Clic para agregar par al carrito):</span>
+                    <span className="text-amber-700 text-[10px]">
+                      {posLightboxProduct.summary.completeSeries} {posLightboxProduct.summary.completeSeries === 1 ? "serie" : "series"} disponibles
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {posLightboxProduct.summary.sizes.map((s: any) => {
+                      const hasStock = s.stock > 0;
+                      return (
+                        <button
+                          key={s.size}
+                          type="button"
+                          disabled={!hasStock}
+                          onClick={() => {
+                            const variantProd =
+                              posLightboxProduct.variants?.find(
+                                (v: any) => extractSizeFromProduct(v) === s.size
+                              ) || posLightboxProduct.primaryProduct;
+                            addToCart(variantProd);
+                            toast.success(`🛒 Agregado: ${variantProd.name}`);
+                            playBeep();
+                          }}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-black border transition-all flex items-center gap-1.5 cursor-pointer ${hasStock
+                            ? "bg-white hover:bg-indigo-600 hover:text-white border-gray-300 text-gray-800 shadow-xs"
+                            : "bg-gray-100 text-gray-300 border-gray-200 cursor-not-allowed line-through"
+                            }`}
+                        >
+                          <span>T.{s.size}</span>
+                          <span className="text-[10px] opacity-75 font-mono">({s.stock})</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Botones de Acción */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setPosLightboxProduct(null)}
+                className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl text-xs transition-colors cursor-pointer"
+              >
+                Cerrar
+              </button>
+
+              {posLightboxProduct.isSeries ? (
+                <button
+                  type="button"
+                  disabled={posLightboxProduct.summary?.completeSeries <= 0}
+                  onClick={() => {
+                    addSeriesCurveToCart(posLightboxProduct);
+                    setPosLightboxProduct(null);
+                  }}
+                  className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 disabled:opacity-40 text-white font-black rounded-2xl text-xs flex items-center gap-2 shadow-sm cursor-pointer"
+                >
+                  <Package className="w-4 h-4" />
+                  Vender Serie Completa (S/ {Number(posLightboxProduct.salePricePerSeries || 0).toFixed(2)})
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    addToCart(posLightboxProduct);
+                    toast.success(`🛒 Agregado: ${posLightboxProduct.name}`);
+                    playBeep();
+                    setPosLightboxProduct(null);
+                  }}
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-2xl text-xs flex items-center gap-2 shadow-sm cursor-pointer"
+                >
+                  <ShoppingCart className="w-4 h-4" />
+                  Agregar al Carrito
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* MODAL: Cámara Escáner */}
       <Modal

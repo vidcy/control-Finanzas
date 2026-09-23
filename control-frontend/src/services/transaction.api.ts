@@ -71,9 +71,9 @@ export const updateTransactionRequest = async (
     categoryId: string;
     subCategoryId?: string | null;
     amount: number;
-    date: Date;
-    dueDate?: Date;
-    paidAt?: Date;
+    date: Date | string;
+    dueDate?: Date | string;
+    paidAt?: Date | string;
     currency: "PEN" | "USD";
     exchangeRate?: number;
     paymentMethod: string;
