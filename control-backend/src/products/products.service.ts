@@ -58,7 +58,7 @@ export class ProductsService {
       }
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    return (this.prisma as any).$transaction(async (tx) => {
       const brandId = productData.brandId ? String(productData.brandId) : null;
       const familyId = productData.familyId ? String(productData.familyId) : null;
 
@@ -66,7 +66,7 @@ export class ProductsService {
       const maxProduct = await tx.product.findFirst({
         where: { userId },
         orderBy: { customCode: 'desc' },
-      });
+      }, { maxWait: 15000, timeout: 30000 });
       const nextCode =
         maxProduct && maxProduct.customCode ? maxProduct.customCode + 1 : 1;
 
@@ -256,7 +256,7 @@ export class ProductsService {
       updateData.familyId = productData.familyId ? String(productData.familyId) : null;
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    return (this.prisma as any).$transaction(async (tx) => {
       // If presentations are provided, manage upserts/deletions safely
       if (presentations !== undefined) {
         const presentationsList = (presentations || []).filter(
@@ -306,7 +306,7 @@ export class ProductsService {
         for (const p of toDelete) {
           const movementsCount = await tx.inventoryMovement.count({
             where: { presentationId: p.id },
-          });
+          }, { maxWait: 15000, timeout: 30000 });
           if (movementsCount === 0) {
             await tx.presentation.delete({ where: { id: p.id } }).catch(() => null);
           }
@@ -433,7 +433,7 @@ export class ProductsService {
           },
         },
       });
-    });
+    }, { maxWait: 15000, timeout: 30000 });
   }
 
   
@@ -441,11 +441,11 @@ export class ProductsService {
     if (!productIds || productIds.length === 0) return { deletedCount: 0 };
     const uniqueIds = Array.from(new Set(productIds));
 
-    return this.prisma.$transaction(async (tx) => {
+    return (this.prisma as any).$transaction(async (tx) => {
       const validProducts = await tx.product.findMany({
         where: { id: { in: uniqueIds }, userId },
         select: { id: true, imageUrl: true },
-      });
+      }, { maxWait: 15000, timeout: 30000 });
       const validIds = validProducts.map((p) => p.id);
       if (validIds.length === 0) return { deletedCount: 0 };
 
@@ -487,12 +487,12 @@ export class ProductsService {
   async remove(userId: string, id: string) {
     const product = await this.findOne(userId, id);
 
-    const result = await this.prisma.$transaction(async (tx) => {
+    const result = await (this.prisma as any).$transaction(async (tx) => {
       // Unlink sales so historical sales are preserved
       await tx.saleItem.updateMany({
         where: { productId: id },
         data: { productId: null },
-      });
+      }, { maxWait: 15000, timeout: 30000 });
 
       // Delete inventory movements associated with this product
       await tx.inventoryMovement.deleteMany({
@@ -571,7 +571,7 @@ export class ProductsService {
       }
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    return (this.prisma as any).$transaction(async (tx) => {
       // 1. Create General Contable Transaction
       const transaction = await tx.transaction.create({
         data: {
@@ -588,7 +588,7 @@ export class ProductsService {
           workspace: 'BUSINESS',
           userId,
         },
-      });
+      }, { maxWait: 15000, timeout: 30000 });
 
       // 2. Calculate Weighted Average Cost (CPP)
       const purchaseUnitPrice = parseFloat(totalCost) / mainUnitsQty;
@@ -702,11 +702,11 @@ export class ProductsService {
       throw new BadRequestException('El carrito de compras está vacío.');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    return (this.prisma as any).$transaction(async (tx) => {
       // 0. Find active CashShift for the worker
       const activeShift = await tx.cashShift.findFirst({
         where: { userId: workerId, status: 'OPEN' },
-      });
+      }, { maxWait: 15000, timeout: 30000 });
       if (!activeShift) {
         throw new BadRequestException(
           'No hay ninguna caja abierta para realizar ventas.',
@@ -1306,7 +1306,7 @@ export class ProductsService {
       }
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    return (this.prisma as any).$transaction(async (tx) => {
       // 1. Create PurchaseOrder and items
       const purchaseOrder = await tx.purchaseOrder.create({
         data: {
@@ -1335,7 +1335,7 @@ export class ProductsService {
             },
           },
         },
-      });
+      }, { maxWait: 15000, timeout: 30000 });
 
       // 2. Fetch product details for descriptions
       const productIds = items.map((item: any) => item.productId);
@@ -1526,12 +1526,12 @@ export class ProductsService {
       );
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    return (this.prisma as any).$transaction(async (tx) => {
       // 1. Update Order Status
       const updatedOrder = await tx.purchaseOrder.update({
         where: { id },
         data: { status: 'RECEIVED' },
-      });
+      }, { maxWait: 15000, timeout: 30000 });
 
       // 1.1 Find associated Treasury transaction and update status to PAID (Completado/Finalizado)
       const transaction = await tx.transaction.findFirst({
@@ -1673,7 +1673,7 @@ export class ProductsService {
       }
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    return (this.prisma as any).$transaction(async (tx) => {
       // 1. Update status to PAID, wasPaid to true, and save subCategoryId
       const updatedOrder = await tx.purchaseOrder.update({
         where: { id },
@@ -1685,7 +1685,7 @@ export class ProductsService {
           receiptUrl: receiptUrl || null,
           wasPaid: true,
         },
-      });
+      }, { maxWait: 15000, timeout: 30000 });
 
       // 2. Locate or transition the PENDING transaction to PAID
       const existingPendingTx = await tx.transaction.findFirst({
@@ -1767,7 +1767,7 @@ export class ProductsService {
       );
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    return (this.prisma as any).$transaction(async (tx) => {
       // Si el pedido ya tiene un registro de pago CONFIRMADO (PAID) en Tesorería, no se puede eliminar
       const paidTreasuryRecord = await tx.transaction.findFirst({
         where: {
@@ -1777,7 +1777,7 @@ export class ProductsService {
           },
           status: 'PAID',
         },
-      });
+      }, { maxWait: 15000, timeout: 30000 });
 
       if (paidTreasuryRecord) {
         throw new BadRequestException(
@@ -1837,12 +1837,12 @@ export class ProductsService {
       throw new BadRequestException('Este pedido ya está cancelado.');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    return (this.prisma as any).$transaction(async (tx) => {
       // Cancelar el pedido
       const updatedOrder = await tx.purchaseOrder.update({
         where: { id },
         data: { status: 'CANCELLED' },
-      });
+      }, { maxWait: 15000, timeout: 30000 });
 
       // Buscar y anular el registro en Tesorería si existe
       const treasuryRecord = await tx.transaction.findFirst({
@@ -1895,12 +1895,12 @@ export class ProductsService {
       );
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    return (this.prisma as any).$transaction(async (tx) => {
       // 1. Update Order Status back to PAID (since it was paid)
       const updatedOrder = await tx.purchaseOrder.update({
         where: { id },
         data: { status: 'PAID' },
-      });
+      }, { maxWait: 15000, timeout: 30000 });
 
       // 1.1 Find associated Treasury transaction and update back to PENDING (En Proceso)
       const transaction = await tx.transaction.findFirst({
@@ -2024,12 +2024,12 @@ export class ProductsService {
     });
     if (!order) throw new NotFoundException('Pedido no encontrado');
 
-    return this.prisma.$transaction(async (tx) => {
+    return (this.prisma as any).$transaction(async (tx) => {
       const isReceived = order.status === 'RECEIVED';
       const firstBranch = await tx.branch.findFirst({
         where: { userId },
         orderBy: { createdAt: 'asc' },
-      });
+      }, { maxWait: 15000, timeout: 30000 });
 
       if (isReceived) {
         // Revert stock from old items

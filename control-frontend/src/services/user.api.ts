@@ -18,7 +18,8 @@ export const registerRequest = async (
   profiles?: string[],
   parentId?: string | null,
   blockedProfiles?: string[],
-  hasElectronicBilling?: boolean
+  hasElectronicBilling?: boolean,
+  taxRegime?: string
 ) => {
   try {
     const res = await API.post("/users", {
@@ -32,6 +33,7 @@ export const registerRequest = async (
       parentId,
       blockedProfiles,
       hasElectronicBilling: !!hasElectronicBilling,
+      taxRegime: taxRegime || "GENERAL_18",
     });
 
     // 👇 SI LLEGAMOS AQUÍ = backend respondió 200 OK

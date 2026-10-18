@@ -33,6 +33,7 @@ import {
   PlusSquare,
   Zap,
   FileText,
+  Sparkles,
 } from "lucide-react";
 
 import { toast } from "react-hot-toast";
@@ -46,6 +47,7 @@ import Modal from "../ui/Modal";
 import { changePasswordRequest } from "../../services/auth.api";
 import { FloatingSaveButton } from "../../pages/PiggPage";
 import PersonalAIChatFloating from "../dashboard/PersonalAIChatFloating";
+import { TAX_REGIMES, isAmazoniaDepartment } from "../../utils/fiscalUtils";
 
 export default function FinanceAppShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
@@ -149,6 +151,8 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
   const [businessDistrict, setBusinessDistrict] = useState(user?.businessDistrict || "");
   const [billingSerieInvoice, setBillingSerieInvoice] = useState(user?.billingSerieInvoice || "F001");
   const [billingSerieBoleta, setBillingSerieBoleta] = useState(user?.billingSerieBoleta || "B001");
+  const [taxRegime, setTaxRegime] = useState(user?.taxRegime || "GENERAL_18");
+  const [igvRate, setIgvRate] = useState<number>(user?.igvRate !== undefined ? user.igvRate : 18);
   const [businessLogo, setBusinessLogo] = useState<string | File>(user?.businessLogo || "");
   const [businessBanner, setBusinessBanner] = useState<string | File>(user?.businessBanner || "");
   const [nubefactUrl, setNubefactUrl] = useState(user?.nubefactUrl || "");
@@ -195,6 +199,9 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       setBusinessDistrict(user.businessDistrict || "");
       setBillingSerieInvoice(user.billingSerieInvoice || "F001");
       setBillingSerieBoleta(user.billingSerieBoleta || "B001");
+      const initialRegime = user.taxRegime || (isAmazoniaDepartment(user.businessDepartment) ? "AMAZONIA_EXONERADO" : "GENERAL_18");
+      setTaxRegime(initialRegime);
+      setIgvRate(user.igvRate !== undefined ? user.igvRate : (initialRegime === "AMAZONIA_EXONERADO" ? 0 : 18));
       setBusinessLogo(user.businessLogo || "");
       setBusinessBanner(user.businessBanner || "");
       setNubefactUrl(user.nubefactUrl || "");
@@ -204,8 +211,9 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (businessRuc && businessRuc.trim() !== "" && businessRuc.length !== 11) {
-      toast.error("El RUC debe tener exactamente 11 dígitos.");
+    const cleanRuc = (businessRuc || "").trim().replace(/\D/g, "");
+    if (cleanRuc !== "" && cleanRuc.length !== 11) {
+      toast.error("El RUC debe tener exactamente 11 dígitos numéricos.");
       return;
     }
     setIsSavingProfile(true);
@@ -230,7 +238,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
         lastName: profileLastName,
         personalAvatar: finalAvatarUrl || null,
         businessName: businessName || null,
-        businessRuc: businessRuc || null,
+        businessRuc: cleanRuc || null,
         businessReason: businessReason || null,
         businessRubro: businessRubro || null,
         businessAddress: businessAddress || null,
@@ -241,6 +249,8 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
         businessDistrict: businessDistrict || null,
         billingSerieInvoice: billingSerieInvoice || "F001",
         billingSerieBoleta: billingSerieBoleta || "B001",
+        taxRegime: taxRegime || "GENERAL_18",
+        igvRate: Number(igvRate),
         businessLogo: finalLogoUrl || null,
         businessBanner: finalBannerUrl || null,
         nubefactUrl: nubefactUrl || null,
@@ -1199,17 +1209,22 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                   type="text"
                   maxLength={11}
                   placeholder="Ej. 10203040506"
-                  className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 focus:ring-purple-500 outline-none text-sm font-bold text-gray-700 bg-white ${businessRuc && businessRuc.length !== 11 ? "border-rose-300 focus:ring-rose-500" : "border-gray-200"
+                  className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 focus:ring-purple-500 outline-none text-sm font-bold text-gray-700 bg-white ${businessRuc && businessRuc.trim().replace(/\D/g, "").length !== 11 ? "border-rose-300 focus:ring-rose-500" : "border-gray-200"
                     }`}
                   value={businessRuc}
                   onChange={(e) => {
-                    const val = e.target.value.replace(/\D/g, "");
+                    const val = e.target.value.replace(/\D/g, "").slice(0, 11);
                     setBusinessRuc(val);
                   }}
+                  onPaste={(e) => {
+                    e.preventDefault();
+                    const text = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 11);
+                    setBusinessRuc(text);
+                  }}
                 />
-                {businessRuc && businessRuc.length !== 11 && (
+                {businessRuc && businessRuc.trim().replace(/\D/g, "").length !== 11 && (
                   <p className="text-[11px] text-rose-500 font-extrabold mt-1 animate-pulse">
-                    ⚠️ El RUC debe tener exactamente 11 dígitos numéricos. (Tiene {businessRuc.length})
+                    ⚠️ El RUC debe tener exactamente 11 dígitos numéricos. (Tiene {businessRuc.trim().replace(/\D/g, "").length})
                   </p>
                 )}
               </div>
@@ -1348,6 +1363,44 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                         />
                       </div>
                     </div>
+                  </div>
+
+                  {/* RÉGIMEN TRIBUTARIO & LEY DE AMAZONÍA (IGV) */}
+                  <div className="pt-2 border-t border-gray-100">
+                    <label className="block text-xs font-black text-gray-700 uppercase tracking-wider mb-1">
+                      Régimen Tributario / Afectación al IGV
+                    </label>
+                    <select
+                      value={taxRegime}
+                      onChange={(e) => {
+                        const newRegime = e.target.value;
+                        setTaxRegime(newRegime);
+                        const opt = TAX_REGIMES[newRegime];
+                        if (opt) setIgvRate(opt.rate);
+                      }}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-bold text-gray-700 bg-white"
+                    >
+                      {Object.values(TAX_REGIMES).map((r) => (
+                        <option key={r.code} value={r.code}>
+                          {r.name}
+                        </option>
+                      ))}
+                    </select>
+
+                    {/* Alerta inteligente para Madre de Dios / Amazonía */}
+                    {(isAmazoniaDepartment(businessDepartment) || taxRegime === "AMAZONIA_EXONERADO") && (
+                      <div className="mt-2.5 p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-start gap-2.5 animate-fadeIn">
+                        <Sparkles className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
+                        <div>
+                          <p className="text-[11px] font-black text-emerald-900 uppercase tracking-wider">
+                            Régimen Amazonía Activo — Ley N° 27037
+                          </p>
+                          <p className="text-[10px] text-emerald-700 leading-relaxed mt-0.5 font-medium">
+                            En <strong>Madre de Dios</strong> y regiones amazónicas, las ventas de bienes están <strong>100% exoneradas de IGV (0.00%)</strong>. En tickets, boletas y facturas no se cobrará IGV y se consignará la leyenda oficial de ley automáticamente.
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

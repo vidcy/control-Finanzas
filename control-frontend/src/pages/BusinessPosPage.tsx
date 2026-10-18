@@ -3,6 +3,7 @@ import { getBranchesRequest, type Branch } from "../services/branch.api";
 import { useState, useEffect, useRef, useMemo } from "react";
 import { motion } from "framer-motion";
 import Appshell from "../components/layout/Appshell";
+import { calculateFiscalBreakdown } from "../utils/fiscalUtils";
 import { useAuth } from "../auth/AuthContext";
 import {
   getProductsRequest,
@@ -20,6 +21,7 @@ import {
   extractSizeFromProduct,
   extractTacoFromProduct,
   groupProductsBySeries,
+  decodeSeriesMetadata,
   type GroupedSeriesProduct,
 } from "../utils/seriesUtils";
 import {
@@ -424,29 +426,34 @@ export default function BusinessPosPage() {
     }
     const isFiscal = lastSale.billingType === "BOLETA" || lastSale.billingType === "FACTURA";
     const totalAmount = Number(lastSale.total) || 0;
-    const baseGravada = Number((totalAmount / 1.18).toFixed(2));
-    const igv = Number((totalAmount - baseGravada).toFixed(2));
+    const activeBranch = branches.find((b: any) => b.id === (lastSale.branchId || activeShift?.branchId));
+    const breakdown = calculateFiscalBreakdown(totalAmount, {
+      taxRegime: activeBranch?.taxRegime || user?.taxRegime,
+      department: activeBranch?.department || user?.businessDepartment,
+      igvRate: activeBranch?.igvRate ?? user?.igvRate,
+    });
+
     const formattedCorrelative = lastSale.billingNumber ? String(lastSale.billingNumber).padStart(8, "0") : "00000001";
     const serieCode = lastSale.billingSerie || (lastSale.billingType === "FACTURA" ? (user?.billingSerieInvoice || "F001") : (user?.billingSerieBoleta || "B001"));
     const numComp = isFiscal
       ? `${serieCode}-${formattedCorrelative}`
       : (lastSale.billingSerie && lastSale.billingNumber
-          ? `${lastSale.billingSerie}-${String(lastSale.billingNumber).padStart(8, "0")}`
-          : (lastSale.txId?.slice(0, 8) || "0000").toUpperCase());
+        ? `${lastSale.billingSerie}-${String(lastSale.billingNumber).padStart(8, "0")}`
+        : (lastSale.txId?.slice(0, 8) || "0000").toUpperCase());
 
     const qrPayload = isFiscal
       ? [
-          user?.businessRuc || "20000000001",
-          lastSale.billingType === "FACTURA" ? "01" : "03",
-          serieCode,
-          formattedCorrelative,
-          igv.toFixed(2),
-          totalAmount.toFixed(2),
-          format(new Date(lastSale.date), "yyyy-MM-dd"),
-          lastSale.clientDocumentType || (lastSale.billingType === "FACTURA" ? "6" : "1"),
-          lastSale.clientDocumentNumber || "00000000",
-          lastSale.billingHash || "HASH-VALIDADO-SUNAT",
-        ].join("|")
+        user?.businessRuc || "20000000001",
+        lastSale.billingType === "FACTURA" ? "01" : "03",
+        serieCode,
+        formattedCorrelative,
+        breakdown.igv.toFixed(2),
+        totalAmount.toFixed(2),
+        format(new Date(lastSale.date), "yyyy-MM-dd"),
+        lastSale.clientDocumentType || (lastSale.billingType === "FACTURA" ? "6" : "1"),
+        lastSale.clientDocumentNumber || "00000000",
+        lastSale.billingHash || "HASH-VALIDADO-SUNAT",
+      ].join("|")
       : `${window.location.origin}/ticket/${numComp}`;
 
     QRCode.toDataURL(qrPayload, {
@@ -1309,24 +1316,28 @@ export default function BusinessPosPage() {
 
     const isFiscal = lastSale.billingType === "BOLETA" || lastSale.billingType === "FACTURA";
     const totalAmount = Number(lastSale.total) || 0;
-    const baseGravada = Number((totalAmount / 1.18).toFixed(2));
-    const igv = Number((totalAmount - baseGravada).toFixed(2));
+    const activeBranchId = activeShift?.branchId || lastSale.branchId;
+    const branchInfo = branches.find((b: any) => b.id === activeBranchId);
+
+    const breakdown = calculateFiscalBreakdown(totalAmount, {
+      taxRegime: branchInfo?.taxRegime || user?.taxRegime,
+      department: branchInfo?.department || user?.businessDepartment,
+      igvRate: branchInfo?.igvRate ?? user?.igvRate,
+    });
 
     const formattedCorrelative = lastSale.billingNumber ? String(lastSale.billingNumber).padStart(8, "0") : "00000001";
     const serieCode = lastSale.billingSerie || (lastSale.billingType === "FACTURA" ? (user?.billingSerieInvoice || "F001") : (user?.billingSerieBoleta || "B001"));
     const numComp = isFiscal
       ? `${serieCode}-${formattedCorrelative}`
       : (lastSale.billingSerie && lastSale.billingNumber
-          ? `${lastSale.billingSerie}-${String(lastSale.billingNumber).padStart(8, "0")}`
-          : (lastSale.txId?.slice(0, 8) || "0000").toUpperCase());
+        ? `${lastSale.billingSerie}-${String(lastSale.billingNumber).padStart(8, "0")}`
+        : (lastSale.txId?.slice(0, 8) || "0000").toUpperCase());
 
     const businessName = user?.businessName ? user.businessName.toUpperCase() : "EMPRESA PRINCIPAL";
     const businessReason = user?.businessReason ? `Razón Social: ${user.businessReason}<br/>` : "";
     const businessRuc = user?.businessRuc ? `RUC: ${user.businessRuc}<br/>` : "";
     const businessRubro = user?.businessRubro ? `Giro: ${user.businessRubro}<br/>` : "";
 
-    const activeBranchId = activeShift?.branchId || lastSale.branchId;
-    const branchInfo = branches.find((b: any) => b.id === activeBranchId);
     const branchAddress = branchInfo?.address || user?.businessAddress || "";
     const branchPhone = branchInfo?.phone || user?.businessPhone || "";
     const branchName = branchInfo?.name || "";
@@ -1340,7 +1351,7 @@ export default function BusinessPosPage() {
             ? "NOTA DE CRÉDITO ELECTRÓNICA"
             : lastSale.billingType === "NOTA_DEBITO"
               ? "NOTA DE DÉBITO ELECTRÓNICA"
-              : "TICKET DE VENTA";
+              : "NOTA DE VENTA";
     const dateStr = format(lastSale.date, "dd/MM/yyyy HH:mm");
     const payStr = paymentLabel[lastSale.paymentMethod] || lastSale.paymentMethod;
 
@@ -1349,17 +1360,17 @@ export default function BusinessPosPage() {
     try {
       const qrPayload = isFiscal
         ? [
-            user?.businessRuc || "20000000001",
-            lastSale.billingType === "FACTURA" ? "01" : "03",
-            serieCode,
-            formattedCorrelative,
-            igv.toFixed(2),
-            totalAmount.toFixed(2),
-            format(lastSale.date, "yyyy-MM-dd"),
-            lastSale.clientDocumentType || (lastSale.billingType === "FACTURA" ? "6" : "1"),
-            lastSale.clientDocumentNumber || "00000000",
-            lastSale.billingHash || "HASH-VALIDADO-SUNAT",
-          ].join("|")
+          user?.businessRuc || "20000000001",
+          lastSale.billingType === "FACTURA" ? "01" : "03",
+          serieCode,
+          formattedCorrelative,
+          breakdown.igv.toFixed(2),
+          totalAmount.toFixed(2),
+          format(lastSale.date, "yyyy-MM-dd"),
+          lastSale.clientDocumentType || (lastSale.billingType === "FACTURA" ? "6" : "1"),
+          lastSale.clientDocumentNumber || "00000000",
+          lastSale.billingHash || "HASH-VALIDADO-SUNAT",
+        ].join("|")
         : `${window.location.origin}/ticket/${numComp}`;
 
       qrDataUrl = await QRCode.toDataURL(qrPayload, {
@@ -1416,9 +1427,11 @@ export default function BusinessPosPage() {
       `
         : "";
 
-    const logoHtml = user?.businessLogo
-      ? `<div style="text-align: center; margin-bottom: 6px;">
-          <img src="${user.businessLogo}" style="max-height: 48px; max-width: 150px; object-fit: contain; margin: 0 auto; display: block;" />
+    const rawLogo = user?.businessLogo || (branchInfo as any)?.logo;
+    const logoUrl = rawLogo ? (getReceiptAbsoluteUrl(rawLogo) || rawLogo) : "";
+    const logoHtml = logoUrl
+      ? `<div style="text-align: center; margin-bottom: 8px;">
+          <img src="${logoUrl}" alt="Logo" style="max-height: 55px; max-width: 170px; object-fit: contain; margin: 0 auto; display: block;" onerror="this.style.display='none'" />
          </div>`
       : "";
 
@@ -1427,7 +1440,7 @@ export default function BusinessPosPage() {
       <html>
         <head>
           <meta charset="utf-8" />
-          <title>Ticket_${numComp}</title>
+          <title>Nota_Venta_${numComp}</title>
           <style>
             @page {
               size: 80mm auto;
@@ -1478,7 +1491,7 @@ export default function BusinessPosPage() {
             <span>${dateStr}</span>
           </div>
           <div class="flex-between">
-            <span>${lastSale.billingType && lastSale.billingType !== "TICKET_VENTA" ? "Comprobante:" : "Ticket #:"}</span>
+            <span>${lastSale.billingType && lastSale.billingType !== "TICKET_VENTA" ? "Comprobante:" : "Nota de Venta #:"}</span>
             <span class="bold">${numComp}</span>
           </div>
           <div class="flex-between">
@@ -1502,18 +1515,34 @@ export default function BusinessPosPage() {
           <div class="double-line"></div>
           ${isFiscal ? `
             <div style="font-size: 10px; line-height: 1.4; margin-bottom: 4px;">
-              <div class="flex-between">
-                <span>OP. GRAVADA:</span>
-                <span>S/ ${baseGravada.toFixed(2)}</span>
-              </div>
-              <div class="flex-between">
-                <span>I.G.V. (18.00%):</span>
-                <span>S/ ${igv.toFixed(2)}</span>
-              </div>
+              ${breakdown.isExonerated ? `
+                <div class="flex-between">
+                  <span>OP. EXONERADA:</span>
+                  <span>S/ ${breakdown.baseExonerada.toFixed(2)}</span>
+                </div>
+                <div class="flex-between">
+                  <span>I.G.V. (0.00%):</span>
+                  <span>S/ 0.00</span>
+                </div>
+              ` : `
+                <div class="flex-between">
+                  <span>OP. GRAVADA:</span>
+                  <span>S/ ${breakdown.baseGravada.toFixed(2)}</span>
+                </div>
+                <div class="flex-between">
+                  <span>I.G.V. (${breakdown.rate.toFixed(2)}%):</span>
+                  <span>S/ ${breakdown.igv.toFixed(2)}</span>
+                </div>
+              `}
               <div class="flex-between bold" style="font-size: 13px; margin-top: 3px; border-top: 1px solid #000; padding-top: 2px;">
                 <span>TOTAL A PAGAR:</span>
-                <span>S/ ${totalAmount.toFixed(2)}</span>
+                <span>S/ ${breakdown.total.toFixed(2)}</span>
               </div>
+              ${breakdown.legend ? `
+                <div style="font-size: 7.5px; text-align: center; margin-top: 4px; font-weight: bold; line-height: 1.2;">
+                  ${breakdown.legend}
+                </div>
+              ` : ""}
             </div>
           ` : `
             <div class="flex-between bold" style="font-size: 13.5px;">
@@ -1559,7 +1588,7 @@ export default function BusinessPosPage() {
         } catch (e) {
           console.error("Popup print error:", e);
         }
-      }, 350);
+      }, logoUrl ? 500 : 300);
       return;
     }
 
@@ -1610,10 +1639,10 @@ export default function BusinessPosPage() {
         },
       });
       const link = document.createElement("a");
-      link.download = `Ticket_${lastSale.txId?.slice(0, 8) || Date.now()}.png`;
+      link.download = `${lastSale.billingType && lastSale.billingType !== "TICKET_VENTA" ? "Comprobante" : "Nota_Venta"}_${lastSale.txId?.slice(0, 8) || Date.now()}.png`;
       link.href = dataUrl;
       link.click();
-      toast.success("Imagen descargada");
+      toast.success("Comprobante / Nota de Venta descargada");
     } catch (err) {
       console.error(err);
       toast.error("Error al descargar imagen");
@@ -1676,7 +1705,7 @@ export default function BusinessPosPage() {
               ? "NOTA DE CRÉDITO ELECTRÓNICA"
               : lastSale.billingType === "NOTA_DEBITO"
                 ? "NOTA DE DÉBITO ELECTRÓNICA"
-                : "PROFORMA DE VENTA";
+                : "NOTA DE VENTA";
       doc.text(compType, pdfW / 2, y, { align: "center" });
 
       y += 4;
@@ -1693,7 +1722,7 @@ export default function BusinessPosPage() {
         lastSale.billingSerie && lastSale.billingNumber
           ? `${lastSale.billingSerie}-${lastSale.billingNumber}`
           : (lastSale.txId?.slice(0, 8) || "").toUpperCase();
-      doc.text(`${lastSale.billingType && lastSale.billingType !== "TICKET_VENTA" ? "Comprobante:" : "Ticket #:"} ${numComp}`, m, y);
+      doc.text(`${lastSale.billingType && lastSale.billingType !== "TICKET_VENTA" ? "Comprobante:" : "Nota de Venta #:"} ${numComp}`, m, y);
       y += 3.5;
       const payStr = paymentLabel[lastSale.paymentMethod] || lastSale.paymentMethod;
       doc.text(`Pago: ${payStr}`, m, y);
@@ -1769,17 +1798,27 @@ export default function BusinessPosPage() {
       }
       y += 4;
       doc.setFont("courier", "bold");
-      doc.text("Corporación Ccoplex - THINK ERP", pdfW / 2, y, { align: "center" });
+      doc.text("SISTEMA CONTROL FINANZAS ERP", pdfW / 2, y, { align: "center" });
 
       // Guardar PDF nativo con nombre real .pdf
-      const filename = `Ticket_${lastSale.txId?.slice(0, 8) || Date.now()}.pdf`;
+      const filename = `${lastSale.billingType && lastSale.billingType !== "TICKET_VENTA" ? "Comprobante" : "Nota_Venta"}_${lastSale.txId?.slice(0, 8) || Date.now()}.pdf`;
       doc.save(filename);
-      toast.success("Ticket descargado en formato PDF");
+      toast.success("Comprobante / Nota de Venta descargada en formato PDF");
     } catch (err) {
       console.error("Error al exportar ticket PDF:", err);
       toast.error("Error al generar PDF del ticket");
     }
   };
+
+  const userRubro = (user?.businessRubro || "").toLowerCase();
+  const hasShoeProducts = products.some(
+    (p) => p.unit === "Par" || p.unit === "Serie" || decodeSeriesMetadata(p.description) !== null
+  );
+  const isFootwearRubro =
+    /calzad|zapato|sandalia|stiletto|tac[oó]n|veaz/i.test(userRubro) ||
+    (!user?.businessRubro && hasShoeProducts);
+  const isClothingRubro = /ropa|boutique|moda|textil|confecc/i.test(userRubro);
+  const isApparelOrFootwear = isFootwearRubro || isClothingRubro;
 
   const marcasDisponibles = Array.from(
     new Set(
@@ -1788,12 +1827,15 @@ export default function BusinessPosPage() {
         .filter(Boolean)
     )
   );
-  const tallasDisponibles = Array.from(
-    new Set(
-      products
-        .map((p) => extractSizeFromProduct(p) || (p as any).size || (p as any).talla)
-        .filter(Boolean)
+  const tallasDisponibles = (isApparelOrFootwear
+    ? Array.from(
+      new Set(
+        products
+          .map((p) => extractSizeFromProduct(p) || (p as any).size || (p as any).talla)
+          .filter(Boolean)
+      )
     )
+    : []
   ).sort((a, b) => {
     const na = parseFloat(a);
     const nb = parseFloat(b);
@@ -1807,12 +1849,15 @@ export default function BusinessPosPage() {
         .filter(Boolean)
     )
   ).sort() as string[];
-  const tacosDisponibles = Array.from(
-    new Set(
-      products
-        .map((p) => extractTacoFromProduct(p)?.trim())
-        .filter(Boolean)
+  const tacosDisponibles = (isFootwearRubro
+    ? Array.from(
+      new Set(
+        products
+          .map((p) => extractTacoFromProduct(p)?.trim())
+          .filter(Boolean)
+      )
     )
+    : []
   ).sort() as string[];
   const gruposDisponibles = Array.from(
     new Set(
@@ -2019,11 +2064,9 @@ export default function BusinessPosPage() {
                     crossOrigin="anonymous"
                     alt="Logo"
                     style={{
-                      width: "60px",
-                      height: "60px",
-                      objectFit: "cover",
-                      borderRadius: "50%",
-                      border: "1px solid #eee",
+                      maxHeight: "55px",
+                      maxWidth: "160px",
+                      objectFit: "contain",
                     }}
                     onError={(e) => {
                       (e.target as HTMLImageElement).style.display = "none";
@@ -2088,7 +2131,7 @@ export default function BusinessPosPage() {
                       ? "NOTA DE CRÉDITO ELECTRÓNICA"
                       : lastSale.billingType === "NOTA_DEBITO"
                         ? "NOTA DE DÉBITO ELECTRÓNICA"
-                        : "TICKET DE VENTA"}
+                        : "NOTA DE VENTA"}
               </div>
               <div
                 style={{ borderBottom: "1px dashed #ccc", margin: "8px 0" }}
@@ -2110,7 +2153,7 @@ export default function BusinessPosPage() {
                   fontSize: "10px",
                 }}
               >
-                <span>{lastSale.billingType && lastSale.billingType !== "TICKET_VENTA" ? "Comprobante:" : "Ticket #:"}</span>
+                <span>{lastSale.billingType && lastSale.billingType !== "TICKET_VENTA" ? "Comprobante:" : "Nota de Venta #:"}</span>
                 <span style={{ fontWeight: "bold" }}>
                   {lastSale.billingSerie && lastSale.billingNumber
                     ? `${lastSale.billingSerie}-${String(lastSale.billingNumber).padStart(8, "0")}`
@@ -2200,22 +2243,47 @@ export default function BusinessPosPage() {
             {(() => {
               const isFiscal = lastSale.billingType === "BOLETA" || lastSale.billingType === "FACTURA";
               const totalAmt = Number(lastSale.total) || 0;
-              const gravada = Number((totalAmt / 1.18).toFixed(2));
-              const igv = Number((totalAmt - gravada).toFixed(2));
+              const activeBranch = branches.find((b: any) => b.id === (lastSale.branchId || activeShift?.branchId));
+              const breakdown = calculateFiscalBreakdown(totalAmt, {
+                taxRegime: activeBranch?.taxRegime || user?.taxRegime,
+                department: activeBranch?.department || user?.businessDepartment,
+                igvRate: activeBranch?.igvRate ?? user?.igvRate,
+              });
+
               return isFiscal ? (
                 <div style={{ fontSize: "10px", lineHeight: "1.4", marginBottom: "4px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span>OP. GRAVADA:</span>
-                    <span>S/ {gravada.toFixed(2)}</span>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span>I.G.V. (18.00%):</span>
-                    <span>S/ {igv.toFixed(2)}</span>
-                  </div>
+                  {breakdown.isExonerated ? (
+                    <>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span>OP. EXONERADA:</span>
+                        <span>S/ {breakdown.baseExonerada.toFixed(2)}</span>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span>I.G.V. (0.00%):</span>
+                        <span>S/ 0.00</span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span>OP. GRAVADA:</span>
+                        <span>S/ {breakdown.baseGravada.toFixed(2)}</span>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span>I.G.V. ({breakdown.rate.toFixed(2)}%):</span>
+                        <span>S/ {breakdown.igv.toFixed(2)}</span>
+                      </div>
+                    </>
+                  )}
                   <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, fontSize: "14px", marginTop: "3px", borderTop: "1px solid #111", paddingTop: "2px" }}>
                     <span>TOTAL A PAGAR:</span>
-                    <span>S/ {totalAmt.toFixed(2)}</span>
+                    <span>S/ {breakdown.total.toFixed(2)}</span>
                   </div>
+                  {breakdown.legend && (
+                    <div style={{ fontSize: "7.5px", textAlign: "center", marginTop: "4px", fontWeight: "bold", color: "#065f46" }}>
+                      🌿 {breakdown.legend}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div
@@ -2724,7 +2792,7 @@ export default function BusinessPosPage() {
                               SKU: {p.sku}
                             </span>
                           ) : null}
-                          {extractTacoFromProduct(p) ? (
+                          {isFootwearRubro && extractTacoFromProduct(p) ? (
                             <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-pink-600 text-white shadow-xs">
                               👠 {extractTacoFromProduct(p)}
                             </span>
@@ -3160,7 +3228,7 @@ export default function BusinessPosPage() {
                       src={getReceiptAbsoluteUrl(user.businessLogo) || ""}
                       crossOrigin="anonymous"
                       alt="Logo"
-                      className="w-12 h-12 rounded-full object-cover border border-gray-100"
+                      style={{ maxHeight: "55px", maxWidth: "160px", objectFit: "contain" }}
                       onError={(e) => {
                         (e.target as HTMLImageElement).style.display = "none";
                       }}
@@ -3218,7 +3286,7 @@ export default function BusinessPosPage() {
                         ? "NOTA DE CRÉDITO ELECTRÓNICA"
                         : lastSale.billingType === "NOTA_DEBITO"
                           ? "NOTA DE DÉBITO ELECTRÓNICA"
-                          : "TICKET DE VENTA"}
+                          : "NOTA DE VENTA"}
                 </div>
                 <div className="border-b border-dashed border-gray-300 my-3"></div>
                 <div className="flex justify-between text-[10px] mb-1">
@@ -3226,7 +3294,7 @@ export default function BusinessPosPage() {
                   <span>{format(new Date(lastSale.date), "dd/MM/yyyy HH:mm")}</span>
                 </div>
                 <div className="flex justify-between text-[10px] mb-1">
-                  <span>{lastSale.billingType && lastSale.billingType !== "TICKET_VENTA" ? "Comprobante:" : "Ticket #:"}</span>
+                  <span>{lastSale.billingType && lastSale.billingType !== "TICKET_VENTA" ? "Comprobante:" : "Nota de Venta #:"}</span>
                   <span className="font-bold">
                     {lastSale.billingSerie && lastSale.billingNumber
                       ? `${lastSale.billingSerie}-${String(lastSale.billingNumber).padStart(8, "0")}`
@@ -3278,22 +3346,47 @@ export default function BusinessPosPage() {
               {(() => {
                 const isFiscal = lastSale.billingType === "BOLETA" || lastSale.billingType === "FACTURA";
                 const totalAmt = Number(lastSale.total) || 0;
-                const gravada = Number((totalAmt / 1.18).toFixed(2));
-                const igv = Number((totalAmt - gravada).toFixed(2));
+                const activeBranch = branches.find((b: any) => b.id === (lastSale.branchId || activeShift?.branchId));
+                const breakdown = calculateFiscalBreakdown(totalAmt, {
+                  taxRegime: activeBranch?.taxRegime || user?.taxRegime,
+                  department: activeBranch?.department || user?.businessDepartment,
+                  igvRate: activeBranch?.igvRate ?? user?.igvRate,
+                });
+
                 return isFiscal ? (
                   <div className="text-[10px] space-y-1 mb-2">
-                    <div className="flex justify-between text-gray-600">
-                      <span>OP. GRAVADA:</span>
-                      <span>S/ {gravada.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between text-gray-600">
-                      <span>I.G.V. (18.00%):</span>
-                      <span>S/ {igv.toFixed(2)}</span>
-                    </div>
+                    {breakdown.isExonerated ? (
+                      <>
+                        <div className="flex justify-between text-gray-600">
+                          <span>OP. EXONERADA:</span>
+                          <span>S/ {breakdown.baseExonerada.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between text-gray-600">
+                          <span>I.G.V. (0.00%):</span>
+                          <span>S/ 0.00</span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex justify-between text-gray-600">
+                          <span>OP. GRAVADA:</span>
+                          <span>S/ {breakdown.baseGravada.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between text-gray-600">
+                          <span>I.G.V. ({breakdown.rate.toFixed(2)}%):</span>
+                          <span>S/ {breakdown.igv.toFixed(2)}</span>
+                        </div>
+                      </>
+                    )}
                     <div className="flex justify-between font-black text-sm pt-1 border-t border-gray-300">
                       <span>TOTAL A PAGAR:</span>
-                      <span className="text-indigo-900">S/ {totalAmt.toFixed(2)}</span>
+                      <span className="text-indigo-900">S/ {breakdown.total.toFixed(2)}</span>
                     </div>
+                    {breakdown.legend && (
+                      <div className="text-[7.5px] text-center mt-1 font-bold text-emerald-800">
+                        🌿 {breakdown.legend}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="flex justify-between font-black text-sm mb-2">

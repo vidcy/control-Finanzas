@@ -19,6 +19,7 @@ import {
   deleteBranchRequest
 } from "../services/branch.api";
 import type { Branch } from "../services/branch.api";
+import { TAX_REGIMES, isAmazoniaDepartment } from "../utils/fiscalUtils";
 
 export default function BusinessBranchesPage() {
   // Pagination states
@@ -57,7 +58,15 @@ export default function BusinessBranchesPage() {
     if (branch) {
       setCurrentBranch(branch);
     } else {
-      setCurrentBranch({ name: "", address: "" });
+      setCurrentBranch({
+        name: "",
+        address: "",
+        department: "",
+        province: "",
+        district: "",
+        taxRegime: "GENERAL_18",
+        igvRate: 18,
+      });
     }
     setIsEditModalOpen(true);
   };
@@ -70,18 +79,22 @@ export default function BusinessBranchesPage() {
       return;
     }
 
+    const payload = {
+      name: currentBranch.name,
+      address: currentBranch.address,
+      department: currentBranch.department || null,
+      province: currentBranch.province || null,
+      district: currentBranch.district || null,
+      taxRegime: currentBranch.taxRegime || "GENERAL_18",
+      igvRate: currentBranch.taxRegime === "AMAZONIA_EXONERADO" ? 0 : (currentBranch.igvRate ?? 18),
+    };
+
     try {
       if (currentBranch.id) {
-        await updateBranchRequest(currentBranch.id, {
-          name: currentBranch.name,
-          address: currentBranch.address,
-        });
+        await updateBranchRequest(currentBranch.id, payload);
         toast.success("Sede actualizada correctamente");
       } else {
-        await createBranchRequest({
-          name: currentBranch.name,
-          address: currentBranch.address,
-        });
+        await createBranchRequest(payload);
         toast.success("Sede creada correctamente");
       }
       setIsEditModalOpen(false);
@@ -206,6 +219,29 @@ export default function BusinessBranchesPage() {
                       </div>
                     )}
 
+                    {b.department && (
+                      <div className="text-xs font-bold text-gray-400 mt-1">
+                        📍 {b.department}{b.province ? `, ${b.province}` : ""}{b.district ? ` - ${b.district}` : ""}
+                      </div>
+                    )}
+
+                    {/* Badge Régimen Tributario */}
+                    <div className="mt-3">
+                      {b.taxRegime === "AMAZONIA_EXONERADO" || isAmazoniaDepartment(b.department) ? (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200">
+                          <Sparkles className="w-3 h-3 text-emerald-600" /> Amazonía Exonerado (Ley 27037)
+                        </span>
+                      ) : b.taxRegime === "RESTAURANTES_10" ? (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-200">
+                          🍽️ Hoteles / Restaurantes (10%)
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-gray-100 text-gray-700 border border-gray-200">
+                          🏛️ Régimen General (IGV 18%)
+                        </span>
+                      )}
+                    </div>
+
                     <div className="mt-6 pt-4 border-t border-gray-50 flex items-center justify-between text-xs font-bold text-gray-400">
                       <span>CREADA EL</span>
                       <span className="text-gray-600">{new Date(b.createdAt).toLocaleDateString()}</span>
@@ -233,28 +269,87 @@ export default function BusinessBranchesPage() {
           title={currentBranch?.id ? "Editar Sede" : "Registrar Nueva Sede"}
           maxWidth="max-w-lg"
         >
-          <form onSubmit={handleSaveBranch} className="space-y-6">
+          <form onSubmit={handleSaveBranch} className="space-y-5">
             <div>
-              <label className="block text-gray-700 font-extrabold mb-2">Nombre de la Sede</label>
+              <label className="block text-gray-700 font-extrabold mb-1.5 text-xs uppercase tracking-wider">Nombre de la Sede</label>
               <input
                 type="text"
-                placeholder="Ej. Sede Sur, Almacén Chiclayo"
+                placeholder="Ej. Sede Puerto Maldonado, Almacén Chiclayo"
                 value={currentBranch?.name || ""}
                 onChange={(e) => setCurrentBranch(prev => ({ ...prev, name: e.target.value }))}
-                className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-rose-500 focus:bg-white transition-all font-semibold outline-none"
+                className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-rose-500 focus:bg-white transition-all font-semibold outline-none text-sm"
                 required
               />
             </div>
 
             <div>
-              <label className="block text-gray-700 font-extrabold mb-2">Dirección (Opcional)</label>
+              <label className="block text-gray-700 font-extrabold mb-1.5 text-xs uppercase tracking-wider">Dirección Física</label>
               <input
                 type="text"
-                placeholder="Ej. Av. Larco 456, Miraflores"
+                placeholder="Ej. Jr. Billinghurst 450"
                 value={currentBranch?.address || ""}
                 onChange={(e) => setCurrentBranch(prev => ({ ...prev, address: e.target.value }))}
-                className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-rose-500 focus:bg-white transition-all font-semibold outline-none"
+                className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-rose-500 focus:bg-white transition-all font-semibold outline-none text-sm"
               />
+            </div>
+
+            <div>
+              <label className="block text-gray-700 font-extrabold mb-1.5 text-xs uppercase tracking-wider">Ubicación (Dpto / Prov / Dist)</label>
+              <div className="grid grid-cols-3 gap-2">
+                <input
+                  type="text"
+                  placeholder="Madre de Dios"
+                  value={currentBranch?.department || ""}
+                  onChange={(e) => {
+                    const dept = e.target.value;
+                    const isAmazon = isAmazoniaDepartment(dept);
+                    setCurrentBranch(prev => ({
+                      ...prev,
+                      department: dept,
+                      taxRegime: isAmazon ? "AMAZONIA_EXONERADO" : prev?.taxRegime,
+                    }));
+                  }}
+                  className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-rose-500"
+                />
+                <input
+                  type="text"
+                  placeholder="Tambopata"
+                  value={currentBranch?.province || ""}
+                  onChange={(e) => setCurrentBranch(prev => ({ ...prev, province: e.target.value }))}
+                  className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-rose-500"
+                />
+                <input
+                  type="text"
+                  placeholder="Puerto Maldonado"
+                  value={currentBranch?.district || ""}
+                  onChange={(e) => setCurrentBranch(prev => ({ ...prev, district: e.target.value }))}
+                  className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-rose-500"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-gray-700 font-extrabold mb-1.5 text-xs uppercase tracking-wider">Régimen Tributario / IGV</label>
+              <select
+                value={currentBranch?.taxRegime || (isAmazoniaDepartment(currentBranch?.department) ? "AMAZONIA_EXONERADO" : "GENERAL_18")}
+                onChange={(e) => setCurrentBranch(prev => ({ ...prev, taxRegime: e.target.value }))}
+                className="w-full px-3.5 py-3 bg-gray-50 border border-gray-200 rounded-xl text-xs font-extrabold outline-none focus:ring-2 focus:ring-rose-500 text-gray-700"
+              >
+                {Object.values(TAX_REGIMES).map((r) => (
+                  <option key={r.code} value={r.code}>
+                    {r.name}
+                  </option>
+                ))}
+              </select>
+
+              {(isAmazoniaDepartment(currentBranch?.department) || currentBranch?.taxRegime === "AMAZONIA_EXONERADO") && (
+                <div className="mt-2.5 p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-start gap-2 text-emerald-800 text-xs font-bold">
+                  <Sparkles className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
+                  <span>
+                    Sede en Amazonía (Madre de Dios / Ley 27037). Las ventas en esta sede se emitirán con <strong>IGV 0.00% (Exonerado)</strong>.
+                  </span>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-4 pt-4">

@@ -542,13 +542,19 @@ export function cleanModelName(rawName: string): string {
  * Extracts size from name, description, presentations, or sku
  */
 export function extractSizeFromProduct(product: any): string {
+  if (!product) return "";
+
+  // If size is explicitly present in product object
+  if (product.size && String(product.size).trim()) return String(product.size).trim();
+  if (product.talla && String(product.talla).trim()) return String(product.talla).trim();
+
   const combined = `${product.name || ""} ${product.description || ""} ${product.sku || ""}`;
 
-  // Explicit size
-  const explicit = combined.match(/(?:talla|t\.|t-|t:)\s*([0-9]{2}(?:\.[0-9])?)/i);
+  // Explicit size prefix: Talla 37, T.37, T-37, etc.
+  const explicit = combined.match(/(?:talla|t\.|t-|t:)\s*([0-9]{2}(?:\.[0-9])?|[SMLX|XL|XXL]+)/i);
   if (explicit && explicit[1]) return explicit[1].trim();
 
-  // Trailing SKU
+  // Trailing SKU like -37 or _38
   const skuMatch = (product.sku || "").match(/[-_/\s](3[0-9]|4[0-5])$/i);
   if (skuMatch && skuMatch[1]) return skuMatch[1].trim();
 
@@ -560,11 +566,19 @@ export function extractSizeFromProduct(product: any): string {
     }
   }
 
-  // Standalone shoe size (30 to 45)
-  const standalone = combined.match(/\b(3[0-9]|4[0-5])\b/);
-  if (standalone && standalone[1]) return standalone[1].trim();
+  // Only check standalone numbers (30 to 45) if product context is footwear / series
+  const isShoeContext =
+    product.unit === "Serie" ||
+    product.unit === "Par" ||
+    decodeSeriesMetadata(product.description) !== null ||
+    /(?:calzad|zapato|sandalia|bota|botin|stiletto|tac[oó]n|sneaker)/i.test(combined);
 
-  return "37"; // default fallback
+  if (isShoeContext) {
+    const standalone = combined.match(/\b(3[0-9]|4[0-5])\b/);
+    if (standalone && standalone[1]) return standalone[1].trim();
+  }
+
+  return "";
 }
 
 /**

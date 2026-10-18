@@ -36,7 +36,7 @@ export class BranchesService {
     return branches;
   }
 
-  async createBranch(userId: string, data: { name: string; address?: string }) {
+  async createBranch(userId: string, data: { name: string; address?: string; phone?: string; code?: string; department?: string; province?: string; district?: string; taxRegime?: string; igvRate?: number }) {
     if (!data.name) {
       throw new BadRequestException('El nombre de la sede es requerido');
     }
@@ -52,7 +52,7 @@ export class BranchesService {
   async updateBranch(
     userId: string,
     id: string,
-    data: { name?: string; address?: string },
+    data: { name?: string; address?: string; phone?: string; code?: string; department?: string; province?: string; district?: string; taxRegime?: string; igvRate?: number },
   ) {
     const branch = await this.prisma.branch.findFirst({
       where: { id, userId },

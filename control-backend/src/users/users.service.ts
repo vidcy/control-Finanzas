@@ -46,6 +46,9 @@ export class UsersService {
             : ['PERSONAL'],
         blockedProfiles: data.blockedProfiles || [],
         hasElectronicBilling: !!data.hasElectronicBilling,
+        taxRegime: data.taxRegime || 'GENERAL_18',
+        igvRate: data.taxRegime === 'AMAZONIA_0' || data.taxRegime === 'EXONERADO_0' || data.taxRegime === 'INAFECTO_0' ? 0.00 : (data.taxRegime === 'RESTAURANTE_10' ? 10.00 : 18.00),
+        businessDepartment: data.businessDepartment || null,
         isActive: data.isActive !== undefined ? data.isActive : true,
         parentId: data.parentId || null,
         isSelfRegistered: data.isSelfRegistered || false,
@@ -78,6 +81,8 @@ export class UsersService {
         blockedProfiles: true,
         parentId: true,
         hasElectronicBilling: true,
+        taxRegime: true, // in listUser
+        businessDepartment: true,
       },
     });
   }
@@ -140,6 +145,9 @@ export class UsersService {
     if (data.blockedProfiles !== undefined) updateData.blockedProfiles = data.blockedProfiles;
     if (data.parentId !== undefined) updateData.parentId = data.parentId || null;
     if (data.hasElectronicBilling !== undefined) updateData.hasElectronicBilling = !!data.hasElectronicBilling;
+    if (data.taxRegime !== undefined) updateData.taxRegime = data.taxRegime;
+    if (data.igvRate !== undefined) updateData.igvRate = Number(data.igvRate);
+    if (data.businessDepartment !== undefined) updateData.businessDepartment = data.businessDepartment;
     if (data.nubefactUrl !== undefined) updateData.nubefactUrl = data.nubefactUrl;
     if (data.nubefactToken !== undefined) updateData.nubefactToken = data.nubefactToken;
     if (data.password && String(data.password).trim() !== '') {
@@ -181,6 +189,16 @@ export class UsersService {
         nubefactToken: true,
         isSelfRegistered: true,
         trialEndsAt: true,
+        taxRegime: true,
+        igvRate: true,
+        businessDepartment: true,
+        businessProvince: true,
+        businessDistrict: true,
+        businessAddress: true,
+        businessPhone: true,
+        businessEmail: true,
+        billingSerieInvoice: true,
+        billingSerieBoleta: true,
       },
     });
 
@@ -241,6 +259,8 @@ export class UsersService {
       'billingSerieInvoice',
       'billingSerieBoleta',
       'hasElectronicBilling',
+      'taxRegime',
+      'igvRate',
     ];
     const updateData: any = {};
     for (const key of allowedFields) {
@@ -283,7 +303,7 @@ export class UsersService {
     ) {
       const rucStr = String(updateData.businessRuc).trim();
       if (rucStr !== '') {
-        if (!/^d{11}$/.test(rucStr)) {
+        if (!/^[0-9]{11}$/.test(rucStr)) {
           throw new BadRequestException(
             'El RUC debe tener exactamente 11 dígitos numéricos.',
           );

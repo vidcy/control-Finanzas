@@ -176,6 +176,16 @@ export class UsersController {
         hasElectronicBilling: parent?.hasElectronicBilling,
         nubefactUrl: parent?.nubefactUrl,
         nubefactToken: parent?.nubefactToken,
+        businessAddress: parent?.businessAddress,
+        businessPhone: parent?.businessPhone,
+        businessEmail: parent?.businessEmail,
+        businessDepartment: parent?.businessDepartment,
+        businessProvince: parent?.businessProvince,
+        businessDistrict: parent?.businessDistrict,
+        billingSerieInvoice: parent?.billingSerieInvoice,
+        billingSerieBoleta: parent?.billingSerieBoleta,
+        taxRegime: parent?.taxRegime,
+        igvRate: parent?.igvRate,
       };
     }
     return user;

@@ -66,6 +66,8 @@ model User {
   hasElectronicBilling Boolean @default(false)
   nubefactUrl          String?
   nubefactToken        String?
+  taxRegime            String?   @default("GENERAL_18")
+  igvRate              Float?    @default(18.0)
 
   resetToken       String?
   resetTokenExpiry DateTime?
@@ -132,6 +134,11 @@ model Branch {
   code      String?
   address   String?
   phone     String?
+  department   String?
+  province     String?
+  district     String?
+  taxRegime    String?   // override if set: "GENERAL_18", "AMAZONIA_EXONERADO", "RESTAURANTES_10", etc.
+  igvRate      Float?
   userId    String
   user      User     @relation("OwnerBranches", fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
@@ -675,6 +682,12 @@ model Sale {
   clientDenomination   String?
   clientAddress        String?
   clientEmail          String?
+  taxRegime            String?   @default("GENERAL_18")
+  igvRate              Float?    @default(18.0)
+  totalGravada         Float?    @default(0)
+  totalExonerada       Float?    @default(0)
+  totalInafecta        Float?    @default(0)
+  totalIgv             Float?    @default(0)
 
   items       SaleItem[]
   commissions Commission[]

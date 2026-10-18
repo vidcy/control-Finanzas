@@ -30,6 +30,7 @@ import {
   updateUserRequest,
   deleteUserRequest,
 } from "../services/user.api";
+import { TAX_REGIMES, TAX_REGIMES_LIST, isAmazoniaDepartment } from "../utils/fiscalUtils";
 
 type User = {
   id: string;
@@ -43,6 +44,8 @@ type User = {
   blockedProfiles: string[];
   parentId?: string | null;
   hasElectronicBilling?: boolean;
+  taxRegime?: string;
+  businessDepartment?: string;
 };
 
 export default function UserPage() {
@@ -75,6 +78,8 @@ export default function UserPage() {
   const [isWorker, setIsWorker] = useState(false);
   const [parentId, setParentId] = useState("");
   const [hasElectronicBilling, setHasElectronicBilling] = useState(false);
+  const [taxRegime, setTaxRegime] = useState("GENERAL_18");
+  const [businessDepartment, setBusinessDepartment] = useState("");
 
   const SUB_MODULES = [
     { key: "BUSINESS_DASHBOARD", name: "Dashboard de Negocio" },
@@ -102,6 +107,8 @@ export default function UserPage() {
     setIsWorker(false);
     setParentId("");
     setHasElectronicBilling(false);
+    setTaxRegime("GENERAL_18");
+    setBusinessDepartment("");
     setIsCreateOpen(true);
   };
 
@@ -118,6 +125,8 @@ export default function UserPage() {
     setIsWorker(!!user.parentId);
     setParentId(user.parentId || "");
     setHasElectronicBilling(user.hasElectronicBilling || false);
+    setTaxRegime(user.taxRegime || "GENERAL_18");
+    setBusinessDepartment(user.businessDepartment || "");
     setIsEditOpen(true);
   };
 
@@ -151,7 +160,8 @@ export default function UserPage() {
         formData.profiles,
         isWorker ? parentId : null,
         computedBlockedProfiles,
-        !isWorker && hasElectronicBilling
+        !isWorker && hasElectronicBilling,
+        taxRegime
       );
       toast.success("Usuario creado exitosamente");
       await fetchUsers();
@@ -189,6 +199,8 @@ export default function UserPage() {
         blockedProfiles: computedBlockedProfiles,
         parentId: isWorker ? parentId : null,
         hasElectronicBilling,
+        taxRegime,
+        businessDepartment,
       };
       if (formData.password && formData.password.trim() !== "") {
         payload.password = formData.password;
@@ -262,6 +274,8 @@ export default function UserPage() {
         blockedProfiles: Array.isArray(u.blockedProfiles) ? u.blockedProfiles : [],
         parentId: u.parentId || null,
         hasElectronicBilling: u.hasElectronicBilling || false,
+        taxRegime: u.taxRegime || "GENERAL_18",
+        businessDepartment: u.businessDepartment || "",
       }));
       setUsers(formattedUsers);
     } catch (error: unknown) {
@@ -383,8 +397,8 @@ export default function UserPage() {
       doc.setFontSize(11);
       doc.text(`${workerCount}`, 200, 53);
 
-      const headers = ["Nombre Completo", "Email", "Rol", "Perfiles", "Tipo Cuenta", "Fact. Electrónica"];
-      const colWidths = [55, 60, 25, 70, 35, 24];
+      const headers = ["Nombre Completo", "Email", "Rol", "Perfiles", "Tipo Cuenta", "Fact. Elect.", "Régimen IGV"];
+      const colWidths = [50, 52, 22, 55, 30, 25, 35];
 
       const drawTblHeader = (sy: number) => {
         doc.setFillColor(124, 58, 237);
@@ -460,6 +474,12 @@ export default function UserPage() {
         const electronicVal = fitText(doc, u.hasElectronicBilling ? "Sí" : "No", colWidths[5] - 4);
         doc.text(electronicVal, cx + 2, y + 5);
         cx += colWidths[5];
+
+        // Col 7: Régimen IGV
+        doc.setTextColor(30, 41, 59);
+        const regVal = fitText(doc, (u.taxRegime === "AMAZONIA_0" || isAmazoniaDepartment(u.businessDepartment)) ? "Amazonía (0%)" : (u.taxRegime === "RESTAURANTE_10" ? "Restaurante (10%)" : "General (18%)"), colWidths[6] - 4);
+        doc.text(regVal, cx + 2, y + 5);
+        cx += colWidths[6];
 
         y += rowH;
       });
@@ -540,6 +560,7 @@ export default function UserPage() {
                   <th className="p-6">Módulo Personal</th>
                   <th className="p-6">Módulo Negocios</th>
                   <th className="p-6">Fact. Electrónica</th>
+                  <th className="p-6">Régimen IGV</th>
                   <th className="p-6">Estado</th>
                   <th className="p-6 pr-8 text-center">Acciones</th>
                 </tr>
@@ -547,7 +568,7 @@ export default function UserPage() {
               <tbody className="divide-y divide-gray-50/50">
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="p-20 text-center">
+                    <td colSpan={7} className="p-20 text-center">
                       <Loader2 className="w-10 h-10 text-purple-500 animate-spin mx-auto mb-4" />
                       <p className="text-xs font-black text-gray-400 uppercase tracking-widest">
                         Sincronizando base de datos...
@@ -725,6 +746,25 @@ export default function UserPage() {
                           </button>
                         ) : (
                           <span className="text-[10px] text-gray-300 font-bold">Heredada</span>
+                        )}
+                      </td>
+                      <td className="p-6">
+                        {user.taxRegime === "AMAZONIA_0" || (user.businessDepartment && isAmazoniaDepartment(user.businessDepartment)) ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200" title="Amazonía Exonerada de IGV (Ley 27037)">
+                            🌿 Amazonía 0%
+                          </span>
+                        ) : user.taxRegime === "RESTAURANTE_10" ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200">
+                            🍽️ Rest. 10%
+                          </span>
+                        ) : user.taxRegime === "EXONERADO_0" ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider bg-teal-50 text-teal-700 border border-teal-200">
+                            🛡️ Exon. 0%
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200">
+                            🏛️ General 18%
+                          </span>
                         )}
                       </td>
                       <td className="p-6">
@@ -1211,6 +1251,70 @@ export default function UserPage() {
                       <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
                     </label>
                   </div>
+
+                  {/* RÉGIMEN TRIBUTARIO & IGV (LEY DE AMAZONÍA) */}
+                  <div className="p-5 bg-gradient-to-br from-purple-50/50 to-indigo-50/50 rounded-2xl border border-purple-100/80 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-black uppercase tracking-wider text-purple-900 flex items-center gap-2">
+                        <span>🏛️</span> Régimen Tributario & Configuración IGV
+                      </label>
+                      <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-white border border-purple-200 text-purple-700">
+                        SUNAT / Regional
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[11px] font-bold text-gray-600 mb-1">
+                          Departamento / Región
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Ej: Madre de Dios, Lima, Loreto..."
+                          value={businessDepartment}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setBusinessDepartment(val);
+                            if (isAmazoniaDepartment(val)) {
+                              setTaxRegime("AMAZONIA_0");
+                            }
+                          }}
+                          className="w-full px-4 py-3 bg-white border border-purple-100 rounded-xl text-xs font-bold text-gray-800 outline-none focus:ring-2 focus:ring-purple-400"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-gray-600 mb-1">
+                          Régimen de IGV Aplicable
+                        </label>
+                        <select
+                          value={taxRegime}
+                          onChange={(e) => setTaxRegime(e.target.value)}
+                          className="w-full px-4 py-3 bg-white border border-purple-100 rounded-xl text-xs font-black text-gray-800 outline-none focus:ring-2 focus:ring-purple-400"
+                        >
+                          {TAX_REGIMES_LIST.map((reg) => (
+                            <option key={reg.code} value={reg.code}>
+                              {reg.name} ({reg.rate}%)
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {(taxRegime === "AMAZONIA_0" || isAmazoniaDepartment(businessDepartment)) && (
+                      <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-start gap-3 text-xs text-emerald-800 font-medium">
+                        <span className="text-base flex-shrink-0">🌿</span>
+                        <div className="space-y-0.5">
+                          <p className="font-black text-emerald-900">
+                            Exonerado de IGV por Ley de Amazonía (Ley N° 27037)
+                          </p>
+                          <p className="text-[11px] text-emerald-700 leading-relaxed">
+                            En <strong>Madre de Dios</strong> y regiones de la Amazonía peruana, los comprobantes electrónicos se emiten al <strong>0% IGV</strong> con código SUNAT de Operación Exonerada e imprimen la leyenda oficial obligatoria.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -1355,6 +1459,70 @@ export default function UserPage() {
                       El usuario configurará sus credenciales NubeFacT desde su panel de negocio.
                     </p>
                   )}
+
+                  {/* RÉGIMEN TRIBUTARIO & IGV (LEY DE AMAZONÍA) */}
+                  <div className="p-5 bg-gradient-to-br from-purple-50/50 to-indigo-50/50 rounded-2xl border border-purple-100/80 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-black uppercase tracking-wider text-purple-900 flex items-center gap-2">
+                        <span>🏛️</span> Régimen Tributario & Configuración IGV
+                      </label>
+                      <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-white border border-purple-200 text-purple-700">
+                        SUNAT / Regional
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[11px] font-bold text-gray-600 mb-1">
+                          Departamento / Región
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Ej: Madre de Dios, Lima, Loreto..."
+                          value={businessDepartment}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setBusinessDepartment(val);
+                            if (isAmazoniaDepartment(val)) {
+                              setTaxRegime("AMAZONIA_0");
+                            }
+                          }}
+                          className="w-full px-4 py-3 bg-white border border-purple-100 rounded-xl text-xs font-bold text-gray-800 outline-none focus:ring-2 focus:ring-purple-400"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-gray-600 mb-1">
+                          Régimen de IGV Aplicable
+                        </label>
+                        <select
+                          value={taxRegime}
+                          onChange={(e) => setTaxRegime(e.target.value)}
+                          className="w-full px-4 py-3 bg-white border border-purple-100 rounded-xl text-xs font-black text-gray-800 outline-none focus:ring-2 focus:ring-purple-400"
+                        >
+                          {TAX_REGIMES_LIST.map((reg) => (
+                            <option key={reg.code} value={reg.code}>
+                              {reg.name} ({reg.rate}%)
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {(taxRegime === "AMAZONIA_0" || isAmazoniaDepartment(businessDepartment)) && (
+                      <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-start gap-3 text-xs text-emerald-800 font-medium">
+                        <span className="text-base flex-shrink-0">🌿</span>
+                        <div className="space-y-0.5">
+                          <p className="font-black text-emerald-900">
+                            Exonerado de IGV por Ley de Amazonía (Ley N° 27037)
+                          </p>
+                          <p className="text-[11px] text-emerald-700 leading-relaxed">
+                            En <strong>Madre de Dios</strong> y regiones de la Amazonía peruana, los comprobantes electrónicos se emiten al <strong>0% IGV</strong> con código SUNAT de Operación Exonerada e imprimen la leyenda oficial obligatoria.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 

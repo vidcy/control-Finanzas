@@ -27,6 +27,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
+import { isAmazoniaDepartment } from "../utils/fiscalUtils";
 import Modal from "../components/ui/Modal";
 import {
   getBillingStatsRequest,
@@ -1142,19 +1143,39 @@ export default function BusinessBillingPage() {
                   </div>
                 </div>
 
-                <div className="border-t border-dashed border-slate-300 pt-2 space-y-1 text-right">
-                  <div className="flex justify-between">
-                    <span>OP. GRAVADA:</span>
-                    <span>{selectedDocForPreview.currency} {selectedDocForPreview.totalOpGravada.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>I.G.V. (18%):</span>
-                    <span>{selectedDocForPreview.currency} {selectedDocForPreview.totalIgv.toFixed(2)}</span>
-                  </div>
+                <div className="border-t border-dashed border-slate-300 pt-2 space-y-1 text-right text-xs">
+                  {selectedDocForPreview.totalOpExonerada > 0 ? (
+                    <>
+                      <div className="flex justify-between">
+                        <span>OP. EXONERADA:</span>
+                        <span>{selectedDocForPreview.currency} {selectedDocForPreview.totalOpExonerada.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>I.G.V. (0.00%):</span>
+                        <span>{selectedDocForPreview.currency} 0.00</span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex justify-between">
+                        <span>OP. GRAVADA:</span>
+                        <span>{selectedDocForPreview.currency} {selectedDocForPreview.totalOpGravada.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>I.G.V. (18%):</span>
+                        <span>{selectedDocForPreview.currency} {selectedDocForPreview.totalIgv.toFixed(2)}</span>
+                      </div>
+                    </>
+                  )}
                   <div className="flex justify-between font-bold text-sm text-slate-900 pt-1 border-t border-slate-200">
                     <span>TOTAL A PAGAR:</span>
                     <span>{selectedDocForPreview.currency} {selectedDocForPreview.totalAmount.toFixed(2)}</span>
                   </div>
+                  {selectedDocForPreview.totalOpExonerada > 0 && (
+                    <div className="text-[8px] text-center font-bold text-emerald-800 pt-1 leading-tight">
+                      BIENES TRANSFERIDOS EN LA AMAZONÍA PARA SER CONSUMIDOS EN LA MISMA - LEY N° 27037
+                    </div>
+                  )}
                 </div>
 
                 {qrDataUrl && (

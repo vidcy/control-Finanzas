@@ -3,8 +3,14 @@ import API from "./axios";
 export interface Branch {
   id: string;
   name: string;
-  phone: string;
-  address?: string;
+  code?: string;
+  phone?: string;
+  address?: string | null;
+  department?: string | null;
+  province?: string | null;
+  district?: string | null;
+  taxRegime?: string | null;
+  igvRate?: number | null;
   userId: string;
   createdAt: string;
   updatedAt: string;
@@ -19,7 +25,7 @@ export const getBranchesRequest = async (): Promise<Branch[]> => {
   }
 };
 
-export const createBranchRequest = async (data: { name: string; address?: string }): Promise<Branch> => {
+export const createBranchRequest = async (data: Partial<Branch>): Promise<Branch> => {
   try {
     const res = await API.post("/branches", data);
     return res.data;
@@ -28,7 +34,7 @@ export const createBranchRequest = async (data: { name: string; address?: string
   }
 };
 
-export const updateBranchRequest = async (id: string, data: { name?: string; address?: string }): Promise<Branch> => {
+export const updateBranchRequest = async (id: string, data: Partial<Branch>): Promise<Branch> => {
   try {
     const res = await API.patch(`/branches/${id}`, data);
     return res.data;

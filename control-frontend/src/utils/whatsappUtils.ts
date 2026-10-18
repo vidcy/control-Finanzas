@@ -27,14 +27,14 @@ export function formatCurrency(amount: number): string {
 }
 
 /**
- * Genera y abre el enlace de WhatsApp con el comprobante / ticket de venta.
+ * Genera y abre el enlace de WhatsApp con el comprobante / NOTA DE VENTA.
  */
 export function shareSaleReceiptViaWhatsApp(sale: SaleWhatsAppPayload, phone: string = ""): void {
   const dateStr = sale.date
     ? new Date(sale.date).toLocaleString("es-PE", {
-        dateStyle: "medium",
-        timeStyle: "short",
-      })
+      dateStyle: "medium",
+      timeStyle: "short",
+    })
     : new Date().toLocaleString("es-PE", { dateStyle: "medium", timeStyle: "short" });
 
   const client = (sale.clientDenomination || "CLIENTES VARIOS").trim();
@@ -42,16 +42,22 @@ export function shareSaleReceiptViaWhatsApp(sale: SaleWhatsAppPayload, phone: st
     ? `${sale.billingSerie}-${String(sale.billingNumber || "").padStart(6, "0")}`
     : (sale.txId ? String(sale.txId).slice(-8).toUpperCase() : `VTA-${Date.now().toString().slice(-6)}`);
 
-  const business = (sale.businessName || "CONTROL & FINANZAS").trim();
+  const isDocFiscal = sale.billingType === "BOLETA" || sale.billingType === "FACTURA";
+  const headerTitle = sale.billingType === "FACTURA"
+    ? "FACTURA ELECTRÓNICA"
+    : sale.billingType === "BOLETA"
+      ? "BOLETA DE VENTA ELECTRÓNICA"
+      : "NOTA DE VENTA";
 
-  let msg = `🛍️ *COMPROBANTE DE VENTA ELECTRÓNICO*\n`;
+  const business = (sale.businessName || "CONTROL & FINANZAS").trim();
+  let msg = `🧾 *${headerTitle}*\n`;
   msg += `🏢 *${business}*\n`;
   msg += `📅 *Fecha:* ${dateStr}\n`;
   msg += `👤 *Cliente:* ${client}\n`;
   if (sale.clientDocumentNumber) {
     msg += `📄 *Doc:* ${sale.clientDocumentNumber}\n`;
   }
-  msg += `🧾 *Comprobante N°:* ${ticketRef}\n`;
+  msg += `📄 *${isDocFiscal ? "Comprobante N°:" : "Nota de Venta N°:"}* ${ticketRef}\n`;
   msg += `💳 *Método de Pago:* ${sale.paymentMethod || "Efectivo / Transferencia"}\n`;
   msg += `─────────────────────────\n`;
   msg += `*DETALLE DE PRODUCTOS:*\n`;
@@ -95,7 +101,7 @@ export function shareProductOfferViaWhatsApp(
   if (hasOffer && regularPrice > promoPrice) {
     const discountPct = Math.round(((regularPrice - promoPrice) / regularPrice) * 100);
     msg += `🔥 *PRECIO DE OFERTA:* *${formatCurrency(promoPrice)}* ` +
-           `~(${formatCurrency(regularPrice)})~ ¡-${discountPct}% OFF!\n`;
+      `~(${formatCurrency(regularPrice)})~ ¡-${discountPct}% OFF!\n`;
   } else {
     msg += `💵 *Precio:* *${formatCurrency(regularPrice)}*\n`;
   }

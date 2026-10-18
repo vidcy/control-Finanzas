@@ -233,24 +233,30 @@ export default function BusinessInventoryPage() {
   const editingSiblings = useMemo(() => {
     if (!editingProduct) return [];
     const seriesMeta = decodeSeriesMetadata(editingProduct.description);
-    const cleanTarget = cleanModelName(editingProduct.name).toLowerCase();
-    return products.filter((p) => {
-      if (seriesMeta?.seriesId) {
+    if (!seriesMeta && editingProduct.unit !== "Serie") return [];
+    if (seriesMeta?.seriesId) {
+      return products.filter((p) => {
         const pMeta = decodeSeriesMetadata(p.description);
-        if (pMeta?.seriesId && pMeta.seriesId === seriesMeta.seriesId) return true;
-      }
-      return (
-        cleanModelName(p.name).toLowerCase() === cleanTarget &&
-        (p.brandId || "") === (editingProduct.brandId || "")
+        return pMeta?.seriesId === seriesMeta.seriesId;
+      });
+    }
+    if (editingProduct.unit === "Serie") {
+      const cleanTarget = cleanModelName(editingProduct.name).toLowerCase();
+      return products.filter(
+        (p) =>
+          p.unit === "Serie" &&
+          cleanModelName(p.name).toLowerCase() === cleanTarget &&
+          (p.brandId || "") === (editingProduct.brandId || "")
       );
-    });
+    }
+    return [];
   }, [editingProduct, products]);
 
   const isSeriesEligible = useMemo(() => {
     if (!editingProduct) return false;
     const seriesMeta = decodeSeriesMetadata(editingProduct.description);
-    return editingProduct.unit === "Serie" || Boolean(seriesMeta) || editingSiblings.length > 1;
-  }, [editingProduct, editingSiblings]);
+    return editingProduct.unit === "Serie" || Boolean(seriesMeta);
+  }, [editingProduct]);
   const [isRestockModalOpen, setIsRestockModalOpen] = useState(false);
   const [restockProduct, setRestockProduct] = useState<Product | null>(null);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -1085,26 +1091,30 @@ export default function BusinessInventoryPage() {
       setOfferDurationDays(Number(localStorage.getItem("veaz_offer_days") || "3"));
       setApplyOfferToSeries(false);
 
-      // Cargar configuración de serie si aplica
+      // Cargar configuración de serie si aplica únicamente a productos de tipo Serie
       const seriesMeta = decodeSeriesMetadata(product.description);
-      const cleanTarget = cleanModelName(product.name).toLowerCase();
-      const seriesId = seriesMeta?.seriesId;
-      const siblings = products.filter((p) => {
-        if (seriesId) {
-          const pMeta = decodeSeriesMetadata(p.description);
-          if (pMeta?.seriesId && pMeta.seriesId === seriesId) return true;
-        }
-        return (
-          cleanModelName(p.name).toLowerCase() === cleanTarget &&
-          (p.brandId || "") === (product.brandId || "")
-        );
-      });
-
-      const isSeries = product.unit === "Serie" || Boolean(seriesMeta) || siblings.length > 1;
-      let editConfig = defaultSeriesConfig;
-
+      const isSeries = product.unit === "Serie" || Boolean(seriesMeta);
+      let siblings: Product[] = [];
       if (isSeries) {
-        editConfig = buildEditSeriesConfig(product, siblings);
+        if (seriesMeta?.seriesId) {
+          siblings = products.filter((p) => {
+            const pMeta = decodeSeriesMetadata(p.description);
+            return pMeta?.seriesId === seriesMeta.seriesId;
+          });
+        } else {
+          const cleanTarget = cleanModelName(product.name).toLowerCase();
+          siblings = products.filter(
+            (p) =>
+              p.unit === "Serie" &&
+              cleanModelName(p.name).toLowerCase() === cleanTarget &&
+              (p.brandId || "") === (product.brandId || "")
+          );
+        }
+      }
+
+      let editConfig = defaultSeriesConfig;
+      if (isSeries) {
+        editConfig = buildEditSeriesConfig(product, siblings.length > 0 ? siblings : [product]);
         setStandaloneTaco(editConfig.taco || "");
         setSeriesConfig(editConfig);
         setEditScope("SERIES");
@@ -1114,7 +1124,6 @@ export default function BusinessInventoryPage() {
         setSeriesConfig(defaultSeriesConfig);
         setEditScope("SINGLE");
       }
-
       const initialCost = isSeries && editConfig.costPricePerUnit > 0
         ? editConfig.costPricePerUnit
         : product.costPrice;
@@ -1473,7 +1482,7 @@ export default function BusinessInventoryPage() {
 
         if (!editingProduct) {
           // Registrar serie nueva
-          const createPromises = seriesConfig.curve.map(async (item) => {
+          for (const item of seriesConfig.curve) {
             const sizeStock = item.stock !== undefined
               ? Math.max(0, Number(item.stock))
               : (seriesConfig.seriesStock || 0) * (item.ratio || 1);
@@ -1493,7 +1502,7 @@ export default function BusinessInventoryPage() {
               },
             ];
 
-            return createProductRequest({
+            await createProductRequest({
               name: sizeName,
               description: finalDesc,
               sku: sizeSku,
@@ -1512,9 +1521,7 @@ export default function BusinessInventoryPage() {
               commissionValue: formData.commissionValue,
               priceWithAgent: formData.priceWithAgent,
             } as any);
-          });
-
-          await Promise.all(createPromises);
+          }
           toast.success(
             `Serie registrada: ${seriesConfig.seriesStock} series (${totalUnits * seriesConfig.seriesStock} pares en ${seriesConfig.curve.length} tallas)`
           );
@@ -1536,99 +1543,95 @@ export default function BusinessInventoryPage() {
           const siblings = matchedSiblings.length > 0 ? matchedSiblings : [editingProduct];
           const finalAdjustedPrice = isOfferActive && Number(formData.adjustedPrice) > 0 ? Number(formData.adjustedPrice) : null;
 
-          // 1. Actualizar cada talla existente con su stock definido en la curva
-          await Promise.all(
-            siblings.map((sibling) => {
-              const sibSize = extractSizeFromProduct(sibling);
-              const sibCurveItem = seriesConfig.curve.find((c) => String(c.size).trim() === String(sibSize).trim());
+          // 1. Actualizar cada talla existente con su stock definido en la curva secuencialmente
+          for (const sibling of siblings) {
+            const sibSize = extractSizeFromProduct(sibling);
+            const sibCurveItem = seriesConfig.curve.find((c) => String(c.size).trim() === String(sibSize).trim());
 
-              // Stock exacto definido en el configurador o conservado
-              const finalSibStock = sibCurveItem && sibCurveItem.stock !== undefined
-                ? Math.max(0, Number(sibCurveItem.stock))
-                : (Number(sibling.stock) || 0);
+            const finalSibStock = sibCurveItem && sibCurveItem.stock !== undefined
+              ? Math.max(0, Number(sibCurveItem.stock))
+              : (Number(sibling.stock) || 0);
 
-              const sizeSku = formData.sku ? `${formData.sku.trim()}-${sibSize}` : sibling.sku;
+            const sizeSku = formData.sku ? `${formData.sku.trim()}-${sibSize}` : sibling.sku;
 
-              const existingCompletePres = sibling.presentations?.find(
-                (pr: any) => pr.equivalence === totalUnits || pr.name?.toLowerCase().includes("serie")
-              );
-              const existingUnitPres = sibling.presentations?.find(
-                (pr: any) => pr.equivalence === 1 || pr.name?.toLowerCase().includes("par") || pr.name?.toLowerCase().includes("talla")
-              );
-
-              return updateProductRequest(sibling.id, {
-                name: `${cleanName} - Talla ${sibSize}`,
-                sku: sizeSku || undefined,
-                imageUrl: finalImageUrl || undefined,
-                brandId: formData.brandId || undefined,
-                familyId: formData.familyId || undefined,
-                color: formData.color || undefined,
-                costPrice: costUnit,
-                salePrice: saleUnit,
-                stock: finalSibStock,
-                minStock: formData.minStock || 5,
-                adjustedPrice: finalAdjustedPrice,
-                unit: "Serie",
-                description: finalDesc,
-                presentations: [
-                  {
-                    id: existingCompletePres?.id,
-                    name: `Serie Completa (${totalUnits} pares)`,
-                    equivalence: totalUnits,
-                    price: saleSeries,
-                  },
-                  {
-                    id: existingUnitPres?.id,
-                    name: `Par (Talla ${sibSize})`,
-                    equivalence: 1,
-                    price: saleUnit,
-                  },
-                ],
-              } as any);
-            })
-          );
-
-          // 2. Crear tallas nuevas añadidas a la curva
-          const existingSizes = new Set(siblings.map((s) => extractSizeFromProduct(s).trim()));
-          const newCurveItems = seriesConfig.curve.filter((c) => !existingSizes.has(String(c.size).trim()));
-          if (newCurveItems.length > 0) {
-            await Promise.all(
-              newCurveItems.map((item) => {
-                const sizeStock = item.stock !== undefined
-                  ? Math.max(0, Number(item.stock))
-                  : ((seriesConfig.seriesStock > 0 ? seriesConfig.seriesStock : 1) * (item.ratio || 1));
-                const sizeSku = formData.sku ? `${formData.sku.trim()}-${item.size}` : undefined;
-                return createProductRequest({
-                  name: `${cleanName} - Talla ${item.size}`,
-                  description: finalDesc,
-                  sku: sizeSku,
-                  color: formData.color || undefined,
-                  costPrice: costUnit,
-                  salePrice: saleUnit,
-                  adjustedPrice: finalAdjustedPrice,
-                  stock: sizeStock,
-                  minStock: formData.minStock || 5,
-                  unit: "Serie",
-                  imageUrl: finalImageUrl || undefined,
-                  presentations: [
-                    {
-                      name: `Serie Completa (${totalUnits} pares)`,
-                      equivalence: totalUnits,
-                      price: saleSeries,
-                    },
-                    {
-                      name: `Par (Talla ${item.size})`,
-                      equivalence: 1,
-                      price: saleUnit,
-                    },
-                  ],
-                  brandId: formData.brandId || undefined,
-                  familyId: formData.familyId || undefined,
-                } as any);
-              })
+            const existingCompletePres = sibling.presentations?.find(
+              (pr: any) => pr.equivalence === totalUnits || pr.name?.toLowerCase().includes("serie")
             );
+            const existingUnitPres = sibling.presentations?.find(
+              (pr: any) => pr.equivalence === 1 || pr.name?.toLowerCase().includes("par") || pr.name?.toLowerCase().includes("talla")
+            );
+
+            await updateProductRequest(sibling.id, {
+              name: `${cleanName} - Talla ${sibSize}`,
+              sku: sizeSku || undefined,
+              imageUrl: finalImageUrl || undefined,
+              brandId: formData.brandId || undefined,
+              familyId: formData.familyId || undefined,
+              color: formData.color || undefined,
+              costPrice: costUnit,
+              salePrice: saleUnit,
+              stock: finalSibStock,
+              minStock: formData.minStock || 5,
+              adjustedPrice: finalAdjustedPrice,
+              unit: "Serie",
+              description: finalDesc,
+              presentations: [
+                {
+                  id: existingCompletePres?.id,
+                  name: `Serie Completa (${totalUnits} pares)`,
+                  equivalence: totalUnits,
+                  price: saleSeries,
+                },
+                {
+                  id: existingUnitPres?.id,
+                  name: `Par (Talla ${sibSize})`,
+                  equivalence: 1,
+                  price: saleUnit,
+                },
+              ],
+            } as any);
           }
 
+          // 2. Crear tallas nuevas añadidas a la curva secuencialmente
+          const existingSizes = new Set(siblings.map((s) => extractSizeFromProduct(s).trim()));
+          const newCurveItems = seriesConfig.curve.filter((c) => !existingSizes.has(String(c.size).trim()));
+          for (const item of newCurveItems) {
+            const sizeStock = item.stock !== undefined
+              ? Math.max(0, Number(item.stock))
+              : ((seriesConfig.seriesStock > 0 ? seriesConfig.seriesStock : 1) * (item.ratio || 1));
+            const sizeSku = formData.sku ? `${formData.sku.trim()}-${item.size}` : undefined;
+            const presList: Presentation[] = [
+              {
+                name: `Serie Completa (${totalUnits} pares)`,
+                equivalence: totalUnits,
+                price: saleSeries,
+              },
+              {
+                name: `Par (Talla ${item.size})`,
+                equivalence: 1,
+                price: saleUnit,
+              },
+            ];
+            await createProductRequest({
+              name: `${cleanName} - Talla ${item.size}`,
+              description: finalDesc,
+              sku: sizeSku,
+              color: formData.color || undefined,
+              costPrice: costUnit,
+              salePrice: saleUnit,
+              adjustedPrice: finalAdjustedPrice || undefined,
+              stock: sizeStock,
+              minStock: formData.minStock || 5,
+              unit: "Serie",
+              imageUrl: finalImageUrl || undefined,
+              presentations: presList,
+              brandId: formData.brandId || undefined,
+              familyId: formData.familyId || undefined,
+              commissionType: formData.commissionType,
+              commissionValue: formData.commissionValue,
+              priceWithAgent: formData.priceWithAgent,
+            } as any);
+          }
           toast.success(`Serie actualizada con éxito: ${siblings.length} tallas sincronizadas.`);
         }
 
@@ -4817,7 +4820,7 @@ export default function BusinessInventoryPage() {
         title={
           editingProduct
             ? `Editar Producto: SKU ${editingProduct.sku || 'S/SKU'} (Cód #${String((editingProduct as any).customCode || 0).padStart(4, "0")})`
-            : "Nuevo Producto / Calzado"
+            : (formData.unit === "Serie" ? "Registrar Serie de Calzado" : "Nuevo Producto")
         }
       >
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -4867,10 +4870,10 @@ export default function BusinessInventoryPage() {
                   <div>
                     <div className="text-xs font-black flex items-center gap-1.5">
                       <Package className="w-4 h-4" />
-                      Modificar SOLO este Registro / Talla
+                      {extractSizeFromProduct(editingProduct) ? `Modificar SOLO Talla ${extractSizeFromProduct(editingProduct)}` : "Modificar SOLO este Producto"}
                     </div>
                     <div className={`text-[10px] font-medium mt-0.5 ${editScope === "SINGLE" ? "text-amber-100" : "text-gray-500"}`}>
-                      Cambia únicamente Talla ${extractSizeFromProduct(editingProduct)} (su stock individual, precio o SKU)
+                      {extractSizeFromProduct(editingProduct) ? `Cambia únicamente Talla ${extractSizeFromProduct(editingProduct)} (su stock individual, precio o SKU)` : "Cambia únicamente este registro sin afectar otros productos"}
                     </div>
                   </div>
                   {editScope === "SINGLE" && <Check className="w-4 h-4 shrink-0" />}
@@ -5679,9 +5682,15 @@ export default function BusinessInventoryPage() {
             >
               <Check className="w-4 h-4" />
               {editingProduct ? (
-                editScope === "SINGLE"
-                  ? `Guardar Solo Talla ${extractSizeFromProduct(editingProduct)}`
-                  : `Actualizar Toda la Serie (${editingSiblings.length} tallas)`
+                isSeriesEligible ? (
+                  editScope === "SERIES"
+                    ? `Actualizar Toda la Serie (${editingSiblings.length} tallas)`
+                    : extractSizeFromProduct(editingProduct)
+                      ? `Guardar Talla ${extractSizeFromProduct(editingProduct)}`
+                      : "Guardar Producto"
+                ) : (
+                  "Guardar Producto"
+                )
               ) : formData.unit === "Serie" ? (
                 `Registrar Serie Completa (${calculateCurveTotalUnits(seriesConfig.curve)} pares)`
               ) : (

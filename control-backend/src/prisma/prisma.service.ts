@@ -39,7 +39,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
             try {
               // We use the base client instance (self) to perform the audit log write,
               // preventing infinite recursion and avoiding undefined context.
-              await (self as any).auditLog.create({
+              (self as any).auditLog.create({
                 data: {
                   action: 'INSERT',
                   tableName: model,
@@ -49,7 +49,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
                   userId: context?.userId || null,
                   userEmail: context?.userEmail || null,
                 },
-              });
+              }).catch((err: any) => console.warn('AuditLog background error:', err?.message));
             } catch (e) {
               console.error('AuditLog Error (create):', e);
             }
@@ -82,7 +82,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
             const result = await query(args);
 
             try {
-              await (self as any).auditLog.create({
+              (self as any).auditLog.create({
                 data: {
                   action: 'UPDATE',
                   tableName: model,
@@ -94,7 +94,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
                   userId: context?.userId || null,
                   userEmail: context?.userEmail || null,
                 },
-              });
+              }).catch((err: any) => console.warn('AuditLog background error:', err?.message));
             } catch (e) {
               console.error('AuditLog Error (update):', e);
             }
@@ -130,7 +130,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
             const result = await query(args);
 
             try {
-              await (self as any).auditLog.create({
+              (self as any).auditLog.create({
                 data: {
                   action: 'DELETE',
                   tableName: model,
@@ -142,7 +142,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
                   userId: context?.userId || null,
                   userEmail: context?.userEmail || null,
                 },
-              });
+              }).catch((err: any) => console.warn('AuditLog background error:', err?.message));
             } catch (e) {
               console.error('AuditLog Error (delete):', e);
             }
