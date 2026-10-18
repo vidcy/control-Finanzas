@@ -25,10 +25,11 @@ import { BranchesModule } from './branches/branches.module';
 import { AdvisorsModule } from './advisors/advisors.module';
 import { CommissionModelsModule } from './commission-models/commission-models.module';
 import { SalesModule } from './sales/sales.module';
+import { BillingModule } from './billing/billing.module';
 
 @Module({
   imports: [
-    PassportModule.register({ defaultStrategy: 'jwt' }), // ðŸ‘ˆ CLAVE
+    PassportModule.register({ defaultStrategy: 'jwt' }),
     AuthModule,
     PendingTransactionModule,
     TransactionsModule,
@@ -48,6 +49,7 @@ import { SalesModule } from './sales/sales.module';
     CommissionModelsModule,
     SalesModule,
     LeadsModule,
+    BillingModule,
     ConfigModule.forRoot({
       isGlobal: true,
     }),
@@ -62,6 +64,6 @@ import { SalesModule } from './sales/sales.module';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(TimezoneMiddleware).forRoutes('*'); // â† se aplica a TODAS las rutas
+    consumer.apply(TimezoneMiddleware).forRoutes('*');
   }
 }

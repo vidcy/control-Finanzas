@@ -17,7 +17,8 @@ export const registerRequest = async (
   status?: boolean,
   profiles?: string[],
   parentId?: string | null,
-  blockedProfiles?: string[]
+  blockedProfiles?: string[],
+  hasElectronicBilling?: boolean
 ) => {
   try {
     const res = await API.post("/users", {
@@ -30,13 +31,14 @@ export const registerRequest = async (
       profiles,
       parentId,
       blockedProfiles,
+      hasElectronicBilling: !!hasElectronicBilling,
     });
 
     // 👇 SI LLEGAMOS AQUÍ = backend respondió 200 OK
     return res.data;
   } catch (error: any) {
     // 👇 SI BACKEND RESPONDE 401 CAEMOS AQUÍ
-    throw new Error(error?.response?.data?.message || "Error al registrarse");
+    throw new Error(error?.response?.data?.message || "Error al registrar usuario");
   }
 };
 export const getUserRequest = async () => {
@@ -168,6 +170,15 @@ export const queryDocumentRequest = async (type: string, number: string) => {
     return res.data;
   } catch (error: any) {
     throw new Error(error?.response?.data?.message || "No se pudo obtener información del documento");
+  }
+};
+
+export const deleteUserRequest = async (id: string) => {
+  try {
+    const res = await API.delete(`/users/${id}`);
+    return res.data;
+  } catch (error: any) {
+    throw new Error(error?.response?.data?.message || "Error al eliminar usuario");
   }
 };
 

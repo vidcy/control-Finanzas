@@ -18,8 +18,14 @@ export const ProtectedRoute = ({ children, role }: { children: JSX.Element; role
     );
   }
 
-  if (role && user.role !== role) {
-    return <Navigate to="/workspace-selection" />;
+  if (role) {
+    const isAdminRole = user.role === "ADMIN" || user.role === "SUPERADMIN";
+    if (role === "ADMIN" && !isAdminRole) {
+      return <Navigate to="/workspace-selection" />;
+    }
+    if (role !== "ADMIN" && user.role !== role) {
+      return <Navigate to="/workspace-selection" />;
+    }
   }
 
   const profiles = Array.isArray(user.profiles) ? user.profiles : [];

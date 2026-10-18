@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE `Advisor` ADD COLUMN `commissionType` VARCHAR(191) NOT NULL DEFAULT 'PERCENT',
+    ADD COLUMN `commissionValue` DOUBLE NOT NULL DEFAULT 0.0;

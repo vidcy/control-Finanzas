@@ -247,6 +247,13 @@ export class UsersController {
     return this.usersService.inactiveUserRequest(id);
   }
 
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @Delete(':id')
+  deleteUser(@Param('id') id: string) {
+    return this.usersService.deleteUser(id);
+  }
+
   @UseGuards(JwtAuthGuard)
   @Get('api/document/:type/:number')
   async queryDocument(@Param('type') type: string, @Param('number') number: string) {

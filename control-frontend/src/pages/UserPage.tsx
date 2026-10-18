@@ -19,6 +19,7 @@ import {
   Receipt,
   Zap,
   Download,
+  Trash2,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import {
@@ -27,6 +28,7 @@ import {
   listUsersRequest,
   registerRequest,
   updateUserRequest,
+  deleteUserRequest,
 } from "../services/user.api";
 
 type User = {
@@ -35,7 +37,7 @@ type User = {
   lastName: string;
   email: string;
   password?: string;
-  role: "ADMIN" | "USER";
+  role: "SUPERADMIN" | "ADMIN" | "USER" | string;
   status: "TRUE" | "FALSE";
   profiles: string[];
   blockedProfiles: string[];
@@ -99,6 +101,7 @@ export default function UserPage() {
     });
     setIsWorker(false);
     setParentId("");
+    setHasElectronicBilling(false);
     setIsCreateOpen(true);
   };
 
@@ -124,6 +127,10 @@ export default function UserPage() {
       toast.error("Debe seleccionar un cliente/dueño vinculado.");
       return;
     }
+    if (!formData.password || formData.password.length < 6) {
+      toast.error("La contraseña debe tener al menos 6 caracteres.");
+      return;
+    }
     setIsSaving(true);
     try {
       const ALL_KEYS = [
@@ -143,7 +150,8 @@ export default function UserPage() {
         true,
         formData.profiles,
         isWorker ? parentId : null,
-        computedBlockedProfiles
+        computedBlockedProfiles,
+        !isWorker && hasElectronicBilling
       );
       toast.success("Usuario creado exitosamente");
       await fetchUsers();
@@ -199,7 +207,7 @@ export default function UserPage() {
 
   const toggleStatus = async (user: User) => {
     try {
-      if (user.role === "ADMIN") {
+      if (user.role === "ADMIN" || user.role === "SUPERADMIN") {
         toast.error("No se puede desactivar un administrador");
         return;
       }
@@ -217,6 +225,28 @@ export default function UserPage() {
     }
   };
 
+  const handleDeleteUser = async (user: User) => {
+    if (user.role === "ADMIN" || user.role === "SUPERADMIN") {
+      toast.error("No se puede eliminar a un administrador");
+      return;
+    }
+    const confirmed = window.confirm(
+      `¿Estás absolutamente seguro de eliminar al usuario "${user.name} ${user.lastName}" (${user.email})?\n\nEsta acción es irreversible y eliminará todos sus datos vinculados.`
+    );
+    if (!confirmed) return;
+
+    const loadingToast = toast.loading("Eliminando usuario...");
+    try {
+      await deleteUserRequest(user.id);
+      toast.dismiss(loadingToast);
+      toast.success("Usuario eliminado correctamente");
+      await fetchUsers();
+    } catch (err: any) {
+      toast.dismiss(loadingToast);
+      toast.error(err.message || "Error al eliminar usuario");
+    }
+  };
+
   const fetchUsers = async () => {
     setLoading(true);
     try {
@@ -226,7 +256,7 @@ export default function UserPage() {
         name: u.name,
         lastName: u.lastName,
         email: u.email,
-        role: u.role === "ADMIN" ? "ADMIN" : "USER",
+        role: u.role || "USER",
         status: u.isActive ? "TRUE" : "FALSE",
         profiles: Array.isArray(u.profiles) ? u.profiles : [],
         blockedProfiles: Array.isArray(u.blockedProfiles) ? u.blockedProfiles : [],
@@ -509,6 +539,7 @@ export default function UserPage() {
                   <th className="p-6">Rol de Acceso</th>
                   <th className="p-6">Módulo Personal</th>
                   <th className="p-6">Módulo Negocios</th>
+                  <th className="p-6">Fact. Electrónica</th>
                   <th className="p-6">Estado</th>
                   <th className="p-6 pr-8 text-center">Acciones</th>
                 </tr>
@@ -555,7 +586,7 @@ export default function UserPage() {
                       </td>
                       <td className="p-6">
                         <span
-                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider ${user.role === "ADMIN" ? "bg-indigo-100 text-indigo-700 border border-indigo-200" : "bg-gray-100 text-gray-600 border border-gray-200"}`}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider ${user.role === "ADMIN" || user.role === "SUPERADMIN" ? "bg-indigo-100 text-indigo-700 border border-indigo-200" : "bg-gray-100 text-gray-600 border border-gray-200"}`}
                         >
                           <ShieldCheck className="w-3.5 h-3.5" />
                           {user.role}
@@ -718,6 +749,15 @@ export default function UserPage() {
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
+                          {user.role !== "ADMIN" && user.role !== "SUPERADMIN" && (
+                            <button
+                              onClick={() => handleDeleteUser(user)}
+                              className="p-3 bg-white border border-gray-100 text-rose-500 hover:bg-rose-600 hover:text-white rounded-2xl transition-all shadow-sm"
+                              title="Eliminar Usuario Definitivamente"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -746,16 +786,28 @@ export default function UserPage() {
                         <p className="text-xs text-gray-400 font-medium">{user.email}</p>
                       </div>
                     </div>
-                    <button
-                      onClick={() => handleOpenEdit(user)}
-                      className="p-3 bg-white border border-gray-100 text-purple-600 rounded-xl shadow-sm"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                  </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleOpenEdit(user)}
+                          className="p-2.5 bg-white border border-gray-100 text-purple-600 rounded-xl shadow-sm"
+                          title="Editar"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        {user.role !== "ADMIN" && user.role !== "SUPERADMIN" && (
+                          <button
+                            onClick={() => handleDeleteUser(user)}
+                            className="p-2.5 bg-white border border-rose-100 text-rose-500 rounded-xl shadow-sm hover:bg-rose-50"
+                            title="Eliminar"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
 
                   <div className="flex items-center justify-between gap-4 pt-2">
-                    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider ${user.role === "ADMIN" ? "bg-indigo-100 text-indigo-700" : "bg-gray-100 text-gray-600"}`}>
+                    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider ${user.role === "ADMIN" || user.role === "SUPERADMIN" ? "bg-indigo-100 text-indigo-700" : "bg-gray-100 text-gray-600"}`}>
                       <ShieldCheck className="w-3.5 h-3.5" />
                       {user.role}
                     </span>
@@ -856,6 +908,25 @@ export default function UserPage() {
                             /> Habilitado
                           </label>
                         </div>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-gray-800">Fact. Electrónica</span>
+                        <button
+                          onClick={async () => {
+                            const newVal = !user.hasElectronicBilling;
+                            try {
+                              await updateUserRequest(user.id, { hasElectronicBilling: newVal });
+                              toast.success(newVal ? "Facturación electrónica activada" : "Facturación electrónica desactivada");
+                              await fetchUsers();
+                            } catch (err: any) {
+                              toast.error(err.message || "Error");
+                            }
+                          }}
+                          className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-lg transition-all ${user.hasElectronicBilling ? "bg-emerald-500 text-white" : "bg-gray-100 text-gray-500"}`}
+                        >
+                          {user.hasElectronicBilling ? "Activado" : "Desactivado"}
+                        </button>
                       </div>
                     </div>
                   )}              </div>
@@ -1114,6 +1185,32 @@ export default function UserPage() {
                       </div>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* FACTURACIÓN ELECTRÓNICA - ALTA */}
+              {!isWorker && (
+                <div className="space-y-3 pt-4 border-t border-purple-100/50">
+                  <div className="flex items-center justify-between p-4 bg-emerald-50/60 rounded-2xl border border-emerald-100">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-emerald-500 rounded-xl shadow">
+                        <Receipt className="w-4 h-4 text-white" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-black text-gray-800">Facturación Electrónica (SUNAT)</p>
+                        <p className="text-xs text-gray-500 font-medium">Habilitar emisión de Boletas y Facturas para este negocio</p>
+                      </div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="sr-only peer"
+                        checked={hasElectronicBilling}
+                        onChange={(e) => setHasElectronicBilling(e.target.checked)}
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                    </label>
+                  </div>
                 </div>
               )}
             </div>

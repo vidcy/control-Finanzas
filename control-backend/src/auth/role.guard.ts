@@ -31,8 +31,11 @@ export class RolesGuard implements CanActivate {
     }
     //  console.log('user', user);
 
-    // 3. validamos rol
-    const hasRole = requiredRoles.includes(user.role);
+    // 3. validamos rol (SUPERADMIN tiene acceso total a todos los módulos)
+    if (user.role === 'SUPERADMIN') {
+      return true;
+    }
+    const hasRole = requiredRoles.includes(user.role) || (requiredRoles.includes('ADMIN') && user.role === 'SUPERADMIN');
 
     if (!hasRole) {
       throw new ForbiddenException('No tienes permisos');

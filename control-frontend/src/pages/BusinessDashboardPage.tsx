@@ -16,8 +16,15 @@ import {
   ArrowUpRight,
   Clock,
   AlertTriangle,
+  FileText,
+  ShieldCheck,
+  Receipt,
+  Sparkles,
+  CreditCard,
+  Building2,
 } from "lucide-react";
 import { Link } from "react-router-dom";
+import { getBillingStatsRequest, type BillingStats } from "../services/billing.api";
 import {
   AreaChart,
   Area,
@@ -54,6 +61,7 @@ export default function BusinessDashboardPage() {
   const [recentSalesList, setRecentSalesList] = useState<any[]>([]);
   const [lowStockProducts, setLowStockProducts] = useState<any[]>([]);
   const [isLowStockModalOpen, setIsLowStockModalOpen] = useState(false);
+  const [billingStats, setBillingStats] = useState<BillingStats | null>(null);
 
   useEffect(() => {
     loadData();
@@ -62,11 +70,13 @@ export default function BusinessDashboardPage() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [txs, prods, rawSales] = await Promise.all([
+      const [txs, prods, rawSales, bStats] = await Promise.all([
         getTransactionsRequest({ workspace: "BUSINESS" }),
         getProductsRequest(),
         getSalesRequest().catch(() => []),
+        getBillingStatsRequest().catch(() => null),
       ]);
+      setBillingStats(bStats);
 
       const safeTx = txs.filter((t: any) => t.status === "PAID");
 
@@ -304,12 +314,26 @@ export default function BusinessDashboardPage() {
                   </p>
                 </div>
               </div>
-              <div className="flex gap-3 relative z-10">
+              <div className="flex flex-wrap items-center gap-2.5 relative z-10">
+                <Link
+                  to="/business-billing"
+                  className="bg-white/90 hover:bg-white text-blue-900 px-4 py-3 rounded-2xl font-bold flex items-center gap-2 shadow-sm hover:shadow-md transition-all duration-300 active:scale-95 border border-blue-200"
+                >
+                  <FileText className="w-4 h-4 text-blue-600" />
+                  Facturación SUNAT
+                </Link>
+                <Link
+                  to="/business-cash-register"
+                  className="bg-white/90 hover:bg-white text-slate-800 px-4 py-3 rounded-2xl font-bold flex items-center gap-2 shadow-sm hover:shadow-md transition-all duration-300 active:scale-95 border border-slate-200"
+                >
+                  <Wallet className="w-4 h-4 text-slate-600" />
+                  Caja
+                </Link>
                 <Link
                   to="/business-pos"
-                  className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white px-6 py-3.5 rounded-2xl font-bold flex items-center gap-2 hover:shadow-xl hover:shadow-indigo-500/20 transition-all duration-300 active:scale-95 border border-indigo-500/10"
+                  className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white px-5 py-3 rounded-2xl font-bold flex items-center gap-2 hover:shadow-xl hover:shadow-indigo-500/20 transition-all duration-300 active:scale-95 border border-indigo-500/10"
                 >
-                  <DollarSign className="w-5 h-5 text-white" />
+                  <DollarSign className="w-4 h-4 text-white" />
                   Punto de Venta POS
                 </Link>
               </div>
@@ -323,6 +347,56 @@ export default function BusinessDashboardPage() {
           </div>
         ) : (
           <>
+            {/* FISCAL & SUNAT INTELLIGENCE COCKPIT */}
+            <div className="bg-gradient-to-r from-blue-950 via-indigo-950 to-slate-900 rounded-[2rem] p-6 text-white shadow-lg border border-blue-800/60 relative overflow-hidden">
+              <div className="absolute right-0 top-0 h-full w-1/3 bg-blue-500/10 blur-2xl pointer-events-none" />
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
+                <div className="flex items-center gap-4">
+                  <div className="h-12 w-12 rounded-2xl bg-white/10 flex items-center justify-center text-blue-300 border border-white/10 shrink-0">
+                    <ShieldCheck className="h-7 w-7 text-emerald-400" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/20 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                        {billingStats?.credentialsConfigured ? "CONECTADO A SUNAT" : "MODO EMISIÓN BETA READY"}
+                      </span>
+                      <span className="text-xs font-semibold text-slate-300">UBL 2.1 • Hash SHA-256</span>
+                    </div>
+                    <h4 className="text-lg font-bold text-white mt-0.5">
+                      {billingStats?.issuerRuc && billingStats.issuerRuc !== "No configurado"
+                        ? `RUC ${billingStats.issuerRuc} • ${billingStats.issuerName}`
+                        : "Facturación Electrónica Integrada Oficial"}
+                    </h4>
+                    <p className="text-xs text-slate-300">
+                      Emisión de Facturas F001, Boletas B001, Notas de Crédito y Débito con validación tributaria directa.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-5 lg:border-l lg:border-white/10 lg:pl-6">
+                  <div>
+                    <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Facturado en Comprobantes</div>
+                    <div className="text-xl font-black text-white font-mono">
+                      S/ {(billingStats?.totalInvoicedPen || 0).toFixed(2)}
+                    </div>
+                  </div>
+                  <div className="h-8 w-px bg-white/10 hidden sm:block" />
+                  <div>
+                    <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">I.G.V. Liquidado (18%)</div>
+                    <div className="text-xl font-black text-indigo-300 font-mono">
+                      S/ {(billingStats?.totalIgvPen || 0).toFixed(2)}
+                    </div>
+                  </div>
+                  <Link
+                    to="/business-billing"
+                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-md transition-all active:scale-95"
+                  >
+                    <FileText className="h-4 w-4" />
+                    Módulo de Facturación
+                  </Link>
+                </div>
+              </div>
+            </div>
             {/* ALERTA DE STOCK CRÍTICO */}
             {metrics.lowStockCount > 0 && (
               <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-100 rounded-3xl p-5 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 transition-all duration-300">

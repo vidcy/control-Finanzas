@@ -197,6 +197,7 @@ export interface GroupedShoeModel {
   sku: string;
   name: string;
   brandName: string;
+  brand?: string;
   familyName: string;
   color: string;
   colorHex: string;

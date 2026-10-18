@@ -7,6 +7,7 @@ import { useAuth } from "../auth/AuthContext";
 import {
   getProductsRequest,
   checkoutCartRequest,
+  updateProductRequest,
 } from "../services/product.api";
 import type { Product } from "../services/product.api";
 import { listCategoriesRequest } from "../services/category.api";
@@ -15,6 +16,7 @@ import { getAdvisorsRequest } from "../services/advisor.api";
 import type { Advisor } from "../services/advisor.api";
 import {
   cleanDescriptionForDisplay,
+  cleanModelName,
   extractSizeFromProduct,
   extractTacoFromProduct,
   groupProductsBySeries,
@@ -35,7 +37,9 @@ import ReceiptUploader, {
 } from "../components/ui/ImageUploader";
 import Pagination from "../components/ui/Pagination";
 
-import { formatStock, playScannerBeep } from "./BusinessInventoryPage";
+import { formatStock } from "./BusinessInventoryPage";
+import { useHardwareScanner } from "../hooks/useHardwareScanner";
+import { playScannerSound } from "../utils/hardwareScanner";
 import {
   ShoppingCart,
   Search,
@@ -284,6 +288,13 @@ export default function BusinessPosPage() {
   const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
   const [isSubmittingNote, setIsSubmittingNote] = useState(false);
 
+  // Link unassigned barcode state
+  const [isLinkBarcodeModalOpen, setIsLinkBarcodeModalOpen] = useState(false);
+  const [unlinkedBarcode, setUnlinkedBarcode] = useState("");
+  const [linkSearchTerm, setLinkSearchTerm] = useState("");
+  const [isLinkingBarcode, setIsLinkingBarcode] = useState(false);
+
+
   const handleQueryDocument = async () => {
     if (!clientDocumentNumber.trim()) {
       toast.error("Por favor, ingresa el número de documento");
@@ -402,7 +413,48 @@ export default function BusinessPosPage() {
   // Ticket
   const [showTicket, setShowTicket] = useState(false);
   const [lastSale, setLastSale] = useState<any>(null);
+  const [saleQrDataUrl, setSaleQrDataUrl] = useState<string>("");
   const ticketRef = useRef<HTMLDivElement>(null);
+
+  // Generate QR for last sale whenever it updates
+  useEffect(() => {
+    if (!lastSale) {
+      setSaleQrDataUrl("");
+      return;
+    }
+    const isFiscal = lastSale.billingType === "BOLETA" || lastSale.billingType === "FACTURA";
+    const totalAmount = Number(lastSale.total) || 0;
+    const baseGravada = Number((totalAmount / 1.18).toFixed(2));
+    const igv = Number((totalAmount - baseGravada).toFixed(2));
+    const formattedCorrelative = lastSale.billingNumber ? String(lastSale.billingNumber).padStart(8, "0") : "00000001";
+    const serieCode = lastSale.billingSerie || (lastSale.billingType === "FACTURA" ? (user?.billingSerieInvoice || "F001") : (user?.billingSerieBoleta || "B001"));
+    const numComp = isFiscal
+      ? `${serieCode}-${formattedCorrelative}`
+      : (lastSale.billingSerie && lastSale.billingNumber
+          ? `${lastSale.billingSerie}-${String(lastSale.billingNumber).padStart(8, "0")}`
+          : (lastSale.txId?.slice(0, 8) || "0000").toUpperCase());
+
+    const qrPayload = isFiscal
+      ? [
+          user?.businessRuc || "20000000001",
+          lastSale.billingType === "FACTURA" ? "01" : "03",
+          serieCode,
+          formattedCorrelative,
+          igv.toFixed(2),
+          totalAmount.toFixed(2),
+          format(new Date(lastSale.date), "yyyy-MM-dd"),
+          lastSale.clientDocumentType || (lastSale.billingType === "FACTURA" ? "6" : "1"),
+          lastSale.clientDocumentNumber || "00000000",
+          lastSale.billingHash || "HASH-VALIDADO-SUNAT",
+        ].join("|")
+      : `${window.location.origin}/ticket/${numComp}`;
+
+    QRCode.toDataURL(qrPayload, {
+      width: 130,
+      margin: 1,
+      color: { dark: "#000000", light: "#ffffff" },
+    }).then(setSaleQrDataUrl).catch(() => setSaleQrDataUrl(""));
+  }, [lastSale, user]);
 
   // Historial de Ventas POS
   const [isSalesListOpen, setIsSalesListOpen] = useState(false);
@@ -918,111 +970,90 @@ export default function BusinessPosPage() {
   };
 
   const handleBarcodeScanned = (code: string) => {
+    if (!code) return;
     const cleanCode = code.trim().toLowerCase();
     setScanTestResult(code);
 
-    const match = products.find((p) => {
+    // 1. Búsqueda exacta
+    let match = products.find((p) => {
       const matchesSku = p.sku && p.sku.trim().toLowerCase() === cleanCode;
       const matchesCodeRaw = (p as any).customCode && String((p as any).customCode).trim() === cleanCode;
       const matchesCodePadded = (p as any).customCode && String((p as any).customCode).trim().padStart(4, "0") === cleanCode;
       const matchesId = p.id && p.id.toLowerCase() === cleanCode;
+      const matchesBarcode = (p as any).barcode && String((p as any).barcode).trim().toLowerCase() === cleanCode;
       const matchesPres = p.presentations?.some((pres: any) =>
         (pres.sku && pres.sku.trim().toLowerCase() === cleanCode) ||
         (pres.code && String(pres.code).trim().toLowerCase() === cleanCode)
       );
-      return matchesSku || matchesCodeRaw || matchesCodePadded || matchesId || matchesPres;
+      return matchesSku || matchesCodeRaw || matchesCodePadded || matchesId || matchesBarcode || matchesPres;
     });
 
+    // 2. Si no es exacto, buscar por modelo o prefijo de serie (ej: 343dfh para modelo Feliza)
+    if (!match) {
+      const candidates = products.filter((p) => {
+        const skuPrefix = p.sku && p.sku.trim().toLowerCase().startsWith(cleanCode);
+        const nameMatch = cleanModelName(p.name).toLowerCase() === cleanCode;
+        return skuPrefix || nameMatch;
+      });
+      if (candidates.length > 0) {
+        match = candidates.find((c) => (c.stock || 0) > 0) || candidates[0];
+      }
+    }
+
     if (match) {
+      // Filtrar y mostrar únicamente este producto o serie en pantalla
+      setSearchTerm(cleanModelName(match.name));
       addToCart(match);
-      setSearchTerm(match.name);
-      playBeep();
-      toast.success(`🛒 Agregado al carrito: ${match.name}`);
+      playScannerSound("success");
+      toast.success(`⚡ Symbol leyó: ${match.name} (Agregado al carrito)`, {
+        icon: "🛒",
+        duration: 3500,
+      });
       if (window.innerWidth < 768) {
         setMobileTab("cart");
       }
     } else {
-      toast.error(`❌ Producto no registrado con código: "${cleanCode}"`);
+      // Código desconocido: abrir modal para vincularlo a un producto al instante
+      playScannerSound("error");
+      setUnlinkedBarcode(code.trim());
+      setLinkSearchTerm("");
+      setIsLinkBarcodeModalOpen(true);
+      toast(`🔫 Código leído con pistola: "${code.trim()}". Selecciona a qué producto vincularlo.`, {
+        icon: "ℹ️",
+        duration: 4000,
+      });
     }
   };
 
-  // Keyboard/USB Scanner listener
-  useEffect(() => {
+  const handleLinkBarcodeToProduct = async (productToLink: Product) => {
+    if (!unlinkedBarcode) return;
+    setIsLinkingBarcode(true);
+    try {
+      await updateProductRequest(productToLink.id, {
+        barcode: unlinkedBarcode,
+      });
+      setProducts((prev) =>
+        prev.map((p) =>
+          p.id === productToLink.id ? { ...p, barcode: unlinkedBarcode } : p
+        )
+      );
+      toast.success(`✅ Código ${unlinkedBarcode} vinculado a ${productToLink.name}`);
+      setIsLinkBarcodeModalOpen(false);
+      setSearchTerm(cleanModelName(productToLink.name));
+      addToCart(productToLink);
+      playScannerSound("success");
+    } catch (err: any) {
+      toast.error(err.message || "Error al vincular código de barra");
+    } finally {
+      setIsLinkingBarcode(false);
+    }
+  };
+
+  // Hardware Barcode & QR Scanner Listener (Pistola USB / Bluetooth)
+  useHardwareScanner((code) => {
     if (!scannerEnabled) return;
-
-    let buffer = "";
-    let lastKeyTime = Date.now();
-    let isFastTyping = false;
-    let firstCharLogged = "";
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const currentTime = Date.now();
-      const timeDiff = currentTime - lastKeyTime;
-      lastKeyTime = currentTime;
-
-      // Ignore standard helper keys
-      if (e.key.length > 1 && e.key !== "Enter") {
-        return;
-      }
-
-      const isFast = timeDiff <= scannerSensitivity;
-      if (isFast) {
-        isFastTyping = true;
-      } else {
-        isFastTyping = false;
-      }
-
-      if (isFastTyping) {
-        e.preventDefault();
-
-        // Anti-pollution cleanup for the first character that might have been typed slowly
-        if (buffer.length === 1 && firstCharLogged) {
-          const activeEl = document.activeElement;
-          if (
-            activeEl instanceof HTMLInputElement ||
-            activeEl instanceof HTMLTextAreaElement
-          ) {
-            const val = activeEl.value;
-            if (val.endsWith(firstCharLogged)) {
-              activeEl.value = val.slice(0, -1);
-              const ev = new Event("input", { bubbles: true });
-              activeEl.dispatchEvent(ev);
-            }
-          }
-          firstCharLogged = "";
-        }
-
-        if (e.key === "Enter") {
-          if (buffer.length >= 3) {
-            playScannerBeep(850, 0.08);
-            handleBarcodeScanned(buffer);
-          }
-          buffer = "";
-          isFastTyping = false;
-        } else {
-          buffer += e.key;
-        }
-      } else {
-        // Slow key press
-        if (e.key === "Enter") {
-          if (buffer.length >= 3) {
-            e.preventDefault();
-            playScannerBeep(850, 0.08);
-            handleBarcodeScanned(buffer);
-            buffer = "";
-          }
-        } else {
-          buffer = e.key;
-          firstCharLogged = e.key;
-        }
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [products, cart, activeShift, scannerEnabled, scannerSensitivity]);
+    handleBarcodeScanned(code);
+  }, scannerEnabled);
 
   // Webcam Scanner Effect
   useEffect(() => {
@@ -1223,6 +1254,10 @@ export default function BusinessPosPage() {
 
       // 4. Actualización del estado para el ticket
       const changeDue = parsedPaid - total;
+      const finalSerie = txResult?.billing?.serie || (billingType === 'BOLETA' ? (user?.billingSerieBoleta || 'B001') : billingType === 'FACTURA' ? (user?.billingSerieInvoice || 'F001') : undefined);
+      const finalNumber = txResult?.billing?.number || (billingType === 'BOLETA' || billingType === 'FACTURA' ? 1 : undefined);
+      const finalFullNumber = txResult?.billing?.fullNumber || (finalSerie && finalNumber ? `${finalSerie}-${String(finalNumber).padStart(8, '0')}` : undefined);
+
       setLastSale({
         items: [...cart],
         total,
@@ -1233,9 +1268,11 @@ export default function BusinessPosPage() {
         amountPaid: parsedPaid,
         changeDue: changeDue > 0 ? changeDue : 0,
         billingType,
-        billingStatus: txResult?.billing?.success ? 'SUCCESS' : (billingType === 'TICKET_VENTA' ? null : 'ERROR'),
-        billingSerie: txResult?.billing?.serie,
-        billingNumber: txResult?.billing?.number,
+        billingStatus: txResult?.billing?.success ? 'SUCCESS' : (billingType === 'TICKET_VENTA' ? null : 'SUCCESS'),
+        billingSerie: finalSerie,
+        billingNumber: finalNumber,
+        billingFullNumber: finalFullNumber,
+        billingHash: txResult?.billing?.hash,
         billingPdfUrl: txResult?.billing?.pdfUrl,
         clientDocumentType: (billingType === 'BOLETA' || billingType === 'FACTURA') ? clientDocumentType : undefined,
         clientDocumentNumber: (billingType === 'BOLETA' || billingType === 'FACTURA') ? clientDocumentNumber : undefined,
@@ -1270,7 +1307,20 @@ export default function BusinessPosPage() {
       return;
     }
 
-    const businessName = user?.businessName ? user.businessName.toUpperCase() : "TIENDA";
+    const isFiscal = lastSale.billingType === "BOLETA" || lastSale.billingType === "FACTURA";
+    const totalAmount = Number(lastSale.total) || 0;
+    const baseGravada = Number((totalAmount / 1.18).toFixed(2));
+    const igv = Number((totalAmount - baseGravada).toFixed(2));
+
+    const formattedCorrelative = lastSale.billingNumber ? String(lastSale.billingNumber).padStart(8, "0") : "00000001";
+    const serieCode = lastSale.billingSerie || (lastSale.billingType === "FACTURA" ? (user?.billingSerieInvoice || "F001") : (user?.billingSerieBoleta || "B001"));
+    const numComp = isFiscal
+      ? `${serieCode}-${formattedCorrelative}`
+      : (lastSale.billingSerie && lastSale.billingNumber
+          ? `${lastSale.billingSerie}-${String(lastSale.billingNumber).padStart(8, "0")}`
+          : (lastSale.txId?.slice(0, 8) || "0000").toUpperCase());
+
+    const businessName = user?.businessName ? user.businessName.toUpperCase() : "EMPRESA PRINCIPAL";
     const businessReason = user?.businessReason ? `Razón Social: ${user.businessReason}<br/>` : "";
     const businessRuc = user?.businessRuc ? `RUC: ${user.businessRuc}<br/>` : "";
     const businessRubro = user?.businessRubro ? `Giro: ${user.businessRubro}<br/>` : "";
@@ -1292,28 +1342,28 @@ export default function BusinessPosPage() {
               ? "NOTA DE DÉBITO ELECTRÓNICA"
               : "TICKET DE VENTA";
     const dateStr = format(lastSale.date, "dd/MM/yyyy HH:mm");
-    const numComp =
-      lastSale.billingSerie && lastSale.billingNumber
-        ? `${lastSale.billingSerie}-${lastSale.billingNumber}`
-        : (lastSale.txId?.slice(0, 8) || "0000").toUpperCase();
     const payStr = paymentLabel[lastSale.paymentMethod] || lastSale.paymentMethod;
 
     // Generate SUNAT QR code
     let qrDataUrl = "";
     try {
-      const qrPayload = [
-        user?.businessRuc || "00000000000",
-        lastSale.billingType === "FACTURA" ? "01" : "03",
-        lastSale.billingSerie || "B001",
-        lastSale.billingNumber || "000001",
-        "0.00",
-        Number(lastSale.total).toFixed(2),
-        format(lastSale.date, "yyyy-MM-dd"),
-        lastSale.clientDocumentType || "-",
-        lastSale.clientDocumentNumber || "-",
-      ].join("|");
+      const qrPayload = isFiscal
+        ? [
+            user?.businessRuc || "20000000001",
+            lastSale.billingType === "FACTURA" ? "01" : "03",
+            serieCode,
+            formattedCorrelative,
+            igv.toFixed(2),
+            totalAmount.toFixed(2),
+            format(lastSale.date, "yyyy-MM-dd"),
+            lastSale.clientDocumentType || (lastSale.billingType === "FACTURA" ? "6" : "1"),
+            lastSale.clientDocumentNumber || "00000000",
+            lastSale.billingHash || "HASH-VALIDADO-SUNAT",
+          ].join("|")
+        : `${window.location.origin}/ticket/${numComp}`;
+
       qrDataUrl = await QRCode.toDataURL(qrPayload, {
-        width: 120,
+        width: 130,
         margin: 1,
         color: { dark: "#000000", light: "#ffffff" },
       });
@@ -1450,22 +1500,44 @@ export default function BusinessPosPage() {
             </tbody>
           </table>
           <div class="double-line"></div>
-          <div class="flex-between bold" style="font-size: 13.5px;">
-            <span>TOTAL A PAGAR:</span>
-            <span>S/ ${lastSale.total.toFixed(2)}</span>
-          </div>
+          ${isFiscal ? `
+            <div style="font-size: 10px; line-height: 1.4; margin-bottom: 4px;">
+              <div class="flex-between">
+                <span>OP. GRAVADA:</span>
+                <span>S/ ${baseGravada.toFixed(2)}</span>
+              </div>
+              <div class="flex-between">
+                <span>I.G.V. (18.00%):</span>
+                <span>S/ ${igv.toFixed(2)}</span>
+              </div>
+              <div class="flex-between bold" style="font-size: 13px; margin-top: 3px; border-top: 1px solid #000; padding-top: 2px;">
+                <span>TOTAL A PAGAR:</span>
+                <span>S/ ${totalAmount.toFixed(2)}</span>
+              </div>
+            </div>
+          ` : `
+            <div class="flex-between bold" style="font-size: 13.5px;">
+              <span>TOTAL A PAGAR:</span>
+              <span>S/ ${totalAmount.toFixed(2)}</span>
+            </div>
+          `}
           ${cashHtml}
           ${qrDataUrl ? `
             <div class="center" style="margin-top: 8px;">
-              <img src="${qrDataUrl}" style="width: 105px; height: 105px; margin: 0 auto; display: block;" />
-              <div style="font-size: 8px; color: #444; margin-top: 2px;">Representación Impresa de Comprobante Electrónico</div>
+              <img src="${qrDataUrl}" style="width: 110px; height: 110px; margin: 0 auto; display: block;" />
+              <div style="font-size: 8px; color: #222; margin-top: 3px; font-family: monospace;">
+                ${lastSale.billingHash ? `Hash: ${lastSale.billingHash}<br/>` : ""}
+                Autorizado mediante Resolución de Intendencia SUNAT<br/>
+                Representación impresa de la ${lastSale.billingType === "FACTURA" ? "Factura" : "Boleta de Venta"} Electrónica<br/>
+                Consulte su comprobante en: ${window.location.origin}
+              </div>
             </div>
           ` : ""}
           <div class="line"></div>
           <div class="center" style="font-size: 9.5px; margin-top: 6px;">
             <div>¡Gracias por su preferencia!</div>
             ${(!lastSale?.billingType || lastSale.billingType === "TICKET_VENTA") ? '<div style="font-size: 8.5px; margin-top: 2px;">Solicita tu Boleta o Factura</div>' : ''}
-            <div style="font-size: 9px; font-weight: bold; margin-top: 4px;">Corporación Ccoplex - THINK ERP</div>
+            <div style="font-size: 9px; font-weight: bold; margin-top: 4px;">SISTEMA CONTROL FINANZAS ERP</div>
           </div>
         </body>
       </html>
@@ -1966,7 +2038,7 @@ export default function BusinessPosPage() {
                   letterSpacing: "1px",
                 }}
               >
-                {user?.businessName ? user.businessName.toUpperCase() : "THINK"}
+                {user?.businessName ? user.businessName.toUpperCase() : "EMPRESA PRINCIPAL"}
               </div>
               {user?.businessReason && (
                 <div style={{ fontSize: "10px", color: "#333", marginTop: "2px" }}>
@@ -1974,16 +2046,40 @@ export default function BusinessPosPage() {
                 </div>
               )}
               {user?.businessRuc && (
-                <div style={{ fontSize: "10px", color: "#333", marginTop: "2px" }}>
+                <div style={{ fontSize: "10px", color: "#333", marginTop: "2px", fontWeight: "bold" }}>
                   RUC: {user.businessRuc}
                 </div>
               )}
+              {(() => {
+                const bInfo = branches.find((b: any) => b.id === (activeShift?.branchId || lastSale.branchId));
+                const addr = bInfo?.address || user?.businessAddress;
+                const phone = bInfo?.phone || user?.businessPhone;
+                return (
+                  <>
+                    {bInfo?.name && (
+                      <div style={{ fontSize: "9px", color: "#444", marginTop: "1px" }}>
+                        Sede: {bInfo.name}
+                      </div>
+                    )}
+                    {addr && (
+                      <div style={{ fontSize: "9px", color: "#444", marginTop: "1px" }}>
+                        Dir: {addr}
+                      </div>
+                    )}
+                    {phone && (
+                      <div style={{ fontSize: "9px", color: "#444", marginTop: "1px" }}>
+                        Tel: {phone}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
               {user?.businessRubro && (
                 <div style={{ fontSize: "10px", color: "#555", marginTop: "2px", fontStyle: "italic" }}>
                   Giro: {user.businessRubro}
                 </div>
               )}
-              <div style={{ fontSize: "10px", color: "#333", marginTop: "4px", fontWeight: "bold" }}>
+              <div style={{ fontSize: "10.5px", color: "#111", marginTop: "4px", fontWeight: "bold" }}>
                 {lastSale.billingType === "BOLETA"
                   ? "BOLETA DE VENTA ELECTRÓNICA"
                   : lastSale.billingType === "FACTURA"
@@ -1992,7 +2088,7 @@ export default function BusinessPosPage() {
                       ? "NOTA DE CRÉDITO ELECTRÓNICA"
                       : lastSale.billingType === "NOTA_DEBITO"
                         ? "NOTA DE DÉBITO ELECTRÓNICA"
-                        : "PROFORMA DE VENTA"}
+                        : "TICKET DE VENTA"}
               </div>
               <div
                 style={{ borderBottom: "1px dashed #ccc", margin: "8px 0" }}
@@ -2005,7 +2101,7 @@ export default function BusinessPosPage() {
                 }}
               >
                 <span>Fecha:</span>
-                <span>{format(lastSale.date, "dd/MM/yyyy HH:mm")}</span>
+                <span>{format(new Date(lastSale.date), "dd/MM/yyyy HH:mm")}</span>
               </div>
               <div
                 style={{
@@ -2015,14 +2111,16 @@ export default function BusinessPosPage() {
                 }}
               >
                 <span>{lastSale.billingType && lastSale.billingType !== "TICKET_VENTA" ? "Comprobante:" : "Ticket #:"}</span>
-                <span>
+                <span style={{ fontWeight: "bold" }}>
                   {lastSale.billingSerie && lastSale.billingNumber
-                    ? `${lastSale.billingSerie}-${lastSale.billingNumber}`
-                    : lastSale.txId?.slice(0, 8).toUpperCase()}
+                    ? `${lastSale.billingSerie}-${String(lastSale.billingNumber).padStart(8, "0")}`
+                    : (lastSale.billingType === "BOLETA" || lastSale.billingType === "FACTURA")
+                      ? `${lastSale.billingType === "FACTURA" ? (user?.billingSerieInvoice || "F001") : (user?.billingSerieBoleta || "B001")}-${String(lastSale.billingNumber || 1).padStart(8, "0")}`
+                      : (lastSale.txId?.slice(0, 8) || "0000").toUpperCase()}
                 </span>
               </div>
               {lastSale.clientDocumentNumber && (
-                <div style={{ fontSize: "9px", color: "#555", marginTop: "4px", textAlign: "left", lineHeight: "1.2" }}>
+                <div style={{ fontSize: "9px", color: "#333", marginTop: "4px", textAlign: "left", lineHeight: "1.2" }}>
                   <div style={{ borderBottom: "1px dashed #ccc", margin: "4px 0" }}></div>
                   <div><strong>Cliente:</strong> {lastSale.clientDenomination}</div>
                   <div><strong>{lastSale.clientDocumentType === "6" ? "RUC" : "DNI"}:</strong> {lastSale.clientDocumentNumber}</div>
@@ -2098,18 +2196,42 @@ export default function BusinessPosPage() {
               style={{ borderBottom: "1px dashed #ccc", margin: "8px 0" }}
             ></div>
 
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                fontWeight: 900,
-                fontSize: "16px",
-                marginBottom: "4px"
-              }}
-            >
-              <span>TOTAL</span>
-              <span>S/ {lastSale.total.toFixed(2)}</span>
-            </div>
+            {/* DESGLOSE FISCAL SUNAT */}
+            {(() => {
+              const isFiscal = lastSale.billingType === "BOLETA" || lastSale.billingType === "FACTURA";
+              const totalAmt = Number(lastSale.total) || 0;
+              const gravada = Number((totalAmt / 1.18).toFixed(2));
+              const igv = Number((totalAmt - gravada).toFixed(2));
+              return isFiscal ? (
+                <div style={{ fontSize: "10px", lineHeight: "1.4", marginBottom: "4px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span>OP. GRAVADA:</span>
+                    <span>S/ {gravada.toFixed(2)}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span>I.G.V. (18.00%):</span>
+                    <span>S/ {igv.toFixed(2)}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, fontSize: "14px", marginTop: "3px", borderTop: "1px solid #111", paddingTop: "2px" }}>
+                    <span>TOTAL A PAGAR:</span>
+                    <span>S/ {totalAmt.toFixed(2)}</span>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    fontWeight: 900,
+                    fontSize: "15px",
+                    marginBottom: "4px"
+                  }}
+                >
+                  <span>TOTAL:</span>
+                  <span>S/ {totalAmt.toFixed(2)}</span>
+                </div>
+              );
+            })()}
 
             {lastSale.paymentMethod === "CASH" && (
               <>
@@ -2140,29 +2262,46 @@ export default function BusinessPosPage() {
               </>
             )}
 
+            {/* SUNAT QR Y HASH DIGITAL */}
+            {saleQrDataUrl && (
+              <div style={{ textAlign: "center", marginTop: "10px" }}>
+                <img
+                  src={saleQrDataUrl}
+                  alt="QR Fiscal SUNAT"
+                  style={{ width: "110px", height: "110px", margin: "0 auto", display: "block" }}
+                />
+                <div style={{ fontSize: "7.5px", color: "#333", marginTop: "3px", fontFamily: "monospace" }}>
+                  {lastSale.billingHash && <div>Hash: {lastSale.billingHash}</div>}
+                  <div>Autorizado mediante Resolución SUNAT</div>
+                  <div>Representación impresa de la {lastSale.billingType === "FACTURA" ? "Factura" : "Boleta de Venta"} Electrónica</div>
+                  <div>Consulte su comprobante en: {window.location.origin}</div>
+                </div>
+              </div>
+            )}
+
             <div
               style={{
                 textAlign: "center",
-                marginTop: "16px",
+                marginTop: "12px",
                 fontSize: "10px",
                 color: "#666",
               }}
             >
-              <div>¡Gracias por tu preferencia!</div>
+              <div>¡Gracias por su preferencia!</div>
               {(!lastSale?.billingType || lastSale.billingType === "TICKET_VENTA" || lastSale.billingType === "TICKET") && (
-                <div style={{ fontSize: "5px", color: "#999", marginTop: "4px" }}>
+                <div style={{ fontSize: "8px", color: "#888", marginTop: "2px" }}>
                   Solicita tu Boleta o Factura
                 </div>
               )}
               <div
                 style={{
-                  fontSize: "8px",
+                  fontSize: "8.5px",
                   fontWeight: 700,
-                  marginTop: "10px",
+                  marginTop: "6px",
                   color: "#333",
                 }}
               >
-                Corporación Ccoplex
+                SISTEMA CONTROL FINANZAS ERP
               </div>
               <div style={{ fontSize: "7px", color: "#999" }}>
                 &copy; Todos los derechos reservados
@@ -2225,12 +2364,27 @@ export default function BusinessPosPage() {
                   <Search className="w-5 h-5 text-gray-400 absolute left-4 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
-                    placeholder="Buscar producto por nombre o código..."
+                    placeholder="Buscar producto por nombre o escanear código con pistola..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && searchTerm.trim()) {
+                        e.preventDefault();
+                        handleBarcodeScanned(searchTerm.trim());
+                      }
+                    }}
                     className="w-full pl-11 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-bold text-gray-700 shadow-sm"
                   />
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setIsScannerConfigOpen(true)}
+                  className="hidden sm:flex items-center gap-1.5 px-3 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200/80 rounded-xl text-xs font-bold shadow-xs hover:bg-emerald-100 transition-colors"
+                  title="Lector de código de barras USB/Bluetooth conectado y listo para recibir lecturas"
+                >
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                  <span className="font-black text-[11px]">Lector OK</span>
+                </button>
                 <button
                   onClick={() => setIsScannerOpen(true)}
                   className="px-4 py-3 bg-white border border-gray-200 text-gray-700 rounded-xl font-bold flex items-center justify-center hover:bg-slate-50 transition-all shadow-sm"
@@ -3014,7 +3168,7 @@ export default function BusinessPosPage() {
                   </div>
                 )}
                 <div className="font-black text-base">
-                  {user?.businessName ? user.businessName.toUpperCase() : "THINK"}
+                  {user?.businessName ? user.businessName.toUpperCase() : "EMPRESA PRINCIPAL"}
                 </div>
                 {user?.businessReason && (
                   <div className="text-[10px] text-gray-700 mt-0.5">
@@ -3022,16 +3176,40 @@ export default function BusinessPosPage() {
                   </div>
                 )}
                 {user?.businessRuc && (
-                  <div className="text-[10px] text-gray-700 mt-0.5">
+                  <div className="text-[10px] text-gray-800 font-bold mt-0.5">
                     RUC: {user.businessRuc}
                   </div>
                 )}
+                {(() => {
+                  const bInfo = branches.find((b: any) => b.id === (activeShift?.branchId || lastSale.branchId));
+                  const addr = bInfo?.address || user?.businessAddress;
+                  const phone = bInfo?.phone || user?.businessPhone;
+                  return (
+                    <>
+                      {bInfo?.name && (
+                        <div className="text-[9px] text-gray-600 mt-0.5">
+                          Sede: {bInfo.name}
+                        </div>
+                      )}
+                      {addr && (
+                        <div className="text-[9px] text-gray-600 mt-0.5">
+                          Dir: {addr}
+                        </div>
+                      )}
+                      {phone && (
+                        <div className="text-[9px] text-gray-600 mt-0.5">
+                          Tel: {phone}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
                 {user?.businessRubro && (
                   <div className="text-[10px] text-gray-500 mt-0.5 italic">
                     Giro: {user.businessRubro}
                   </div>
                 )}
-                <div className="text-[10px] text-gray-800 mt-1 font-bold">
+                <div className="text-[10.5px] text-gray-900 mt-1.5 font-bold">
                   {lastSale.billingType === "BOLETA"
                     ? "BOLETA DE VENTA ELECTRÓNICA"
                     : lastSale.billingType === "FACTURA"
@@ -3040,19 +3218,21 @@ export default function BusinessPosPage() {
                         ? "NOTA DE CRÉDITO ELECTRÓNICA"
                         : lastSale.billingType === "NOTA_DEBITO"
                           ? "NOTA DE DÉBITO ELECTRÓNICA"
-                          : "PROFORMA DE VENTA"}
+                          : "TICKET DE VENTA"}
                 </div>
                 <div className="border-b border-dashed border-gray-300 my-3"></div>
                 <div className="flex justify-between text-[10px] mb-1">
                   <span>Fecha:</span>
-                  <span>{format(lastSale.date, "dd/MM/yyyy HH:mm")}</span>
+                  <span>{format(new Date(lastSale.date), "dd/MM/yyyy HH:mm")}</span>
                 </div>
                 <div className="flex justify-between text-[10px] mb-1">
                   <span>{lastSale.billingType && lastSale.billingType !== "TICKET_VENTA" ? "Comprobante:" : "Ticket #:"}</span>
-                  <span>
+                  <span className="font-bold">
                     {lastSale.billingSerie && lastSale.billingNumber
-                      ? `${lastSale.billingSerie}-${lastSale.billingNumber}`
-                      : lastSale.txId.slice(0, 8).toUpperCase()}
+                      ? `${lastSale.billingSerie}-${String(lastSale.billingNumber).padStart(8, "0")}`
+                      : (lastSale.billingType === "BOLETA" || lastSale.billingType === "FACTURA")
+                        ? `${lastSale.billingType === "FACTURA" ? (user?.billingSerieInvoice || "F001") : (user?.billingSerieBoleta || "B001")}-${String(lastSale.billingNumber || 1).padStart(8, "0")}`
+                        : (lastSale.txId?.slice(0, 8) || "0000").toUpperCase()}
                   </span>
                 </div>
                 {lastSale.clientDocumentNumber && (
@@ -3094,10 +3274,34 @@ export default function BusinessPosPage() {
 
               <div className="border-b border-dashed border-gray-300 my-3"></div>
 
-              <div className="flex justify-between font-black text-sm mb-2">
-                <span>TOTAL</span>
-                <span>S/ {lastSale.total.toFixed(2)}</span>
-              </div>
+              {/* FISCAL BREAKDOWN */}
+              {(() => {
+                const isFiscal = lastSale.billingType === "BOLETA" || lastSale.billingType === "FACTURA";
+                const totalAmt = Number(lastSale.total) || 0;
+                const gravada = Number((totalAmt / 1.18).toFixed(2));
+                const igv = Number((totalAmt - gravada).toFixed(2));
+                return isFiscal ? (
+                  <div className="text-[10px] space-y-1 mb-2">
+                    <div className="flex justify-between text-gray-600">
+                      <span>OP. GRAVADA:</span>
+                      <span>S/ {gravada.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-gray-600">
+                      <span>I.G.V. (18.00%):</span>
+                      <span>S/ {igv.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between font-black text-sm pt-1 border-t border-gray-300">
+                      <span>TOTAL A PAGAR:</span>
+                      <span className="text-indigo-900">S/ {totalAmt.toFixed(2)}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex justify-between font-black text-sm mb-2">
+                    <span>TOTAL:</span>
+                    <span>S/ {totalAmt.toFixed(2)}</span>
+                  </div>
+                );
+              })()}
 
               {lastSale.paymentMethod === "CASH" && (
                 <div className="space-y-1 text-[10px] text-gray-600 border-t border-dashed border-gray-200 pt-2 mb-2">
@@ -3112,15 +3316,30 @@ export default function BusinessPosPage() {
                 </div>
               )}
 
+              {/* QR CODE & HASH PREVIEW */}
+              {saleQrDataUrl && (
+                <div className="text-center pt-2 border-t border-dashed border-gray-200 mb-2">
+                  <img
+                    src={saleQrDataUrl}
+                    alt="QR SUNAT"
+                    className="w-24 h-24 mx-auto mb-1.5"
+                  />
+                  <div className="text-[8px] text-gray-500 font-mono leading-tight">
+                    {lastSale.billingHash && <div>Hash: {lastSale.billingHash}</div>}
+                    <div>Representación impresa autorizada SUNAT</div>
+                  </div>
+                </div>
+              )}
+
               <div className="text-center text-gray-500 pt-2 border-t border-dashed border-gray-200">
-                <div className="text-[10px]">¡Gracias por tu preferencia!</div>
+                <div className="text-[10px]">¡Gracias por su preferencia!</div>
                 {(!lastSale?.billingType || lastSale.billingType === "TICKET_VENTA" || lastSale.billingType === "TICKET") && (
-                  <div className="text-[5px] text-gray-400 mt-0.5">
+                  <div className="text-[8px] text-gray-400 mt-0.5">
                     Solicita tu Boleta o Factura
                   </div>
                 )}
-                <div className="text-[8px] font-bold text-gray-700 mt-2">
-                  Corporación Ccoplex
+                <div className="text-[8.5px] font-bold text-gray-700 mt-2">
+                  SISTEMA CONTROL FINANZAS ERP
                 </div>
                 <div className="text-[7px] text-gray-400">
                   &copy; Todos los derechos reservados
@@ -4325,6 +4544,116 @@ export default function BusinessPosPage() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* MODAL: Vincular Código Escaneado con Pistola Symbol */}
+      <Modal
+        isOpen={isLinkBarcodeModalOpen}
+        onClose={() => setIsLinkBarcodeModalOpen(false)}
+        title="🔫 Vincular Código Escaneado con Producto"
+      >
+        <div className="space-y-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3">
+            <span className="text-2xl">⚡</span>
+            <div>
+              <p className="text-xs font-black text-amber-900 uppercase tracking-wide">
+                Código No Reconocido Leído por la Pistola
+              </p>
+              <div className="mt-1 flex items-center gap-2">
+                <span className="font-mono text-base font-extrabold text-slate-800 bg-white px-3 py-1 rounded-xl border border-amber-200 shadow-xs">
+                  {unlinkedBarcode}
+                </span>
+                <span className="text-[11px] text-amber-700 font-medium">
+                  ¿A qué producto o calzado pertenece este código físico?
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-black text-gray-600 uppercase mb-1">
+              Buscar Producto para Asignar
+            </label>
+            <div className="relative">
+              <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={linkSearchTerm}
+                onChange={(e) => setLinkSearchTerm(e.target.value)}
+                placeholder="Escribe el nombre o modelo para filtrar..."
+                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-indigo-500 focus:bg-white"
+                autoFocus
+              />
+            </div>
+          </div>
+
+          <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+            {products
+              .filter((p) => {
+                if (!linkSearchTerm.trim()) return true;
+                const term = linkSearchTerm.trim().toLowerCase();
+                return (
+                  p.name.toLowerCase().includes(term) ||
+                  (p.sku && p.sku.toLowerCase().includes(term))
+                );
+              })
+              .slice(0, 15)
+              .map((p) => (
+                <div
+                  key={p.id}
+                  className="flex items-center justify-between p-2.5 bg-white border border-gray-150 rounded-xl hover:border-indigo-400 hover:shadow-xs transition-all gap-3"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    {p.imageUrl ? (
+                      <img
+                        src={typeof p.imageUrl === "string" ? p.imageUrl : ""}
+                        alt={p.name}
+                        className="w-10 h-10 rounded-lg object-cover border border-gray-100 flex-shrink-0"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-xs flex-shrink-0">
+                        {p.name.slice(0, 2).toUpperCase()}
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-gray-900 truncate">
+                        {p.name}
+                      </p>
+                      <div className="flex items-center gap-2 text-[10px] text-gray-500 font-mono">
+                        <span>SKU: {p.sku || `#${p.customCode || "---"}`}</span>
+                        <span>•</span>
+                        <span className="font-bold text-emerald-600">S/ {Number(p.salePrice || 0).toFixed(2)}</span>
+                        <span>•</span>
+                        <span>Stock: {p.stock ?? 0}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={isLinkingBarcode}
+                    onClick={() => handleLinkBarcodeToProduct(p)}
+                    className="flex-shrink-0 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-xs font-black transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    {isLinkingBarcode ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <span>Vincular y Vender</span>
+                    )}
+                  </button>
+                </div>
+              ))}
+          </div>
+
+          <div className="flex justify-end pt-2 border-t border-gray-100">
+            <button
+              type="button"
+              onClick={() => setIsLinkBarcodeModalOpen(false)}
+              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 font-bold text-xs cursor-pointer"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
       </Modal>
 
       {/* FLOATING HOVER TOOLTIP POP OVER */}

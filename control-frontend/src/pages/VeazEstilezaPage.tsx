@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Link } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import {
   Search,
   Sparkles,
@@ -12,7 +12,6 @@ import {
   MessageCircle,
   MapPin,
   Clock,
-  Layers,
   Award,
   LayoutDashboard,
   FileDown,
@@ -23,11 +22,12 @@ import {
   Navigation,
   Compass,
   ExternalLink,
+  Crown,
 } from "lucide-react";
 import { FaInstagram, FaFacebookF, FaTiktok } from "react-icons/fa6";
 import VeazLogo, { VeazCrownIcon } from "../components/veaz/VeazLogo";
 import { VeazBrandLogo } from "../components/veaz/VeazBrandLogo";
-import VeazHeroSlider from "../components/veaz/VeazHeroSlider";
+import VeazHeroSlider, { type HeroSlide } from "../components/veaz/VeazHeroSlider";
 import VeazModelGallery from "../components/veaz/VeazModelGallery";
 import VeazShoeCard from "../components/veaz/VeazShoeCard";
 import VeazImageLightbox from "../components/veaz/VeazImageLightbox";
@@ -40,13 +40,65 @@ import {
   getCatalogProductsRequest,
   getCatalogBrandsRequest,
   getCatalogFamiliesRequest,
+  getCatalogStoreInfoRequest,
+  type CatalogStoreInfo,
   type Product,
 } from "../services/product.api";
+import { getReceiptAbsoluteUrl } from "../components/ui/ImageUploader";
+import { getRubroPreset, type CatalogShowcaseRailItem } from "../utils/catalogRubroPresets";
+
+const DEFAULT_VEAZ_RAIL: CatalogShowcaseRailItem[] = [
+  {
+    brand: "VIZZANO",
+    title: "Stilettos & Glamour",
+    desc: "Tacos aguja de alta costura",
+    img: "https://images.unsplash.com/photo-1543163521-1bf539c55dd2?q=80&w=600&auto=format&fit=crop",
+  },
+  {
+    brand: "MODARE",
+    title: "Ultra Confort",
+    desc: "Plantillas anatómicas acolchadas",
+    img: "https://images.unsplash.com/photo-1515372039744-b8f02a3ae446?q=80&w=600&auto=format&fit=crop",
+  },
+  {
+    brand: "MARIMENA",
+    title: "Gala & Strass",
+    desc: "Diseños de fiesta y alfombra roja",
+    img: "https://images.unsplash.com/photo-1539109136881-3be0616acf4b?q=80&w=600&auto=format&fit=crop",
+  },
+  {
+    brand: "EDWIN",
+    title: "Línea Varones",
+    desc: "Cueros selectos de vestir",
+    img: "https://images.unsplash.com/photo-1614252235316-8c857d38b5f4?q=80&w=600&auto=format&fit=crop",
+  },
+  {
+    brand: "XIOMARA",
+    title: "Tendencia Chic",
+    desc: "Tacones confort y sandalias modernas",
+    img: "https://images.unsplash.com/photo-1509631179647-0177331693ae?q=80&w=600&auto=format&fit=crop",
+  },
+  {
+    brand: "TRIKCS",
+    title: "Urbano Premium",
+    desc: "Calzados anatómicos resistentes",
+    img: "https://images.unsplash.com/photo-1496747611176-843222e1e57c?q=80&w=600&auto=format&fit=crop",
+  },
+];
 
 export default function VeazEstilezaPage() {
   const catalogRef = useRef<HTMLDivElement>(null);
   const brandRailRef = useRef<HTMLDivElement>(null);
   const footerRailRef = useRef<HTMLDivElement>(null);
+
+  const params = useParams<{ identifier?: string }>();
+  const isDirectVeazRoute = window.location.pathname.startsWith("/veaz-estileza");
+  const targetIdentifier = isDirectVeazRoute
+    ? "veaz-estileza"
+    : params.identifier || "veaz-estileza";
+
+  // Store metadata
+  const [storeInfo, setStoreInfo] = useState<CatalogStoreInfo | null>(null);
 
   // States
   const [products, setProducts] = useState<Product[]>([]);
@@ -66,25 +118,35 @@ export default function VeazEstilezaPage() {
   const [availableBrands, setAvailableBrands] = useState<string[]>([]);
   const [availableFamilies, setAvailableFamilies] = useState<string[]>([]);
 
-  // Page title
-  useEffect(() => {
-    document.title = "VEAZ ESTILEZA | Alta Costura en Calzados Femeninos, Tacos & Stilettos";
-    window.scrollTo(0, 0);
-  }, []);
+  // Rubro preset based on profile
+  const rubroPreset = useMemo(() => {
+    return getRubroPreset(storeInfo?.catalogConfig?.rubroKey || storeInfo?.businessRubro);
+  }, [storeInfo]);
 
-  // Fetch real products, brands and families from backend
+  // Fetch real products, store info, brands and families from backend
   useEffect(() => {
     let isMounted = true;
+    window.scrollTo(0, 0);
 
     async function loadData() {
       try {
-        const [prodsData, brandsData, familiesData] = await Promise.all([
-          getCatalogProductsRequest().catch(() => []),
-          getCatalogBrandsRequest().catch(() => []),
-          getCatalogFamiliesRequest().catch(() => []),
+        const [storeData, prodsData, brandsData, familiesData] = await Promise.all([
+          getCatalogStoreInfoRequest(targetIdentifier).catch(() => null),
+          getCatalogProductsRequest(targetIdentifier).catch(() => []),
+          getCatalogBrandsRequest(targetIdentifier).catch(() => []),
+          getCatalogFamiliesRequest(targetIdentifier).catch(() => []),
         ]);
 
         if (!isMounted) return;
+
+        if (storeData) {
+          setStoreInfo(storeData);
+          if (storeData.isOfficialStore || targetIdentifier === "veaz-estileza") {
+            document.title = "VEAZ ESTILEZA | Alta Costura en Calzados Femeninos, Tacos & Stilettos";
+          } else {
+            document.title = `${storeData.businessName} | ${storeData.catalogConfig?.catalogTitle || storeData.businessRubro || "Catálogo Oficial"}`;
+          }
+        }
 
         if (Array.isArray(prodsData)) {
           setProducts(prodsData);
@@ -110,7 +172,7 @@ export default function VeazEstilezaPage() {
         }
         setAvailableFamilies(Array.from(famNames).sort());
       } catch (err) {
-        console.error("Error loading VEAZ catalog products:", err);
+        console.error("Error loading catalog data:", err);
       }
     }
 
@@ -118,7 +180,88 @@ export default function VeazEstilezaPage() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [targetIdentifier]);
+
+  // Convert custom merchant banners to hero slides if configured
+  const customHeroSlides = useMemo<HeroSlide[] | undefined>(() => {
+    if (storeInfo?.catalogConfig?.banners && storeInfo.catalogConfig.banners.length > 0) {
+      return storeInfo.catalogConfig.banners.map((b, idx) => ({
+        id: b.id || `custom-slide-${idx}`,
+        title: b.title || storeInfo.businessName,
+        highlight: b.highlight || "COLECCIÓN 2026",
+        subtitle: b.subtitle || "Productos garantizados y atención inmediata por WhatsApp.",
+        category: "Colección",
+        badge: b.badge || "100% ORIGINALES",
+        image: getReceiptAbsoluteUrl(b.image) || b.image,
+        modelLook: storeInfo.businessName,
+        ctaText: b.ctaText || "Ver Colección",
+      }));
+    }
+    if (storeInfo?.businessBanner) {
+      return [
+        {
+          id: "slide-banner-custom",
+          title: storeInfo.businessName,
+          highlight: storeInfo.businessRubro || "COLECCIÓN EXCLUSIVA 2026",
+          subtitle: "Encuentra tus artículos favoritos en nuestro catálogo digital oficial.",
+          category: "Colección",
+          badge: "TIENDA OFICIAL",
+          image: getReceiptAbsoluteUrl(storeInfo.businessBanner) || storeInfo.businessBanner,
+          modelLook: storeInfo.businessName,
+          ctaText: "Ver Catálogo",
+        },
+      ];
+    }
+    if (storeInfo && !storeInfo.isOfficialStore && rubroPreset.banners.length > 0) {
+      return rubroPreset.banners.map((b, idx) => ({
+        id: b.id || `rubro-slide-${idx}`,
+        title: storeInfo.businessName || b.title,
+        highlight: b.highlight,
+        subtitle: b.subtitle,
+        category: "Colección",
+        badge: b.badge,
+        image: b.image,
+        modelLook: storeInfo.businessName,
+        ctaText: b.ctaText,
+      }));
+    }
+    return undefined;
+  }, [storeInfo, rubroPreset]);
+
+  // Dynamic Ticker Phrases
+  const tickerItems = useMemo<string[]>(() => {
+    if (storeInfo?.catalogConfig?.tickerPhrases && storeInfo.catalogConfig.tickerPhrases.length > 0) {
+      return storeInfo.catalogConfig.tickerPhrases;
+    }
+    if (storeInfo && !storeInfo.isOfficialStore) {
+      return rubroPreset.tickerPhrases;
+    }
+    return [
+      "100% ALTA COSTURA EN CALZADOS DE DAMA",
+      "SERIES DE TALLAS CONSOLIDADAS POR SKU",
+      "DISTRIBUIDOR AUTORIZADO OFICIAL",
+      "ENVÍOS SEGUROS A TODO EL PERÚ",
+      "COLECCIÓN PASARELA 2026",
+    ];
+  }, [storeInfo, rubroPreset]);
+
+  // Dynamic WhatsApp Phone
+  const storeWhatsAppPhone = useMemo(() => {
+    const raw = storeInfo?.catalogConfig?.whatsappPhone || (storeInfo?.isOfficialStore ? "51929962458" : "51929962458");
+    const clean = raw.replace(/\D/g, "");
+    return clean.startsWith("51") ? clean : `51${clean}`;
+  }, [storeInfo]);
+
+  // Dynamic Showcase Rail items (bottom carrusel de marcas/categorías)
+  const showcaseRailItems = useMemo<CatalogShowcaseRailItem[]>(() => {
+    if (storeInfo?.catalogConfig?.showcaseRailItems && storeInfo.catalogConfig.showcaseRailItems.length > 0) {
+      return storeInfo.catalogConfig.showcaseRailItems;
+    }
+    if (storeInfo && !storeInfo.isOfficialStore) {
+      return rubroPreset.showcaseRailItems || [];
+    }
+    return DEFAULT_VEAZ_RAIL;
+  }, [storeInfo, rubroPreset]);
 
   // Consolidate and group products by model name and series
   const groupedShoeModels = useMemo(() => {
@@ -337,15 +480,71 @@ export default function VeazEstilezaPage() {
   return (
     <div className="min-h-screen bg-[#FAF8F5] text-slate-900 font-sans selection:bg-amber-200 selection:text-amber-950 overflow-x-hidden">
       {/* ──────────────────────────────────────────────────────────
+          0. TOP ANNOUNCEMENT & ATTRIBUTION BANNER
+      ────────────────────────────────────────────────────────── */}
+      {storeInfo?.catalogConfig?.announcement ? (
+        <div className="fixed top-0 inset-x-0 z-50 bg-gradient-to-r from-amber-700 via-amber-800 to-amber-950 text-amber-100 text-[11px] py-1.5 px-4 text-center font-outfit font-medium tracking-wide flex items-center justify-center gap-2">
+          <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+          <span>{storeInfo.catalogConfig.announcement}</span>
+        </div>
+      ) : storeInfo && !storeInfo.isOfficialStore ? (
+        <div className="fixed top-0 inset-x-0 z-50 bg-gradient-to-r from-slate-900 via-[#151722] to-slate-900 text-amber-300 text-[11px] py-1.5 px-4 text-center font-cinzel tracking-wider flex items-center justify-between border-b border-amber-500/20">
+          <div className="flex items-center gap-2 mx-auto">
+            <span>✨ Catálogo Oficial de <strong>{storeInfo.businessName}</strong></span>
+            <span className="text-slate-500">•</span>
+            <span className="text-slate-300">Impulsado por CCoplex THINK ERP</span>
+          </div>
+          <Link
+            to="/veaz-estileza"
+            target="_blank"
+            className="text-[10px] text-amber-400 hover:text-amber-200 underline font-bold hidden sm:inline"
+          >
+            Visitar Tienda de Prendas Y Calzados VEAZ ESTILEZA 👑
+          </Link>
+        </div>
+      ) : null}
+
+      {/* ──────────────────────────────────────────────────────────
           1. LUXURY LIGHT GLASS NAVBAR (FULL SCREEN WIDTH)
       ────────────────────────────────────────────────────────── */}
-      <header className="fixed top-0 inset-x-0 z-50 bg-white/90 backdrop-blur-xl border-b border-[#EDE2D4] shadow-[0_4px_30px_rgba(0,0,0,0.03)] transition-all">
+      <header className={`fixed inset-x-0 z-40 bg-white/95 backdrop-blur-xl border-b border-[#EDE2D4] shadow-[0_4px_30px_rgba(0,0,0,0.03)] transition-all ${
+        storeInfo?.catalogConfig?.announcement || (storeInfo && !storeInfo.isOfficialStore) ? "top-7" : "top-0"
+      }`}>
         <div className="w-full px-4 sm:px-8 lg:px-12 2xl:px-16 h-20 md:h-24 flex items-center justify-between gap-4">
           <div
             onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
             className="cursor-pointer group flex items-center"
           >
-            <VeazLogo size="md" showSubtitle={true} />
+            {storeInfo && !storeInfo.isOfficialStore ? (
+              <div className="flex items-center gap-3">
+                {storeInfo.businessLogo ? (
+                  <img
+                    src={getReceiptAbsoluteUrl(storeInfo.businessLogo) || storeInfo.businessLogo}
+                    alt={storeInfo.businessName}
+                    className="h-10 sm:h-12 w-auto max-w-[140px] sm:max-w-[180px] object-contain rounded-xl"
+                  />
+                ) : (
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-tr from-amber-500 to-amber-700 flex items-center justify-center text-white font-black text-lg shadow-sm">
+                    {storeInfo.businessName.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-cinzel font-black text-sm sm:text-base tracking-wider text-slate-900 uppercase">
+                      {storeInfo.businessName}
+                    </span>
+                    <span className="text-[9px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded-full border border-amber-300">
+                      Oficial
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-slate-500 tracking-wider font-outfit uppercase">
+                    {storeInfo.businessRubro || "Calzados & Moda"}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <VeazLogo size="md" showSubtitle={true} />
+            )}
           </div>
 
           <nav className="hidden xl:flex items-center gap-8 font-cinzel text-xs font-bold tracking-[0.2em] text-slate-700 uppercase">
@@ -353,7 +552,7 @@ export default function VeazEstilezaPage() {
               onClick={scrollToCatalog}
               className="hover:text-amber-800 transition-colors cursor-pointer"
             >
-              Colección Calzados
+              {storeInfo?.isOfficialStore ? "Colección Calzados" : (rubroPreset.navCatalogTitle || "Catálogo de Productos")}
             </button>
             <button
               onClick={() => {
@@ -362,7 +561,7 @@ export default function VeazEstilezaPage() {
               }}
               className="hover:text-amber-800 transition-colors cursor-pointer"
             >
-              Pasarela Editorial
+              {storeInfo?.isOfficialStore ? "Pasarela Editorial" : (rubroPreset.navLookbookTitle || "Líneas Destacadas")}
             </button>
             <button
               onClick={() => {
@@ -371,7 +570,7 @@ export default function VeazEstilezaPage() {
               }}
               className="hover:text-amber-800 transition-colors cursor-pointer"
             >
-              Ubicación Boutique
+              {storeInfo?.isOfficialStore ? "Ubicación Boutique" : (rubroPreset.navLocationTitle || "Ubicación & Local")}
             </button>
             <button
               onClick={() => {
@@ -393,7 +592,7 @@ export default function VeazEstilezaPage() {
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Buscar modelo, SKU, taco..."
+                placeholder={storeInfo?.isOfficialStore ? "Buscar modelo, SKU, taco..." : (rubroPreset.searchPlaceholder || "Buscar producto, modelo, código...")}
                 className="w-full pl-9 pr-8 py-2 rounded-full bg-[#FAF7F2] border border-[#E8DCBE] text-xs text-slate-900 placeholder:text-slate-400 font-outfit focus:outline-none focus:border-amber-500 focus:bg-white transition-all shadow-xs"
               />
               {searchTerm && (
@@ -407,7 +606,9 @@ export default function VeazEstilezaPage() {
             </div>
 
             <a
-              href="https://wa.me/51929962458?text=Hola%20VEAZ%20ESTILEZA,%20deseo%20asesor%C3%ADa%20personalizada%20de%20calzados"
+              href={`https://wa.me/${storeWhatsAppPhone}?text=${encodeURIComponent(
+                `Hola *${storeInfo?.businessName || "VEAZ ESTILEZA"}*, deseo consultar su catálogo oficial de ${storeInfo?.isOfficialStore ? "calzados" : "productos"} y modelos disponibles.`
+              )}`}
               target="_blank"
               rel="noopener noreferrer"
               className="hidden sm:flex items-center gap-2 px-4 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-cinzel text-xs font-bold tracking-wider shadow-sm hover:shadow-md transition-all cursor-pointer"
@@ -431,45 +632,34 @@ export default function VeazEstilezaPage() {
       {/* ──────────────────────────────────────────────────────────
           2. HORIZONTAL HERO SLIDER
       ────────────────────────────────────────────────────────── */}
-      <div className="pt-20 md:pt-24 w-full">
+      <div className={`w-full ${
+        storeInfo?.catalogConfig?.announcement || (storeInfo && !storeInfo.isOfficialStore) ? "pt-28 md:pt-32" : "pt-20 md:pt-24"
+      }`}>
         <VeazHeroSlider
+          slides={customHeroSlides}
+          storeName={storeInfo?.businessName}
+          isOfficialStore={storeInfo?.isOfficialStore ?? true}
           onSelectCategory={handleSelectCategoryFromHeroOrModel}
           onExploreCatalog={scrollToCatalog}
         />
       </div>
 
       {/* ──────────────────────────────────────────────────────────
-          3. LUXURY VALUE TICKER / MARQUEE
+          3. LUXURY VALUE TICKER / MARQUEE (DYNAMIC BY RUBRO & STORE)
       ────────────────────────────────────────────────────────── */}
       <div className="bg-gradient-to-r from-[#FAF6F0] via-[#FFFDF9] to-[#F5EFEB] border-y border-[#EDE2D4] py-4 overflow-hidden select-none">
         <div className="animate-marquee flex items-center gap-12 whitespace-nowrap">
           {[1, 2].map((iter) => (
             <React.Fragment key={iter}>
-              <div className="inline-flex items-center gap-3 text-xs font-cinzel tracking-[0.25em] text-amber-900 font-bold uppercase">
-                <VeazCrownIcon size={15} />
-                <span>100% ALTA COSTURA EN CALZADOS DE DAMA</span>
-              </div>
-              <span className="text-amber-400 font-bold">•</span>
-              <div className="inline-flex items-center gap-2 text-xs font-cinzel tracking-[0.25em] text-slate-700 font-semibold uppercase">
-                <Layers className="w-3.5 h-3.5 text-amber-700" />
-                <span>SERIES DE TALLAS CONSOLIDADAS POR SKU</span>
-              </div>
-              <span className="text-amber-400 font-bold">•</span>
-              <div className="inline-flex items-center gap-2 text-xs font-cinzel tracking-[0.25em] text-amber-900 font-bold uppercase">
-                <Award className="w-3.5 h-3.5 text-amber-700" />
-                <span>DISTRIBUIDOR AUTORIZADO OFICIAL</span>
-              </div>
-              <span className="text-amber-400 font-bold">•</span>
-              <div className="inline-flex items-center gap-2 text-xs font-cinzel tracking-[0.25em] text-slate-700 font-semibold uppercase">
-                <Truck className="w-3.5 h-3.5 text-amber-700" />
-                <span>ENVÍOS SEGUROS A TODO EL PERÚ</span>
-              </div>
-              <span className="text-amber-400 font-bold">•</span>
-              <div className="inline-flex items-center gap-2 text-xs font-cinzel tracking-[0.25em] text-amber-900 font-bold uppercase">
-                <Sparkles className="w-3.5 h-3.5 text-amber-700" />
-                <span>COLECCIÓN PASARELA 2026</span>
-              </div>
-              <span className="text-amber-400 font-bold">•</span>
+              {tickerItems.map((phrase, pIdx) => (
+                <React.Fragment key={`${iter}-${pIdx}`}>
+                  <div className="inline-flex items-center gap-2.5 text-xs font-cinzel tracking-[0.22em] text-amber-950 font-bold uppercase">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-700" />
+                    <span>{phrase}</span>
+                  </div>
+                  <span className="text-amber-400 font-bold">•</span>
+                </React.Fragment>
+              ))}
             </React.Fragment>
           ))}
         </div>
@@ -482,16 +672,34 @@ export default function VeazEstilezaPage() {
         <div className="text-center max-w-3xl mx-auto mb-12 sm:mb-14">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white border border-amber-300 text-amber-900 text-xs font-cinzel font-bold tracking-[0.25em] uppercase mb-4 shadow-xs">
             <VeazCrownIcon size={14} />
-            <span>VITRINA EXCLUSIVA DE CALZADOS ORIGINALES</span>
+            <span>
+              {storeInfo?.catalogConfig?.catalogBadge ||
+                (storeInfo?.isOfficialStore
+                  ? "VITRINA EXCLUSIVA DE CALZADOS ORIGINALES"
+                  : rubroPreset.catalogBadge)}
+            </span>
             <Sparkles className="w-3.5 h-3.5 text-amber-600" />
           </div>
 
           <h2 className="font-playfair text-3xl sm:text-5xl lg:text-6xl font-black text-slate-900 tracking-tight leading-tight">
-            Colección <span className="bg-gradient-to-r from-amber-800 to-amber-600 bg-clip-text text-transparent">VEAZ ESTILEZA</span>
+            {storeInfo?.catalogConfig?.catalogTitle ? (
+              <span>{storeInfo.catalogConfig.catalogTitle}</span>
+            ) : storeInfo?.isOfficialStore ? (
+              <>
+                Colección <span className="bg-gradient-to-r from-amber-800 to-amber-600 bg-clip-text text-transparent">VEAZ ESTILEZA</span>
+              </>
+            ) : (
+              <>
+                Vitrina <span className="bg-gradient-to-r from-amber-800 to-amber-600 bg-clip-text text-transparent">{storeInfo?.businessName || "Oficial"}</span>
+              </>
+            )}
           </h2>
 
           <p className="font-outfit text-base sm:text-lg text-slate-600 font-normal mt-3 leading-relaxed">
-            Stilettos, tacos aguja, modelos calados troquelados y TACONES de gala. Cada modelo agrupa su serie completa de tallas y stock en tiempo real.
+            {storeInfo?.catalogConfig?.catalogSubtitle ||
+              (storeInfo?.isOfficialStore
+                ? "Stilettos, tacos aguja, modelos calados troquelados y TACONES de gala. Cada modelo agrupa su serie completa de tallas y stock en tiempo real."
+                : rubroPreset.catalogSubtitle)}
           </p>
         </div>
 
@@ -504,7 +712,7 @@ export default function VeazEstilezaPage() {
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Buscar por modelo, SKU, taco (ej. Taco 12), color..."
+                placeholder={storeInfo?.isOfficialStore ? "Buscar por modelo, SKU, taco (ej. Taco 12), color..." : (rubroPreset.searchPlaceholder || "Buscar por modelo, marca, código o especificación...")}
                 className="w-full pl-11 pr-10 py-3 rounded-2xl bg-[#FAF7F2] border border-[#E8DCBE] text-xs text-slate-900 placeholder:text-slate-400 font-outfit focus:outline-none focus:border-amber-500 focus:bg-white transition-all shadow-xs"
               />
               {searchTerm && (
@@ -538,7 +746,7 @@ export default function VeazEstilezaPage() {
                   <option value="featured">Más Destacados</option>
                   <option value="price-asc">Precio: Menor a Mayor</option>
                   <option value="price-desc">Precio: Mayor a Menor</option>
-                  <option value="stock">Mayor Stock en Serie</option>
+                  <option value="stock">{storeInfo?.isOfficialStore ? "Mayor Stock en Serie" : "Mayor Stock Disponible"}</option>
                 </select>
               </div>
 
@@ -668,7 +876,7 @@ export default function VeazEstilezaPage() {
           <div className="pt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-[11px] font-cinzel font-bold tracking-widest text-slate-700 uppercase mr-1">
-                Tallas en Serie:
+                {storeInfo?.catalogConfig?.variantLabel || rubroPreset.variantLabel}:
               </span>
               <button
                 onClick={() => setSelectedSize("TODAS")}
@@ -679,20 +887,24 @@ export default function VeazEstilezaPage() {
               >
                 Todas
               </button>
-              {allSizesWithCounts.map(({ size, count }) => (
-                <button
-                  key={size}
-                  onClick={() => setSelectedSize(size)}
-                  className={`h-8 min-w-[46px] px-2.5 rounded-xl text-xs font-cinzel font-bold tracking-wider transition-all cursor-pointer border flex items-center justify-center gap-1 ${selectedSize === size
-                    ? "bg-amber-700 text-white border-amber-700 shadow-sm scale-105"
-                    : "bg-[#FAF8F5] text-slate-800 border-[#E8DCBE] hover:border-amber-500 hover:bg-amber-50"
-                    }`}
-                  title={`${count} modelos disponibles en talla ${size}`}
-                >
-                  <span>T{size}</span>
-                  <span className="text-[9px] opacity-75 font-normal">({count})</span>
-                </button>
-              ))}
+              {allSizesWithCounts.map(({ size, count }) => {
+                const isNumeric = !isNaN(Number(size)) && !size.startsWith("T");
+                const displayLabel = isNumeric ? (storeInfo?.isOfficialStore ? `T${size}` : size) : size;
+                return (
+                  <button
+                    key={size}
+                    onClick={() => setSelectedSize(size)}
+                    className={`h-8 min-w-[46px] px-2.5 rounded-xl text-xs font-cinzel font-bold tracking-wider transition-all cursor-pointer border flex items-center justify-center gap-1 ${selectedSize === size
+                      ? "bg-amber-700 text-white border-amber-700 shadow-sm scale-105"
+                      : "bg-[#FAF8F5] text-slate-800 border-[#E8DCBE] hover:border-amber-500 hover:bg-amber-50"
+                      }`}
+                    title={`${count} disponibles en ${size}`}
+                  >
+                    <span>{displayLabel}</span>
+                    <span className="text-[9px] opacity-75 font-normal">({count})</span>
+                  </button>
+                );
+              })}
             </div>
 
             <div className="text-right shrink-0">
@@ -724,7 +936,7 @@ export default function VeazEstilezaPage() {
             )}
             {selectedSize !== "TODAS" && (
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-200 text-slate-800 text-xs font-outfit font-bold">
-                Talla: {selectedSize}
+                {storeInfo?.catalogConfig?.variantLabel || rubroPreset.variantLabel}: {selectedSize}
                 <button onClick={() => setSelectedSize("TODAS")} className="cursor-pointer hover:text-red-700">
                   <X className="w-3 h-3" />
                 </button>
@@ -769,6 +981,10 @@ export default function VeazEstilezaPage() {
               <VeazShoeCard
                 key={shoe.key}
                 shoe={shoe}
+                storePhone={storeWhatsAppPhone}
+                storeName={storeInfo?.businessName || "VEAZ ESTILEZA"}
+                variantLabel={storeInfo?.catalogConfig?.variantLabel || rubroPreset.variantLabel}
+                isOfficialStore={storeInfo?.isOfficialStore ?? true}
                 onOpenLightbox={(selected) => setActiveLightboxShoe(selected)}
               />
             ))}
@@ -782,7 +998,7 @@ export default function VeazEstilezaPage() {
               No encontramos modelos con estos filtros
             </h3>
             <p className="text-sm text-slate-600 font-outfit max-w-md mx-auto mb-6">
-              Prueba cambiando la marca, el estilo o restableciendo los filtros para ver todos los calzados disponibles.
+              Prueba cambiando la marca, el estilo o restableciendo los filtros para ver todos los productos disponibles.
             </p>
             <button
               onClick={clearAllFilters}
@@ -795,165 +1011,212 @@ export default function VeazEstilezaPage() {
       </section>
 
       {/* ──────────────────────────────────────────────────────────
-          5. PASARELA EDITORIAL DE ALTA MODA
+          5. PASARELA EDITORIAL / GALERÍA DESTACADA
       ────────────────────────────────────────────────────────── */}
-      <div id="pasarela-section">
-        <VeazModelGallery
-          onSelectBrand={handleSelectBrand}
-          onSelectCategory={handleSelectCategoryFromHeroOrModel}
-        />
-      </div>
+      {storeInfo?.catalogConfig?.showLookbook !== false && (
+        <div id="pasarela-section">
+          <VeazModelGallery
+            onSelectBrand={handleSelectBrand}
+            onSelectCategory={handleSelectCategoryFromHeroOrModel}
+            isOfficialStore={storeInfo?.isOfficialStore ?? true}
+            customTitle={
+              storeInfo?.catalogConfig?.lookbookTitle ||
+              (!storeInfo?.isOfficialStore ? rubroPreset.lookbookTitle : undefined)
+            }
+            customSubtitle={
+              storeInfo?.catalogConfig?.lookbookSubtitle ||
+              (!storeInfo?.isOfficialStore ? rubroPreset.lookbookSubtitle : undefined)
+            }
+            customBadge={
+              storeInfo?.catalogConfig?.lookbookBadge ||
+              (!storeInfo?.isOfficialStore ? rubroPreset.lookbookBadge : undefined)
+            }
+            customLooks={
+              storeInfo?.catalogConfig?.lookbookItems ||
+              (!storeInfo?.isOfficialStore ? rubroPreset.lookbookItems : undefined)
+            }
+          />
+        </div>
+      )}
 
       {/* ──────────────────────────────────────────────────────────
-          6. NUEVA SECCIÓN MODERNA E INTERACTIVA DE DIRECCIÓN Y SHOWROOM
+          6. SECCIÓN DE UBICACIÓN FÍSICA & SHOWROOM
       ────────────────────────────────────────────────────────── */}
-      <section id="ubicacion-section" className="py-20 w-full px-4 sm:px-8 lg:px-12 2xl:px-16 bg-gradient-to-b from-[#FAF8F5] via-[#F4EDE2] to-[#FAF8F5] border-y border-[#EDE2D4] relative overflow-hidden">
-        {/* Decorative background glows */}
-        <div className="absolute -top-32 -left-32 w-96 h-96 bg-amber-200/30 rounded-full blur-3xl pointer-events-none"></div>
-        <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-amber-300/20 rounded-full blur-3xl pointer-events-none"></div>
+      {storeInfo?.catalogConfig?.showLocation !== false && (
+        <section id="ubicacion-section" className="py-20 w-full px-4 sm:px-8 lg:px-12 2xl:px-16 bg-gradient-to-b from-[#FAF8F5] via-[#F4EDE2] to-[#FAF8F5] border-y border-[#EDE2D4] relative overflow-hidden">
+          {/* Decorative background glows */}
+          <div className="absolute -top-32 -left-32 w-96 h-96 bg-amber-200/30 rounded-full blur-3xl pointer-events-none"></div>
+          <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-amber-300/20 rounded-full blur-3xl pointer-events-none"></div>
 
-        <div className="max-w-6xl mx-auto relative z-10">
-          {/* Section Header */}
-          <div className="text-center max-w-2xl mx-auto mb-14">
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white border border-amber-300 text-amber-900 text-xs font-cinzel font-bold tracking-[0.25em] uppercase mb-4 shadow-xs">
-              <Compass className="w-3.5 h-3.5 text-amber-700 animate-spin" style={{ animationDuration: "12s" }} />
-              <span>SHOWROOM & BOUTIQUE EXCLUSIVA</span>
-              <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-            </div>
-            <h2 className="font-playfair text-3xl sm:text-5xl font-black text-slate-900 tracking-tight">
-              Visita Nuestro <span className="bg-gradient-to-r from-amber-800 to-amber-600 bg-clip-text text-transparent">Salón de Exhibición</span>
-            </h2>
-            <p className="font-outfit text-sm sm:text-base text-slate-600 mt-3">
-              Vive la experiencia de alta costura en persona. Te esperamos en nuestro local principal en Puerto Maldonado.
-            </p>
-          </div>
-
-          {/* Grid Layout: Address Card + Interactive Map Card */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-
-            {/* Left Box: Detailed Address & Landmarks (7 Cols) */}
-            <div className="lg:col-span-7 bg-white/90 backdrop-blur-md border border-[#E8DCBE] rounded-3xl p-8 sm:p-10 shadow-[0_10px_40px_rgba(0,0,0,0.05)]">
-              <div className="flex items-center gap-3.5 mb-6">
-                <div className="w-12 h-12 rounded-2xl bg-amber-900 text-amber-100 flex items-center justify-center shadow-md">
-                  <MapPin className="w-6 h-6 text-amber-300" />
-                </div>
-                <div>
-                  <span className="text-[10px] font-cinzel font-bold tracking-[0.25em] text-amber-800 uppercase block">
-                    Ubicación Oficial
-                  </span>
-                  <h3 className="font-playfair text-xl sm:text-2xl font-bold text-slate-900">
-                    Puerto Maldonado, Madre de Dios
-                  </h3>
-                </div>
+          <div className="max-w-6xl mx-auto relative z-10">
+            {/* Section Header */}
+            <div className="text-center max-w-2xl mx-auto mb-14">
+              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white border border-amber-300 text-amber-900 text-xs font-cinzel font-bold tracking-[0.25em] uppercase mb-4 shadow-xs">
+                <Compass className="w-3.5 h-3.5 text-amber-700 animate-spin" style={{ animationDuration: "12s" }} />
+                <span>
+                  {storeInfo?.isOfficialStore
+                    ? "SHOWROOM & BOUTIQUE EXCLUSIVA"
+                    : "LOCAL DE ATENCIÓN & UBICACIÓN"}
+                </span>
+                <Sparkles className="w-3.5 h-3.5 text-amber-600" />
               </div>
-
-              {/* Main Address Highlight */}
-              <div className="p-4 sm:p-5 rounded-2xl bg-[#FAF7F2] border border-[#E8DCBE] mb-6">
-                <p className="font-playfair text-lg sm:text-xl font-bold text-slate-900 leading-snug">
-                  Av. Madre de Dios, Con Pasaje Fonavi
-                </p>
-                <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-amber-200/60">
-                  <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-900 font-outfit text-xs font-semibold">
-                    📍 Frente a Proversa
-                  </span>
-                  <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-900 font-outfit text-xs font-semibold">
-                    🔥 Al costado de Pollería Todo a Leña
-                  </span>
-                </div>
-              </div>
-
-              {/* Horarios & Atencion details */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
-                <div className="flex items-start gap-3 p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-                  <Clock className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
-                  <div>
-                    <h4 className="font-cinzel text-xs font-bold text-slate-900 uppercase">Horario de Atención</h4>
-                    <p className="font-outfit text-xs text-slate-600 mt-0.5">Domingo a Viernes: 8:00 am - 9:30 pm</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3 p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-                  <ShieldCheck className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />
-                  <div>
-                    <h4 className="font-cinzel text-xs font-bold text-slate-900 uppercase">Asesoría Personalizada</h4>
-                    <p className="font-outfit text-xs text-slate-600 mt-0.5">Prueba de tallas y series completas</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex flex-wrap items-center gap-4">
-                <a
-                  href="https://maps.app.goo.gl/p9uX1yW7n2FgFj9bA"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 min-w-[200px] px-6 py-3.5 rounded-2xl bg-gradient-to-r from-amber-700 to-amber-900 hover:from-amber-800 hover:to-amber-950 text-white font-cinzel text-xs font-bold tracking-wider uppercase flex items-center justify-center gap-2.5 shadow-lg hover:shadow-xl transition-all cursor-pointer group"
-                >
-                  <Navigation className="w-4 h-4 text-amber-300 group-hover:rotate-45 transition-transform" />
-                  <span>Abrir en Google Maps</span>
-                  <ExternalLink className="w-3.5 h-3.5 opacity-70" />
-                </a>
-
-                <a
-                  href="https://wa.me/51929962458?text=Hola%20VEAZ%20ESTILEZA,%20deseo%20coordinar%20una%20visita%20a%20su%20showroom%20en%20Av.%20Madre%20de%20Dios"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-6 py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-cinzel text-xs font-bold tracking-wider uppercase flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer"
-                >
-                  <MessageCircle className="w-4 h-4 fill-white text-emerald-600" />
-                  <span>Coordinar Visita</span>
-                </a>
-              </div>
+              <h2 className="font-playfair text-3xl sm:text-5xl font-black text-slate-900 tracking-tight">
+                Visita Nuestro{" "}
+                <span className="bg-gradient-to-r from-amber-800 to-amber-600 bg-clip-text text-transparent">
+                  {storeInfo?.isOfficialStore ? "Salón de Exhibición" : "Punto de Venta"}
+                </span>
+              </h2>
+              <p className="font-outfit text-sm sm:text-base text-slate-600 mt-3">
+                {storeInfo?.isOfficialStore
+                  ? "Vive la experiencia de alta costura en persona. Te esperamos en nuestro local principal en Puerto Maldonado."
+                  : `Conoce nuestros productos y recibe atención personalizada en ${storeInfo?.catalogConfig?.locationCity || "nuestro local comercial"}.`}
+              </p>
             </div>
 
-            {/* Right Box: Visual Map / Interactive Card (5 Cols) */}
-            <div className="lg:col-span-5">
-              <div className="relative rounded-3xl overflow-hidden border-2 border-amber-300/60 shadow-2xl bg-slate-900 group aspect-4/3 sm:aspect-square flex items-center justify-center">
-                {/* Background image mockup simulating Puerto Maldonado boutique location */}
-                <img
-                  src="https://images.unsplash.com/photo-1524758631624-e2822e304c36?q=80&w=800&auto=format&fit=crop"
-                  alt="Showroom VEAZ ESTILEZA"
-                  className="w-full h-full object-cover opacity-60 group-hover:scale-105 transition-transform duration-700"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent"></div>
-
-                {/* Floating Map Badge */}
-                <div className="absolute top-4 left-4 right-4 flex items-center justify-between">
-                  <span className="px-3 py-1.5 rounded-full bg-white/90 backdrop-blur-md text-[10px] font-cinzel font-bold tracking-widest text-slate-900 uppercase shadow-md flex items-center gap-1.5">
-                    <MapPin className="w-3.5 h-3.5 text-rose-600 animate-bounce" />
-                    <span>Madre de Dios, Perú</span>
-                  </span>
-                  <div className="w-9 h-9 rounded-full bg-amber-500 text-slate-950 flex items-center justify-center font-bold shadow-lg">
-                    <VeazCrownIcon size={16} />
+            {/* Grid Layout: Address Card + Interactive Map Card */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+              {/* Left Box: Detailed Address & Landmarks (7 Cols) */}
+              <div className="lg:col-span-7 bg-white/90 backdrop-blur-md border border-[#E8DCBE] rounded-3xl p-8 sm:p-10 shadow-[0_10px_40px_rgba(0,0,0,0.05)]">
+                <div className="flex items-center gap-3.5 mb-6">
+                  <div className="w-12 h-12 rounded-2xl bg-amber-900 text-amber-100 flex items-center justify-center shadow-md">
+                    <MapPin className="w-6 h-6 text-amber-300" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-cinzel font-bold tracking-[0.25em] text-amber-800 uppercase block">
+                      Ubicación Oficial
+                    </span>
+                    <h3 className="font-playfair text-xl sm:text-2xl font-bold text-slate-900">
+                      {storeInfo?.catalogConfig?.locationCity ||
+                        (storeInfo?.isOfficialStore ? "Puerto Maldonado, Madre de Dios" : "Atención Presencial")}
+                    </h3>
                   </div>
                 </div>
 
-                {/* Center Content / Quick Interactive Trigger */}
-                <div className="absolute inset-x-6 bottom-6 text-center text-white">
-                  <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl p-5 shadow-2xl">
-                    <h4 className="font-playfair text-lg font-bold mb-1">
-                      ¿Cómo llegar al Showroom?
-                    </h4>
-                    <p className="font-outfit text-xs text-slate-200 mb-4">
-                      Toca el botón para trazar tu ruta exacta desde tu ubicación actual.
-                    </p>
+                {/* Main Address Highlight */}
+                <div className="p-4 sm:p-5 rounded-2xl bg-[#FAF7F2] border border-[#E8DCBE] mb-6">
+                  <p className="font-playfair text-lg sm:text-xl font-bold text-slate-900 leading-snug">
+                    {storeInfo?.catalogConfig?.locationAddress ||
+                      (storeInfo?.isOfficialStore
+                        ? "Av. Madre de Dios, Con Pasaje Fonavi"
+                        : "Visítanos en nuestro local comercial")}
+                  </p>
+                  {(storeInfo?.catalogConfig?.locationLandmarks || storeInfo?.isOfficialStore) && (
+                    <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-amber-200/60">
+                      <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-900 font-outfit text-xs font-semibold">
+                        📍 {storeInfo?.catalogConfig?.locationLandmarks || "Frente a Proversa / Al costado de Pollería Todo a Leña"}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Horarios & Atencion details */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+                  <div className="flex items-start gap-3 p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+                    <Clock className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="font-cinzel text-xs font-bold text-slate-900 uppercase">Horario de Atención</h4>
+                      <p className="font-outfit text-xs text-slate-600 mt-0.5">
+                        {storeInfo?.catalogConfig?.locationSchedule ||
+                          (storeInfo?.isOfficialStore ? "Domingo a Viernes: 8:00 am - 9:30 pm" : "Lunes a Sábado: 8:30 am - 8:30 pm")}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3 p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+                    <ShieldCheck className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="font-cinzel text-xs font-bold text-slate-900 uppercase">Asesoría Directa</h4>
+                      <p className="font-outfit text-xs text-slate-600 mt-0.5">
+                        {storeInfo?.isOfficialStore ? "Prueba de tallas y series completas" : "Atención personalizada y pedidos al momento"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex flex-wrap items-center gap-4">
+                  {(storeInfo?.catalogConfig?.locationMapsUrl || storeInfo?.isOfficialStore) && (
                     <a
-                      href="https://maps.app.goo.gl/p9uX1yW7n2FgFj9bA"
+                      href={storeInfo?.catalogConfig?.locationMapsUrl || "https://maps.app.goo.gl/p9uX1yW7n2FgFj9bA"}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-cinzel text-xs font-bold tracking-wider uppercase shadow-md transition-all cursor-pointer"
+                      className="flex-1 min-w-[200px] px-6 py-3.5 rounded-2xl bg-gradient-to-r from-amber-700 to-amber-900 hover:from-amber-800 hover:to-amber-950 text-white font-cinzel text-xs font-bold tracking-wider uppercase flex items-center justify-center gap-2.5 shadow-lg hover:shadow-xl transition-all cursor-pointer group"
                     >
-                      <Navigation className="w-3.5 h-3.5" />
-                      <span>Iniciar Navegación GPS</span>
+                      <Navigation className="w-4 h-4 text-amber-300 group-hover:rotate-45 transition-transform" />
+                      <span>Abrir en Google Maps</span>
+                      <ExternalLink className="w-3.5 h-3.5 opacity-70" />
                     </a>
+                  )}
+
+                  <a
+                    href={`https://wa.me/${storeWhatsAppPhone}?text=${encodeURIComponent(
+                      `Hola *${storeInfo?.businessName || "VEAZ ESTILEZA"}*, deseo consultar sobre la atención en su local.`
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-6 py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-cinzel text-xs font-bold tracking-wider uppercase flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer"
+                  >
+                    <MessageCircle className="w-4 h-4 fill-white text-emerald-600" />
+                    <span>Contactar por WhatsApp</span>
+                  </a>
+                </div>
+              </div>
+
+              {/* Right Box: Visual Map / Interactive Card (5 Cols) */}
+              <div className="lg:col-span-5">
+                <div className="relative rounded-3xl overflow-hidden border-2 border-amber-300/60 shadow-2xl bg-slate-900 group aspect-4/3 sm:aspect-square flex items-center justify-center">
+                  <img
+                    src={
+                      (storeInfo?.catalogConfig?.locationImage && getReceiptAbsoluteUrl(storeInfo.catalogConfig.locationImage)) ||
+                      storeInfo?.catalogConfig?.locationImage ||
+                      "https://images.unsplash.com/photo-1524758631624-e2822e304c36?q=80&w=800&auto=format&fit=crop"
+                    }
+                    alt={storeInfo?.businessName || "Local"}
+                    className="w-full h-full object-cover opacity-60 group-hover:scale-105 transition-transform duration-700"
+                    onError={(e) => {
+                      (e.target as any).src =
+                        "https://images.unsplash.com/photo-1524758631624-e2822e304c36?q=80&w=800&auto=format&fit=crop";
+                    }}
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent"></div>
+
+                  {/* Floating Map Badge */}
+                  <div className="absolute top-4 left-4 right-4 flex items-center justify-between">
+                    <span className="px-3 py-1.5 rounded-full bg-white/90 backdrop-blur-md text-[10px] font-cinzel font-bold tracking-widest text-slate-900 uppercase shadow-md flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-rose-600 animate-bounce" />
+                      <span>{storeInfo?.catalogConfig?.locationCity || "Perú"}</span>
+                    </span>
+                    <div className="w-9 h-9 rounded-full bg-amber-500 text-slate-950 flex items-center justify-center font-bold shadow-lg">
+                      <VeazCrownIcon size={16} />
+                    </div>
+                  </div>
+
+                  {/* Center Content / Quick Interactive Trigger */}
+                  <div className="absolute inset-x-6 bottom-6 text-center text-white">
+                    <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl p-5 shadow-2xl">
+                      <h4 className="font-playfair text-lg font-bold mb-1">
+                        ¿Cómo llegar al Local?
+                      </h4>
+                      <p className="font-outfit text-xs text-slate-200 mb-4">
+                        Inicia navegación GPS para trazar tu ruta directa.
+                      </p>
+                      <a
+                        href={storeInfo?.catalogConfig?.locationMapsUrl || "https://maps.app.goo.gl/p9uX1yW7n2FgFj9bA"}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-cinzel text-xs font-bold tracking-wider uppercase shadow-md transition-all cursor-pointer"
+                      >
+                        <Navigation className="w-3.5 h-3.5" />
+                        <span>Iniciar Navegación GPS</span>
+                      </a>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* ──────────────────────────────────────────────────────────
           7. LIGHTBOX MODAL FOR HIGH-RES ZOOM
@@ -969,7 +1232,9 @@ export default function VeazEstilezaPage() {
       ────────────────────────────────────────────────────────── */}
       <div className="fixed bottom-6 right-6 z-40 flex items-center gap-3">
         <a
-          href="https://wa.me/51929962458?text=Hola%20VEAZ%20ESTILEZA,%20deseo%20consultar%20disponibilidad%20de%20calzados"
+          href={`https://wa.me/${storeWhatsAppPhone}?text=${encodeURIComponent(
+            `Hola *${storeInfo?.businessName || "VEAZ ESTILEZA"}*, deseo consultar disponibilidad en su catálogo oficial.`
+          )}`}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-2.5 px-5 py-3.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-cinzel text-xs font-bold tracking-wider shadow-2xl hover:scale-105 active:scale-95 transition-all cursor-pointer group"
@@ -984,119 +1249,129 @@ export default function VeazEstilezaPage() {
           9. HAUTE COUTURE LUXURY LIGHT FOOTER WITH DYNAMIC HOVER RAIL
       ────────────────────────────────────────────────────────── */}
       <footer className="bg-white border-t border-[#EDE2D4] pt-16 pb-12 px-4 sm:px-8 lg:px-12 2xl:px-16 relative">
-        <div className="mb-16 pb-12 border-b border-slate-100">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
-            <div>
-              <div className="inline-flex items-center gap-2 text-xs font-cinzel tracking-[0.25em] text-amber-900 font-bold uppercase mb-1">
-                <VeazCrownIcon size={13} />
-                <span>UNIVERSO VEAZ ESTILEZA</span>
-              </div>
-              <h3 className="font-playfair text-2xl font-black text-slate-900">
-                Marcas Oficiales & Líneas de Colección
-              </h3>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-400 font-outfit hidden md:inline">
-                Acerca el cursor a los bordes para deslizar
-              </span>
-              <button
-                onClick={() => scrollFooterRail("left")}
-                className="w-9 h-9 rounded-full bg-[#FAF7F2] border border-[#E8DCBE] text-slate-700 hover:bg-amber-100 flex items-center justify-center transition-all cursor-pointer shadow-xs"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => scrollFooterRail("right")}
-                className="w-9 h-9 rounded-full bg-[#FAF7F2] border border-[#E8DCBE] text-slate-700 hover:bg-amber-100 flex items-center justify-center transition-all cursor-pointer shadow-xs"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          <div
-            ref={footerRailRef}
-            onMouseMove={handleFooterRailMouseMove}
-            onMouseEnter={handleFooterRailMouseEnter}
-            onMouseLeave={handleFooterRailMouseLeave}
-            className="flex items-center gap-5 overflow-x-auto pb-4 scrollbar-none scroll-smooth select-none cursor-grab active:cursor-grabbing"
-          >
-            {[
-              {
-                brand: "VIZZANO",
-                title: "Stilettos & Glamour",
-                desc: "Tacos aguja de alta costura",
-                img: "https://images.unsplash.com/photo-1543163521-1bf539c55dd2?q=80&w=600&auto=format&fit=crop",
-              },
-              {
-                brand: "MODARE",
-                title: "Ultra Confort",
-                desc: "Plantillas anatómicas acolchadas",
-                img: "https://images.unsplash.com/photo-1515372039744-b8f02a3ae446?q=80&w=600&auto=format&fit=crop",
-              },
-              {
-                brand: "MARIMENA",
-                title: "Gala & Strass",
-                desc: "Diseños de fiesta y alfombra roja",
-                img: "https://images.unsplash.com/photo-1539109136881-3be0616acf4b?q=80&w=600&auto=format&fit=crop",
-              },
-              {
-                brand: "EDWIN",
-                title: "Línea Varones",
-                desc: "Cueros selectos de vestir",
-                img: "https://images.unsplash.com/photo-1614252235316-8c857d38b5f4?q=80&w=600&auto=format&fit=crop",
-              },
-              {
-                brand: "XIOMARA",
-                title: "Tendencia Chic",
-                desc: "Tacones confort y TACONES modernas",
-                img: "https://images.unsplash.com/photo-1509631179647-0177331693ae?q=80&w=600&auto=format&fit=crop",
-              },
-              {
-                brand: "TRIKCS",
-                title: "Urbano Premium",
-                desc: "Calzados anatómicos resistentes",
-                img: "https://images.unsplash.com/photo-1496747611176-843222e1e57c?q=80&w=600&auto=format&fit=crop",
-              },
-            ].map((item) => (
-              <div
-                key={item.brand}
-                onClick={() => handleSelectBrand(item.brand)}
-                className="shrink-0 w-72 h-44 rounded-3xl relative overflow-hidden group cursor-pointer border border-[#EDE2D4] shadow-sm hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1"
-              >
-                <img
-                  src={item.img}
-                  alt={item.title}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent"></div>
-                <div className="absolute top-3.5 left-3.5">
-                  <span className="px-3 py-1 rounded-full bg-white/90 backdrop-blur-md text-[10px] font-cinzel font-bold tracking-widest text-slate-900 uppercase shadow-sm">
-                    {item.brand}
+        {/* BOTTOM SHOWCASE RAIL (MARCAS & LÍNEAS) */}
+        {storeInfo?.catalogConfig?.showShowcaseRail !== false && showcaseRailItems.length > 0 && (
+          <div className="mb-16 pb-12 border-b border-slate-100">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+              <div>
+                <div className="inline-flex items-center gap-2 text-xs font-cinzel tracking-[0.25em] text-amber-900 font-bold uppercase mb-1">
+                  <VeazCrownIcon size={13} />
+                  <span>
+                    {storeInfo?.isOfficialStore
+                      ? "UNIVERSO VEAZ ESTILEZA"
+                      : (storeInfo?.businessName ? `UNIVERSO ${storeInfo.businessName.toUpperCase()}` : "LÍNEAS DESTACADAS")}
                   </span>
                 </div>
-                <div className="absolute bottom-3.5 left-3.5 right-3.5 text-white">
-                  <h4 className="font-playfair text-base font-bold tracking-wide">
-                    {item.title}
-                  </h4>
-                  <p className="font-outfit text-xs text-slate-300">
-                    {item.desc}
-                  </p>
-                </div>
+                <h3 className="font-playfair text-2xl font-black text-slate-900">
+                  {storeInfo?.catalogConfig?.showcaseRailTitle ||
+                    (storeInfo?.isOfficialStore
+                      ? "Marcas Oficiales & Líneas de Colección"
+                      : rubroPreset.showcaseRailTitle || "Líneas de Productos & Marcas Oficiales")}
+                </h3>
               </div>
-            ))}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400 font-outfit hidden md:inline">
+                  Acerca el cursor a los bordes para deslizar
+                </span>
+                <button
+                  onClick={() => scrollFooterRail("left")}
+                  className="w-9 h-9 rounded-full bg-[#FAF7F2] border border-[#E8DCBE] text-slate-700 hover:bg-amber-100 flex items-center justify-center transition-all cursor-pointer shadow-xs"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => scrollFooterRail("right")}
+                  className="w-9 h-9 rounded-full bg-[#FAF7F2] border border-[#E8DCBE] text-slate-700 hover:bg-amber-100 flex items-center justify-center transition-all cursor-pointer shadow-xs"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            <div
+              ref={footerRailRef}
+              onMouseMove={handleFooterRailMouseMove}
+              onMouseEnter={handleFooterRailMouseEnter}
+              onMouseLeave={handleFooterRailMouseLeave}
+              className="flex items-center gap-5 overflow-x-auto pb-4 scrollbar-none scroll-smooth select-none cursor-grab active:cursor-grabbing"
+            >
+              {showcaseRailItems.map((item, idx) => (
+                <div
+                  key={`${item.brand}-${idx}`}
+                  onClick={() => {
+                    handleSelectBrand(item.brand);
+                    scrollToCatalog();
+                  }}
+                  className="shrink-0 w-72 h-44 rounded-3xl relative overflow-hidden group cursor-pointer border border-[#EDE2D4] shadow-sm hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1"
+                >
+                  <img
+                    src={getReceiptAbsoluteUrl(item.img) || item.img}
+                    alt={item.title}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent"></div>
+                  <div className="absolute top-3.5 left-3.5">
+                    <span className="px-3 py-1 rounded-full bg-white/90 backdrop-blur-md text-[10px] font-cinzel font-bold tracking-widest text-slate-900 uppercase shadow-sm">
+                      {item.brand}
+                    </span>
+                  </div>
+                  <div className="absolute bottom-3.5 left-3.5 right-3.5 text-white">
+                    <h4 className="font-playfair text-base font-bold tracking-wide">
+                      {item.title}
+                    </h4>
+                    <p className="font-outfit text-xs text-slate-300">
+                      {item.desc}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12 mb-16">
           <div className="flex flex-col gap-4">
-            <VeazLogo size="md" showSubtitle={true} />
-            <p className="text-xs sm:text-sm text-slate-600 font-outfit font-normal leading-relaxed mt-2">
-              VEAZ ESTILEZA representa la máxima expresión del calzado femenino de lujo. Curaduría impecable, series por tallas y diseños que coronan tu elegancia en cada pisada.
-            </p>
+            {storeInfo && !storeInfo.isOfficialStore ? (
+              <>
+                <div className="flex items-center gap-3">
+                  {storeInfo.businessLogo ? (
+                    <img
+                      src={getReceiptAbsoluteUrl(storeInfo.businessLogo) || storeInfo.businessLogo}
+                      alt={storeInfo.businessName}
+                      className="h-10 w-auto object-contain rounded-xl"
+                    />
+                  ) : (
+                    <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 to-amber-700 flex items-center justify-center text-white font-black text-base shadow-sm">
+                      {storeInfo.businessName.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <div>
+                    <h3 className="font-cinzel font-black text-base tracking-wider text-slate-900 uppercase">
+                      {storeInfo.businessName}
+                    </h3>
+                    <span className="text-[10px] text-slate-500 font-outfit uppercase">
+                      {storeInfo.businessRubro || "Catálogo Oficial"}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-xs sm:text-sm text-slate-600 font-outfit font-normal leading-relaxed">
+                  {storeInfo?.catalogConfig?.footerAbout ||
+                    rubroPreset.footerAbout ||
+                    "Catálogo digital verificado con atención personalizada y pedidos directos por WhatsApp."}
+                </p>
+              </>
+            ) : (
+              <>
+                <VeazLogo size="md" showSubtitle={true} />
+                <p className="text-xs sm:text-sm text-slate-600 font-outfit font-normal leading-relaxed mt-2">
+                  VEAZ ESTILEZA representa la máxima expresión del calzado femenino de lujo. Curaduría impecable, series por tallas y diseños que coronan tu elegancia en cada pisada.
+                </p>
+              </>
+            )}
+
             <div className="flex items-center gap-3 mt-3">
               <a
-                href="https://instagram.com"
+                href={storeInfo?.catalogConfig?.instagramUrl || "https://instagram.com"}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="w-10 h-10 rounded-full bg-[#FAF7F2] border border-slate-200 hover:border-amber-500 hover:text-amber-800 flex items-center justify-center transition-all text-slate-700"
@@ -1105,7 +1380,7 @@ export default function VeazEstilezaPage() {
                 <FaInstagram className="w-4 h-4" />
               </a>
               <a
-                href="https://facebook.com"
+                href={storeInfo?.catalogConfig?.facebookUrl || "https://facebook.com"}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="w-10 h-10 rounded-full bg-[#FAF7F2] border border-slate-200 hover:border-amber-500 hover:text-amber-800 flex items-center justify-center transition-all text-slate-700"
@@ -1114,7 +1389,7 @@ export default function VeazEstilezaPage() {
                 <FaFacebookF className="w-4 h-4" />
               </a>
               <a
-                href="https://tiktok.com"
+                href={storeInfo?.catalogConfig?.tiktokUrl || "https://tiktok.com"}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="w-10 h-10 rounded-full bg-[#FAF7F2] border border-slate-200 hover:border-amber-500 hover:text-amber-800 flex items-center justify-center transition-all text-slate-700"
@@ -1123,7 +1398,9 @@ export default function VeazEstilezaPage() {
                 <FaTiktok className="w-4 h-4" />
               </a>
               <a
-                href="https://wa.me/51929962458"
+                href={`https://wa.me/${storeWhatsAppPhone}?text=${encodeURIComponent(
+                  `Hola *${storeInfo?.businessName || "VEAZ ESTILEZA"}*, deseo consultar su catálogo oficial de ${storeInfo?.isOfficialStore ? "calzados" : "productos"} y modelos disponibles.`
+                )}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="w-10 h-10 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-700 hover:bg-emerald-600 hover:text-white flex items-center justify-center transition-all"
@@ -1132,53 +1409,97 @@ export default function VeazEstilezaPage() {
                 <MessageCircle className="w-4 h-4" />
               </a>
             </div>
+
+            {storeInfo && !storeInfo.isOfficialStore && (
+              <div className="pt-2 border-t border-slate-100">
+                <Link
+                  to="/veaz-estileza"
+                  className="inline-flex items-center gap-1.5 text-xs text-amber-800 hover:text-amber-950 font-cinzel font-bold hover:underline"
+                >
+                  <Crown className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Visitar Tienda de Prendas Y Calzados VEAZ ESTILEZA 👑</span>
+                </Link>
+              </div>
+            )}
           </div>
 
           <div>
             <h4 className="font-cinzel text-xs uppercase tracking-[0.25em] text-amber-900 font-bold mb-5">
-              Líneas Exclusivas
+              {storeInfo?.isOfficialStore ? "Líneas Exclusivas" : "Categorías Principales"}
             </h4>
             <ul className="space-y-3 text-xs text-slate-600 font-outfit">
-              <li>
-                <button
-                  onClick={() => handleSelectCategoryFromHeroOrModel("Stilettos")}
-                  className="hover:text-amber-800 transition-colors cursor-pointer"
-                >
-                  Stilettos Haute Couture
-                </button>
-              </li>
-              <li>
-                <button
-                  onClick={() => handleSelectCategoryFromHeroOrModel("Tacos")}
-                  className="hover:text-amber-800 transition-colors cursor-pointer"
-                >
-                  Tacos Aguja & Pasarela
-                </button>
-              </li>
-              <li>
-                <button
-                  onClick={() => handleSelectCategoryFromHeroOrModel("Calados")}
-                  className="hover:text-amber-800 transition-colors cursor-pointer"
-                >
-                  Calados Láser Anatómicos
-                </button>
-              </li>
-              <li>
-                <button
-                  onClick={() => handleSelectCategoryFromHeroOrModel("TACONES")}
-                  className="hover:text-amber-800 transition-colors cursor-pointer"
-                >
-                  TACONES Red Carpet & Strass
-                </button>
-              </li>
-              <li>
-                <button
-                  onClick={() => handleSelectCategoryFromHeroOrModel("Plataformas")}
-                  className="hover:text-amber-800 transition-colors cursor-pointer"
-                >
-                  Plataformas Empress Confort
-                </button>
-              </li>
+              {storeInfo?.isOfficialStore ? (
+                <>
+                  <li>
+                    <button
+                      onClick={() => handleSelectCategoryFromHeroOrModel("Stilettos")}
+                      className="hover:text-amber-800 transition-colors cursor-pointer"
+                    >
+                      Stilettos Haute Couture
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      onClick={() => handleSelectCategoryFromHeroOrModel("Tacos")}
+                      className="hover:text-amber-800 transition-colors cursor-pointer"
+                    >
+                      Tacos Aguja & Pasarela
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      onClick={() => handleSelectCategoryFromHeroOrModel("Calados")}
+                      className="hover:text-amber-800 transition-colors cursor-pointer"
+                    >
+                      Calados Láser Anatómicos
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      onClick={() => handleSelectCategoryFromHeroOrModel("TACONES")}
+                      className="hover:text-amber-800 transition-colors cursor-pointer"
+                    >
+                      TACONES Red Carpet & Strass
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      onClick={() => handleSelectCategoryFromHeroOrModel("Plataformas")}
+                      className="hover:text-amber-800 transition-colors cursor-pointer"
+                    >
+                      Plataformas Empress Confort
+                    </button>
+                  </li>
+                </>
+              ) : availableFamilies.length > 0 ? (
+                availableFamilies.slice(0, 6).map((fam) => (
+                  <li key={fam}>
+                    <button
+                      onClick={() => {
+                        setSelectedFamily(fam);
+                        scrollToCatalog();
+                      }}
+                      className="hover:text-amber-800 transition-colors cursor-pointer text-left capitalize"
+                    >
+                      {fam}
+                    </button>
+                  </li>
+                ))
+              ) : (
+                (rubroPreset.showcaseRailItems || []).slice(0, 5).map((item) => (
+                  <li key={item.brand}>
+                    <button
+                      onClick={() => {
+                        handleSelectBrand(item.brand);
+                        scrollToCatalog();
+                      }}
+                      className="hover:text-amber-800 transition-colors cursor-pointer text-left"
+                    >
+                      {item.title} ({item.brand})
+                    </button>
+                  </li>
+                ))
+              )}
             </ul>
           </div>
 
@@ -1189,19 +1510,19 @@ export default function VeazEstilezaPage() {
             <ul className="space-y-3 text-xs text-slate-600 font-outfit">
               <li className="flex items-center gap-2">
                 <Truck className="w-4 h-4 text-amber-700 shrink-0" />
-                <span>Envíos express a todo el Perú</span>
+                <span>Envíos express y cobertura nacional</span>
               </li>
               <li className="flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-amber-700 shrink-0" />
-                <span>Garantía de confort y autenticidad</span>
+                <span>Garantía oficial y productos 100% originales</span>
               </li>
               <li className="flex items-center gap-2">
                 <Clock className="w-4 h-4 text-amber-700 shrink-0" />
-                <span>Atención: Lun - Sáb: 9:00 am - 8:30 pm</span>
+                <span>{storeInfo?.catalogConfig?.locationSchedule || "Atención: Lun - Sáb: 8:30 am - 8:30 pm"}</span>
               </li>
               <li className="flex items-center gap-2">
                 <MapPin className="w-4 h-4 text-amber-700 shrink-0" />
-                <span>Av. Madre de Dios, Pasaje Fonavi</span>
+                <span>{storeInfo?.catalogConfig?.locationAddress || (storeInfo?.isOfficialStore ? "Av. Madre de Dios, Pasaje Fonavi" : rubroPreset.locationAddress || "Atención directa y envíos")}</span>
               </li>
             </ul>
           </div>
@@ -1211,7 +1532,9 @@ export default function VeazEstilezaPage() {
               Conexión THINK ERP
             </h4>
             <p className="text-xs text-slate-600 font-outfit leading-relaxed mb-4">
-              Este catálogo sincroniza directamente las series de tallas y el inventario en tiempo real con el panel financiero THINK.
+              {storeInfo?.isOfficialStore
+                ? "Este catálogo sincroniza directamente las series de tallas y el inventario en tiempo real con el panel financiero THINK."
+                : "Este catálogo sincroniza el stock disponible y precios oficiales en tiempo real con el sistema THINK ERP."}
             </p>
             <Link
               to="/dashboard"
@@ -1225,10 +1548,14 @@ export default function VeazEstilezaPage() {
 
         <div className="w-full pt-8 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
           <p className="text-xs text-slate-500 font-outfit">
-            © {new Date().getFullYear()} VEAZ ESTILEZA. Todos los derechos reservados.
+            © {new Date().getFullYear()} {storeInfo?.businessName || "VEAZ ESTILEZA"}. Todos los derechos reservados.
           </p>
           <p className="text-xs text-slate-500 font-outfit flex items-center gap-1.5 justify-center">
-            Confección con <Sparkles className="w-3.5 h-3.5 text-amber-600" /> para damas distinguidas.
+            {storeInfo?.isOfficialStore ? (
+              <>Confección con <Sparkles className="w-3.5 h-3.5 text-amber-600" /> para damas distinguidas.</>
+            ) : (
+              <>Catálogo oficial y garantizado de <span className="font-semibold text-slate-700">{storeInfo?.businessName || "la tienda"}</span>.</>
+            )}
           </p>
         </div>
       </footer>

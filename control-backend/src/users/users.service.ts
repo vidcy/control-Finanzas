@@ -44,6 +44,8 @@ export class UsersService {
           data.profiles && data.profiles.length > 0
             ? data.profiles
             : ['PERSONAL'],
+        blockedProfiles: data.blockedProfiles || [],
+        hasElectronicBilling: !!data.hasElectronicBilling,
         isActive: data.isActive !== undefined ? data.isActive : true,
         parentId: data.parentId || null,
         isSelfRegistered: data.isSelfRegistered || false,
@@ -108,10 +110,45 @@ export class UsersService {
     });
     return user;
   }
+
+  async deleteUser(id: string) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+    if (user.role === 'ADMIN') {
+      throw new BadRequestException('No se puede eliminar a un usuario administrador');
+    }
+
+    // Cascade cleanup if necessary before deletion
+    await this.prisma.category.deleteMany({ where: { userId: id } });
+    await this.prisma.product.deleteMany({ where: { userId: id } });
+    await this.prisma.branch.deleteMany({ where: { userId: id } });
+
+    return this.prisma.user.delete({
+      where: { id },
+    });
+  }
   async update(id: string, data: any) {
+    const updateData: any = {};
+    if (data.name !== undefined) updateData.name = data.name;
+    if (data.lastName !== undefined) updateData.lastName = data.lastName;
+    if (data.email !== undefined) updateData.email = data.email;
+    if (data.role !== undefined) updateData.role = data.role;
+    if (data.isActive !== undefined) updateData.isActive = data.isActive;
+    if (data.profiles !== undefined) updateData.profiles = data.profiles;
+    if (data.blockedProfiles !== undefined) updateData.blockedProfiles = data.blockedProfiles;
+    if (data.parentId !== undefined) updateData.parentId = data.parentId || null;
+    if (data.hasElectronicBilling !== undefined) updateData.hasElectronicBilling = !!data.hasElectronicBilling;
+    if (data.nubefactUrl !== undefined) updateData.nubefactUrl = data.nubefactUrl;
+    if (data.nubefactToken !== undefined) updateData.nubefactToken = data.nubefactToken;
+    if (data.password && String(data.password).trim() !== '') {
+      updateData.password = await bcrypt.hash(String(data.password).trim(), 10);
+    }
+
     return this.prisma.user.update({
       where: { id },
-      data: data,
+      data: updateData,
     });
   }
   async me(id: string) {
@@ -147,6 +184,21 @@ export class UsersService {
       },
     });
 
+    if (user) {
+      try {
+        const extra: any = await this.prisma.$queryRawUnsafe(
+          'SELECT "businessSlug", "catalogConfig" FROM "User" WHERE "id" = $1',
+          id,
+        );
+        if (extra && extra.length > 0) {
+          (user as any).businessSlug = extra[0].businessSlug;
+          (user as any).catalogConfig = extra[0].catalogConfig;
+        }
+      } catch (e: any) {
+        // Ignored or logged
+      }
+    }
+
     if (user && user.isSelfRegistered && user.trialEndsAt && new Date() > new Date(user.trialEndsAt)) {
       if (user.isActive) {
         await this.prisma.user.update({
@@ -179,12 +231,49 @@ export class UsersService {
       'defaultCommissionModel',
       'nubefactUrl',
       'nubefactToken',
+      'catalogConfig',
+      'businessAddress',
+      'businessPhone',
+      'businessEmail',
+      'businessDepartment',
+      'businessProvince',
+      'businessDistrict',
+      'billingSerieInvoice',
+      'billingSerieBoleta',
+      'hasElectronicBilling',
     ];
     const updateData: any = {};
     for (const key of allowedFields) {
       if (data[key] !== undefined) {
         updateData[key] = data[key];
       }
+    }
+
+    // Clean and validate businessSlug
+    if (data.businessSlug !== undefined) {
+      const cleanSlug = data.businessSlug
+        ? String(data.businessSlug)
+            .toLowerCase()
+            .trim()
+            .replace(/[^a-z0-9_-]/g, '-')
+            .replace(/-+/g, '-')
+            .replace(/^-|-$/g, '')
+        : null;
+
+      if (cleanSlug) {
+        const existing = await this.prisma.user.findFirst({
+          where: {
+            businessSlug: cleanSlug,
+            NOT: { id },
+          },
+        });
+        if (existing) {
+          throw new BadRequestException(
+            'El enlace público / slug ya está en uso por otra tienda.',
+          );
+        }
+      }
+      updateData.businessSlug = cleanSlug;
     }
 
     // Validar RUC si se envía (11 dígitos numéricos en Perú)
@@ -194,7 +283,7 @@ export class UsersService {
     ) {
       const rucStr = String(updateData.businessRuc).trim();
       if (rucStr !== '') {
-        if (!/^\d{11}$/.test(rucStr)) {
+        if (!/^d{11}$/.test(rucStr)) {
           throw new BadRequestException(
             'El RUC debe tener exactamente 11 dígitos numéricos.',
           );
@@ -270,6 +359,8 @@ export class UsersService {
         businessRubro: true,
         businessLogo: true,
         businessBanner: true,
+        businessSlug: true,
+        catalogConfig: true,
         advisorLabel: true,
         agentRoleSingular: true,
         agentRolePlural: true,

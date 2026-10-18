@@ -344,7 +344,9 @@ export function computeSeriesStockSummary(
 }
 
 /**
- * Encodes series metadata into a structured tag stored safely in product description
+ * Encodes series metadata into a structured tag stored safely in product description.
+ * Uses unambiguous [SERIE_START] ... [SERIE_END] delimiters to completely avoid
+ * premature termination from inner JSON array brackets like c:[{"s":"35","r":1}].
  */
 export function encodeSeriesMetadata(config: {
   seriesId: string;
@@ -362,11 +364,12 @@ export function encodeSeriesMetadata(config: {
     ppu: config.pricePerUnit,
     t: config.taco,
   };
-  return `[SERIE:${JSON.stringify(payload)}]`;
+  return `[SERIE_START]${JSON.stringify(payload)}[SERIE_END]`;
 }
 
 /**
- * Decodes series metadata from product description
+ * Decodes series metadata from product description safely,
+ * supporting both modern [SERIE_START]...[SERIE_END] and legacy [SERIE:{...}].
  */
 export function decodeSeriesMetadata(
   description?: string
@@ -379,29 +382,114 @@ export function decodeSeriesMetadata(
   taco?: string;
 } | null {
   if (!description) return null;
-  const match = description.match(/\[SERIE:(\{.*?\})\]/);
-  if (!match || !match[1]) return null;
-  try {
-    const data = JSON.parse(match[1]);
-    return {
-      seriesId: data.sid,
-      unitsPerSeries: data.u,
-      curve: data.c?.map((x: any) => ({ size: x.s, ratio: x.r })),
-      pricePerSeries: data.pps,
-      pricePerUnit: data.ppu,
-      taco: data.t,
-    };
-  } catch {
-    return null;
+
+  // 1. Modern safe delimiter: [SERIE_START]...[SERIE_END]
+  const modernMatch = description.match(/\[SERIE_START\]([\s\S]*?)\[SERIE_END\]/);
+  if (modernMatch && modernMatch[1]) {
+    try {
+      const data = JSON.parse(modernMatch[1]);
+      return {
+        seriesId: data.sid,
+        unitsPerSeries: data.u,
+        curve: data.c?.map((x: any) => ({ size: x.s, ratio: x.r })),
+        pricePerSeries: data.pps,
+        pricePerUnit: data.ppu,
+        taco: data.t,
+      };
+    } catch {
+      // Fall through to legacy
+    }
   }
+
+  // 2. Legacy delimiter [SERIE:{...}] with balanced brace counting
+  const tagIdx = description.indexOf("[SERIE:");
+  if (tagIdx !== -1) {
+    const startBrace = description.indexOf("{", tagIdx);
+    if (startBrace !== -1) {
+      let depth = 0;
+      let jsonStr = "";
+      for (let i = startBrace; i < description.length; i++) {
+        if (description[i] === "{") depth++;
+        else if (description[i] === "}") {
+          depth--;
+          if (depth === 0) {
+            jsonStr = description.substring(startBrace, i + 1);
+            break;
+          }
+        }
+      }
+      if (jsonStr) {
+        try {
+          const data = JSON.parse(jsonStr);
+          return {
+            seriesId: data.sid,
+            unitsPerSeries: data.u,
+            curve: data.c?.map((x: any) => ({ size: x.s, ratio: x.r })),
+            pricePerSeries: data.pps,
+            pricePerUnit: data.ppu,
+            taco: data.t,
+          };
+        } catch {
+          // Ignore parse errors
+        }
+      }
+    }
+  }
+
+  return null;
 }
 
 /**
- * Strips out the internal [SERIE:{...}] and [TACO:...] metadata tags from description for user-facing display
+ * Strips out internal metadata tags, balanced series JSON, and any orphaned JSON fragments
+ * so the user only sees clean, human-written text.
  */
 export function cleanDescriptionForDisplay(description?: string): string {
   if (!description) return "";
-  let cleaned = description
+  let cleaned = description;
+
+  // 1. Remove modern [SERIE_START]...[SERIE_END] tags
+  cleaned = cleaned.replace(/\[SERIE_START\][\s\S]*?\[SERIE_END\]/gi, "");
+
+  // 2. Remove balanced legacy [SERIE:{...}] tags safely (does not get confused by inner arrays)
+  while (true) {
+    const tagIdx = cleaned.indexOf("[SERIE:");
+    if (tagIdx === -1) break;
+    const startBrace = cleaned.indexOf("{", tagIdx);
+    if (startBrace === -1) {
+      cleaned = cleaned.replace(/\[SERIE:[\s\S]*?\]/gi, "").replace(/\[SERIE:[\s\S]*/gi, "");
+      break;
+    }
+    let depth = 0;
+    let endIdx = -1;
+    for (let i = startBrace; i < cleaned.length; i++) {
+      if (cleaned[i] === "{") depth++;
+      else if (cleaned[i] === "}") {
+        depth--;
+        if (depth === 0) {
+          endIdx = i;
+          break;
+        }
+      }
+    }
+    if (endIdx !== -1) {
+      const closeBracket = cleaned.indexOf("]", endIdx);
+      const cutEnd = closeBracket !== -1 && closeBracket - endIdx <= 4 ? closeBracket + 1 : endIdx + 1;
+      cleaned = cleaned.substring(0, tagIdx) + cleaned.substring(cutEnd);
+    } else {
+      cleaned = cleaned.substring(0, tagIdx);
+      break;
+    }
+  }
+
+  // 3. Remove any orphaned fragments leftover from previous buggy regex cuts:
+  // e.g. ,"pps":1235,"ppu":247,"t":"Taco 5"}]
+  cleaned = cleaned
+    .replace(/,?\s*"pps"\s*:\s*[0-9.]+(?:,\s*"ppu"\s*:\s*[0-9.]+)?(?:,\s*"t"\s*:\s*"[^"]*")?\s*\}?\s*\]?/gi, "")
+    .replace(/,?\s*"ppu"\s*:\s*[0-9.]+(?:,\s*"t"\s*:\s*"[^"]*")?\s*\}?\s*\]?/gi, "")
+    .replace(/,?\s*"t"\s*:\s*"[^"]*"\s*\}?\s*\]?/gi, "")
+    .replace(/,?\s*"sid"\s*:\s*"[^"]*"/gi, "")
+    .replace(/,?\s*"u"\s*:\s*[0-9.]+/gi, "")
+    .replace(/,?\s*"c"\s*:\s*\[[\s\S]*?\]/gi, "")
     .replace(/\[SERIE:[\s\S]*?\]/gi, "")
     .replace(/\[SERIE:[\s\S]*/gi, "")
     .replace(/\[TACO:[\s\S]*?\]/gi, "")
@@ -413,12 +501,24 @@ export function cleanDescriptionForDisplay(description?: string): string {
     .replace(/\{"seriesId":[\s\S]*/gi, "")
     .replace(/\{[\s\S]*?"pricePerSeries"[\s\S]*?\}/gi, "")
     .replace(/,?[\s\S]*?"pricePerSeries"[\s\S]*?\]/gi, "")
-    .replace(/\{[\s\S]*?"curve"[\s\S]*?\}/gi, "")
+    .replace(/\{[\s\S]*?"curve"[\s\S]*?\}/gi, "");
+
+  // 4. Remove dangling JSON/punctuation marks at end or beginning
+  cleaned = cleaned
+    .replace(/[,\s{}\[\]":;.\-_]+$/g, "")
+    .replace(/^[,\s{}\[\]":;.\-_]+/g, "")
     .replace(/\s{2,}/g, " ")
     .trim();
 
-  // If the result consists only of orphaned punctuation or series tags, return empty string
-  if (!cleaned || /^[,\s{}\[\]":;.\-_]+$/.test(cleaned) || cleaned.includes('"pricePerSeries"') || cleaned.includes('"seriesId"')) {
+  // If only punctuation/orphaned characters remained, return empty
+  if (
+    !cleaned ||
+    /^[,\s{}\[\]":;.\-_]+$/.test(cleaned) ||
+    cleaned.includes('"pricePerSeries"') ||
+    cleaned.includes('"seriesId"') ||
+    cleaned.includes('"pps"') ||
+    cleaned.includes('"sid"')
+  ) {
     return "";
   }
   return cleaned;

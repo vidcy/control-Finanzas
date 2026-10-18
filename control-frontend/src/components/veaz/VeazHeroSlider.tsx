@@ -75,32 +75,48 @@ const HERO_SLIDES: HeroSlide[] = [
 ];
 
 interface VeazHeroSliderProps {
+  slides?: HeroSlide[];
+  storeName?: string;
+  storeBadge?: string;
+  isOfficialStore?: boolean;
   onSelectCategory?: (category: string) => void;
   onExploreCatalog?: () => void;
 }
 
 export default function VeazHeroSlider({
+  slides,
+  storeName,
+  storeBadge,
+  isOfficialStore = true,
   onSelectCategory,
   onExploreCatalog,
 }: VeazHeroSliderProps) {
+  const activeSlides = slides && slides.length > 0 ? slides : HERO_SLIDES;
   const [currentIndex, setCurrentIndex] = useState(0);
   const [direction, setDirection] = useState<"left" | "right">("right");
   const [isPlaying, setIsPlaying] = useState(true);
   const [progress, setProgress] = useState(0);
 
+  // Reset index if slides change and index is out of bounds
+  useEffect(() => {
+    if (currentIndex >= activeSlides.length) {
+      setCurrentIndex(0);
+    }
+  }, [activeSlides.length, currentIndex]);
+
   const SLIDE_DURATION = 6500;
 
   const handleNext = useCallback(() => {
     setDirection("right");
-    setCurrentIndex((prev) => (prev + 1) % HERO_SLIDES.length);
+    setCurrentIndex((prev) => (prev + 1) % activeSlides.length);
     setProgress(0);
-  }, []);
+  }, [activeSlides.length]);
 
   const handlePrev = useCallback(() => {
     setDirection("left");
-    setCurrentIndex((prev) => (prev - 1 + HERO_SLIDES.length) % HERO_SLIDES.length);
+    setCurrentIndex((prev) => (prev - 1 + activeSlides.length) % activeSlides.length);
     setProgress(0);
-  }, []);
+  }, [activeSlides.length]);
 
   const handleGoTo = (index: number) => {
     setDirection(index > currentIndex ? "right" : "left");
@@ -127,7 +143,7 @@ export default function VeazHeroSlider({
     return () => clearInterval(timer);
   }, [isPlaying, handleNext]);
 
-  const currentSlide = HERO_SLIDES[currentIndex];
+  const currentSlide = activeSlides[currentIndex] || activeSlides[0];
 
   const variants = {
     enter: (dir: "left" | "right") => ({
@@ -195,7 +211,7 @@ export default function VeazHeroSlider({
             className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/90 border border-amber-300/80 text-amber-900 backdrop-blur-md text-xs font-cinzel font-bold tracking-[0.2em] uppercase mb-5 shadow-sm"
           >
             <VeazCrownIcon size={16} />
-            <span>{currentSlide.badge}</span>
+            <span>{storeBadge || (isOfficialStore ? currentSlide.badge : "TIENDA OFICIAL")}</span>
             <Sparkles className="w-3.5 h-3.5 text-amber-500" />
           </motion.div>
 
@@ -264,10 +280,10 @@ export default function VeazHeroSlider({
         <div className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping" />
         <div className="flex flex-col">
           <span className="text-[10px] uppercase font-cinzel font-bold tracking-widest text-amber-700">
-            Lookbook de Pasarela
+            {isOfficialStore ? "Lookbook de Pasarela" : (storeName || "Colección")}
           </span>
           <span className="text-xs font-semibold text-slate-900">
-            {currentSlide.modelLook}
+            {currentSlide.modelLook || storeName || "Modelos de Temporada"}
           </span>
         </div>
       </div>
@@ -303,9 +319,9 @@ export default function VeazHeroSlider({
 
         {/* Slide Indicators Dots */}
         <div className="flex items-center gap-2">
-          {HERO_SLIDES.map((slide, idx) => (
+          {activeSlides.map((slide, idx) => (
             <button
-              key={slide.id}
+              key={slide.id || idx}
               onClick={() => handleGoTo(idx)}
               aria-label={`Ir a diapositiva ${idx + 1}`}
               className={`h-2 rounded-full transition-all cursor-pointer ${idx === currentIndex

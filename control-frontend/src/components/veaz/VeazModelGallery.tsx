@@ -3,6 +3,8 @@ import { motion } from "framer-motion";
 import { Sparkles, ChevronLeft, ChevronRight, Eye, ArrowUpRight } from "lucide-react";
 import { VeazCrownIcon } from "./VeazLogo";
 import { VeazBrandLogo } from "./VeazBrandLogo";
+import { getReceiptAbsoluteUrl } from "../ui/ImageUploader";
+import type { CatalogLookItem } from "../../utils/catalogRubroPresets";
 
 export interface RunwayLook {
   id: string;
@@ -101,11 +103,21 @@ const RUNWAY_FULL_LOOKS: RunwayLook[] = [
 interface VeazModelGalleryProps {
   onSelectBrand?: (brand: string) => void;
   onSelectCategory?: (cat: string) => void;
+  customTitle?: string;
+  customSubtitle?: string;
+  customBadge?: string;
+  customLooks?: CatalogLookItem[];
+  isOfficialStore?: boolean;
 }
 
 export default function VeazModelGallery({
   onSelectBrand,
   onSelectCategory,
+  customTitle,
+  customSubtitle,
+  customBadge,
+  customLooks,
+  isOfficialStore = true,
 }: VeazModelGalleryProps) {
   const sliderRef = useRef<HTMLDivElement>(null);
 
@@ -124,6 +136,8 @@ export default function VeazModelGallery({
     }
   };
 
+  const hasCustomLooks = !isOfficialStore && customLooks && customLooks.length > 0;
+
   return (
     <section className="py-20 w-full px-4 sm:px-8 lg:px-12 2xl:px-16 bg-gradient-to-b from-[#FAF8F5] via-[#FFFDF9] to-[#F5EFEB] border-t border-[#EDE2D4] relative overflow-hidden">
       {/* Ambient background glows */}
@@ -136,24 +150,40 @@ export default function VeazModelGallery({
           <div>
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-amber-300 text-amber-900 text-xs font-cinzel font-bold uppercase tracking-[0.25em] mb-3 shadow-xs">
               <VeazCrownIcon size={14} />
-              <span>PASARELA DE CALZADOS & OUTFITS DE ALTA GAMA</span>
+              <span>{customBadge || (isOfficialStore ? "PASARELA DE CALZADOS & OUTFITS DE ALTA GAMA" : "LÍNEAS DESTACADAS & PRODUCTOS DE ALTA GAMA")}</span>
               <Sparkles className="w-3.5 h-3.5 text-amber-600" />
             </div>
             <h2 className="font-playfair text-2xl sm:text-4xl lg:text-5xl font-black text-slate-900 tracking-tight">
-              Modelos en{" "}
-              <span className="bg-gradient-to-r from-amber-700 via-yellow-600 to-amber-800 bg-clip-text text-transparent">
-                Pasarela de Alta Moda
-              </span>
+              {customTitle ? (
+                <span>{customTitle}</span>
+              ) : isOfficialStore ? (
+                <>
+                  Modelos en{" "}
+                  <span className="bg-gradient-to-r from-amber-700 via-yellow-600 to-amber-800 bg-clip-text text-transparent">
+                    Pasarela de Alta Moda
+                  </span>
+                </>
+              ) : (
+                <>
+                  Galería de{" "}
+                  <span className="bg-gradient-to-r from-amber-700 via-yellow-600 to-amber-800 bg-clip-text text-transparent">
+                    Líneas & Novedades
+                  </span>
+                </>
+              )}
             </h2>
             <p className="font-outfit text-slate-600 text-sm sm:text-base mt-2 max-w-2xl font-normal">
-              Prendas de alta costura combinadas con los calzados originales que distribuimos. Desliza hacia la izquierda o derecha para ver todas las marcas autorizadas.
+              {customSubtitle ||
+                (isOfficialStore
+                  ? "Prendas de alta costura combinadas con los calzados originales que distribuimos. Desliza hacia la izquierda o derecha para ver todas las marcas autorizadas."
+                  : "Artículos y equipos seleccionados con garantía oficial de fábrica y atención directa por WhatsApp.")}
             </p>
           </div>
 
-          {/* INTERACTIVE CAROUSEL CONTROLS (MOVE LEFT / RIGHT) */}
+          {/* INTERACTIVE CAROUSEL CONTROLS */}
           <div className="flex items-center gap-3">
             <span className="text-xs font-cinzel font-bold text-slate-500 uppercase tracking-widest hidden sm:inline">
-              Deslizar Marcas:
+              Deslizar:
             </span>
             <button
               type="button"
@@ -176,106 +206,142 @@ export default function VeazModelGallery({
           </div>
         </div>
 
-        {/* HORIZONTAL CAROUSEL WITH SMOOTH SNAP & HOVER REVEAL */}
+        {/* HORIZONTAL CAROUSEL */}
         <div
           ref={sliderRef}
           className="flex gap-5 sm:gap-6 overflow-x-auto pb-6 pt-2 snap-x snap-mandatory scrollbar-none scroll-smooth"
           style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
         >
-          {RUNWAY_FULL_LOOKS.map((item, index) => (
-            <motion.div
-              key={item.id}
-              initial={{ opacity: 0, y: 15 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.35, delay: index * 0.06 }}
-              className="group shrink-0 w-[290px] sm:w-[340px] snap-start relative rounded-3xl overflow-hidden bg-white border border-[#EDE2D4] hover:border-amber-400 transition-all duration-400 flex flex-col h-[520px] shadow-sm hover:shadow-xl hover:-translate-y-1"
-            >
-              {/* FULL BODY RUNWAY IMAGE */}
-              <div
-                className="relative w-full h-[66%] overflow-hidden bg-slate-900 cursor-pointer"
-                onClick={() => handleSelect(item)}
-              >
-                <img
-                  src={item.image}
-                  alt={item.title}
-                  className="w-full h-full object-cover object-top transition-transform duration-700 ease-out group-hover:scale-106"
-                  loading="lazy"
-                />
+          {hasCustomLooks
+            ? customLooks!.map((item, index) => (
+                <motion.div
+                  key={item.id || index}
+                  initial={{ opacity: 0, y: 15 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.35, delay: index * 0.06 }}
+                  className="group shrink-0 w-[290px] sm:w-[340px] snap-start relative rounded-3xl overflow-hidden bg-white border border-[#EDE2D4] hover:border-amber-400 transition-all duration-400 flex flex-col h-[520px] shadow-sm hover:shadow-xl hover:-translate-y-1"
+                >
+                  <div className="relative w-full h-[66%] overflow-hidden bg-slate-900">
+                    <img
+                      src={getReceiptAbsoluteUrl(item.image) || item.image}
+                      alt={item.title}
+                      className="w-full h-full object-cover object-top transition-transform duration-700 ease-out group-hover:scale-106"
+                      loading="lazy"
+                      onError={(e) => {
+                        (e.target as any).src =
+                          "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=800&auto=format&fit=crop";
+                      }}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-black/20 to-transparent" />
+                    <div className="absolute top-3.5 left-3.5 z-10 pointer-events-none">
+                      <span className="px-3 py-1 rounded-full bg-white/90 backdrop-blur-md text-[10px] font-cinzel font-bold text-slate-900 border border-white shadow-xs">
+                        {item.tag || "DESTACADO"}
+                      </span>
+                    </div>
+                  </div>
 
-                {/* Subtle gradient overlay */}
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-black/20 to-transparent" />
+                  <div className="flex-1 p-4 sm:p-5 flex flex-col justify-between bg-white">
+                    <div>
+                      <h3 className="font-playfair text-base sm:text-lg font-bold text-slate-900 group-hover:text-amber-800 transition-colors line-clamp-2 mb-1.5">
+                        {item.title}
+                      </h3>
+                      <p className="text-xs text-slate-600 font-outfit line-clamp-3">
+                        {item.subtitle}
+                      </p>
+                    </div>
 
-                {/* Top Brand Logo */}
-                <div className="absolute top-3.5 left-3.5 z-10 pointer-events-none">
-                  <VeazBrandLogo brandName={item.brand} size="sm" showTagline={false} />
-                </div>
-
-                {/* Season Tag */}
-                <div className="absolute top-3.5 right-3.5 z-10 pointer-events-none">
-                  <span className="px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md text-[9px] font-cinzel font-bold text-amber-200 border border-white/20 uppercase tracking-wider">
-                    {item.season}
-                  </span>
-                </div>
-
-                {/* Shoe Tag Badge (Bottom Left) */}
-                <div className="absolute bottom-3 left-3 right-14 z-10 pointer-events-none">
-                  <span className="inline-block px-2.5 py-1 rounded-lg bg-white/90 backdrop-blur-md text-[10px] font-outfit font-bold text-slate-900 border border-white shadow-xs truncate max-w-full">
-                    👠 {item.shoeType}
-                  </span>
-                </div>
-
-                {/* Click Filter Button (Bottom Right) */}
-                <div className="absolute bottom-3 right-3 z-10">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleSelect(item);
-                    }}
-                    className="w-9 h-9 rounded-full bg-white text-slate-900 border border-amber-300 flex items-center justify-center hover:bg-slate-950 hover:text-amber-300 hover:scale-110 active:scale-95 transition-all shadow-md cursor-pointer"
-                    title={`Ver calzados de ${item.brand}`}
-                  >
-                    <ArrowUpRight className="w-4 h-4 stroke-[2.5]" />
-                  </button>
-                </div>
-              </div>
-
-              {/* DETAILS FOOTER */}
-              <div className="flex-1 p-4 sm:p-5 flex flex-col justify-between bg-white">
-                <div>
-                  <h3
+                    <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between">
+                      <span className="text-[11px] font-cinzel font-bold text-amber-800 uppercase tracking-wider">
+                        Línea Verificada
+                      </span>
+                      <span className="text-[11px] font-outfit text-slate-400">
+                        Disponible
+                      </span>
+                    </div>
+                  </div>
+                </motion.div>
+              ))
+            : RUNWAY_FULL_LOOKS.map((item, index) => (
+                <motion.div
+                  key={item.id}
+                  initial={{ opacity: 0, y: 15 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.35, delay: index * 0.06 }}
+                  className="group shrink-0 w-[290px] sm:w-[340px] snap-start relative rounded-3xl overflow-hidden bg-white border border-[#EDE2D4] hover:border-amber-400 transition-all duration-400 flex flex-col h-[520px] shadow-sm hover:shadow-xl hover:-translate-y-1"
+                >
+                  <div
+                    className="relative w-full h-[66%] overflow-hidden bg-slate-900 cursor-pointer"
                     onClick={() => handleSelect(item)}
-                    className="font-playfair text-base sm:text-lg font-bold text-slate-900 group-hover:text-amber-800 transition-colors line-clamp-1 cursor-pointer mb-1"
                   >
-                    {item.title}
-                  </h3>
+                    <img
+                      src={item.image}
+                      alt={item.title}
+                      className="w-full h-full object-cover object-top transition-transform duration-700 ease-out group-hover:scale-106"
+                      loading="lazy"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-black/20 to-transparent" />
+                    <div className="absolute top-3.5 left-3.5 z-10 pointer-events-none">
+                      <VeazBrandLogo brandName={item.brand} size="sm" showTagline={false} />
+                    </div>
+                    <div className="absolute top-3.5 right-3.5 z-10 pointer-events-none">
+                      <span className="px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md text-[9px] font-cinzel font-bold text-amber-200 border border-white/20 uppercase tracking-wider">
+                        {item.season}
+                      </span>
+                    </div>
+                    <div className="absolute bottom-3 left-3 right-14 z-10 pointer-events-none">
+                      <span className="inline-block px-2.5 py-1 rounded-lg bg-white/90 backdrop-blur-md text-[10px] font-outfit font-bold text-slate-900 border border-white shadow-xs truncate max-w-full">
+                        👠 {item.shoeType}
+                      </span>
+                    </div>
+                    <div className="absolute bottom-3 right-3 z-10">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSelect(item);
+                        }}
+                        className="w-9 h-9 rounded-full bg-white text-slate-900 border border-amber-300 flex items-center justify-center hover:bg-slate-950 hover:text-amber-300 hover:scale-110 active:scale-95 transition-all shadow-md cursor-pointer"
+                        title={`Ver calzados de ${item.brand}`}
+                      >
+                        <ArrowUpRight className="w-4 h-4 stroke-[2.5]" />
+                      </button>
+                    </div>
+                  </div>
 
-                  <p className="text-xs text-slate-500 font-outfit line-clamp-1 mb-1">
-                    <strong>Outfit:</strong> {item.outfit}
-                  </p>
+                  <div className="flex-1 p-4 sm:p-5 flex flex-col justify-between bg-white">
+                    <div>
+                      <h3
+                        onClick={() => handleSelect(item)}
+                        className="font-playfair text-base sm:text-lg font-bold text-slate-900 group-hover:text-amber-800 transition-colors line-clamp-1 cursor-pointer mb-1"
+                      >
+                        {item.title}
+                      </h3>
+                      <p className="text-xs text-slate-500 font-outfit line-clamp-1 mb-1">
+                        <strong>Outfit:</strong> {item.outfit}
+                      </p>
+                      <p className="text-xs text-slate-600 font-outfit italic line-clamp-2">
+                        "{item.quote}"
+                      </p>
+                    </div>
 
-                  <p className="text-xs text-slate-600 font-outfit italic line-clamp-2">
-                    "{item.quote}"
-                  </p>
-                </div>
-
-                <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between">
-                  <span className="text-[11px] font-cinzel font-bold text-slate-700 uppercase tracking-wider">
-                    Colección {item.brand}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => handleSelect(item)}
-                    className="text-[11px] font-cinzel font-bold text-amber-800 flex items-center gap-1 hover:text-amber-600 hover:underline cursor-pointer"
-                  >
-                    <span>Ver Modelos</span>
-                    <Eye className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          ))}
+                    <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between">
+                      <span className="text-[11px] font-cinzel font-bold text-slate-700 uppercase tracking-wider">
+                        Colección {item.brand}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleSelect(item)}
+                        className="text-[11px] font-cinzel font-bold text-amber-800 flex items-center gap-1 hover:text-amber-600 hover:underline cursor-pointer"
+                      >
+                        <span>Ver Modelos</span>
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              ))}
         </div>
       </div>
     </section>

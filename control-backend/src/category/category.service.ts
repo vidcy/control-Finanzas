@@ -76,11 +76,18 @@ export class CategoriesService {
     });
   }
 
-  // 🔹 Obtener SOLO categorías del usuario logueado
-  findAllByUser(userId: string) {
-    return this.prisma.category.findMany({
+  // 🔹 Obtener categorías del usuario (con auto-seed si está vacío)
+  async findAllByUser(userId: string) {
+    // Si es trabajador, usar las categorías del patrón/negocio
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, parentId: true, role: true },
+    });
+    const effectiveUserId = user?.parentId || userId;
+
+    let categories = await this.prisma.category.findMany({
       where: {
-        userId,
+        userId: effectiveUserId,
       },
       include: {
         children: true,
@@ -90,6 +97,25 @@ export class CategoriesService {
         createdAt: 'desc',
       },
     });
+
+    // Auto-seed si el usuario (Admin o Negocio) no tiene categorías aún
+    if (categories.length === 0) {
+      await this.seedDefaultCategories(effectiveUserId);
+      categories = await this.prisma.category.findMany({
+        where: {
+          userId: effectiveUserId,
+        },
+        include: {
+          children: true,
+          parent: true,
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
+    }
+
+    return categories;
   }
 
   // FIND ONE

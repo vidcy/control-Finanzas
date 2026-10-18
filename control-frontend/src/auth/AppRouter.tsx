@@ -25,6 +25,7 @@ import BusinessWorkersPage from "../pages/BusinessWorkersPage";
 import BusinessAdvisorsPage from "../pages/BusinessAdvisorsPage";
 import BusinessCommissionsPage from "../pages/BusinessCommissionsPage";
 import BusinessLeadsPage from "../pages/BusinessLeadsPage";
+import BusinessBillingPage from "../pages/BusinessBillingPage";
 
 import LandingPage from "../pages/LandingPage";
 import VeazEstilezaPage from "../pages/VeazEstilezaPage";
@@ -35,6 +36,8 @@ export default function AppRoutes() {
       {/* ruta pública */}
       <Route path="/" element={<LandingPage />} />
       <Route path="/veaz-estileza" element={<VeazEstilezaPage />} />
+      <Route path="/catalogo/:identifier" element={<VeazEstilezaPage />} />
+      <Route path="/c/:identifier" element={<VeazEstilezaPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/forgot-password" element={<RecoverPasswordPage />} />
@@ -158,6 +161,14 @@ export default function AppRoutes() {
         element={
           <ProtectedRoute>
             <BusinessLeadsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/business-billing"
+        element={
+          <ProtectedRoute>
+            <BusinessBillingPage />
           </ProtectedRoute>
         }
       />

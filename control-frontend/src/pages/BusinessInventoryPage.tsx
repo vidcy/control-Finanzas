@@ -97,6 +97,9 @@ import {
   type SeriesConfig,
 } from "../utils/seriesUtils";
 import { shareProductOfferViaWhatsApp } from "../utils/whatsappUtils";
+import { useHardwareScanner } from "../hooks/useHardwareScanner";
+import { playScannerSound } from "../utils/hardwareScanner";
+import ProfessionalBarcodeCenter from "../components/inventory/ProfessionalBarcodeCenter";
 
 // Helper dynamically loading CDN scripts to bypass React 19 dependency conflict issues
 const loadHtml5Qrcode = (): Promise<any> => {
@@ -786,123 +789,71 @@ export default function BusinessInventoryPage() {
     );
   }, [scannerSensitivity]);
 
-  // Keyboard/USB Scanner listener
-  useEffect(() => {
+  const [lastScannedCode, setLastScannedCode] = useState("");
+
+  const handleBarcodeScanned = (code: string) => {
+    if (!code) return;
+    const cleanCode = code.trim().toLowerCase();
+    setScanTestResult(code);
+    setLastScannedCode(code);
+
+    // Si el modal de creación o edición de producto está abierto, asignar el código escaneado directamente
+    if (isModalOpen) {
+      setFormData((prev) => ({
+        ...prev,
+        sku: prev.sku || code.trim(),
+        barcode: code.trim(),
+      }));
+      playScannerSound("success");
+      toast.success(`🎯 Código asignado al producto: ${code.trim()}`);
+      return;
+    }
+
+    let match = products.find((p) => {
+      const matchesSku = p.sku && p.sku.trim().toLowerCase() === cleanCode;
+      const matchesCodeRaw = p.customCode && String(p.customCode).trim() === cleanCode;
+      const matchesCodePadded =
+        p.customCode && String(p.customCode).trim().padStart(4, "0") === cleanCode;
+      const matchesId = p.id && p.id.toLowerCase() === cleanCode;
+      const matchesBarcode = (p as any).barcode && String((p as any).barcode).trim().toLowerCase() === cleanCode;
+      const matchesPres = p.presentations?.some((pres: any) =>
+        (pres.sku && pres.sku.trim().toLowerCase() === cleanCode) ||
+        (pres.code && String(pres.code).trim().toLowerCase() === cleanCode)
+      );
+      return matchesSku || matchesCodeRaw || matchesCodePadded || matchesId || matchesBarcode || matchesPres;
+    });
+
+    // Fallback: búsqueda por prefijo de serie o modelo
+    if (!match) {
+      match = products.find((p) => {
+        const skuPrefix = p.sku && p.sku.trim().toLowerCase().startsWith(cleanCode);
+        const nameMatch = cleanModelName(p.name).toLowerCase() === cleanCode;
+        return skuPrefix || nameMatch;
+      });
+    }
+
+    if (match) {
+      playScannerSound("success");
+      if (activeTab === "labels") {
+        setTicketProductId(match.id);
+        toast.success(`🏷️ Producto seleccionado en rotulado: ${match.name}`);
+      } else {
+        setSearchTerm(match.name);
+        handleOpenModal(match);
+        toast.success(`📦 Producto encontrado: ${match.name}`);
+      }
+    } else {
+      playScannerSound("error");
+      toast.error(`❌ Código escaneado con pistola: "${code}". No coincide con ningún producto.`);
+      setFormData((prev) => ({ ...prev, sku: code.trim(), barcode: code.trim() }));
+    }
+  };
+
+  // Hardware Barcode & QR Scanner Listener (Pistola USB / Bluetooth)
+  useHardwareScanner((code) => {
     if (!scannerEnabled) return;
-
-    let buffer = "";
-    let lastKeyTime = Date.now();
-    let isFastTyping = false;
-    let firstCharLogged = "";
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const currentTime = Date.now();
-      const timeDiff = currentTime - lastKeyTime;
-      lastKeyTime = currentTime;
-
-      // Ignore standard helper keys
-      if (e.key.length > 1 && e.key !== "Enter") {
-        return;
-      }
-
-      const isFast = timeDiff <= scannerSensitivity;
-      if (isFast) {
-        isFastTyping = true;
-      } else {
-        isFastTyping = false;
-      }
-
-      if (isFastTyping) {
-        e.preventDefault();
-
-        // Anti-pollution cleanup for the first character that might have been typed slowly
-        if (buffer.length === 1 && firstCharLogged) {
-          const activeEl = document.activeElement;
-          if (
-            activeEl instanceof HTMLInputElement ||
-            activeEl instanceof HTMLTextAreaElement
-          ) {
-            const val = activeEl.value;
-            if (val.endsWith(firstCharLogged)) {
-              activeEl.value = val.slice(0, -1);
-              const ev = new Event("input", { bubbles: true });
-              activeEl.dispatchEvent(ev);
-            }
-          }
-          firstCharLogged = "";
-        }
-
-        if (e.key === "Enter") {
-          if (buffer.length >= 3) {
-            playScannerBeep(850, 0.08);
-            setScanTestResult(buffer);
-
-            const cleanCode = buffer.trim().toLowerCase();
-            const match = products.find((p) => {
-              const matchesSku = p.sku && p.sku.toLowerCase() === cleanCode;
-              const matchesCodeRaw =
-                p.customCode && String(p.customCode) === cleanCode;
-              const matchesCodePadded =
-                p.customCode &&
-                String(p.customCode).padStart(4, "0") === cleanCode;
-              return matchesSku || matchesCodeRaw || matchesCodePadded;
-            });
-
-            if (match) {
-              handleOpenModal(match);
-              toast.success(`Producto encontrado: ${match.name}`);
-            } else {
-              toast.error(
-                `Código escaneado: "${buffer}", pero no coincide con ningún producto.`,
-              );
-            }
-          }
-          buffer = "";
-          isFastTyping = false;
-        } else {
-          buffer += e.key;
-        }
-      } else {
-        // Slow key press
-        if (e.key === "Enter") {
-          if (buffer.length >= 3) {
-            e.preventDefault();
-            playScannerBeep(850, 0.08);
-            setScanTestResult(buffer);
-
-            const cleanCode = buffer.trim().toLowerCase();
-            const match = products.find((p) => {
-              const matchesSku = p.sku && p.sku.toLowerCase() === cleanCode;
-              const matchesCodeRaw =
-                p.customCode && String(p.customCode) === cleanCode;
-              const matchesCodePadded =
-                p.customCode &&
-                String(p.customCode).padStart(4, "0") === cleanCode;
-              return matchesSku || matchesCodeRaw || matchesCodePadded;
-            });
-
-            if (match) {
-              handleOpenModal(match);
-              toast.success(`Producto encontrado: ${match.name}`);
-            } else {
-              toast.error(
-                `Código escaneado: "${buffer}", pero no coincide con ningún producto.`,
-              );
-            }
-            buffer = "";
-          }
-        } else {
-          buffer = e.key;
-          firstCharLogged = e.key;
-        }
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [products, scannerEnabled, scannerSensitivity]);
+    handleBarcodeScanned(code);
+  }, scannerEnabled);
 
   // Premium metrics computations
   const totalProducts = products.length;
@@ -1122,49 +1073,6 @@ export default function BusinessInventoryPage() {
       }
     };
   }, [isScannerOpen]);
-
-  const handleBarcodeScanned = (code: string) => {
-    toast.success(`Código escaneado: ${code}`);
-    const cleanCode = code.trim().toLowerCase();
-    const match = products.find((p) => {
-      const matchesSku = p.sku && p.sku.toLowerCase() === cleanCode;
-      const matchesCodeRaw = p.customCode && String(p.customCode) === cleanCode;
-      const matchesCodePadded =
-        p.customCode && String(p.customCode).padStart(4, "0") === cleanCode;
-      return matchesSku || matchesCodeRaw || matchesCodePadded;
-    });
-
-    if (match) {
-      handleOpenModal(match);
-      toast.success(`Producto encontrado: ${match.name}`);
-    } else {
-      // Create new product with this SKU prefilled
-      setEditingProduct(null);
-      setFormData({
-        name: "",
-        description: "",
-        sku: code.trim(),
-        color: "",
-        costPrice: 0,
-        salePrice: 0,
-        adjustedPrice: 0,
-        stock: 0,
-        minStock: 5,
-        unit: "Unidad",
-        imageUrl: "",
-        presentations: [],
-        brandId: "",
-        familyId: "",
-        commissionType: "PERCENT",
-        commissionValue: 0,
-        priceWithAgent: 0,
-      });
-      setIsModalOpen(true);
-      toast("Código nuevo. Rellene los datos para registrarlo.", {
-        icon: "ℹ️",
-      });
-    }
-  };
 
   const handleOpenModal = (product?: Product | any) => {
     if (product) {
@@ -3108,7 +3016,8 @@ export default function BusinessInventoryPage() {
                     <Search className="w-5 h-5 text-gray-400 shrink-0" />
                     <input
                       type="text"
-                      placeholder="Buscar por nombre, SKU, marca o familia..."
+                      placeholder="Buscar por nombre, SKU o escanear con pistola..."
+                      onKeyDown={(e) => { if (e.key === "Enter" && searchTerm.trim()) { e.preventDefault(); handleBarcodeScanned(searchTerm.trim()); } }}
                       className="w-full bg-transparent border-none focus:ring-0 text-sm py-3.5 px-3 outline-none font-medium text-gray-700"
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
@@ -4885,346 +4794,16 @@ export default function BusinessInventoryPage() {
             )}
 
             {activeTab === "labels" && (
-              <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 space-y-6">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-gray-100 pb-5 no-print">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-100">
-                        🏷️ Imprenta & Tickets
-                      </span>
-                      {isSelectedLabelSeries && (
-                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-50 text-amber-800 border border-amber-200">
-                          👟 Serie ({labelSiblings.length} tallas)
-                        </span>
-                      )}
-                    </div>
-                    <h2 className="text-xl font-black text-gray-900">
-                      Diseñador de Etiquetas & Código QR / Barras
-                    </h2>
-                    <p className="text-sm text-gray-500 font-medium">
-                      Genera boletines de tickets adhesivos para pegar en tus cajas de zapatillas o vitrinas. Exporta a PDF listo para llevar a la imprenta con líneas de corte y tallas en alto contraste.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    <button
-                      disabled={labelItemsToPrint.length === 0}
-                      onClick={exportLabelsToPdf}
-                      className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 disabled:opacity-40 text-white px-5 py-3 rounded-2xl font-black text-sm flex items-center gap-2 transition-all active:scale-95 shadow-md shadow-emerald-600/20 cursor-pointer"
-                      title="Generar PDF tamaño A4 en cuadrícula 4x6 con líneas de corte para la imprenta"
-                    >
-                      <FileText className="w-4 h-4" />
-                      📄 Exportar PDF Imprenta ({labelItemsToPrint.length})
-                    </button>
-                    <button
-                      disabled={labelItemsToPrint.length === 0}
-                      onClick={() => window.print()}
-                      className="bg-indigo-600 disabled:opacity-40 hover:bg-indigo-700 text-white px-5 py-3 rounded-2xl font-black text-sm flex items-center gap-2 transition-all active:scale-95 shadow-md shadow-indigo-600/20 cursor-pointer"
-                      title="Imprimir directamente en tu impresora"
-                    >
-                      <Printer className="w-4 h-4" />
-                      🖨️ Imprimir ({labelItemsToPrint.length})
-                    </button>
-                  </div>
-                </div>
-
-                {/* FILTERS FOR LABEL GENERATOR */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50 p-5 rounded-2xl border border-gray-100 no-print">
-                  <div>
-                    <label className="block text-[10px] font-black uppercase text-gray-500 mb-1.5">
-                      Buscar Producto
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Nombre, SKU o Cód..."
-                      value={labelSearchTerm}
-                      onChange={(e) => setLabelSearchTerm(e.target.value)}
-                      className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-xs font-bold text-gray-700 shadow-sm placeholder-gray-400"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-black uppercase text-gray-500 mb-1.5">
-                      Filtrar por Marca
-                    </label>
-                    <select
-                      value={labelFilterBrandId}
-                      onChange={(e) => setLabelFilterBrandId(e.target.value)}
-                      className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-xs font-bold text-gray-700 shadow-sm"
-                    >
-                      <option value="">Todas las Marcas</option>
-                      {brands.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-black uppercase text-gray-500 mb-1.5">
-                      Filtrar por Familia
-                    </label>
-                    <select
-                      value={labelFilterFamilyId}
-                      onChange={(e) => setLabelFilterFamilyId(e.target.value)}
-                      className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-xs font-bold text-gray-700 shadow-sm"
-                    >
-                      <option value="">Todas las Familias</option>
-                      {families.map((f) => (
-                        <option key={f.id} value={f.id}>
-                          {f.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <label className="block text-[10px] font-black uppercase text-gray-500">
-                        Producto a Etiquetar
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => setIsCatalogShowcaseMode(!isCatalogShowcaseMode)}
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-black border transition-all cursor-pointer ${
-                          isCatalogShowcaseMode
-                            ? "bg-indigo-600 text-white border-indigo-600 shadow-xs ring-1 ring-indigo-300"
-                            : "bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200"
-                        }`}
-                        title="Imprime 1 etiqueta por cada modelo único visible para rotular vitrina de exhibición"
-                      >
-                        {isCatalogShowcaseMode ? "✨ Modo Vitrina Activo" : "🏷️ Modo Vitrina"}
-                      </button>
-                    </div>
-                    <select
-                      value={ticketProductId}
-                      disabled={isCatalogShowcaseMode}
-                      onChange={(e) => setTicketProductId(e.target.value)}
-                      className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-xs font-bold text-gray-750 shadow-sm disabled:bg-gray-100 disabled:text-gray-400"
-                    >
-                      <option value="">{isCatalogShowcaseMode ? "-- Vitrina: Todos los Modelos --" : "-- Selecciona un Producto --"}</option>
-                      {labelFilteredProducts.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name} (
-                          {p.sku ||
-                            `Cód: ${String((p as any).customCode || 0).padStart(4, "0")}`}
-                          )
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {/* SHOWCASE MODE BANNER */}
-                {isCatalogShowcaseMode && (
-                  <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-indigo-950 no-print animate-fade-in">
-                    <div className="flex items-center gap-2 font-black uppercase tracking-wide">
-                      <Sparkles className="w-4 h-4 text-indigo-600" />
-                      <span>Modo Vitrina / Exhibición Activo: Generando 1 etiqueta por cada modelo del catálogo visible</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setIsCatalogShowcaseMode(false)}
-                      className="px-3 py-1 bg-white border border-indigo-200 hover:bg-indigo-50 text-indigo-700 font-bold rounded-xl text-xs transition-colors cursor-pointer"
-                    >
-                      Desactivar Vitrina
-                    </button>
-                  </div>
-                )}
-
-                {/* SERIE SUMMARY BANNER IF DETECTED */}
-                {isSelectedLabelSeries && selectedLabelProduct && (
-                  <div className="bg-amber-50/70 border border-amber-200/80 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-amber-900 no-print animate-fade-in">
-                    <div>
-                      <div className="font-black flex items-center gap-2 uppercase tracking-wide">
-                        <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
-                        Serie de Calzado: {cleanModelName(selectedLabelProduct.name)} ({labelSiblings.length} tallas distintas)
-                      </div>
-                      <div className="text-[11px] text-amber-800/90 font-medium mt-1 flex flex-wrap gap-1.5">
-                        {labelSiblings.map((s) => (
-                          <span
-                            key={s.id}
-                            className="px-2 py-0.5 bg-white border border-amber-200 rounded-md font-bold text-[10px]"
-                          >
-                            T.{extractSizeFromProduct(s)}: <strong className="text-amber-950 font-black">{s.stock} pares</strong>
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="bg-amber-200/80 text-amber-950 font-black px-3 py-1.5 rounded-xl text-xs shrink-0">
-                      {labelSiblings.reduce((acc, s) => acc + (s.stock || 0), 0)} pares totales en stock
-                    </div>
-                  </div>
-                )}
-
-                {/* FORM CONTROLS */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50/50 p-5 rounded-2xl border border-gray-100 no-print animate-fade-in">
-                  {/* PRINT MODE */}
-                  <div>
-                    <label className="block text-xs font-black uppercase text-gray-600 mb-2">
-                      Modo de Impresión
-                    </label>
-                    <select
-                      value={labelPrintMode}
-                      onChange={(e) => setLabelPrintMode(e.target.value as any)}
-                      className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-xs font-bold text-gray-800 shadow-sm"
-                    >
-                      {isSelectedLabelSeries ? (
-                        <>
-                          <option value="curve">
-                            📏 1 por cada talla ({labelSiblings.length} tickets)
-                          </option>
-                          <option value="stock">
-                            📦 Según stock en almacén (para cajas)
-                          </option>
-                          <option value="single">
-                            🏷️ 1 sola del modelo (Serie general)
-                          </option>
-                          <option value="custom">
-                            🔢 Copias personalizadas por talla
-                          </option>
-                        </>
-                      ) : (
-                        <>
-                          <option value="single">
-                            🏷️ 1 sola etiqueta del producto
-                          </option>
-                          <option value="stock">
-                            📦 Según stock disponible ({selectedLabelProduct?.stock || 1} tickets)
-                          </option>
-                          <option value="custom">
-                            🔢 Cantidad personalizada
-                          </option>
-                        </>
-                      )}
-                    </select>
-                  </div>
-
-                  {/* COPIES QUANTITY */}
-                  <div>
-                    <label className="block text-xs font-black uppercase text-gray-600 mb-2">
-                      {labelPrintMode === "custom" || labelPrintMode === "single"
-                        ? "Copias por Etiqueta"
-                        : "Copias (Modo Automático)"}
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="100"
-                      disabled={labelPrintMode === "stock" || (labelPrintMode === "curve" && isSelectedLabelSeries)}
-                      value={ticketQuantity}
-                      onChange={(e) =>
-                        setTicketQuantity(Math.max(1, Number(e.target.value)))
-                      }
-                      className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-xs font-bold text-gray-800 shadow-sm disabled:bg-gray-100 disabled:text-gray-400"
-                    />
-                  </div>
-
-                  {/* BUSINESS NAME */}
-                  <div>
-                    <label className="block text-xs font-black uppercase text-gray-600 mb-2">
-                      Nombre Comercial / Encabezado
-                    </label>
-                    <input
-                      type="text"
-                      value={ticketBusinessName}
-                      onChange={(e) => setTicketBusinessName(e.target.value)}
-                      placeholder="Nombre de tienda"
-                      className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-xs font-bold text-gray-800 shadow-sm"
-                    />
-                  </div>
-
-                  {/* CODE TYPE */}
-                  <div>
-                    <label className="block text-xs font-black uppercase text-gray-600 mb-2">
-                      Tipo de Código
-                    </label>
-                    <select
-                      value={codeType}
-                      onChange={(e) =>
-                        setCodeType(e.target.value as "qr" | "barcode")
-                      }
-                      className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-xs font-bold text-gray-800 shadow-sm"
-                    >
-                      <option value="qr">📱 Código QR (Escaneo Rápido)</option>
-                      <option value="barcode">📊 Código de Barras (CODE128)</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* TICKET SHEET PREVIEW */}
-                {!ticketProductId ? (
-                  <div className="py-20 text-center text-gray-400 no-print">
-                    <BarcodeIcon className="w-16 h-16 mx-auto mb-3 opacity-20 text-indigo-600" />
-                    <p className="font-extrabold">
-                      Seleccione un producto para generar la vista previa de
-                      etiquetas.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between no-print">
-                      <h3 className="text-sm font-black text-gray-600 uppercase tracking-widest">
-                        Vista previa de impresión ({labelItemsToPrint.length} etiquetas listas)
-                      </h3>
-                      <span className="text-xs text-gray-400 font-medium">
-                        Configurado para adhesivos tamaño estándar o corte para imprenta
-                      </span>
-                    </div>
-
-                    <div
-                      id="print-area"
-                      className="bg-white border border-gray-200 rounded-3xl p-6"
-                    >
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-                        {labelItemsToPrint.map((item, index) => (
-                          <div
-                            key={index}
-                            className="border-2 border-dashed border-gray-300 bg-white p-3 rounded-2xl flex flex-col justify-between items-center text-center w-full min-h-[165px] shadow-sm select-none relative group hover:border-indigo-400 transition-colors"
-                          >
-                            <span className="absolute top-1 right-2 text-[8px] font-mono text-gray-300 font-bold no-print">
-                              #{index + 1}
-                            </span>
-
-                            {/* Nombre Comercial */}
-                            <div className="text-[8px] font-black uppercase text-indigo-600 tracking-wider w-full truncate px-1">
-                              {ticketBusinessName || item.brandName || "TIENDA"}
-                            </div>
-
-                            {/* Nombre Modelo */}
-                            <div className="text-[10px] font-black text-gray-900 leading-tight w-full truncate px-1 mt-0.5">
-                              {item.modelName}
-                            </div>
-
-                            {/* TALLA DESTACADA EN ALTO CONTRASTE */}
-                            <div className="my-1.5 px-3 py-0.5 bg-slate-900 text-white rounded-md text-[11px] font-black tracking-wider shadow-xs">
-                              TALLA: {item.size}
-                            </div>
-
-                            {/* PRECIO */}
-                            <div className="text-xs font-black text-amber-600">
-                              S/ {Number(item.price).toFixed(2)}
-                            </div>
-
-                            {/* CÓDIGO QR / BARRAS CANVAS */}
-                            <div className="flex items-center justify-center my-1 w-full min-h-[50px]">
-                              <canvas
-                                id={`ticket-canvas-${index}`}
-                                className="max-w-full"
-                              ></canvas>
-                            </div>
-
-                            {/* SKU / CÓDIGO */}
-                            <div className="text-[8px] font-bold text-gray-400 font-mono">
-                              {item.codeText}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
+              <ProfessionalBarcodeCenter
+                products={products}
+                brands={brands}
+                families={families}
+                initialBusinessName={user?.businessName || "TIENDA"}
+                lastScannedCode={lastScannedCode}
+                onProductSelect={(prod) => {
+                  setTicketProductId(prod.id);
+                }}
+              />
             )}
           </motion.div>
         </AnimatePresence>

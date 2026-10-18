@@ -32,11 +32,13 @@ import {
   Share2,
   PlusSquare,
   Zap,
+  FileText,
 } from "lucide-react";
 
 import { toast } from "react-hot-toast";
 import { updateUserProfilesRequest, updateMyProfileRequest } from "../../services/user.api";
 import { ProductImageUploader, uploadProductImageFile, getReceiptAbsoluteUrl } from "../ui/ImageUploader";
+import CatalogManagerModal from "../catalog/CatalogManagerModal";
 
 import NotificationDropdown from "./NotificationDropdown";
 import { formatPeruTime } from "../../utils/date.utils";
@@ -61,6 +63,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
   }, []);
 
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [isCatalogModalOpen, setIsCatalogModalOpen] = useState(false);
   const [isAvatarSubModalOpen, setIsAvatarSubModalOpen] = useState(false);
   const [isLogoSubModalOpen, setIsLogoSubModalOpen] = useState(false);
   const [isBannerSubModalOpen, setIsBannerSubModalOpen] = useState(false);
@@ -138,6 +141,14 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
   const [businessRuc, setBusinessRuc] = useState(user?.businessRuc || "");
   const [businessReason, setBusinessReason] = useState(user?.businessReason || "");
   const [businessRubro, setBusinessRubro] = useState(user?.businessRubro || "");
+  const [businessAddress, setBusinessAddress] = useState(user?.businessAddress || "");
+  const [businessPhone, setBusinessPhone] = useState(user?.businessPhone || "");
+  const [businessEmail, setBusinessEmail] = useState(user?.businessEmail || "");
+  const [businessDepartment, setBusinessDepartment] = useState(user?.businessDepartment || "");
+  const [businessProvince, setBusinessProvince] = useState(user?.businessProvince || "");
+  const [businessDistrict, setBusinessDistrict] = useState(user?.businessDistrict || "");
+  const [billingSerieInvoice, setBillingSerieInvoice] = useState(user?.billingSerieInvoice || "F001");
+  const [billingSerieBoleta, setBillingSerieBoleta] = useState(user?.billingSerieBoleta || "B001");
   const [businessLogo, setBusinessLogo] = useState<string | File>(user?.businessLogo || "");
   const [businessBanner, setBusinessBanner] = useState<string | File>(user?.businessBanner || "");
   const [nubefactUrl, setNubefactUrl] = useState(user?.nubefactUrl || "");
@@ -176,6 +187,14 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       setBusinessRuc(user.businessRuc || "");
       setBusinessReason(user.businessReason || "");
       setBusinessRubro(user.businessRubro || "");
+      setBusinessAddress(user.businessAddress || "");
+      setBusinessPhone(user.businessPhone || "");
+      setBusinessEmail(user.businessEmail || "");
+      setBusinessDepartment(user.businessDepartment || "");
+      setBusinessProvince(user.businessProvince || "");
+      setBusinessDistrict(user.businessDistrict || "");
+      setBillingSerieInvoice(user.billingSerieInvoice || "F001");
+      setBillingSerieBoleta(user.billingSerieBoleta || "B001");
       setBusinessLogo(user.businessLogo || "");
       setBusinessBanner(user.businessBanner || "");
       setNubefactUrl(user.nubefactUrl || "");
@@ -214,6 +233,14 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
         businessRuc: businessRuc || null,
         businessReason: businessReason || null,
         businessRubro: businessRubro || null,
+        businessAddress: businessAddress || null,
+        businessPhone: businessPhone || null,
+        businessEmail: businessEmail || null,
+        businessDepartment: businessDepartment || null,
+        businessProvince: businessProvince || null,
+        businessDistrict: businessDistrict || null,
+        billingSerieInvoice: billingSerieInvoice || "F001",
+        billingSerieBoleta: billingSerieBoleta || "B001",
         businessLogo: finalLogoUrl || null,
         businessBanner: finalBannerUrl || null,
         nubefactUrl: nubefactUrl || null,
@@ -413,6 +440,8 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
     }
   };
 
+  const isAdmin = user?.role === "ADMIN" || user?.role === "SUPERADMIN";
+
   const menu = [
     {
       name: "Resumen",
@@ -456,14 +485,15 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       color: "from-amber-400 to-amber-600",
       bgActive: "bg-amber-50 text-amber-700",
     },
-    ...(user?.role === "ADMIN"
+    ...(isAdmin
       ? [
         {
-          name: "Usuarios",
+          name: "Gestión de Usuarios",
           path: "/users",
           icon: Users,
-          color: "from-purple-400 to-purple-600",
+          color: "from-purple-500 to-indigo-600",
           bgActive: "bg-purple-50 text-purple-700",
+          adminOnly: true,
         },
       ]
       : []),
@@ -493,6 +523,14 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       color: "from-blue-400 to-blue-600",
       bgActive: "bg-blue-50 text-blue-700",
       profile: "BUSINESS_CASH_REGISTER",
+    },
+    {
+      name: "Facturación SUNAT",
+      path: "/business-billing",
+      icon: FileText,
+      color: "from-blue-600 to-indigo-700",
+      bgActive: "bg-blue-50 text-blue-700",
+      profile: "BUSINESS_POS",
     },
     {
       name: "Almacén y Abastecimiento",
@@ -597,10 +635,23 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       bgActive: "bg-amber-50 text-amber-700",
       profile: "BUSINESS",
     },
+    ...(isAdmin
+      ? [
+        {
+          name: "Gestión de Usuarios",
+          path: "/users",
+          icon: Users,
+          color: "from-purple-500 to-indigo-600",
+          bgActive: "bg-purple-50 text-purple-700",
+          adminOnly: true,
+        },
+      ]
+      : []),
   ];
 
   const activeMenu = activeWorkspace === "BUSINESS"
     ? businessMenu.filter(item => {
+      if ((item as any).adminOnly) return isAdmin;
       const key = (item as any).profile;
       return key ? user?.profiles?.includes(key) : false;
     })
@@ -754,18 +805,75 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
             );
           })}
 
-          {/* VEAZ ESTILEZA SHORTCUT */}
+          {/* SECCIÓN EXCLUSIVA PARA ADMINISTRADORES */}
+          {isAdmin && (
+            <div className="px-2 pt-3">
+              <button
+                type="button"
+                onClick={() => {
+                  navigate("/users");
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`w-full p-3 rounded-2xl flex items-center justify-between group transition-all cursor-pointer shadow-md border ${
+                  location.pathname === "/users"
+                    ? "bg-gradient-to-r from-purple-600 to-indigo-700 text-white shadow-purple-500/25 border-purple-500"
+                    : "bg-gradient-to-r from-purple-50 to-indigo-50 hover:from-purple-100 hover:to-indigo-100 text-purple-950 border-purple-200/70"
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className={`p-1.5 rounded-xl ${location.pathname === "/users" ? "bg-white/20 text-white" : "bg-purple-600 text-white shadow-sm"}`}>
+                    <Users className="w-4 h-4" />
+                  </div>
+                  <div className="text-left">
+                    <span className="text-[10px] font-black uppercase tracking-wider block leading-tight">
+                      Gestión de Usuarios
+                    </span>
+                    <span className={`text-[9px] font-bold ${location.pathname === "/users" ? "text-purple-200" : "text-purple-600"}`}>
+                      Panel Exclusivo Admin
+                    </span>
+                  </div>
+                </div>
+                <span className="text-xs font-black">⚙️</span>
+              </button>
+            </div>
+          )}
+
+          {/* MI TIENDA / CATÁLOGO VIRTUAL SHORTCUT */}
           <div className="px-2 pt-3">
             <button
               type="button"
+              onClick={() => setIsCatalogModalOpen(true)}
+              className="w-full p-3 rounded-2xl bg-gradient-to-r from-amber-500 via-amber-600 to-amber-700 hover:from-amber-600 hover:to-amber-800 text-slate-950 flex items-center justify-between group hover:shadow-lg hover:shadow-amber-500/25 transition-all cursor-pointer shadow-md"
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="text-xl">🛍️</span>
+                <div className="text-left">
+                  <span className="text-[10px] font-black text-amber-950 uppercase tracking-wider block leading-tight">
+                    Mi Catálogo Digital
+                  </span>
+                  <span className="text-xs font-black tracking-wider text-slate-950 transition-colors">
+                    Ver & Compartir
+                  </span>
+                </div>
+              </div>
+              <span className="text-[10px] bg-slate-950 text-amber-300 font-bold px-2 py-0.5 rounded-full uppercase tracking-wider group-hover:bg-black">
+                Abrir
+              </span>
+            </button>
+          </div>
+
+          {/* VEAZ ESTILEZA SHORTCUT */}
+          <div className="px-2 pt-2">
+            <button
+              type="button"
               onClick={() => window.open("/veaz-estileza", "_blank")}
-              className="w-full p-3 rounded-2xl bg-gradient-to-r from-[#0F1118] to-[#181A28] border border-amber-500/40 text-white flex items-center justify-between group hover:border-amber-400 hover:shadow-lg transition-all cursor-pointer shadow-md"
+              className="w-full p-3 rounded-2xl bg-gradient-to-r from-[#0F1118] via-[#151722] to-[#181A28] border border-amber-500/50 text-white flex items-center justify-between group hover:border-amber-400 hover:shadow-lg transition-all cursor-pointer shadow-md"
             >
               <div className="flex items-center gap-2.5">
                 <span className="text-lg">👑</span>
                 <div className="text-left">
                   <span className="text-[10px] font-bold text-amber-300 uppercase tracking-wider block leading-tight">
-                    Catálogo de Calzados
+                    Tienda de Prendas Y Calzados
                   </span>
                   <span className="text-xs font-black tracking-wider text-white group-hover:text-amber-300 transition-colors">
                     VEAZ ESTILEZA
@@ -1129,6 +1237,119 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                   value={businessRubro}
                   onChange={(e) => setBusinessRubro(e.target.value)}
                 />
+              </div>
+
+              {/* DATOS FISCALES PARA FACTURACIÓN ELECTRÓNICA & TICKETS */}
+              <div className="md:col-span-2 bg-gradient-to-br from-indigo-50/50 via-purple-50/30 to-blue-50/50 border border-indigo-100 rounded-2xl p-4 space-y-4">
+                <div className="flex items-center gap-2.5">
+                  <span className="p-2 bg-indigo-600 text-white rounded-xl text-xs font-black shadow-sm">
+                    🏛️ SUNAT
+                  </span>
+                  <div>
+                    <h4 className="text-sm font-black text-indigo-950">Datos Fiscales y de Emisión Oficial</h4>
+                    <p className="text-xs text-indigo-600 font-medium">Aparecerán automáticamente en Boletas, Facturas y Tickets impresos</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-black text-gray-700 uppercase tracking-wider mb-1">
+                      Dirección Fiscal Completa
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ej. Av. Javier Prado Este 4200, Urb. Monterrico"
+                      className="w-full px-3.5 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-bold text-gray-700 bg-white"
+                      value={businessAddress}
+                      onChange={(e) => setBusinessAddress(e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-black text-gray-700 uppercase tracking-wider mb-1">
+                      Teléfono Fiscal / Comercial
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ej. (01) 456-7890 / 987654321"
+                      className="w-full px-3.5 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-bold text-gray-700 bg-white"
+                      value={businessPhone}
+                      onChange={(e) => setBusinessPhone(e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-black text-gray-700 uppercase tracking-wider mb-1">
+                      Correo Electrónico Fiscal
+                    </label>
+                    <input
+                      type="email"
+                      placeholder="Ej. facturacion@miempresa.com"
+                      className="w-full px-3.5 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-bold text-gray-700 bg-white"
+                      value={businessEmail}
+                      onChange={(e) => setBusinessEmail(e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-black text-gray-700 uppercase tracking-wider mb-1">
+                      Departamento / Provincia / Distrito
+                    </label>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <input
+                        type="text"
+                        placeholder="Dpto"
+                        className="px-2.5 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-bold text-gray-700 bg-white"
+                        value={businessDepartment}
+                        onChange={(e) => setBusinessDepartment(e.target.value)}
+                      />
+                      <input
+                        type="text"
+                        placeholder="Prov"
+                        className="px-2.5 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-bold text-gray-700 bg-white"
+                        value={businessProvince}
+                        onChange={(e) => setBusinessProvince(e.target.value)}
+                      />
+                      <input
+                        type="text"
+                        placeholder="Dist"
+                        className="px-2.5 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-bold text-gray-700 bg-white"
+                        value={businessDistrict}
+                        onChange={(e) => setBusinessDistrict(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-black text-gray-700 uppercase tracking-wider mb-1">
+                      Series SUNAT por Defecto
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <span className="text-[10px] text-gray-500 font-bold block mb-0.5">Serie Boleta</span>
+                        <input
+                          type="text"
+                          maxLength={4}
+                          placeholder="B001"
+                          className="w-full px-3 py-1.5 font-mono text-xs uppercase font-extrabold border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
+                          value={billingSerieBoleta}
+                          onChange={(e) => setBillingSerieBoleta(e.target.value.toUpperCase())}
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-gray-500 font-bold block mb-0.5">Serie Factura</span>
+                        <input
+                          type="text"
+                          maxLength={4}
+                          placeholder="F001"
+                          className="w-full px-3 py-1.5 font-mono text-xs uppercase font-extrabold border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
+                          value={billingSerieInvoice}
+                          onChange={(e) => setBillingSerieInvoice(e.target.value.toUpperCase())}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* FACTURACIÓN ELECTRÓNICA - Solo si está habilitada */}
@@ -1760,6 +1981,11 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
           <PersonalAIChatFloating />
         </>
       )}
+
+      <CatalogManagerModal
+        isOpen={isCatalogModalOpen}
+        onClose={() => setIsCatalogModalOpen(false)}
+      />
     </div>
   );
 }

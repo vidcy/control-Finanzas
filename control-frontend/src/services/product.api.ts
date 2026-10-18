@@ -12,6 +12,7 @@ export interface Product {
   name: string;
   description?: string;
   sku?: string;
+  barcode?: string;
   color?: string;
   costPrice: number;
   salePrice: number;
@@ -56,8 +57,32 @@ export interface InventoryMovement {
   createdAt: string;
 }
 
-export const getCatalogProductsRequest = async (email = "beaz.estileza@gmail.com"): Promise<Product[]> => {
-  const res = await API.get("/catalog/products", { params: { email } });
+import type { CatalogConfig, CatalogBannerItem } from "../utils/catalogRubroPresets";
+export type { CatalogConfig, CatalogBannerItem };
+
+export interface CatalogStoreInfo {
+  id: string;
+  name: string;
+  lastName: string;
+  email: string;
+  businessName: string;
+  businessReason?: string;
+  businessRubro?: string;
+  businessLogo?: string | null;
+  businessBanner?: string | null;
+  businessSlug?: string | null;
+  catalogConfig?: CatalogConfig | null;
+  isOfficialStore: boolean;
+  notFound?: boolean;
+}
+
+export const getCatalogStoreInfoRequest = async (identifier = "veaz-estileza"): Promise<CatalogStoreInfo> => {
+  const res = await API.get("/catalog/store-info", { params: { identifier, email: identifier } });
+  return res.data;
+};
+
+export const getCatalogProductsRequest = async (identifier = "beaz.estileza@gmail.com"): Promise<Product[]> => {
+  const res = await API.get("/catalog/products", { params: { identifier, email: identifier } });
   return res.data;
 };
 
@@ -259,8 +284,13 @@ export const updatePurchaseOrderRequest = async (
   return res.data;
 };
 
-export const getCatalogBrandsRequest = async (email = "beaz.estileza@gmail.com"): Promise<any[]> => {
-  const res = await API.get("/catalog/brands", { params: { email } });
+export const getCatalogBrandsRequest = async (identifier = "beaz.estileza@gmail.com"): Promise<any[]> => {
+  const res = await API.get("/catalog/brands", { params: { identifier, email: identifier } });
+  return res.data;
+};
+
+export const getCatalogFamiliesRequest = async (identifier = "beaz.estileza@gmail.com"): Promise<any[]> => {
+  const res = await API.get("/catalog/families", { params: { identifier, email: identifier } });
   return res.data;
 };
 
@@ -284,10 +314,7 @@ export const deleteBrandRequest = async (id: string): Promise<any> => {
   return res.data;
 };
 
-export const getCatalogFamiliesRequest = async (email = "beaz.estileza@gmail.com"): Promise<any[]> => {
-  const res = await API.get("/catalog/families", { params: { email } });
-  return res.data;
-};
+
 
 export const getFamiliesRequest = async (): Promise<any[]> => {
   const res = await API.get("/products/families");
