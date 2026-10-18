@@ -19,7 +19,13 @@ import {
   Maximize2,
   ZoomIn,
   ZoomOut,
-  ScanLine
+  ScanLine,
+  Plus,
+  Minus,
+  Trash2,
+  ListPlus,
+  X,
+  AlertCircle
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import type { Product } from "../../services/product.api";
@@ -237,6 +243,29 @@ export function resolveItemColor(p: Product, manualOverride?: string): string {
   return "";
 }
 
+// Estrategia de rotulado:
+// "selective_queue": Cola personalizada de códigos seleccionados (cero desperdicio de papel)
+// "custom_selection": Selección manual de un producto / serie
+// "showcase_models": 1 etiqueta por cada producto/modelo único
+// "all_warehouse_stock": 1 etiqueta por cada unidad de stock real en almacén
+export type PrintStrategy = "selective_queue" | "custom_selection" | "showcase_models" | "all_warehouse_stock";
+
+export interface PrintQueueItem {
+  id: string;
+  productId: string;
+  name: string;
+  sku: string;
+  customCode: number | null;
+  salePrice: number;
+  stock: number;
+  unit: string;
+  brandName: string;
+  color: string;
+  specBadge: string;
+  imageUrl?: string | null;
+  copies: number;
+}
+
 export default function ProfessionalBarcodeCenter({
   products,
   brands,
@@ -255,13 +284,33 @@ export default function ProfessionalBarcodeCenter({
   const isElectroRubro = /electro|lectro|refriger|lavador|congelad|cocina|linea blanca|licuador/i.test(rubro);
   const isTechRubro = /tecno|movil|celular|comput|laptop/i.test(rubro);
 
-  // Estrategia de rotulado:
-  // "all_warehouse_stock": 1 etiqueta por cada unidad de stock real en almacén
-  // "showcase_models": 1 etiqueta por cada producto/modelo único
-  // "custom_selection": Selección manual de un producto / serie
-  const [strategy, setStrategy] = useState<"all_warehouse_stock" | "showcase_models" | "custom_selection">(
-    initialProductId ? "custom_selection" : "all_warehouse_stock"
-  );
+  const [strategy, setStrategy] = useState<PrintStrategy>(() => {
+    // Si viene un producto inicial o hay cola guardada, priorizar cola selectiva
+    return "selective_queue";
+  });
+
+  // ── COLA DE IMPRESIÓN PERSONALIZADA (Persistente en localStorage) ──
+
+  const [printQueue, setPrintQueue] = useState<PrintQueueItem[]>(() => {
+    try {
+      const saved = localStorage.getItem("barcode_print_queue_v1");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("barcode_print_queue_v1", JSON.stringify(printQueue));
+    } catch (e) {
+      console.error("Error guardando cola de códigos en localStorage:", e);
+    }
+  }, [printQueue]);
+
+  const totalQueuedStickers = useMemo(() => {
+    return printQueue.reduce((acc, item) => acc + (Number(item.copies) || 0), 0);
+  }, [printQueue]);
 
   // Filtros
   const [searchTerm, setSearchTerm] = useState("");
@@ -292,14 +341,77 @@ export default function ProfessionalBarcodeCenter({
   const [badgeMode, setBadgeMode] = useState<"auto" | "specs" | "unit" | "custom" | "none">("auto");
   const [customBadgeText, setCustomBadgeText] = useState<string>("");
 
+  // Funciones de gestión de la cola de impresión
+  const addToQueue = (product: Product, copies = 1, customSpec?: string) => {
+    const spec = customSpec !== undefined ? customSpec : resolveItemBadge(product);
+    const color = resolveItemColor(product, customColorOverride);
+    const code = product.sku || String((product as any).customCode || 0).padStart(4, "0");
+
+    setPrintQueue((prev) => {
+      const idx = prev.findIndex((q) => q.productId === product.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = {
+          ...next[idx],
+          copies: next[idx].copies + copies,
+        };
+        return next;
+      }
+      const newItem: PrintQueueItem = {
+        id: `q-${product.id}-${Date.now()}`,
+        productId: product.id,
+        name: cleanModelName(product.name, isApparelOrFootwear),
+        sku: code,
+        customCode: (product as any).customCode || null,
+        salePrice: Number(product.salePrice) || 0,
+        stock: Number(product.stock) || 0,
+        unit: product.unit || "Unidad",
+        brandName: product.brand?.name || "",
+        color,
+        specBadge: spec,
+        imageUrl: product.imageUrl,
+        copies: Math.max(1, copies),
+      };
+      return [newItem, ...prev];
+    });
+
+    toast.success(`➕ Código añadido: ${cleanModelName(product.name, isApparelOrFootwear)} (+${copies})`, {
+      id: `add-toast-${product.id}`,
+      duration: 2000,
+    });
+  };
+
+  const updateQueueCopies = (productId: string, copies: number) => {
+    if (copies <= 0) {
+      removeFromQueue(productId);
+      return;
+    }
+    setPrintQueue((prev) =>
+      prev.map((item) => (item.productId === productId ? { ...item, copies } : item))
+    );
+  };
+
+  const removeFromQueue = (productId: string) => {
+    setPrintQueue((prev) => prev.filter((item) => item.productId !== productId));
+    toast.success("Código retirado de la lista");
+  };
+
+  const clearQueue = () => {
+    setPrintQueue([]);
+    toast.success("Lista de impresión vaciada");
+  };
+
   // Sincronizar initialProductId cuando cambie
   useEffect(() => {
     if (initialProductId) {
       setSelectedProductId(initialProductId);
-      setStrategy("custom_selection");
-      setCustomSelectionMode("single");
+      const match = products.find((p) => p.id === initialProductId);
+      if (match) {
+        addToQueue(match, 1);
+        setStrategy("selective_queue");
+      }
     }
-  }, [initialProductId]);
+  }, [initialProductId, products]);
 
   // Si cambia el código escaneado desde el hardware scanner
   useEffect(() => {
@@ -314,10 +426,11 @@ export default function ProfessionalBarcodeCenter({
     });
 
     if (match) {
-      setStrategy("custom_selection");
+      addToQueue(match, 1);
+      setStrategy("selective_queue");
       setSelectedProductId(match.id);
       playScannerSound("success");
-      toast.success(`🎯 Pistola detectó: ${match.name}`);
+      toast.success(`🎯 Pistola detectó y adicionó a la lista: ${match.name}`);
       if (onProductSelect) onProductSelect(match);
     }
   }, [lastScannedCode]);
@@ -389,6 +502,29 @@ export default function ProfessionalBarcodeCenter({
   // CONSTRUCCIÓN DE LA LISTA FINAL DE ETIQUETAS A IMPRIMIR
   const labelItems = useMemo<LabelItemData[]>(() => {
     const list: LabelItemData[] = [];
+
+    // ── ESTRATEGIA 0: Cola Personalizada de Códigos Seleccionados (Cero desperdicio) ──
+    if (strategy === "selective_queue") {
+      printQueue.forEach((qItem) => {
+        const copies = Math.max(1, qItem.copies);
+        for (let i = 0; i < copies; i++) {
+          list.push({
+            id: `queue-${qItem.productId}-${i}-${Date.now()}`,
+            productId: qItem.productId,
+            modelName: qItem.name,
+            brandName: qItem.brandName,
+            specBadge: showBadge && badgeMode !== "none"
+              ? (badgeMode === "custom" ? (customBadgeText || "").toUpperCase() : qItem.specBadge)
+              : "",
+            codeText: qItem.sku,
+            price: qItem.salePrice,
+            color: showColor ? qItem.color : "",
+            unit: qItem.unit,
+          });
+        }
+      });
+      return list;
+    }
 
     // ── ESTRATEGIA 1: Todo el almacén por stock real de cada producto ──
     if (strategy === "all_warehouse_stock") {
@@ -499,6 +635,7 @@ export default function ProfessionalBarcodeCenter({
     return list;
   }, [
     strategy,
+    printQueue,
     filteredProducts,
     activeProduct,
     isSeries,
@@ -860,35 +997,70 @@ export default function ProfessionalBarcodeCenter({
         </div>
       </div>
 
-      {/* ── 2. SELECTOR DE ESTRATEGIA (3 BOTONES PRO) ── */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Estrategia 1: Todo el Almacén por Stock Real */}
+      {/* ── 2. SELECTOR DE ESTRATEGIA (4 ESTRATEGIAS PRO) ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Estrategia 0: Escoger y Adicionar Códigos (Cero Desperdicio) */}
         <div
-          onClick={() => setStrategy("all_warehouse_stock")}
+          onClick={() => setStrategy("selective_queue")}
           className={`p-5 rounded-3xl border-2 transition-all cursor-pointer relative overflow-hidden group ${
-            strategy === "all_warehouse_stock"
-              ? "bg-indigo-50/70 border-indigo-600 shadow-lg ring-2 ring-indigo-500/20"
+            strategy === "selective_queue"
+              ? "bg-emerald-50/80 border-emerald-600 shadow-lg ring-2 ring-emerald-500/20"
               : "bg-white border-slate-200 hover:border-slate-300"
           }`}
         >
           <div className="flex items-start justify-between">
-            <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-black shadow-md shadow-indigo-600/30">
-              <Package className="w-6 h-6" />
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center font-black shadow-md shadow-emerald-600/30">
+              <ListPlus className="w-6 h-6" />
             </div>
-            {strategy === "all_warehouse_stock" && (
-              <span className="bg-indigo-600 text-white p-1 rounded-full">
+            {strategy === "selective_queue" && (
+              <span className="bg-emerald-600 text-white p-1 rounded-full">
+                <Check className="w-4 h-4 stroke-[3]" />
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 mt-4">
+            <h3 className="text-base font-black text-slate-900">
+              Escoger y Adicionar
+            </h3>
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-100 text-emerald-800">
+              AHORRO
+            </span>
+          </div>
+          <p className="text-xs text-slate-600 mt-1">
+            Busca y <strong>adiciona únicamente los códigos</strong> que necesitas hoy. Cero hojas desperdiciadas.
+          </p>
+          <div className="mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-black bg-emerald-100 text-emerald-950">
+            🎯 {totalQueuedStickers} etiquetas en lista ({printQueue.length} arts.)
+          </div>
+        </div>
+
+        {/* Estrategia 1: Producto o Serie Específica */}
+        <div
+          onClick={() => setStrategy("custom_selection")}
+          className={`p-5 rounded-3xl border-2 transition-all cursor-pointer relative overflow-hidden group ${
+            strategy === "custom_selection"
+              ? "bg-violet-50/70 border-violet-600 shadow-lg ring-2 ring-violet-500/20"
+              : "bg-white border-slate-200 hover:border-slate-300"
+          }`}
+        >
+          <div className="flex items-start justify-between">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-violet-600 to-purple-600 text-white flex items-center justify-center font-black shadow-md shadow-violet-600/30">
+              <Tag className="w-6 h-6" />
+            </div>
+            {strategy === "custom_selection" && (
+              <span className="bg-violet-600 text-white p-1 rounded-full">
                 <Check className="w-4 h-4 stroke-[3]" />
               </span>
             )}
           </div>
           <h3 className="text-base font-black text-slate-900 mt-4">
-            Rotular Todo el Almacén
+            Producto o Serie Única
           </h3>
           <p className="text-xs text-slate-600 mt-1">
-            Genera 1 etiqueta para <strong>cada unidad física en existencia</strong>. Ideal para inventariar y etiquetar cada caja, prenda o equipo que entra a tienda.
+            Elige un producto específico para imprimir etiquetas por curva de tallas o cantidad deseada.
           </p>
-          <div className="mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-black bg-indigo-100 text-indigo-900">
-            📦 Stock Total: {filteredProducts.reduce((acc, p) => acc + (Number(p.stock) || 0), 0)} unidades
+          <div className="mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-black bg-violet-100 text-violet-950">
+            🏷️ Por Producto / Serie
           </div>
         </div>
 
@@ -915,40 +1087,40 @@ export default function ProfessionalBarcodeCenter({
             Rotular Vitrina / Exhibidor
           </h3>
           <p className="text-xs text-slate-600 mt-1">
-            Genera exactamente <strong>1 etiqueta por cada modelo único</strong> del catálogo para perchas, mostradores, repisas o calzados de exhibición.
+            Genera exactamente <strong>1 etiqueta por cada modelo único</strong> para perchas, mostradores o vitrina.
           </p>
           <div className="mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-black bg-amber-100 text-amber-950">
-            ✨ {filteredProducts.length} modelos listos para vitrina
+            ✨ {filteredProducts.length} modelos listos
           </div>
         </div>
 
-        {/* Estrategia 3: Selección Manual de Producto / Serie */}
+        {/* Estrategia 3: Todo el Almacén por Stock Real */}
         <div
-          onClick={() => setStrategy("custom_selection")}
+          onClick={() => setStrategy("all_warehouse_stock")}
           className={`p-5 rounded-3xl border-2 transition-all cursor-pointer relative overflow-hidden group ${
-            strategy === "custom_selection"
-              ? "bg-violet-50/70 border-violet-600 shadow-lg ring-2 ring-violet-500/20"
+            strategy === "all_warehouse_stock"
+              ? "bg-indigo-50/70 border-indigo-600 shadow-lg ring-2 ring-indigo-500/20"
               : "bg-white border-slate-200 hover:border-slate-300"
           }`}
         >
           <div className="flex items-start justify-between">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-violet-600 to-purple-600 text-white flex items-center justify-center font-black shadow-md shadow-violet-600/30">
-              <Tag className="w-6 h-6" />
+            <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-black shadow-md shadow-indigo-600/30">
+              <Package className="w-6 h-6" />
             </div>
-            {strategy === "custom_selection" && (
-              <span className="bg-violet-600 text-white p-1 rounded-full">
+            {strategy === "all_warehouse_stock" && (
+              <span className="bg-indigo-600 text-white p-1 rounded-full">
                 <Check className="w-4 h-4 stroke-[3]" />
               </span>
             )}
           </div>
           <h3 className="text-base font-black text-slate-900 mt-4">
-            Producto o Serie Específica
+            Rotular Todo el Almacén
           </h3>
           <p className="text-xs text-slate-600 mt-1">
-            Elige un producto específico o <strong>escanea su código con la pistola</strong> para imprimir etiquetas por curva de tallas o cantidad deseada.
+            Genera 1 etiqueta para <strong>cada unidad física en existencia</strong>. Para lotes de llegada masiva.
           </p>
-          <div className="mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-black bg-violet-100 text-violet-950">
-            🎯 Personalizado / Por Lote
+          <div className="mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-black bg-indigo-100 text-indigo-900">
+            📦 Stock: {filteredProducts.reduce((acc, p) => acc + (Number(p.stock) || 0), 0)} unidades
           </div>
         </div>
       </div>
@@ -1032,6 +1204,227 @@ export default function ProfessionalBarcodeCenter({
           </div>
         </div>
 
+        {/* ── MODO SELECTIVE QUEUE: PANEL DE BÚSQUEDA Y ADICIÓN DE CÓDIGOS ── */}
+        {strategy === "selective_queue" && (
+          <div className="space-y-4 p-5 bg-gradient-to-br from-emerald-50/70 via-teal-50/30 to-slate-50 border-2 border-emerald-300/80 rounded-3xl shadow-sm">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-emerald-200">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-black shadow-md shadow-emerald-500/20">
+                  <ListPlus className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-emerald-950 flex items-center gap-2">
+                    Buscar y Adicionar Códigos a la Lista
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      Cero Desperdicio de Hojas
+                    </span>
+                  </h4>
+                  <p className="text-xs text-emerald-700 font-medium">
+                    Busca por nombre, SKU o código # y presiona <strong>"Adicionar"</strong> con la cantidad exacta que vas a rotular.
+                  </p>
+                </div>
+              </div>
+
+              {printQueue.length > 0 && (
+                <button
+                  type="button"
+                  onClick={clearQueue}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-white text-rose-600 hover:bg-rose-50 border border-rose-200 transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Vaciar Lista ({printQueue.length})</span>
+                </button>
+              )}
+            </div>
+
+            {/* Resultados rápidos de búsqueda para adicionar en 1 clic */}
+            {filteredProducts.length > 0 ? (
+              <div className="bg-white rounded-2xl border border-emerald-200 p-3 shadow-xs">
+                <div className="text-[11px] font-black uppercase text-slate-500 mb-2 px-1 flex items-center justify-between">
+                  <span>Productos disponibles para adicionar ({Math.min(filteredProducts.length, 6)} de {filteredProducts.length})</span>
+                  {searchTerm && filteredProducts.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        filteredProducts.slice(0, 10).forEach((p) => addToQueue(p, 1));
+                        toast.success(`Se adicionaron ${Math.min(filteredProducts.length, 10)} productos a la lista`);
+                      }}
+                      className="text-[11px] font-black text-emerald-700 hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Adicionar los primeros {Math.min(filteredProducts.length, 10)}
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-60 overflow-y-auto pr-1">
+                  {filteredProducts.slice(0, 12).map((p) => {
+                    const inQueue = printQueue.find((q) => q.productId === p.id);
+                    const pSpec = resolveItemBadge(p);
+                    const pColor = resolveItemColor(p);
+
+                    return (
+                      <div
+                        key={`quick-add-${p.id}`}
+                        className={`p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2.5 ${
+                          inQueue
+                            ? "bg-emerald-50/80 border-emerald-400 shadow-2xs"
+                            : "bg-slate-50/70 hover:bg-slate-100/80 border-slate-200"
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-black text-slate-900 truncate">
+                            {cleanModelName(p.name, isApparelOrFootwear)}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1.5 mt-0.5 text-[10px] text-slate-500 font-semibold">
+                            <span className="font-mono bg-white px-1.5 py-0.2 rounded border border-slate-200 text-slate-700 font-bold">
+                              {p.sku || `Cód #${p.customCode || ""}`}
+                            </span>
+                            {pSpec && (
+                              <span className="bg-indigo-50 text-indigo-700 px-1.5 py-0.2 rounded font-bold">
+                                {pSpec}
+                              </span>
+                            )}
+                            {pColor && (
+                              <span className="bg-slate-200 text-slate-800 px-1 py-0.2 rounded font-bold">
+                                {pColor}
+                              </span>
+                            )}
+                            <span className="font-black text-emerald-700">
+                              S/ {Number(p.salePrice || 0).toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {inQueue && (
+                            <span className="px-2 py-1 bg-emerald-600 text-white rounded-lg text-xs font-black">
+                              {inQueue.copies} en lista
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => addToQueue(p, 1)}
+                            className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition-all active:scale-95 flex items-center gap-1 shadow-2xs cursor-pointer"
+                            title="Agregar a la lista para imprimir"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>{inQueue ? "+1" : "Adicionar"}</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 bg-white rounded-2xl border border-slate-200 text-center text-xs text-slate-500">
+                No se encontraron productos con el término de búsqueda "{searchTerm}". Prueba borrando el texto de búsqueda.
+              </div>
+            )}
+
+            {/* Lista de Códigos ya adicionados a la cola */}
+            <div className="bg-white rounded-2xl border border-emerald-300 overflow-hidden shadow-xs">
+              <div className="bg-emerald-800 text-white px-4 py-2.5 flex items-center justify-between text-xs font-black">
+                <span className="flex items-center gap-2">
+                  <Tag className="w-4 h-4 text-emerald-300" />
+                  Códigos en Lista para Impresión ({printQueue.length} artículos • {totalQueuedStickers} etiquetas totales)
+                </span>
+                <span className="text-[11px] text-emerald-200 font-bold">
+                  {paperFormat.startsWith("A4")
+                    ? `~${Math.ceil(totalQueuedStickers / (paperFormat === "A4-40" ? 40 : 24))} pliego(s) A4`
+                    : `${totalQueuedStickers} stickers de rollo`}
+                </span>
+              </div>
+
+              {printQueue.length === 0 ? (
+                <div className="py-8 px-4 text-center">
+                  <ListPlus className="w-8 h-8 text-emerald-300 mx-auto mb-2" />
+                  <p className="text-xs font-black text-slate-700">Tu lista de impresión está vacía</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Usa el buscador de arriba o escanea con tu pistola de código de barras para ir adicionando exactamente lo que deseas imprimir.
+                  </p>
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto">
+                  {printQueue.map((item) => (
+                    <div
+                      key={item.id}
+                      className="px-4 py-2.5 hover:bg-slate-50/80 transition-colors flex items-center justify-between gap-3 text-xs"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="font-black text-slate-900 truncate">
+                          {item.name}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 mt-0.5 text-[11px] text-slate-500 font-semibold">
+                          <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded font-bold text-slate-800">
+                            {item.sku}
+                          </span>
+                          {item.brandName && (
+                            <span className="text-slate-600 font-bold">{item.brandName}</span>
+                          )}
+                          {item.specBadge && (
+                            <span className="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded font-bold">
+                              {item.specBadge}
+                            </span>
+                          )}
+                          {item.color && (
+                            <span className="bg-slate-200 text-slate-800 px-1.5 py-0.5 rounded font-bold">
+                              {item.color}
+                            </span>
+                          )}
+                          <span className="font-black text-emerald-700">
+                            S/ {item.salePrice.toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Control de copias */}
+                      <div className="flex items-center gap-3 shrink-0">
+                        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                          <button
+                            type="button"
+                            onClick={() => updateQueueCopies(item.productId, item.copies - 1)}
+                            className="w-7 h-7 rounded-lg bg-white hover:bg-slate-200 text-slate-700 font-black flex items-center justify-center transition-colors shadow-2xs cursor-pointer"
+                            title="Disminuir 1 etiqueta"
+                          >
+                            <Minus className="w-3.5 h-3.5" />
+                          </button>
+                          <input
+                            type="number"
+                            min={1}
+                            max={500}
+                            value={item.copies}
+                            onChange={(e) => updateQueueCopies(item.productId, Math.max(1, parseInt(e.target.value) || 1))}
+                            className="w-12 py-1 text-center font-black text-xs bg-transparent outline-none text-slate-900"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => updateQueueCopies(item.productId, item.copies + 1)}
+                            className="w-7 h-7 rounded-lg bg-white hover:bg-slate-200 text-slate-700 font-black flex items-center justify-center transition-colors shadow-2xs cursor-pointer"
+                            title="Aumentar 1 etiqueta"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => removeFromQueue(item.productId)}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                          title="Eliminar de la lista"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Controles específicos del modo personalizado */}
         {strategy === "custom_selection" && activeProduct && (
           <div className="p-4 bg-violet-50/60 border border-violet-200 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -1076,6 +1469,18 @@ export default function ProfessionalBarcodeCenter({
                   >
                     📦 Según stock de cada variante
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      seriesSiblings.forEach((s) => addToQueue(s, 1));
+                      setStrategy("selective_queue");
+                    }}
+                    className="px-3 py-1.5 rounded-xl text-xs font-black bg-emerald-600 text-white hover:bg-emerald-700 transition-all flex items-center gap-1 shadow-xs cursor-pointer"
+                    title="Enviar todas las tallas a la cola de impresión"
+                  >
+                    <ListPlus className="w-3.5 h-3.5" />
+                    <span>Adicionar a la Cola</span>
+                  </button>
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
@@ -1111,6 +1516,18 @@ export default function ProfessionalBarcodeCenter({
                       className="w-16 px-2 py-1 bg-white border border-violet-300 rounded-lg text-xs font-bold text-center"
                     />
                   )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      addToQueue(activeProduct, customSelectionMode === "custom" ? customCopies : 1);
+                      setStrategy("selective_queue");
+                    }}
+                    className="px-3 py-1.5 rounded-xl text-xs font-black bg-emerald-600 text-white hover:bg-emerald-700 transition-all flex items-center gap-1 shadow-xs cursor-pointer"
+                    title="Adicionar a la cola de impresión"
+                  >
+                    <ListPlus className="w-3.5 h-3.5" />
+                    <span>Adicionar a la Cola</span>
+                  </button>
                 </div>
               )}
 
