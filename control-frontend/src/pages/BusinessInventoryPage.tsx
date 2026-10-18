@@ -281,6 +281,7 @@ export default function BusinessInventoryPage() {
   const [mgmtTransferToBranchId, setMgmtTransferToBranchId] = useState("");
   const [mgmtTransferQty, setMgmtTransferQty] = useState<number | "">("");
   const [mgmtIsSubmitting, setMgmtIsSubmitting] = useState(false);
+  const [isProductSubmitting, setIsProductSubmitting] = useState(false);
 
   // Generic Confirm Modal States
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -1384,6 +1385,8 @@ export default function BusinessInventoryPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isProductSubmitting) return;
+    setIsProductSubmitting(true);
     try {
       let finalImageUrl = formData.imageUrl;
       if (formData.imageUrl instanceof File) {
@@ -1714,6 +1717,8 @@ export default function BusinessInventoryPage() {
         error?.message ||
         "Error al guardar producto";
       toast.error(errMsg);
+    } finally {
+      setIsProductSubmitting(false);
     }
   };
 
@@ -1766,13 +1771,21 @@ export default function BusinessInventoryPage() {
   };
 
   const handleDelete = async (id: string) => {
+    const toastId = toast.loading("Eliminando producto...");
     try {
       await deleteProductRequest(id);
-      toast.success("Producto eliminado");
-      loadData();
+      toast.dismiss(toastId);
+      toast.success("Producto eliminado exitosamente");
+      await loadData();
       if (activeTab === "planner") loadPlannerData();
     } catch (error: any) {
-      toast.error(error?.response?.data?.message || "Error al eliminar");
+      toast.dismiss(toastId);
+      const msg =
+        error?.response?.data?.message ||
+        error?.response?.data?.error?.message ||
+        error?.message ||
+        "Error al eliminar";
+      toast.error(msg);
     }
   };
 
@@ -5673,17 +5686,29 @@ export default function BusinessInventoryPage() {
           <div className="mt-6 flex justify-end gap-3">
             <button
               type="button"
+              disabled={isProductSubmitting}
               onClick={() => setIsModalOpen(false)}
-              className="px-5 py-2.5 bg-gray-100 text-gray-700 font-medium rounded-xl hover:bg-gray-200"
+              className="px-5 py-2.5 bg-gray-100 text-gray-700 font-medium rounded-xl hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              className="px-6 py-2.5 bg-indigo-600 text-white font-black text-xs uppercase tracking-wider rounded-xl hover:bg-indigo-700 shadow-md shadow-indigo-500/30 flex items-center gap-2 cursor-pointer transition-all"
+              disabled={isProductSubmitting}
+              className={`px-6 py-2.5 font-black text-xs uppercase tracking-wider rounded-xl flex items-center gap-2 transition-all ${
+                isProductSubmitting
+                  ? "bg-indigo-400 text-white cursor-not-allowed opacity-80"
+                  : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-md shadow-indigo-500/30 cursor-pointer"
+              }`}
             >
-              <Check className="w-4 h-4" />
-              {editingProduct ? (
+              {isProductSubmitting ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Check className="w-4 h-4" />
+              )}
+              {isProductSubmitting ? (
+                "Guardando..."
+              ) : editingProduct ? (
                 isSeriesEligible ? (
                   editScope === "SERIES"
                     ? `Actualizar Toda la Serie (${editingSiblings.length} tallas)`

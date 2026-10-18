@@ -69,6 +69,7 @@ export const SingleLabelSticker: React.FC<{
   showBadge: boolean;
   showCodeText: boolean;
   showBrand: boolean;
+  showColor?: boolean;
 }> = ({
   item,
   codeType,
@@ -79,6 +80,7 @@ export const SingleLabelSticker: React.FC<{
   showBadge,
   showCodeText,
   showBrand,
+  showColor = true,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -135,7 +137,7 @@ export const SingleLabelSticker: React.FC<{
       className="bg-white border-2 border-black rounded-xl flex flex-col items-center justify-between text-center shadow-xs transition-transform hover:scale-[1.02] text-black select-none overflow-hidden print:border-none print:shadow-none print:m-0 print:p-1"
     >
       {/* 1. Encabezado Tienda / Marca (Negro nítido) */}
-      <div className="w-full flex items-center justify-between gap-1 border-b border-black/30 pb-1 shrink-0">
+      <div className="w-full flex items-center justify-between gap-1 border-b border-black/30 pb-0.5 shrink-0">
         {showStoreName && (
           <span className="text-[10px] font-black tracking-wider uppercase text-black truncate max-w-[120px]">
             {businessName || "TIENDA"}
@@ -148,27 +150,28 @@ export const SingleLabelSticker: React.FC<{
         )}
       </div>
 
-      {/* 2. Nombre del Producto / Modelo (Letras grandes y bien pintadas) */}
-      <div className="w-full my-1 shrink-0">
+      {/* 2. Nombre del Producto / Modelo */}
+      <div className="w-full my-0.5 shrink-0">
         <h4 className="text-[12px] font-black text-black leading-tight truncate px-1" title={item.modelName}>
           {item.modelName}
         </h4>
-        {item.color && (
-          <span className="text-[9px] font-extrabold text-black block leading-none mt-0.5">
-            {item.color}
-          </span>
-        )}
       </div>
 
-      {/* 3. Badge de Especificación + Precio (Alto Contraste) */}
-      <div className="w-full flex items-center justify-center gap-2 my-0.5 shrink-0">
+      {/* 3. COLOR, BADGE Y PRECIO (Clarísimo, muy notorio y de alto contraste) */}
+      <div className="w-full flex items-center justify-center flex-wrap gap-1.5 my-0.5 shrink-0">
+        {showColor && item.color && (
+          <div className="bg-black text-white text-[10.5px] font-black px-2 py-0.5 rounded-md tracking-wider uppercase shadow-xs flex items-center gap-1">
+            <span>COL:</span>
+            <span>{item.color}</span>
+          </div>
+        )}
         {showBadge && item.specBadge && (
-          <div className="bg-black text-white text-[10.5px] font-black px-2.5 py-0.5 rounded-md tracking-wider uppercase shadow-xs">
+          <div className="border-2 border-black text-black text-[10px] font-black px-2 py-0.5 rounded-md tracking-wider uppercase bg-white">
             {item.specBadge}
           </div>
         )}
         {showPrice && (
-          <div className="text-[13px] font-black text-black tracking-tight border-2 border-black px-2 py-0.5 rounded-md bg-white">
+          <div className="text-[12.5px] font-black text-black tracking-tight border-2 border-black px-2 py-0.5 rounded-md bg-white">
             S/ {Number(item.price).toFixed(2)}
           </div>
         )}
@@ -188,6 +191,51 @@ export const SingleLabelSticker: React.FC<{
     </div>
   );
 };
+
+/**
+ * Resuelve y extrae el color del producto para la etiqueta.
+ * Prioriza: override manual, campo color, metadata de serie y búsqueda regex inteligente.
+ */
+export function resolveItemColor(p: Product, manualOverride?: string): string {
+  if (manualOverride && manualOverride.trim()) {
+    return manualOverride.trim().toUpperCase();
+  }
+  if (p.color && p.color.trim()) {
+    return p.color.trim().toUpperCase();
+  }
+  if ((p as any).colour && String((p as any).colour).trim()) {
+    return String((p as any).colour).trim().toUpperCase();
+  }
+
+  const meta = decodeSeriesMetadata(p.description);
+  if (meta && (meta as any).color && String((meta as any).color).trim()) {
+    return String((meta as any).color).trim().toUpperCase();
+  }
+
+  const text = `${p.name || ""} ${p.description || ""}`;
+  const match = text.match(/\b(?:color|col\.?)\s*[:=\-]?\s*([a-zA-ZáéíóúñÁÉÍÓÚÑ]+(?:\s+[a-zA-ZáéíóúñÁÉÍÓÚÑ]+)?)/i);
+  if (match && match[1]) {
+    const candidate = match[1].trim();
+    if (!/^(de|del|para|con|sin|original|nuevo|marca|tipo|serie|unidad|unidades)$/i.test(candidate)) {
+      return candidate.toUpperCase();
+    }
+  }
+
+  const commonColors = [
+    "NEGRO MATE", "NEGRO BRILLANTE", "NEGRO", "BLANCO", "ROJO", "AZUL MARINO", "AZUL REY", "AZUL",
+    "VERDE", "AMARILLO", "GRIS", "PLATA", "PLATEADO", "DORADO", "ORO", "BRONCE", "BEIGE", "CREMA",
+    "MARRÓN", "MARRON", "CAMEL", "NUDE", "ROSA", "ROSADO", "FUCSIA", "GUINDA", "VINO", "LILA",
+    "MORADO", "NARANJA", "INOX", "ACERO INOXIDABLE", "ACERO", "MADERA", "CHAMPAGNE"
+  ];
+  for (const c of commonColors) {
+    const rx = new RegExp(`\\b${c}\\b`, "i");
+    if (rx.test(text)) {
+      return c;
+    }
+  }
+
+  return "";
+}
 
 export default function ProfessionalBarcodeCenter({
   products,
@@ -237,6 +285,8 @@ export default function ProfessionalBarcodeCenter({
   const [showBadge, setShowBadge] = useState(true);
   const [showCodeText, setShowCodeText] = useState(true);
   const [showBrand, setShowBrand] = useState(true);
+  const [showColor, setShowColor] = useState(true);
+  const [customColorOverride, setCustomColorOverride] = useState("");
 
   // Modo de Badge inteligente o manual
   const [badgeMode, setBadgeMode] = useState<"auto" | "specs" | "unit" | "custom" | "none">("auto");
@@ -293,6 +343,13 @@ export default function ProfessionalBarcodeCenter({
     return products.find((p) => p.id === selectedProductId) || filteredProducts[0] || null;
   }, [products, selectedProductId, filteredProducts]);
 
+  // Sincronizar el color detectado cuando activeProduct cambie
+  useEffect(() => {
+    if (activeProduct) {
+      setCustomColorOverride(resolveItemColor(activeProduct));
+    }
+  }, [activeProduct]);
+
   // Solamente calzados en zapaterías o productos explícitos con curva de serie
   const isSeries = useMemo(() => {
     if (!activeProduct) return false;
@@ -337,6 +394,7 @@ export default function ProfessionalBarcodeCenter({
     if (strategy === "all_warehouse_stock") {
       filteredProducts.forEach((p) => {
         const stockUnits = Math.max(0, Math.round(Number(p.stock) || 0));
+        const color = resolveItemColor(p);
         for (let i = 0; i < stockUnits; i++) {
           list.push({
             id: `${p.id}-stock-${i}`,
@@ -346,7 +404,7 @@ export default function ProfessionalBarcodeCenter({
             specBadge: resolveItemBadge(p),
             codeText: p.sku || String((p as any).customCode || 0).padStart(4, "0"),
             price: Number(p.salePrice) || 0,
-            color: p.color || "",
+            color,
             unit: p.unit || "Unidad",
           });
         }
@@ -370,7 +428,7 @@ export default function ProfessionalBarcodeCenter({
             specBadge: badgeText,
             codeText: p.sku || String((p as any).customCode || 0).padStart(4, "0"),
             price: Number(p.salePrice) || 0,
-            color: p.color || "",
+            color: resolveItemColor(p),
             unit: p.unit || "Unidad",
           });
         }
@@ -392,7 +450,7 @@ export default function ProfessionalBarcodeCenter({
           specBadge: resolveItemBadge(sib),
           codeText: sib.sku || String((sib as any).customCode || 0).padStart(4, "0"),
           price: Number(sib.salePrice) || 0,
-          color: sib.color || "",
+          color: resolveItemColor(sib, customColorOverride),
           unit: sib.unit || "Unidad",
         });
       });
@@ -403,6 +461,7 @@ export default function ProfessionalBarcodeCenter({
       // Según stock de cada talla de la serie
       seriesSiblings.forEach((sib) => {
         const count = Math.max(1, Math.round(Number(sib.stock) || 0));
+        const color = resolveItemColor(sib, customColorOverride);
         for (let i = 0; i < count; i++) {
           list.push({
             id: `series-stock-${sib.id}-${i}`,
@@ -412,7 +471,7 @@ export default function ProfessionalBarcodeCenter({
             specBadge: resolveItemBadge(sib),
             codeText: sib.sku || String((sib as any).customCode || 0).padStart(4, "0"),
             price: Number(sib.salePrice) || 0,
-            color: sib.color || "",
+            color,
             unit: sib.unit || "Unidad",
           });
         }
@@ -422,6 +481,7 @@ export default function ProfessionalBarcodeCenter({
 
     // Single o Custom copies
     const copies = customSelectionMode === "custom" ? Math.max(1, customCopies) : 1;
+    const activeColor = resolveItemColor(activeProduct, customColorOverride);
     for (let i = 0; i < copies; i++) {
       list.push({
         id: `custom-prod-${activeProduct.id}-${i}`,
@@ -431,7 +491,7 @@ export default function ProfessionalBarcodeCenter({
         specBadge: resolveItemBadge(activeProduct),
         codeText: activeProduct.sku || String((activeProduct as any).customCode || 0).padStart(4, "0"),
         price: Number(activeProduct.salePrice) || 0,
-        color: activeProduct.color || "",
+        color: activeColor,
         unit: activeProduct.unit || "Unidad",
       });
     }
@@ -446,6 +506,8 @@ export default function ProfessionalBarcodeCenter({
     customSelectionMode,
     customCopies,
     showBadge,
+    showColor,
+    customColorOverride,
     badgeMode,
     customBadgeText,
     businessRubro,
@@ -516,20 +578,35 @@ export default function ProfessionalBarcodeCenter({
           doc.text(truncated, w / 2, curY, { align: "center" });
           curY += isLarge ? 4.0 : 3.4;
 
-          // 3. Badge y Precio (Alto contraste y bien marcado)
+          // 3. COLOR, BADGE Y PRECIO (Clarísimo y bien pronunciado en papel térmico)
+          const hasColor = showColor && Boolean(item.color);
           const hasBadge = showBadge && Boolean(item.specBadge);
           const hasPrice = showPrice && Number(item.price) > 0;
-          if (hasBadge || hasPrice) {
-            if (hasBadge) {
-              const badgeText = item.specBadge.length > 22 ? item.specBadge.slice(0, 21) + "." : item.specBadge;
-              const badgeW = Math.min(w * 0.45, 30);
-              const badgeH = isLarge ? 5.0 : 4.2;
+          if (hasColor || hasBadge || hasPrice) {
+            if (hasColor) {
+              const colorStr = `COL: ${(item.color || "").toUpperCase()}`;
+              const colorW = Math.min(w * 0.38, 25);
+              const colorH = isLarge ? 5.0 : 4.0;
               doc.setFillColor(0, 0, 0);
-              doc.roundedRect(w / 2 - badgeW / 2, curY - (isLarge ? 3.5 : 3.0), badgeW, badgeH, 1, 1, "F");
+              doc.roundedRect(3, curY - (isLarge ? 3.5 : 2.9), colorW, colorH, 1, 1, "F");
               doc.setTextColor(255, 255, 255);
-              doc.setFontSize(isLarge ? 8.0 : 7.0);
+              doc.setFontSize(isLarge ? 8.0 : 6.8);
               doc.setFont("helvetica", "bold");
-              doc.text(badgeText, w / 2, curY + (isLarge ? 0.3 : 0.2), { align: "center" });
+              doc.text(colorStr, 3 + colorW / 2, curY + (isLarge ? 0.3 : 0.2), { align: "center" });
+            }
+
+            if (hasBadge) {
+              const badgeText = item.specBadge.length > 20 ? item.specBadge.slice(0, 19) + "." : item.specBadge;
+              const badgeW = Math.min(w * 0.36, 24);
+              const badgeH = isLarge ? 5.0 : 4.0;
+              const badgeX = hasColor ? (w / 2 - badgeW / 2 + (hasPrice ? 0 : 3)) : (hasPrice ? 3 : w / 2 - badgeW / 2);
+              doc.setDrawColor(0, 0, 0);
+              doc.setLineWidth(0.35);
+              doc.roundedRect(badgeX, curY - (isLarge ? 3.5 : 2.9), badgeW, badgeH, 1, 1, "S");
+              doc.setTextColor(0, 0, 0);
+              doc.setFontSize(isLarge ? 7.8 : 6.5);
+              doc.setFont("helvetica", "bold");
+              doc.text(badgeText, badgeX + badgeW / 2, curY + (isLarge ? 0.3 : 0.2), { align: "center" });
             }
 
             if (hasPrice) {
@@ -642,20 +719,35 @@ export default function ProfessionalBarcodeCenter({
           doc.text(truncated, x + labelW / 2, curY, { align: "center" });
           curY += 3.4;
 
-          // 3. Badge y Precio
+          // 3. COLOR, BADGE Y PRECIO (Clarísimo)
+          const hasColor = showColor && Boolean(item.color);
           const hasBadge = showBadge && Boolean(item.specBadge);
           const hasPrice = showPrice && Number(item.price) > 0;
-          if (hasBadge || hasPrice) {
+          if (hasColor || hasBadge || hasPrice) {
+            if (hasColor) {
+              const colorStr = `COL: ${(item.color || "").toUpperCase()}`;
+              const colorW = Math.min(labelW * 0.36, 22);
+              const colorH = 4.2;
+              doc.setFillColor(0, 0, 0);
+              doc.roundedRect(x + 3, curY - 2.8, colorW, colorH, 1, 1, "F");
+              doc.setTextColor(255, 255, 255);
+              doc.setFontSize(6.8);
+              doc.setFont("helvetica", "bold");
+              doc.text(colorStr, x + 3 + colorW / 2, curY + 0.3, { align: "center" });
+            }
+
             if (hasBadge) {
               const badgeText = item.specBadge.length > 18 ? item.specBadge.slice(0, 17) + "." : item.specBadge;
-              const badgeW = Math.min(labelW * 0.45, 26);
+              const badgeW = Math.min(labelW * 0.36, 22);
               const badgeH = 4.2;
-              doc.setFillColor(0, 0, 0);
-              doc.roundedRect(x + labelW / 2 - badgeW / 2, curY - 2.8, badgeW, badgeH, 1, 1, "F");
-              doc.setTextColor(255, 255, 255);
-              doc.setFontSize(7.0);
+              const badgeX = hasColor ? (x + labelW / 2 - badgeW / 2) : (hasPrice ? x + 3 : x + labelW / 2 - badgeW / 2);
+              doc.setDrawColor(0, 0, 0);
+              doc.setLineWidth(0.35);
+              doc.roundedRect(badgeX, curY - 2.8, badgeW, badgeH, 1, 1, "S");
+              doc.setTextColor(0, 0, 0);
+              doc.setFontSize(6.8);
               doc.setFont("helvetica", "bold");
-              doc.text(badgeText, x + labelW / 2, curY + 0.3, { align: "center" });
+              doc.text(badgeText, badgeX + badgeW / 2, curY + 0.3, { align: "center" });
             }
 
             if (hasPrice) {
@@ -1021,6 +1113,20 @@ export default function ProfessionalBarcodeCenter({
                   )}
                 </div>
               )}
+
+              {/* Color editable / visible para la etiqueta */}
+              <div className="flex items-center gap-1.5 bg-white border border-violet-200 px-3 py-1.5 rounded-xl shadow-2xs">
+                <span className="text-[11px] font-black text-violet-900 flex items-center gap-1">
+                  🎨 Color:
+                </span>
+                <input
+                  type="text"
+                  value={customColorOverride}
+                  onChange={(e) => setCustomColorOverride(e.target.value)}
+                  placeholder="Ej: Negro, Blanco, Plata..."
+                  className="text-xs font-bold text-slate-800 outline-none w-28 bg-transparent"
+                />
+              </div>
             </div>
           </div>
         )}
@@ -1106,7 +1212,16 @@ export default function ProfessionalBarcodeCenter({
             <label className="block text-xs font-black uppercase text-slate-700 mb-1.5">
               Elementos en el Sticker
             </label>
-            <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-1 text-xs">
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showColor}
+                  onChange={(e) => setShowColor(e.target.checked)}
+                  className="rounded text-indigo-600"
+                />
+                <span className="font-semibold text-slate-700">Color</span>
+              </label>
               <label className="flex items-center gap-1.5 cursor-pointer">
                 <input
                   type="checkbox"
@@ -1126,6 +1241,15 @@ export default function ProfessionalBarcodeCenter({
                 <span className="font-semibold text-slate-700 truncate" title="Badge / Especificación / Talla">
                   {isApparelOrFootwear ? "Talla / Medida" : isElectroRubro ? "Especificación / Pulg" : "Especificación"}
                 </span>
+              </label>
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showBrand}
+                  onChange={(e) => setShowBrand(e.target.checked)}
+                  className="rounded text-indigo-600"
+                />
+                <span className="font-semibold text-slate-700">Marca</span>
               </label>
               <label className="flex items-center gap-1.5 cursor-pointer">
                 <input
@@ -1243,6 +1367,7 @@ export default function ProfessionalBarcodeCenter({
                 showBadge={showBadge}
                 showCodeText={showCodeText}
                 showBrand={showBrand}
+                showColor={showColor}
               />
             ))}
           </div>
@@ -1298,6 +1423,7 @@ export default function ProfessionalBarcodeCenter({
             showBadge={showBadge}
             showCodeText={showCodeText}
             showBrand={showBrand}
+            showColor={showColor}
           />
         ))}
       </div>

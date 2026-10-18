@@ -441,95 +441,207 @@ export class ProductsService {
     if (!productIds || productIds.length === 0) return { deletedCount: 0 };
     const uniqueIds = Array.from(new Set(productIds));
 
-    return (this.prisma as any).$transaction(async (tx) => {
-      const validProducts = await tx.product.findMany({
-        where: { id: { in: uniqueIds }, userId },
-        select: { id: true, imageUrl: true },
-      }, { maxWait: 15000, timeout: 30000 });
-      const validIds = validProducts.map((p) => p.id);
-      if (validIds.length === 0) return { deletedCount: 0 };
-
-      // Desvincular ventas historicas
-      await tx.saleItem.updateMany({
-        where: { productId: { in: validIds } },
-        data: { productId: null },
-      });
-
-      // Eliminar movimientos de inventario/kardex
-      await tx.inventoryMovement.deleteMany({
-        where: { productId: { in: validIds } },
-      });
-
-      // Eliminar ordenes de compra relacionadas
-      await tx.purchaseOrderItem.deleteMany({
-        where: { productId: { in: validIds } },
-      });
-
-      // Eliminar stocks por sucursal
-      await tx.branchStock.deleteMany({
-        where: { productId: { in: validIds } },
-      });
-
-      // Eliminar presentaciones
-      await tx.presentation.deleteMany({
-        where: { productId: { in: validIds } },
-      });
-
-      // Eliminar productos fisicamente
-      const deleteRes = await tx.product.deleteMany({
-        where: { id: { in: validIds } },
-      });
-
-      return { deletedCount: deleteRes.count, deletedIds: validIds };
+    // Verificar productos que pertenecen al usuario
+    const validProducts = await this.prisma.product.findMany({
+      where: { id: { in: uniqueIds }, userId },
+      select: { id: true, imageUrl: true },
     });
+    const validIds = validProducts.map((p) => p.id);
+    if (validIds.length === 0) return { deletedCount: 0 };
+
+    // Obtener variantes asociadas a estos productos
+    const variants = await this.prisma.productVariant.findMany({
+      where: { productId: { in: validIds } },
+      select: { id: true },
+    });
+    const variantIds = variants.map((v) => v.id);
+
+    // REGLA DE INTEGRIDAD: No permitir eliminar si alguno tiene ventas registradas
+    const salesCount = await this.prisma.saleItem.count({
+      where: {
+        OR: [
+          { productId: { in: validIds } },
+          ...(variantIds.length > 0 ? [{ variantId: { in: variantIds } }] : []),
+        ],
+      },
+    });
+
+    if (salesCount > 0) {
+      throw new BadRequestException(
+        'No se pueden eliminar los productos seleccionados porque al menos uno de ellos ya cuenta con ventas registradas en el sistema. Para proteger la integridad contable y tributaria, no se permite eliminar productos con historial de ventas.',
+      );
+    }
+
+    const deleteRes = await (this.prisma as any).$transaction(
+      async (tx) => {
+        // 1. Eliminar números de serie
+        await tx.variantSerial.deleteMany({
+          where: { productId: { in: validIds } },
+        });
+
+        // 2. Eliminar curvas de series / calzado
+        await tx.seriesCurve.deleteMany({
+          where: { productId: { in: validIds } },
+        });
+
+        // 3. Eliminar lotes
+        await tx.productBatch.deleteMany({
+          where: { productId: { in: validIds } },
+        });
+
+        // 4. Eliminar insumos y recetas de manufactura (BOM)
+        await tx.bomItem.deleteMany({
+          where: { productId: { in: validIds } },
+        });
+        await tx.billOfMaterials.deleteMany({
+          where: { productId: { in: validIds } },
+        });
+
+        // 5. Eliminar stock en almacenes centrales
+        await tx.warehouseStock.deleteMany({
+          where: { productId: { in: validIds } },
+        });
+
+        // 6. Eliminar stock por sucursal
+        await tx.branchStock.deleteMany({
+          where: { productId: { in: validIds } },
+        });
+
+        // 7. Eliminar movimientos de inventario / kardex (antes de presentaciones por constraint Restrict)
+        await tx.inventoryMovement.deleteMany({
+          where: { productId: { in: validIds } },
+        });
+
+        // 8. Eliminar ítems de órdenes de compra
+        await tx.purchaseOrderItem.deleteMany({
+          where: { productId: { in: validIds } },
+        });
+
+        // 9. Eliminar variantes
+        await tx.productVariant.deleteMany({
+          where: { productId: { in: validIds } },
+        });
+
+        // 10. Eliminar presentaciones
+        await tx.presentation.deleteMany({
+          where: { productId: { in: validIds } },
+        });
+
+        // 11. Eliminar los productos físicamente
+        const count = await tx.product.deleteMany({
+          where: { id: { in: validIds } },
+        });
+
+        return count;
+      },
+      { maxWait: 15000, timeout: 30000 },
+    );
+
+    for (const p of validProducts) {
+      if (p.imageUrl) {
+        await this.filesService.deleteFile(p.imageUrl).catch(() => null);
+      }
+    }
+
+    return { deletedCount: deleteRes.count, deletedIds: validIds };
   }
 
   async remove(userId: string, id: string) {
     const product = await this.findOne(userId, id);
 
-    const result = await (this.prisma as any).$transaction(async (tx) => {
-      // Unlink sales so historical sales are preserved
-      await tx.saleItem.updateMany({
-        where: { productId: id },
-        data: { productId: null },
-      }, { maxWait: 15000, timeout: 30000 });
+    // Obtener variantes asociadas al producto
+    const variants = await this.prisma.productVariant.findMany({
+      where: { productId: id },
+      select: { id: true },
+    });
+    const variantIds = variants.map((v) => v.id);
 
-      // Delete inventory movements associated with this product
-      await tx.inventoryMovement.deleteMany({
-        where: { productId: id },
-      });
-
-      // Delete purchase order items associated with this product
-      await tx.purchaseOrderItem.deleteMany({
-        where: { productId: id },
-      });
-
-      // Delete branch stocks
-      await tx.branchStock.deleteMany({
-        where: { productId: id },
-      });
-
-      // Delete presentations
-      await tx.presentation.deleteMany({
-        where: { productId: id },
-      });
-
-      // Finally delete the product
-      return tx.product.delete({
-        where: { id },
-      });
+    // REGLA DE INTEGRIDAD: Si el producto ya tiene ventas, NO se puede eliminar
+    const salesCount = await this.prisma.saleItem.count({
+      where: {
+        OR: [
+          { productId: id },
+          ...(variantIds.length > 0 ? [{ variantId: { in: variantIds } }] : []),
+        ],
+      },
     });
 
+    if (salesCount > 0) {
+      throw new BadRequestException(
+        'No se puede eliminar este producto porque ya cuenta con ventas registradas en el sistema. Para proteger la integridad contable y tributaria, no se permite eliminar productos que ya fueron vendidos.',
+      );
+    }
+
+    const result = await (this.prisma as any).$transaction(
+      async (tx) => {
+        // 1. Eliminar números de serie
+        await tx.variantSerial.deleteMany({
+          where: { productId: id },
+        });
+
+        // 2. Eliminar curvas de calzado
+        await tx.seriesCurve.deleteMany({
+          where: { productId: id },
+        });
+
+        // 3. Eliminar lotes
+        await tx.productBatch.deleteMany({
+          where: { productId: id },
+        });
+
+        // 4. Eliminar insumos y recetas (BOM)
+        await tx.bomItem.deleteMany({
+          where: { productId: id },
+        });
+        await tx.billOfMaterials.deleteMany({
+          where: { productId: id },
+        });
+
+        // 5. Eliminar stock en almacenes
+        await tx.warehouseStock.deleteMany({
+          where: { productId: id },
+        });
+
+        // 6. Eliminar stock en sucursales
+        await tx.branchStock.deleteMany({
+          where: { productId: id },
+        });
+
+        // 7. Eliminar movimientos de inventario asociados (kardex)
+        await tx.inventoryMovement.deleteMany({
+          where: { productId: id },
+        });
+
+        // 8. Eliminar ítems de órdenes de compra
+        await tx.purchaseOrderItem.deleteMany({
+          where: { productId: id },
+        });
+
+        // 9. Eliminar variantes
+        await tx.productVariant.deleteMany({
+          where: { productId: id },
+        });
+
+        // 10. Eliminar presentaciones
+        await tx.presentation.deleteMany({
+          where: { productId: id },
+        });
+
+        // 11. Eliminar finalmente el producto
+        return tx.product.delete({
+          where: { id },
+        });
+      },
+      { maxWait: 15000, timeout: 30000 },
+    );
+
     if (product.imageUrl) {
-      await this.filesService.deleteFile(product.imageUrl);
+      await this.filesService.deleteFile(product.imageUrl).catch(() => null);
     }
 
     return result;
   }
 
-  /**
-   * Secure restock (purchase) flow
-   */
   async restock(userId: string, productId: string, restockDto: any) {
     const { quantity, presentationId, totalCost, categoryId, paymentMethod } =
       restockDto;
