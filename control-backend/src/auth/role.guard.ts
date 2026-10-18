@@ -11,34 +11,42 @@ export class RolesGuard implements CanActivate {
   constructor(private reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
-    // 1. obtenemos roles requeridos desde @Roles()
+    // 1. Obtenemos roles requeridos desde @Roles()
     const requiredRoles = this.reflector.getAllAndOverride<string[]>('roles', [
       context.getHandler(),
       context.getClass(),
     ]);
 
-    // si no hay roles definidos, deja pasar
+    // Si no hay roles definidos, permite el acceso
     if (!requiredRoles || requiredRoles.length === 0) {
       return true;
     }
 
-    // 2. obtenemos usuario del request (viene del JwtStrategy)
+    // 2. Obtenemos usuario del request (inyectado por JwtStrategy)
     const request = context.switchToHttp().getRequest();
     const user = request.user;
 
     if (!user) {
       throw new ForbiddenException('Usuario no autenticado');
     }
-    //  console.log('user', user);
 
-    // 3. validamos rol (SUPERADMIN tiene acceso total a todos los módulos)
-    if (user.role === 'SUPERADMIN') {
+    const userRole = String(user.role || '').trim().toUpperCase();
+
+    // 3. SUPERADMIN tiene acceso total e irrestricto
+    if (userRole === 'SUPERADMIN') {
       return true;
     }
-    const hasRole = requiredRoles.includes(user.role) || (requiredRoles.includes('ADMIN') && user.role === 'SUPERADMIN');
+
+    // 4. Validar si el rol del usuario cumple con alguno de los roles requeridos
+    const hasRole = requiredRoles.some((r) => {
+      const reqRole = String(r).trim().toUpperCase();
+      if (reqRole === userRole) return true;
+      if (reqRole === 'ADMIN' && (userRole === 'SUPERADMIN' || userRole === 'ADMIN')) return true;
+      return false;
+    });
 
     if (!hasRole) {
-      throw new ForbiddenException('No tienes permisos');
+      throw new ForbiddenException('No tienes permisos suficientes');
     }
 
     return true;

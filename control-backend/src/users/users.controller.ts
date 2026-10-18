@@ -142,14 +142,14 @@ export class UsersController {
     };
   }
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'SUPERADMIN')
   @Post()
   createUsers(@Body() body: any) {
     return this.usersService.createUsers(body);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'SUPERADMIN')
   @Get()
   listUser(@Req() req) {
     // console.log('USER EN REQUEST:', req.user);
@@ -229,26 +229,26 @@ export class UsersController {
     return this.usersService.findUser(id);
   }
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'SUPERADMIN')
   @Patch(':id')
   updateUser(@Param('id') id: string, @Body() body: any) {
     return this.usersService.update(id, body);
   }
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'SUPERADMIN')
   @Patch(':id/active')
   activeUserRequest(@Param('id') id: string) {
     return this.usersService.activeUserRequest(id);
   }
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'SUPERADMIN')
   @Patch(':id/inactive')
   inactiveUserRequest(@Param('id') id: string) {
     return this.usersService.inactiveUserRequest(id);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'SUPERADMIN')
   @Delete(':id')
   deleteUser(@Param('id') id: string) {
     return this.usersService.deleteUser(id);

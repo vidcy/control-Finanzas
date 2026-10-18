@@ -1,12 +1,16 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
+import { PrismaService } from '../prisma/prisma.service';
+
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor(private configService: ConfigService) {
+  constructor(
+    private configService: ConfigService,
+    private prisma: PrismaService,
+  ) {
     const secret = configService.get('JWT_SECRET');
-    // console.log("JWT SECRET USADO", secret);
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
@@ -15,11 +19,36 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: any) {
+    const userId = payload.sub;
+    if (!userId) {
+      throw new UnauthorizedException('Token inválido');
+    }
+
+    // Consultamos usuario en tiempo real en PostgreSQL para garantizar que el rol esté siempre actualizado
+    const dbUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        isActive: true,
+        parentId: true,
+      },
+    });
+
+    if (!dbUser) {
+      throw new UnauthorizedException('Usuario no existe en la base de datos');
+    }
+
+    if (!dbUser.isActive) {
+      throw new UnauthorizedException('Tu cuenta está desactivada');
+    }
+
     return {
-      id: payload.parentId || payload.sub,
-      workerId: payload.parentId ? payload.sub : undefined,
-      email: payload.email,
-      role: payload.role,
+      id: dbUser.parentId || dbUser.id,
+      workerId: dbUser.parentId ? dbUser.id : undefined,
+      email: dbUser.email,
+      role: dbUser.role, // Rol en tiempo real desde PostgreSQL
     };
   }
 }
