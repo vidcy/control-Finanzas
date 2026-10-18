@@ -91,6 +91,7 @@ import {
   cleanModelName,
   computeSeriesStockSummary,
   extractSizeFromProduct,
+  extractProductSpecBadge,
   extractTacoFromProduct,
   calculateCurveTotalUnits,
   buildEditSeriesConfig,
@@ -656,7 +657,7 @@ export default function BusinessInventoryPage() {
             product: p,
             modelName: cleanModelName(p.name),
             brandName: p.brand?.name || "",
-            size: p.unit === "Serie" ? "SERIE" : (extractSizeFromProduct(p) || "STD"),
+            size: extractProductSpecBadge(p, user?.businessRubro),
             codeText: p.sku || String((p as any).customCode || 0).padStart(4, "0"),
             price: p.salePrice,
             color: p.color || "",
@@ -676,7 +677,7 @@ export default function BusinessInventoryPage() {
             product: p,
             modelName: cleanModelName(p.name),
             brandName: p.brand?.name || "",
-            size: extractSizeFromProduct(p) || "STD",
+            size: extractProductSpecBadge(p, user?.businessRubro),
             codeText: p.sku || String((p as any).customCode || 0).padStart(4, "0"),
             price: p.salePrice,
             color: p.color || "",
@@ -703,7 +704,7 @@ export default function BusinessInventoryPage() {
           product: selectedLabelProduct,
           modelName: cleanModelName(selectedLabelProduct.name),
           brandName: selectedLabelProduct.brand?.name || "",
-          size: isSelectedLabelSeries ? "SERIE" : extractSizeFromProduct(selectedLabelProduct),
+          size: isSelectedLabelSeries ? "SERIE" : extractProductSpecBadge(selectedLabelProduct, user?.businessRubro),
           codeText:
             selectedLabelProduct.sku ||
             String((selectedLabelProduct as any).customCode || 0).padStart(4, "0"),
@@ -719,7 +720,7 @@ export default function BusinessInventoryPage() {
         product: sib,
         modelName: cleanModelName(sib.name),
         brandName: sib.brand?.name || selectedLabelProduct.brand?.name || "",
-        size: extractSizeFromProduct(sib),
+        size: extractProductSpecBadge(sib, user?.businessRubro),
         codeText: sib.sku || String((sib as any).customCode || 0).padStart(4, "0"),
         price: sib.salePrice,
         color: sib.color,
@@ -735,7 +736,7 @@ export default function BusinessInventoryPage() {
             product: sib,
             modelName: cleanModelName(sib.name),
             brandName: sib.brand?.name || selectedLabelProduct.brand?.name || "",
-            size: extractSizeFromProduct(sib),
+            size: extractProductSpecBadge(sib, user?.businessRubro),
             codeText: sib.sku || String((sib as any).customCode || 0).padStart(4, "0"),
             price: sib.salePrice,
             color: sib.color,
@@ -752,7 +753,7 @@ export default function BusinessInventoryPage() {
           product: sib,
           modelName: cleanModelName(sib.name),
           brandName: sib.brand?.name || selectedLabelProduct.brand?.name || "",
-          size: extractSizeFromProduct(sib),
+          size: extractProductSpecBadge(sib, user?.businessRubro),
           codeText: sib.sku || String((sib as any).customCode || 0).padStart(4, "0"),
           price: sib.salePrice,
           color: sib.color,
@@ -2743,13 +2744,16 @@ export default function BusinessInventoryPage() {
         const truncatedName = item.modelName.length > 20 ? item.modelName.slice(0, 19) + "..." : item.modelName;
         doc.text(truncatedName, x + labelW / 2, y + 9.5, { align: "center" });
 
-        // TALLA DESTACADA (Caja Negra de Alto Contraste)
-        doc.setFillColor(15, 23, 42); // slate-900
-        doc.roundedRect(x + labelW / 2 - 14, y + 11.5, 28, 6.5, 1.5, 1.5, "F");
-        doc.setTextColor(255, 255, 255);
-        doc.setFontSize(8.5);
-        doc.setFont("helvetica", "bold");
-        doc.text(`TALLA: ${item.size}`, x + labelW / 2, y + 16, { align: "center" });
+        // BADGE / ESPECIFICACIÓN DESTACADA (Caja Negra de Alto Contraste)
+        if (item.size) {
+          doc.setFillColor(15, 23, 42); // slate-900
+          doc.roundedRect(x + labelW / 2 - 14, y + 11.5, 28, 6.5, 1.5, 1.5, "F");
+          doc.setTextColor(255, 255, 255);
+          doc.setFontSize(7.5);
+          doc.setFont("helvetica", "bold");
+          const badgeText = item.size.length > 18 ? item.size.slice(0, 17) + ".." : item.size;
+          doc.text(badgeText, x + labelW / 2, y + 16, { align: "center" });
+        }
 
         // Precio
         doc.setTextColor(217, 119, 6); // amber-600
@@ -4802,6 +4806,8 @@ export default function BusinessInventoryPage() {
                 brands={brands}
                 families={families}
                 initialBusinessName={user?.businessName || "TIENDA"}
+                businessRubro={user?.businessRubro}
+                initialProductId={ticketProductId}
                 lastScannedCode={lastScannedCode}
                 onProductSelect={(prod) => {
                   setTicketProductId(prod.id);

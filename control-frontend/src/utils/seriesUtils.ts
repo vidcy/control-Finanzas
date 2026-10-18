@@ -528,54 +528,215 @@ export function cleanDescriptionForDisplay(description?: string): string {
  * Strips out size identifiers to leave a clean model title so series group together.
  * E.g. "Stiletto Charol - Talla 36" -> "Stiletto Charol"
  */
-export function cleanModelName(rawName: string): string {
-  return (rawName || "")
+export function cleanModelName(rawName: string, isShoeContext: boolean = false): string {
+  if (!rawName) return "";
+  let cleaned = rawName
     .replace(/\s*-\s*talla\s*[0-9]{2}(?:\.[0-9])?/gi, "")
-    .replace(/(?:-\s*)?(?:talla|t\.|t-|t:)\s*[0-9]{2}(?:\.[0-9])?/gi, "")
-    .replace(/\s*\(\s*talla\s*[0-9]{2}\s*\)/gi, "")
-    .replace(/[-_/\s](3[0-9]|4[0-5])$/gi, "")
-    .replace(/\s{2,}/g, " ")
-    .trim();
+    .replace(/(?:-\s*)?(?:talla|t:)\s*[0-9]{2}(?:\.[0-9])?/gi, "")
+    .replace(/\s*\(\s*talla\s*[0-9]{2}\s*\)/gi, "");
+
+  if (isShoeContext) {
+    cleaned = cleaned.replace(/[-_/\s](3[0-9]|4[0-5])$/gi, "");
+  }
+  return cleaned.replace(/\s{2,}/g, " ").trim();
 }
 
 /**
  * Extracts size from name, description, presentations, or sku
+ * Solamente cuando el contexto o producto corresponde a Calzado o Ropa/Moda.
+ * Evita estrictamente falsos positivos en rubros como Electrodomésticos, Tecnología, Ferretería o Farmacia.
  */
-export function extractSizeFromProduct(product: any): string {
+export function extractSizeFromProduct(product: any, userRubro?: string): string {
   if (!product) return "";
 
+  const rubro = (userRubro || "").toLowerCase();
+  const isNonApparelRubro =
+    rubro.includes("electro") ||
+    rubro.includes("lectro") ||
+    rubro.includes("refriger") ||
+    rubro.includes("lavador") ||
+    rubro.includes("congelad") ||
+    rubro.includes("linea blanca") ||
+    rubro.includes("cocina") ||
+    rubro.includes("tecno") ||
+    rubro.includes("comput") ||
+    rubro.includes("laptop") ||
+    rubro.includes("celular") ||
+    rubro.includes("ferret") ||
+    rubro.includes("farma") ||
+    rubro.includes("botic") ||
+    rubro.includes("abarrot") ||
+    rubro.includes("minimarket") ||
+    rubro.includes("bodeg") ||
+    rubro.includes("restauran") ||
+    rubro.includes("comida");
+
+  const combined = `${product.name || ""} ${product.description || ""} ${product.sku || ""}`.toLowerCase();
+
+  const isExplicitShoeProduct =
+    product.unit === "Serie" ||
+    product.unit === "Par" ||
+    product.unit === "Talla" ||
+    decodeSeriesMetadata(product.description) !== null ||
+    /(?:calzad|zapato|sandalia|bota|botin|stiletto|tac[oó]n|sneaker|pantufl)/i.test(combined);
+
+  // Si el rubro NO es calzado/moda y el producto NO tiene indicios explícitos de calzado, JAMÁS extraer talla
+  if (isNonApparelRubro && !isExplicitShoeProduct) {
+    return "";
+  }
+
   // If size is explicitly present in product object
-  if (product.size && String(product.size).trim()) return String(product.size).trim();
-  if (product.talla && String(product.talla).trim()) return String(product.talla).trim();
+  if (product.size && String(product.size).trim()) {
+    if (!isNonApparelRubro || isExplicitShoeProduct) {
+      return String(product.size).trim();
+    }
+  }
+  if (product.talla && String(product.talla).trim()) {
+    return String(product.talla).trim();
+  }
 
-  const combined = `${product.name || ""} ${product.description || ""} ${product.sku || ""}`;
-
-  // Explicit size prefix: Talla 37, T.37, T-37, etc.
-  const explicit = combined.match(/(?:talla|t\.|t-|t:)\s*([0-9]{2}(?:\.[0-9])?|[SMLX|XL|XXL]+)/i);
+  // Explicit size prefix: e.g. "Talla 37", "Talla: 38"
+  const explicit = `${product.name || ""} ${product.description || ""}`.match(/\b(?:talla|t:)\s*([0-9]{2}(?:\.[0-9])?|[SMLX|XL|XXL]+)\b/i);
   if (explicit && explicit[1]) return explicit[1].trim();
 
-  // Trailing SKU like -37 or _38
-  const skuMatch = (product.sku || "").match(/[-_/\s](3[0-9]|4[0-5])$/i);
-  if (skuMatch && skuMatch[1]) return skuMatch[1].trim();
+  // Trailing SKU like -37 or _38 SOLO si es calzado o confección/moda
+  const isApparelProduct =
+    isExplicitShoeProduct ||
+    rubro.includes("calzad") ||
+    rubro.includes("ropa") ||
+    rubro.includes("moda") ||
+    rubro.includes("boutique") ||
+    rubro.includes("textil") ||
+    rubro.includes("confecc");
 
-  // Presentations
-  if (product.presentations && product.presentations.length > 0) {
-    for (const p of product.presentations) {
-      const presMatch = p.name.match(/(?:talla|t\.|t-|t:)?\s*([0-9]{2})/i);
-      if (presMatch && presMatch[1]) return presMatch[1].trim();
+  if (isApparelProduct) {
+    const skuMatch = (product.sku || "").match(/[-_/\s](3[0-9]|4[0-5])$/i);
+    if (skuMatch && skuMatch[1]) return skuMatch[1].trim();
+
+    // Presentations
+    if (product.presentations && product.presentations.length > 0) {
+      for (const p of product.presentations) {
+        const presMatch = p.name.match(/\b(?:talla|t:)?\s*([0-9]{2})\b/i);
+        if (presMatch && presMatch[1]) return presMatch[1].trim();
+      }
     }
   }
 
-  // Only check standalone numbers (30 to 45) if product context is footwear / series
-  const isShoeContext =
-    product.unit === "Serie" ||
-    product.unit === "Par" ||
-    decodeSeriesMetadata(product.description) !== null ||
-    /(?:calzad|zapato|sandalia|bota|botin|stiletto|tac[oó]n|sneaker)/i.test(combined);
-
-  if (isShoeContext) {
+  // Standalone numbers 30-45 ONLY for footwear context
+  if (isExplicitShoeProduct) {
     const standalone = combined.match(/\b(3[0-9]|4[0-5])\b/);
     if (standalone && standalone[1]) return standalone[1].trim();
+  }
+
+  return "";
+}
+
+/**
+ * Extrae de manera inteligente la especificación, medida, capacidad o badge
+ * para el código de barras y etiquetas de impresión según el rubro comercial real.
+ */
+export function extractProductSpecBadge(product: any, businessRubro?: string | null): string {
+  if (!product) return "";
+  
+  const rubro = (businessRubro || "").toLowerCase();
+
+  // 1. Calzado o Ropa / Moda
+  const isFootwearOrApparel =
+    rubro.includes("calzad") ||
+    rubro.includes("zapato") ||
+    rubro.includes("veaz") ||
+    rubro.includes("stiletto") ||
+    rubro.includes("ropa") ||
+    rubro.includes("moda") ||
+    rubro.includes("boutique") ||
+    product.unit === "Serie" ||
+    product.unit === "Par" ||
+    product.unit === "Talla" ||
+    decodeSeriesMetadata(product.description) !== null;
+
+  if (isFootwearOrApparel) {
+    const size = extractSizeFromProduct(product, businessRubro || undefined);
+    if (size) return `TALLA: ${size}`;
+    if (product.unit === "Serie") return "SERIE";
+    if (product.unit && product.unit !== "Unidad" && product.unit !== "UNIDAD") return product.unit.toUpperCase();
+    return "";
+  }
+
+  // 2. Electrodomésticos / Línea Blanca / Tecnología
+  const isElectroOrTech =
+    rubro.includes("electro") ||
+    rubro.includes("lectro") ||
+    rubro.includes("refriger") ||
+    rubro.includes("lavador") ||
+    rubro.includes("congelad") ||
+    rubro.includes("cocina") ||
+    rubro.includes("linea blanca") ||
+    rubro.includes("licuador") ||
+    rubro.includes("tecno") ||
+    rubro.includes("comput") ||
+    rubro.includes("laptop") ||
+    rubro.includes("celular");
+
+  if (isElectroOrTech) {
+    const desc = `${product.description || ""} ${product.name || ""}`;
+    
+    // Pulgadas ej: 65", 55", 43" o 65 pulgadas
+    const inchesMatch = desc.match(/(\d{2}(?:\.\d)?\s*(?:["”']|pulgadas?|inch))/i);
+    if (inchesMatch) return inchesMatch[1].toUpperCase().replace("PULGADAS", "PULG").trim();
+
+    // Capacidad ej: 500L, 12kg, 20L, 220V, 1500W
+    const capMatch = desc.match(/\b(\d+(?:\.\d)?\s*(?:l|litros?|kg|kilos?|watts?|w|btu|v|voltios?|gb|tb|mah))\b/i);
+    if (capMatch) return capMatch[1].toUpperCase();
+
+    // Tecnologías clave
+    const techMatch = desc.match(/\b(4k\s*uhd|4k|uhd|fhd|oled|qled|smart\s*tv|inverter|no\s*frost)\b/i);
+    if (techMatch) return techMatch[1].toUpperCase();
+
+    // Si tiene color registrado
+    if (product.color && product.color.trim()) {
+      return product.color.toUpperCase();
+    }
+
+    if (product.unit && product.unit !== "Unidad" && product.unit !== "UNIDAD") {
+      return product.unit.toUpperCase();
+    }
+    return "EQUIPO ORIGINAL";
+  }
+
+  // 3. Farmacia
+  if (rubro.includes("farma") || rubro.includes("botic") || rubro.includes("salud") || rubro.includes("medic")) {
+    const desc = `${product.name || ""} ${product.description || ""}`;
+    const doseMatch = desc.match(/\b(\d+(?:\.\d)?\s*(?:mg|ml|g|mcg|gr))\b/i);
+    if (doseMatch) return doseMatch[1].toUpperCase();
+    if (product.unit && product.unit !== "Unidad" && product.unit !== "UNIDAD") return product.unit.toUpperCase();
+    return "FARMACÉUTICO";
+  }
+
+  // 4. Ferretería
+  if (rubro.includes("ferret") || rubro.includes("construc") || rubro.includes("herramient")) {
+    const desc = `${product.name || ""} ${product.description || ""}`;
+    const measureMatch = desc.match(/(\d+\/\d+["”']|\d+(?:\.\d)?\s*(?:mm|cm|mts?|metros?|pulgadas?))/i);
+    if (measureMatch) return measureMatch[1].toUpperCase();
+    if (product.unit && product.unit !== "Unidad" && product.unit !== "UNIDAD") return product.unit.toUpperCase();
+    return "ESTÁNDAR";
+  }
+
+  // 5. Abarrotes / Alimentos
+  if (rubro.includes("abarrot") || rubro.includes("minimarket") || rubro.includes("bodeg") || rubro.includes("alimento")) {
+    const desc = `${product.name || ""} ${product.description || ""}`;
+    const weightMatch = desc.match(/\b(\d+(?:\.\d)?\s*(?:kg|g|gr|l|ml|litros?|kilos?|paquete|sixpack|pack))\b/i);
+    if (weightMatch) return weightMatch[1].toUpperCase();
+    if (product.unit && product.unit !== "Unidad" && product.unit !== "UNIDAD") return product.unit.toUpperCase();
+    return "PREMIUM";
+  }
+
+  // Si el producto tiene talla explícita (e.g. moda)
+  const fallbackSize = extractSizeFromProduct(product, businessRubro || undefined);
+  if (fallbackSize) return `TALLA: ${fallbackSize}`;
+
+  // Default unit si no es la genérica
+  if (product.unit && product.unit !== "Unidad" && product.unit !== "UNIDAD") {
+    return product.unit.toUpperCase();
   }
 
   return "";

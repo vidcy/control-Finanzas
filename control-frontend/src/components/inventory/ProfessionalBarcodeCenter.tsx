@@ -23,7 +23,12 @@ import {
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import type { Product } from "../../services/product.api";
-import { cleanModelName, extractSizeFromProduct, decodeSeriesMetadata } from "../../utils/seriesUtils";
+import {
+  cleanModelName,
+  extractSizeFromProduct,
+  extractProductSpecBadge,
+  decodeSeriesMetadata,
+} from "../../utils/seriesUtils";
 import { playScannerSound } from "../../utils/hardwareScanner";
 
 export type LabelPaperFormat = "50x30" | "40x25" | "60x40" | "80x50" | "A4-24" | "A4-40";
@@ -45,6 +50,8 @@ interface ProfessionalBarcodeCenterProps {
   brands: any[];
   families: any[];
   initialBusinessName?: string;
+  businessRubro?: string | null;
+  initialProductId?: string;
   lastScannedCode?: string;
   onProductSelect?: (product: Product) => void;
 }
@@ -187,14 +194,26 @@ export default function ProfessionalBarcodeCenter({
   brands,
   families,
   initialBusinessName = "TIENDA",
+  businessRubro,
+  initialProductId,
   lastScannedCode,
   onProductSelect,
 }: ProfessionalBarcodeCenterProps) {
+  // Detección contextual de rubro
+  const rubro = (businessRubro || "").toLowerCase();
+  const isFootwearRubro = /calzad|zapato|sandalia|stiletto|tac[oó]n|veaz/i.test(rubro);
+  const isClothingRubro = /ropa|boutique|moda|textil|confecc/i.test(rubro);
+  const isApparelOrFootwear = isFootwearRubro || isClothingRubro;
+  const isElectroRubro = /electro|lectro|refriger|lavador|congelad|cocina|linea blanca|licuador/i.test(rubro);
+  const isTechRubro = /tecno|movil|celular|comput|laptop/i.test(rubro);
+
   // Estrategia de rotulado:
   // "all_warehouse_stock": 1 etiqueta por cada unidad de stock real en almacén
   // "showcase_models": 1 etiqueta por cada producto/modelo único
   // "custom_selection": Selección manual de un producto / serie
-  const [strategy, setStrategy] = useState<"all_warehouse_stock" | "showcase_models" | "custom_selection">("all_warehouse_stock");
+  const [strategy, setStrategy] = useState<"all_warehouse_stock" | "showcase_models" | "custom_selection">(
+    initialProductId ? "custom_selection" : "all_warehouse_stock"
+  );
 
   // Filtros
   const [searchTerm, setSearchTerm] = useState("");
@@ -202,21 +221,35 @@ export default function ProfessionalBarcodeCenter({
   const [selectedFamilyId, setSelectedFamilyId] = useState("");
 
   // Producto seleccionado para modo "custom_selection"
-  const [selectedProductId, setSelectedProductId] = useState<string>("");
-  const [customSelectionMode, setCustomSelectionMode] = useState<"curve" | "stock" | "custom" | "single">("curve");
+  const [selectedProductId, setSelectedProductId] = useState<string>(initialProductId || "");
+  const [customSelectionMode, setCustomSelectionMode] = useState<"curve" | "stock" | "custom" | "single">("single");
   const [customCopies, setCustomCopies] = useState<number>(1);
 
-  // Parámetros de etiqueta y papel
-  const [paperFormat, setPaperFormat] = useState<LabelPaperFormat>("50x30");
+  // Parámetros de etiqueta y papel (por defecto 80x50 para electrodomésticos, 50x30 para calzado/general)
+  const defaultPaper: LabelPaperFormat = isElectroRubro || isTechRubro ? "80x50" : "50x30";
+  const [paperFormat, setPaperFormat] = useState<LabelPaperFormat>(defaultPaper);
   const [codeType, setCodeType] = useState<"barcode" | "qr">("barcode");
   const [businessName, setBusinessName] = useState(initialBusinessName);
 
-  // Opciones de visualización
+  // Opciones de visualización y modo de Badge
   const [showStoreName, setShowStoreName] = useState(true);
   const [showPrice, setShowPrice] = useState(true);
   const [showBadge, setShowBadge] = useState(true);
   const [showCodeText, setShowCodeText] = useState(true);
   const [showBrand, setShowBrand] = useState(true);
+
+  // Modo de Badge inteligente o manual
+  const [badgeMode, setBadgeMode] = useState<"auto" | "specs" | "unit" | "custom" | "none">("auto");
+  const [customBadgeText, setCustomBadgeText] = useState<string>("");
+
+  // Sincronizar initialProductId cuando cambie
+  useEffect(() => {
+    if (initialProductId) {
+      setSelectedProductId(initialProductId);
+      setStrategy("custom_selection");
+      setCustomSelectionMode("single");
+    }
+  }, [initialProductId]);
 
   // Si cambia el código escaneado desde el hardware scanner
   useEffect(() => {
@@ -260,27 +293,41 @@ export default function ProfessionalBarcodeCenter({
     return products.find((p) => p.id === selectedProductId) || filteredProducts[0] || null;
   }, [products, selectedProductId, filteredProducts]);
 
+  // Solamente calzados en zapaterías o productos explícitos con curva de serie
   const isSeries = useMemo(() => {
     if (!activeProduct) return false;
-    return activeProduct.unit === "Serie" || Boolean(decodeSeriesMetadata(activeProduct.description));
-  }, [activeProduct]);
+    return (
+      (activeProduct.unit === "Serie" || Boolean(decodeSeriesMetadata(activeProduct.description))) &&
+      isApparelOrFootwear
+    );
+  }, [activeProduct, isApparelOrFootwear]);
 
   const seriesSiblings = useMemo(() => {
     if (!activeProduct || !isSeries) return activeProduct ? [activeProduct] : [];
-    const targetName = cleanModelName(activeProduct.name).toLowerCase();
+    const targetName = cleanModelName(activeProduct.name, true).toLowerCase();
     return products
       .filter(
         (p) =>
-          cleanModelName(p.name).toLowerCase() === targetName &&
+          cleanModelName(p.name, true).toLowerCase() === targetName &&
           (p.brandId || "") === (activeProduct.brandId || "")
       )
       .sort((a, b) => {
-        const na = parseFloat(extractSizeFromProduct(a));
-        const nb = parseFloat(extractSizeFromProduct(b));
+        const na = parseFloat(extractSizeFromProduct(a, businessRubro || undefined));
+        const nb = parseFloat(extractSizeFromProduct(b, businessRubro || undefined));
         if (!isNaN(na) && !isNaN(nb)) return na - nb;
-        return extractSizeFromProduct(a).localeCompare(extractSizeFromProduct(b));
+        return extractSizeFromProduct(a, businessRubro || undefined).localeCompare(
+          extractSizeFromProduct(b, businessRubro || undefined)
+        );
       });
-  }, [activeProduct, isSeries, products]);
+  }, [activeProduct, isSeries, products, businessRubro]);
+
+  // RESOLVER BADGE DINÁMICO POR RUBRO
+  const resolveItemBadge = (p: Product): string => {
+    if (!showBadge || badgeMode === "none") return "";
+    if (badgeMode === "custom") return (customBadgeText || "").trim().toUpperCase();
+    if (badgeMode === "unit") return p.unit && p.unit !== "Unidad" ? p.unit.toUpperCase() : "";
+    return extractProductSpecBadge(p, businessRubro);
+  };
 
   // CONSTRUCCIÓN DE LA LISTA FINAL DE ETIQUETAS A IMPRIMIR
   const labelItems = useMemo<LabelItemData[]>(() => {
@@ -290,16 +337,13 @@ export default function ProfessionalBarcodeCenter({
     if (strategy === "all_warehouse_stock") {
       filteredProducts.forEach((p) => {
         const stockUnits = Math.max(0, Math.round(Number(p.stock) || 0));
-        // Si el stock es 0, no generamos etiquetas a menos que el usuario lo desee
         for (let i = 0; i < stockUnits; i++) {
-          const rawSize = extractSizeFromProduct(p);
-          const badgeText = rawSize ? `TALLA: ${rawSize}` : p.unit && p.unit !== "Unidad" ? p.unit : "";
           list.push({
             id: `${p.id}-stock-${i}`,
             productId: p.id,
-            modelName: cleanModelName(p.name),
+            modelName: cleanModelName(p.name, isApparelOrFootwear),
             brandName: p.brand?.name || "",
-            specBadge: badgeText,
+            specBadge: resolveItemBadge(p),
             codeText: p.sku || String((p as any).customCode || 0).padStart(4, "0"),
             price: Number(p.salePrice) || 0,
             color: p.color || "",
@@ -314,15 +358,14 @@ export default function ProfessionalBarcodeCenter({
     if (strategy === "showcase_models") {
       const seen = new Set<string>();
       filteredProducts.forEach((p) => {
-        const key = p.sku || (p as any).customCode || cleanModelName(p.name);
+        const key = p.sku || (p as any).customCode || cleanModelName(p.name, isApparelOrFootwear);
         if (!seen.has(key)) {
           seen.add(key);
-          const rawSize = extractSizeFromProduct(p);
-          const badgeText = rawSize ? `TALLA: ${rawSize}` : "EXHIBICIÓN";
+          const badgeText = resolveItemBadge(p) || (isApparelOrFootwear ? "EXHIBICIÓN" : "MUESTRA");
           list.push({
             id: `showcase-${p.id}`,
             productId: p.id,
-            modelName: cleanModelName(p.name),
+            modelName: cleanModelName(p.name, isApparelOrFootwear),
             brandName: p.brand?.name || "",
             specBadge: badgeText,
             codeText: p.sku || String((p as any).customCode || 0).padStart(4, "0"),
@@ -341,13 +384,12 @@ export default function ProfessionalBarcodeCenter({
     if (isSeries && customSelectionMode === "curve") {
       // 1 por cada talla de la serie
       seriesSiblings.forEach((sib) => {
-        const rawSize = extractSizeFromProduct(sib);
         list.push({
           id: `curve-${sib.id}`,
           productId: sib.id,
-          modelName: cleanModelName(sib.name),
+          modelName: cleanModelName(sib.name, true),
           brandName: sib.brand?.name || activeProduct.brand?.name || "",
-          specBadge: rawSize ? `TALLA: ${rawSize}` : "SERIE",
+          specBadge: resolveItemBadge(sib),
           codeText: sib.sku || String((sib as any).customCode || 0).padStart(4, "0"),
           price: Number(sib.salePrice) || 0,
           color: sib.color || "",
@@ -362,13 +404,12 @@ export default function ProfessionalBarcodeCenter({
       seriesSiblings.forEach((sib) => {
         const count = Math.max(1, Math.round(Number(sib.stock) || 0));
         for (let i = 0; i < count; i++) {
-          const rawSize = extractSizeFromProduct(sib);
           list.push({
             id: `series-stock-${sib.id}-${i}`,
             productId: sib.id,
-            modelName: cleanModelName(sib.name),
+            modelName: cleanModelName(sib.name, true),
             brandName: sib.brand?.name || activeProduct.brand?.name || "",
-            specBadge: rawSize ? `TALLA: ${rawSize}` : "SERIE",
+            specBadge: resolveItemBadge(sib),
             codeText: sib.sku || String((sib as any).customCode || 0).padStart(4, "0"),
             price: Number(sib.salePrice) || 0,
             color: sib.color || "",
@@ -382,13 +423,12 @@ export default function ProfessionalBarcodeCenter({
     // Single o Custom copies
     const copies = customSelectionMode === "custom" ? Math.max(1, customCopies) : 1;
     for (let i = 0; i < copies; i++) {
-      const rawSize = extractSizeFromProduct(activeProduct);
       list.push({
         id: `custom-prod-${activeProduct.id}-${i}`,
         productId: activeProduct.id,
-        modelName: cleanModelName(activeProduct.name),
+        modelName: cleanModelName(activeProduct.name, isApparelOrFootwear),
         brandName: activeProduct.brand?.name || "",
-        specBadge: rawSize ? `TALLA: ${rawSize}` : isSeries ? "SERIE" : "",
+        specBadge: resolveItemBadge(activeProduct),
         codeText: activeProduct.sku || String((activeProduct as any).customCode || 0).padStart(4, "0"),
         price: Number(activeProduct.salePrice) || 0,
         color: activeProduct.color || "",
@@ -397,7 +437,20 @@ export default function ProfessionalBarcodeCenter({
     }
 
     return list;
-  }, [strategy, filteredProducts, activeProduct, isSeries, seriesSiblings, customSelectionMode, customCopies]);
+  }, [
+    strategy,
+    filteredProducts,
+    activeProduct,
+    isSeries,
+    seriesSiblings,
+    customSelectionMode,
+    customCopies,
+    showBadge,
+    badgeMode,
+    customBadgeText,
+    businessRubro,
+    isApparelOrFootwear,
+  ]);
 
   // Exportar a PDF vectorial con jsPDF
   const handleExportPdf = async () => {
@@ -804,14 +857,16 @@ export default function ProfessionalBarcodeCenter({
           <div className="p-4 bg-violet-50/60 border border-violet-200 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <span className="w-10 h-10 rounded-xl bg-violet-600 text-white flex items-center justify-center font-black">
-                {isSeries ? "👟" : "📦"}
+                {isSeries ? "👟" : isElectroRubro ? "📺" : isTechRubro ? "💻" : "📦"}
               </span>
               <div>
                 <h4 className="text-sm font-black text-violet-950">
-                  {cleanModelName(activeProduct.name)}
+                  {cleanModelName(activeProduct.name, isApparelOrFootwear)}
                 </h4>
                 <p className="text-xs text-violet-700 font-medium">
-                  {isSeries ? `Serie de calzado con ${seriesSiblings.length} tallas distintas` : `Producto individual • Stock: ${activeProduct.stock} ${activeProduct.unit}`}
+                  {isSeries
+                    ? `Serie con ${seriesSiblings.length} variantes/tallas distintas`
+                    : `Producto individual • Stock: ${activeProduct.stock} ${activeProduct.unit || "Unidades"}`}
                 </p>
               </div>
             </div>
@@ -828,7 +883,7 @@ export default function ProfessionalBarcodeCenter({
                         : "bg-white text-violet-900 border border-violet-200 hover:bg-violet-100"
                     }`}
                   >
-                    📏 1 por cada talla ({seriesSiblings.length} tickets)
+                    📏 1 por cada variante ({seriesSiblings.length} tickets)
                   </button>
                   <button
                     type="button"
@@ -839,7 +894,7 @@ export default function ProfessionalBarcodeCenter({
                         : "bg-white text-violet-900 border border-violet-200 hover:bg-violet-100"
                     }`}
                   >
-                    📦 Según stock de cada talla
+                    📦 Según stock de cada variante
                   </button>
                 </div>
               ) : (
@@ -895,10 +950,14 @@ export default function ProfessionalBarcodeCenter({
               className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
             >
               <optgroup label="🖨️ Rollo Térmico Continuo (Stickers)">
-                <option value="50x30">50 x 30 mm (Estándar Calzado & Ropa)</option>
+                <option value="80x50">
+                  80 x 50 mm {isElectroRubro ? "⭐ (Recomendado para Electrodomésticos)" : "(Equipos / Cajas Grandes)"}
+                </option>
+                <option value="60x40">60 x 40 mm (Cajas Medianas / Repisas)</option>
+                <option value="50x30">
+                  50 x 30 mm {isApparelOrFootwear ? "⭐ (Estándar Calzado & Prendas)" : "(Estándar Etiquetas)"}
+                </option>
                 <option value="40x25">40 x 25 mm (Accesorios / Compacto)</option>
-                <option value="60x40">60 x 40 mm (Cajas Medianas)</option>
-                <option value="80x50">80 x 50 mm (Electrodomésticos / Equipos)</option>
               </optgroup>
               <optgroup label="📄 Hoja A4 con Cuadrícula">
                 <option value="A4-24">A4 (3 x 8 = 24 etiquetas por pliego)</option>
@@ -949,7 +1008,7 @@ export default function ProfessionalBarcodeCenter({
               type="text"
               value={businessName}
               onChange={(e) => setBusinessName(e.target.value)}
-              placeholder="Ej: VEAZ ESTILEZA"
+              placeholder="Ej: MI EMPRESA"
               className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
             />
           </div>
@@ -976,7 +1035,9 @@ export default function ProfessionalBarcodeCenter({
                   onChange={(e) => setShowBadge(e.target.checked)}
                   className="rounded text-indigo-600"
                 />
-                <span className="font-semibold text-slate-700">Talla / Badge</span>
+                <span className="font-semibold text-slate-700 truncate" title="Badge / Especificación / Talla">
+                  {isApparelOrFootwear ? "Talla / Medida" : isElectroRubro ? "Especificación / Pulg" : "Especificación"}
+                </span>
               </label>
               <label className="flex items-center gap-1.5 cursor-pointer">
                 <input
@@ -999,6 +1060,42 @@ export default function ProfessionalBarcodeCenter({
             </div>
           </div>
         </div>
+
+        {/* Selector avanzado de Badge adaptado al rubro */}
+        {showBadge && (
+          <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs bg-slate-50/80 p-3 rounded-2xl">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-black text-slate-700 uppercase tracking-wider text-[11px] flex items-center gap-1">
+                <Tag className="w-3.5 h-3.5 text-indigo-600" />
+                Badge Superior:
+              </span>
+              <select
+                value={badgeMode}
+                onChange={(e) => setBadgeMode(e.target.value as any)}
+                className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg font-bold text-xs text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none"
+              >
+                <option value="auto">
+                  ⚡ Automático según {isElectroRubro ? "Electrodomésticos (Pulgadas / Capacidad / 4K)" : isApparelOrFootwear ? "Calzado/Moda (Talla)" : "Rubro"}
+                </option>
+                <option value="specs">📏 Especificación Técnica del Producto</option>
+                <option value="unit">📦 Unidad de Medida (Caja / Pack / Unidad)</option>
+                <option value="custom">✍️ Texto Personalizado Manual</option>
+                <option value="none">❌ Ocultar Badge en Stickers</option>
+              </select>
+            </div>
+            {badgeMode === "custom" && (
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <input
+                  type="text"
+                  placeholder="Ej: GARANTÍA 1 AÑO, 220V, OFERTA..."
+                  value={customBadgeText}
+                  onChange={(e) => setCustomBadgeText(e.target.value)}
+                  className="w-full sm:w-64 px-2.5 py-1.5 bg-white border border-indigo-300 rounded-lg font-bold text-xs text-indigo-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+                />
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── 4. VISTA PREVIA INTERACTIVA EN TIEMPO REAL ── */}

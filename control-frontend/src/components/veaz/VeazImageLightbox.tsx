@@ -358,7 +358,7 @@ export default function VeazImageLightbox({
                 className="w-full py-4 px-6 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-cinzel font-bold text-xs tracking-[0.15em] uppercase flex items-center justify-center gap-3 shadow-md hover:shadow-lg transition-all cursor-pointer"
               >
                 <MessageCircle className="w-5 h-5 fill-white text-emerald-600" />
-                <span>Pedir este Modelo en Talla {selectedSize || "37"}</span>
+                <span>Pedir este Modelo {selectedSize ? `en Talla ${selectedSize}` : "por WhatsApp"}</span>
               </a>
 
               <div className="flex items-center justify-center gap-4 text-slate-500 text-[11px] font-outfit pt-1">
