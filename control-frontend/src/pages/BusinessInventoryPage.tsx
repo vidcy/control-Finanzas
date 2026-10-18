@@ -2763,35 +2763,31 @@ export default function BusinessInventoryPage() {
 
         // Código QR / Código de Barras desde el canvas
         const canvas = document.getElementById(`ticket-canvas-${i}`) as HTMLCanvasElement;
+        let codeH = 16;
+        let codeY = y + 23;
         if (canvas) {
           try {
             const imgData = canvas.toDataURL("image/png");
             if (codeType === "qr") {
-              const qrSize = 16;
-              doc.addImage(imgData, "PNG", x + labelW / 2 - qrSize / 2, y + 22.5, qrSize, qrSize);
+              const qrSize = Math.min(18, labelH * 0.38);
+              codeH = qrSize;
+              doc.addImage(imgData, "PNG", x + labelW / 2 - qrSize / 2, codeY, qrSize, qrSize);
             } else {
               const bcW = labelW - 8;
-              const bcH = 11;
-              doc.addImage(imgData, "PNG", x + 4, y + 22.5, bcW, bcH);
+              codeH = Math.min(16, labelH * 0.36);
+              doc.addImage(imgData, "PNG", x + 4, codeY, bcW, codeH);
             }
           } catch (e) {
             console.warn("Canvas to image error", e);
           }
         }
 
-        // Footer SKU / Código
-        doc.setTextColor(100, 116, 139);
-        doc.setFontSize(6.5);
-        doc.setFont("helvetica", "normal");
-        if (item.color || item.taco) {
-          doc.setFontSize(6);
-          doc.setTextColor(100, 116, 139);
-          doc.text([item.color, item.taco].filter(Boolean).join(" • ").slice(0, 24), x + labelW / 2, y + 21, { align: "center" });
-        }
+        // Footer SKU / Código (pegado inmediatamente al código sin espacio muerto)
+        const textY = Math.min(y + labelH - 1.5, codeY + codeH + 2.5);
         doc.setFontSize(6.5);
         doc.setFont("helvetica", "bold");
         doc.setTextColor(79, 70, 229);
-        doc.text(`SKU: ${item.codeText}`, x + labelW / 2, y + labelH - 2.5, { align: "center" });
+        doc.text(`SKU: ${item.codeText}`, x + labelW / 2, textY, { align: "center" });
       }
 
       const safeName = selectedLabelProduct?.name.replace(/[^a-zA-Z0-9]/g, "_") || "Etiquetas";

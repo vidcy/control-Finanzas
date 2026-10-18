@@ -132,10 +132,10 @@ export const SingleLabelSticker: React.FC<{
         minHeight: currentStyle.minHeight,
         padding: currentStyle.padding,
       }}
-      className="bg-white border-2 border-dashed border-slate-300 rounded-xl flex flex-col justify-between items-center text-center shadow-xs transition-transform hover:scale-[1.02] text-slate-900 select-none overflow-hidden print:border-none print:shadow-none print:m-0 print:p-1"
+      className="bg-white border-2 border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-between text-center shadow-xs transition-transform hover:scale-[1.02] text-slate-900 select-none overflow-hidden print:border-none print:shadow-none print:m-0 print:p-1"
     >
       {/* 1. Encabezado Tienda / Marca */}
-      <div className="w-full flex items-center justify-between gap-1 border-b border-slate-100 pb-1">
+      <div className="w-full flex items-center justify-between gap-1 border-b border-slate-100 pb-1 shrink-0">
         {showStoreName && (
           <span className="text-[9px] font-black tracking-wider uppercase text-indigo-700 truncate max-w-[110px]">
             {businessName || "TIENDA"}
@@ -149,7 +149,7 @@ export const SingleLabelSticker: React.FC<{
       </div>
 
       {/* 2. Nombre del Producto / Modelo */}
-      <div className="w-full my-1">
+      <div className="w-full my-0.5 shrink-0">
         <h4 className="text-[11px] font-extrabold text-slate-900 leading-tight truncate px-1" title={item.modelName}>
           {item.modelName}
         </h4>
@@ -161,7 +161,7 @@ export const SingleLabelSticker: React.FC<{
       </div>
 
       {/* 3. Badge de Talla / Especificación + Precio */}
-      <div className="w-full flex items-center justify-center gap-2 my-1">
+      <div className="w-full flex items-center justify-center gap-2 my-0.5 shrink-0">
         {showBadge && item.specBadge && (
           <div className="bg-slate-950 text-white text-[10px] font-black px-2.5 py-0.5 rounded-md tracking-wider uppercase shadow-xs">
             {item.specBadge}
@@ -174,17 +174,17 @@ export const SingleLabelSticker: React.FC<{
         )}
       </div>
 
-      {/* 4. Canvas Código de Barras / QR */}
-      <div className="flex items-center justify-center my-1 w-full overflow-hidden">
-        <canvas ref={canvasRef} className="max-w-full h-auto" />
-      </div>
-
-      {/* 5. Texto de Código / SKU */}
-      {showCodeText && (
-        <div className="text-[9px] font-mono font-bold tracking-widest text-slate-700 pt-0.5 border-t border-slate-100 w-full">
-          {item.codeText}
+      {/* 4 y 5. Canvas Código de Barras / QR + SKU Texto (Unidos sin espacio muerto) */}
+      <div className="w-full flex flex-col items-center justify-center my-auto overflow-hidden">
+        <div className="flex items-center justify-center w-full overflow-hidden">
+          <canvas ref={canvasRef} className="max-w-full h-auto" />
         </div>
-      )}
+        {showCodeText && (
+          <div className="text-[9px] font-mono font-bold tracking-widest text-slate-700 pt-0.5 border-t border-slate-100 w-full mt-0.5">
+            {item.codeText}
+          </div>
+        )}
+      </div>
     </div>
   );
 };
@@ -463,7 +463,7 @@ export default function ProfessionalBarcodeCenter({
     try {
       const { jsPDF } = await import("jspdf");
 
-      // Si el formato es de rollo térmico continuo (ej: 50x30 mm)
+      // Si el formato es de rollo térmico continuo (ej: 50x30 mm, 80x50 mm, etc.)
       if (paperFormat === "50x30" || paperFormat === "40x25" || paperFormat === "60x40" || paperFormat === "80x50") {
         const dimensions: Record<string, [number, number]> = {
           "50x30": [50, 30],
@@ -483,64 +483,101 @@ export default function ProfessionalBarcodeCenter({
           if (i > 0) doc.addPage([w, h], "landscape");
           const item = labelItems[i];
 
-          // Encabezado
-          doc.setFont("helvetica", "bold");
-          doc.setFontSize(6.5);
-          doc.setTextColor(79, 70, 229);
-          if (showStoreName) {
-            doc.text((businessName || "TIENDA").toUpperCase(), 3, 4);
-          }
-          if (showBrand && item.brandName) {
-            doc.setTextColor(100, 116, 139);
-            doc.setFontSize(6);
-            doc.text(item.brandName.toUpperCase(), w - 3, 4, { align: "right" });
+          // Posición Y dinámica para un flujo perfecto sin espacios muertos
+          const isLarge = w >= 60;
+          let curY = isLarge ? 4.0 : 3.2;
+
+          // 1. Encabezado Tienda / Marca
+          if (showStoreName || (showBrand && item.brandName)) {
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(isLarge ? 7.2 : 6.2);
+            doc.setTextColor(79, 70, 229);
+            if (showStoreName) {
+              const maxStoreLen = isLarge ? 25 : 18;
+              const storeStr = (businessName || "TIENDA").toUpperCase();
+              doc.text(storeStr.length > maxStoreLen ? storeStr.slice(0, maxStoreLen - 1) + ".." : storeStr, 3, curY);
+            }
+            if (showBrand && item.brandName) {
+              doc.setTextColor(100, 116, 139);
+              doc.setFontSize(isLarge ? 6.5 : 5.8);
+              const maxBrandLen = isLarge ? 20 : 14;
+              const brandStr = item.brandName.toUpperCase();
+              doc.text(brandStr.length > maxBrandLen ? brandStr.slice(0, maxBrandLen - 1) + ".." : brandStr, w - 3, curY, { align: "right" });
+            }
+            curY += isLarge ? 4.2 : 3.4;
           }
 
-          // Nombre de producto
+          // 2. Nombre de producto / modelo
           doc.setTextColor(15, 23, 42);
-          doc.setFontSize(7.5);
-          const truncated = item.modelName.length > 22 ? item.modelName.slice(0, 21) + "..." : item.modelName;
-          doc.text(truncated, w / 2, 7.5, { align: "center" });
+          doc.setFontSize(isLarge ? 8.5 : 7.2);
+          doc.setFont("helvetica", "bold");
+          const maxNameLen = isLarge ? 32 : 22;
+          const truncated = item.modelName.length > maxNameLen ? item.modelName.slice(0, maxNameLen - 1) + "..." : item.modelName;
+          doc.text(truncated, w / 2, curY, { align: "center" });
+          curY += isLarge ? 3.8 : 3.2;
 
-          // Badge y Precio
-          if (showBadge && item.specBadge) {
-            doc.setFillColor(15, 23, 42);
-            doc.roundedRect(w / 2 - 12, 8.8, 24, 4.5, 1, 1, "F");
-            doc.setTextColor(255, 255, 255);
-            doc.setFontSize(7);
-            doc.text(item.specBadge, w / 2, 12, { align: "center" });
+          // 3. Badge y Precio
+          const hasBadge = showBadge && Boolean(item.specBadge);
+          const hasPrice = showPrice && Number(item.price) > 0;
+          if (hasBadge || hasPrice) {
+            if (hasBadge) {
+              const badgeText = item.specBadge.length > 22 ? item.specBadge.slice(0, 21) + "." : item.specBadge;
+              const badgeW = Math.min(w * 0.45, 30);
+              const badgeH = isLarge ? 4.8 : 4.0;
+              doc.setFillColor(15, 23, 42);
+              doc.roundedRect(w / 2 - badgeW / 2, curY - (isLarge ? 3.4 : 2.9), badgeW, badgeH, 1, 1, "F");
+              doc.setTextColor(255, 255, 255);
+              doc.setFontSize(isLarge ? 7.2 : 6.2);
+              doc.text(badgeText, w / 2, curY + (isLarge ? 0.3 : 0.2), { align: "center" });
+            }
+
+            if (hasPrice) {
+              doc.setTextColor(217, 119, 6);
+              doc.setFontSize(isLarge ? 8.2 : 7.2);
+              doc.setFont("helvetica", "bold");
+              doc.text(`S/ ${item.price.toFixed(2)}`, w - 3, curY + (isLarge ? 0.3 : 0.2), { align: "right" });
+            }
+            curY += isLarge ? 4.5 : 3.6;
           }
 
-          if (showPrice) {
-            doc.setTextColor(217, 119, 6);
-            doc.setFontSize(7.5);
-            doc.text(`S/ ${item.price.toFixed(2)}`, w - 3, 12, { align: "right" });
-          }
+          // 4. Código de barras o QR
+          // Altura disponible hasta el final de la etiqueta
+          const skuSpace = showCodeText ? (isLarge ? 4.5 : 3.6) : 1.5;
+          const availH = Math.max(8, h - curY - skuSpace);
 
-          // Código de barras / QR generado en canvas temporal
           const tempCanvas = document.createElement("canvas");
+          let codeRenderH = 0;
+          let codeRenderY = curY + (isLarge ? 0.8 : 0.4);
+
           if (codeType === "qr") {
-            await QRCode.toCanvas(tempCanvas, item.codeText, { width: 60, margin: 1 });
+            const qrDim = Math.min(availH, w * 0.42, isLarge ? 26 : 14);
+            codeRenderH = qrDim;
+            await QRCode.toCanvas(tempCanvas, item.codeText, { width: 120, margin: 1 });
             const qrImg = tempCanvas.toDataURL("image/png");
-            doc.addImage(qrImg, "PNG", w / 2 - 6, 13.5, 12, 12);
+            doc.addImage(qrImg, "PNG", w / 2 - qrDim / 2, codeRenderY, qrDim, qrDim);
           } else {
+            // El código de barras aprovecha la proporción real del papel sin dejar vacíos
+            codeRenderH = Math.min(availH, h * (isLarge ? 0.46 : 0.40));
             JsBarcode(tempCanvas, item.codeText, {
               format: "CODE128",
-              width: 1.2,
-              height: 28,
+              width: isLarge ? 1.8 : 1.3,
+              height: 48,
               displayValue: false,
               margin: 1,
             });
             const bcImg = tempCanvas.toDataURL("image/png");
-            doc.addImage(bcImg, "PNG", 4, 13.5, w - 8, 9);
+            const bcMargin = isLarge ? 6 : 4;
+            doc.addImage(bcImg, "PNG", bcMargin, codeRenderY, w - bcMargin * 2, codeRenderH);
           }
 
-          // SKU text
+          // 5. SKU text inmediatamente debajo del código (CERO ESPACIO MUERTO)
           if (showCodeText) {
+            const textY = codeRenderY + codeRenderH + (isLarge ? 3.0 : 2.4);
+            const safeTextY = Math.min(h - 1.2, textY);
             doc.setFont("courier", "bold");
-            doc.setFontSize(6);
+            doc.setFontSize(isLarge ? 7.2 : 6.0);
             doc.setTextColor(71, 85, 105);
-            doc.text(item.codeText, w / 2, h - 2, { align: "center" });
+            doc.text(item.codeText, w / 2, safeTextY, { align: "center" });
           }
         }
 
@@ -572,54 +609,93 @@ export default function ProfessionalBarcodeCenter({
           doc.roundedRect(x + 1, y + 1, labelW - 2, labelH - 2, 1.5, 1.5, "S");
           doc.setLineDashPattern([], 0);
 
-          // Contenido
-          doc.setFont("helvetica", "bold");
-          doc.setFontSize(6.5);
-          doc.setTextColor(79, 70, 229);
-          if (showStoreName) doc.text(businessName.toUpperCase(), x + 3, y + 5);
+          let curY = y + 4.2;
 
+          // 1. Encabezado Tienda / Marca
+          if (showStoreName || (showBrand && item.brandName)) {
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(6.2);
+            doc.setTextColor(79, 70, 229);
+            if (showStoreName) {
+              const storeStr = businessName.toUpperCase();
+              doc.text(storeStr.length > 18 ? storeStr.slice(0, 17) + ".." : storeStr, x + 3, curY);
+            }
+            if (showBrand && item.brandName) {
+              doc.setTextColor(100, 116, 139);
+              doc.setFontSize(5.8);
+              const brandStr = item.brandName.toUpperCase();
+              doc.text(brandStr.length > 14 ? brandStr.slice(0, 13) + ".." : brandStr, x + labelW - 3, curY, { align: "right" });
+            }
+            curY += 3.5;
+          }
+
+          // 2. Nombre del producto
           doc.setTextColor(15, 23, 42);
-          doc.setFontSize(7.5);
-          const truncated = item.modelName.length > 20 ? item.modelName.slice(0, 19) + "..." : item.modelName;
-          doc.text(truncated, x + labelW / 2, y + 9, { align: "center" });
+          doc.setFontSize(7.2);
+          doc.setFont("helvetica", "bold");
+          const truncated = item.modelName.length > 22 ? item.modelName.slice(0, 21) + "..." : item.modelName;
+          doc.text(truncated, x + labelW / 2, curY, { align: "center" });
+          curY += 3.2;
 
-          if (showBadge && item.specBadge) {
-            doc.setFillColor(15, 23, 42);
-            doc.roundedRect(x + labelW / 2 - 12, y + 10.5, 24, 4.5, 1, 1, "F");
-            doc.setTextColor(255, 255, 255);
-            doc.setFontSize(6.5);
-            doc.text(item.specBadge, x + labelW / 2, y + 13.8, { align: "center" });
+          // 3. Badge y Precio
+          const hasBadge = showBadge && Boolean(item.specBadge);
+          const hasPrice = showPrice && Number(item.price) > 0;
+          if (hasBadge || hasPrice) {
+            if (hasBadge) {
+              const badgeText = item.specBadge.length > 18 ? item.specBadge.slice(0, 17) + "." : item.specBadge;
+              const badgeW = Math.min(labelW * 0.45, 26);
+              const badgeH = 4.0;
+              doc.setFillColor(15, 23, 42);
+              doc.roundedRect(x + labelW / 2 - badgeW / 2, curY - 2.8, badgeW, badgeH, 1, 1, "F");
+              doc.setTextColor(255, 255, 255);
+              doc.setFontSize(6.2);
+              doc.text(badgeText, x + labelW / 2, curY + 0.2, { align: "center" });
+            }
+
+            if (hasPrice) {
+              doc.setTextColor(217, 119, 6);
+              doc.setFontSize(7.2);
+              doc.setFont("helvetica", "bold");
+              doc.text(`S/ ${item.price.toFixed(2)}`, x + labelW - 3, curY + 0.2, { align: "right" });
+            }
+            curY += 3.8;
           }
 
-          if (showPrice) {
-            doc.setTextColor(217, 119, 6);
-            doc.setFontSize(7.5);
-            doc.text(`S/ ${item.price.toFixed(2)}`, x + labelW / 2, y + 18.5, { align: "center" });
-          }
+          // 4. Código de barras o QR dentro de la celda A4
+          const skuSpace = showCodeText ? 3.6 : 1.2;
+          const availH = Math.max(7, y + labelH - curY - skuSpace);
 
-          // Canvas code
           const tempCanvas = document.createElement("canvas");
+          let codeRenderH = 0;
+          let codeRenderY = curY + 0.4;
+
           if (codeType === "qr") {
-            await QRCode.toCanvas(tempCanvas, item.codeText, { width: 50, margin: 1 });
+            const qrDim = Math.min(availH, labelW * 0.4, 18);
+            codeRenderH = qrDim;
+            await QRCode.toCanvas(tempCanvas, item.codeText, { width: 100, margin: 1 });
             const qrImg = tempCanvas.toDataURL("image/png");
-            doc.addImage(qrImg, "PNG", x + labelW / 2 - 6, y + 19.5, 12, 12);
+            doc.addImage(qrImg, "PNG", x + labelW / 2 - qrDim / 2, codeRenderY, qrDim, qrDim);
           } else {
+            codeRenderH = Math.min(availH, labelH * 0.40);
             JsBarcode(tempCanvas, item.codeText, {
               format: "CODE128",
-              width: 1.1,
-              height: 25,
+              width: 1.2,
+              height: 40,
               displayValue: false,
               margin: 1,
             });
             const bcImg = tempCanvas.toDataURL("image/png");
-            doc.addImage(bcImg, "PNG", x + 3, y + 19.5, labelW - 6, 8.5);
+            doc.addImage(bcImg, "PNG", x + 3.5, codeRenderY, labelW - 7, codeRenderH);
           }
 
+          // 5. SKU text inmediatamente debajo del código (CERO ESPACIO MUERTO)
           if (showCodeText) {
+            const textY = codeRenderY + codeRenderH + 2.4;
+            const safeTextY = Math.min(y + labelH - 1.2, textY);
             doc.setFont("courier", "bold");
             doc.setFontSize(6);
             doc.setTextColor(71, 85, 105);
-            doc.text(item.codeText, x + labelW / 2, y + labelH - 2.5, { align: "center" });
+            doc.text(item.codeText, x + labelW / 2, safeTextY, { align: "center" });
           }
         }
 
