@@ -631,11 +631,37 @@ export function extractSizeFromProduct(product: any, userRubro?: string): string
   return "";
 }
 
+export const ALL_KNOWN_COLOR_NAMES = new Set([
+  "NEGRO", "BLANCO", "GRIS", "PLATA", "PLATEADO", "DORADO", "ORO", "BRONCE",
+  "BEIGE", "CREMA", "MARRON", "MARRÓN", "CAMEL", "NUDE", "ROSA", "ROSADO",
+  "FUCSIA", "GUINDA", "VINO", "LILA", "MORADO", "PURPLE", "NARANJA", "ROJO",
+  "AZUL", "VERDE", "AMARILLO", "INOX", "ACERO", "ACERO INOXIDABLE", "TURQUESA",
+  "CELESTE", "CAFE", "CAFÉ", "CHAMPAGNE", "TRANSPARENTE", "VIOLETA", "CORAL",
+  "MOSTAZA", "OLIVA", "MILITAR", "VERDE MILITAR", "AZUL MARINO", "AZUL REY"
+]);
+
+export function isColorString(str?: string | null): boolean {
+  if (!str) return false;
+  const clean = str.trim().toUpperCase().replace(/^COL(?:OR)?\.?\s*[:=\-]?\s*/i, "").trim();
+  if (ALL_KNOWN_COLOR_NAMES.has(clean)) return true;
+  for (const c of ALL_KNOWN_COLOR_NAMES) {
+    if (clean === c || clean.startsWith(`${c} `) || clean.endsWith(` ${c}`)) return true;
+  }
+  return false;
+}
+
 /**
  * Extrae de manera inteligente la especificación, medida, capacidad o badge
  * para el código de barras y etiquetas de impresión según el rubro comercial real.
+ * GARANTÍA ABSOLUTA: Jamás retorna un color para evitar duplicados en stickers.
  */
 export function extractProductSpecBadge(product: any, businessRubro?: string | null): string {
+  const badge = internalExtractProductSpecBadge(product, businessRubro);
+  if (isColorString(badge)) return "";
+  return badge;
+}
+
+function internalExtractProductSpecBadge(product: any, businessRubro?: string | null): string {
   if (!product) return "";
   
   const rubro = (businessRubro || "").toLowerCase();
