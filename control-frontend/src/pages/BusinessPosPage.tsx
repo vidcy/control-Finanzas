@@ -42,6 +42,7 @@ import Pagination from "../components/ui/Pagination";
 import { formatStock } from "./BusinessInventoryPage";
 import { useHardwareScanner } from "../hooks/useHardwareScanner";
 import { playScannerSound } from "../utils/hardwareScanner";
+import { ProductColorBadge, getColorVisual } from "../utils/colorUtils";
 import {
   ShoppingCart,
   Search,
@@ -842,16 +843,23 @@ export default function BusinessPosPage() {
       return;
     }
 
-    // Check if already in cart (same product, same presentation = no presentation)
+    // Check if already in cart (same product)
     const existingIndex = cart.findIndex(
-      (item) =>
-        item.id === product.id && !item.isCustom && !item.presentationId,
+      (item) => item.id === product.id && !item.isCustom && !item.presentationId,
     );
+
+    const price =
+      product.adjustedPrice &&
+      Number(product.adjustedPrice) > 0 &&
+      Number(product.adjustedPrice) < Number(product.salePrice)
+        ? Number(product.adjustedPrice)
+        : Number(product.salePrice);
+
     if (existingIndex > -1) {
       const existing = cart[existingIndex];
       const newQty = existing.quantity + 1;
       if (newQty > availableStock) {
-        toast.error("Stock máximo alcanzado en esta sede");
+        toast.error(`Stock máximo alcanzado en esta sede (${availableStock} ${product.unit || "Unidad"})`);
         return;
       }
       const updatedCart = cart.map((item, idx) =>
@@ -863,16 +871,10 @@ export default function BusinessPosPage() {
         setCart(updatedCart);
       }
     } else {
-      const hasOffer = Boolean(
-        product.adjustedPrice &&
-        Number(product.adjustedPrice) > 0 &&
-        Number(product.adjustedPrice) < Number(product.salePrice)
-      );
-      const effectivePrice = hasOffer ? Number(product.adjustedPrice) : product.salePrice;
-      const newItem = {
+      const newItem: CartItem = {
         ...product,
         quantity: 1,
-        salePrice: effectivePrice,
+        salePrice: price,
         originalSalePrice: product.salePrice,
       };
       const updatedCart = [...cart, newItem];
@@ -882,6 +884,8 @@ export default function BusinessPosPage() {
         setCart(updatedCart);
       }
     }
+    toast.success(`🛒 Agregado: ${product.name}`);
+    playBeep();
   };
 
   const addSeriesCurveToCart = (groupedItem: GroupedSeriesProduct) => {
@@ -2599,19 +2603,8 @@ export default function BusinessPosPage() {
 
                           {/* Color del calzado con nombre y círculo */}
                           {item.color && (
-                            <div
-                              className="absolute top-2.5 right-2.5 z-20 flex items-center gap-1 bg-white/95 backdrop-blur-xs px-2 py-0.5 rounded-full border border-gray-200 shadow-xs"
-                              title={`Color: ${item.color}`}
-                            >
-                              <span
-                                className="inline-flex h-2.5 w-2.5 rounded-full border border-black/15 shrink-0"
-                                style={{
-                                  backgroundColor: item.color.startsWith("#") ? item.color : undefined,
-                                }}
-                              />
-                              <span className="text-[9px] font-black text-gray-800 truncate max-w-[65px]">
-                                {item.color}
-                              </span>
+                            <div className="absolute top-2.5 right-2.5 z-20">
+                              <ProductColorBadge color={item.color} size="xs" />
                             </div>
                           )}
 
@@ -2678,7 +2671,7 @@ export default function BusinessPosPage() {
                                             (v) => extractSizeFromProduct(v) === s.size
                                           ) || item.primaryProduct;
                                         addToCart(variantProd);
-                                        toast.success(`🛒 Agregado: ${variantProd.name}`);
+                                        toast.success(`🛒 Agregado a la venta: ${variantProd.name}`);
                                         playBeep();
                                       }}
                                       className={`text-[10px] font-black px-2 py-1 rounded-lg border transition-all flex items-center gap-1 shadow-2xs ${hasStock
@@ -2774,7 +2767,7 @@ export default function BusinessPosPage() {
                       onMouseLeave={() => {
                         setHoveredProduct(null);
                       }}
-                      className={`bg-white rounded-2xl border hover:border-indigo-300 hover:shadow-lg transition-all cursor-pointer group flex flex-col justify-between overflow-hidden shadow-sm relative h-[325px] ${availableStock <= 0 ? "opacity-50 cursor-not-allowed" : ""}`}
+                      className={`bg-white rounded-2xl border hover:border-indigo-300 hover:shadow-lg transition-all cursor-pointer group flex flex-col justify-between overflow-hidden shadow-sm relative ${availableStock <= 0 ? "opacity-50 cursor-not-allowed" : ""}`}
                     >
                       {/* Contenedor de Imagen */}
                       <div
@@ -2799,9 +2792,12 @@ export default function BusinessPosPage() {
                           ) : null}
                         </div>
 
-                        {/* Color con nombre y círculo */}
-
-
+                        {/* Color con nombre y círculo visible sin hacer nada */}
+                        {p.color && (
+                          <div className="absolute top-2.5 right-2.5 z-20">
+                            <ProductColorBadge color={p.color} size="xs" />
+                          </div>
+                        )}
                         {p.imageUrl ? (
                           <img
                             src={getReceiptAbsoluteUrl(p.imageUrl) || p.imageUrl}
@@ -2820,41 +2816,118 @@ export default function BusinessPosPage() {
 
                       <div className="p-3 flex-1 flex flex-col justify-between">
                         <div>
-                          <h3 className="font-bold text-gray-800 group-hover:text-indigo-600 transition-colors line-clamp-2 text-sm">
-                            {p.name}
-                          </h3>
-                          <span
-                            className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full inline-block mt-1 ${availableStock > 0 ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}
-                          >
-                            {activeShift?.branchId ? "Sede: " : ""}
-                            {formatStock(availableStock, p.unit, p.presentations)}
-                          </span>
+                          <div className="flex items-start justify-between gap-1 mb-1">
+                            <h3 className="font-bold text-gray-800 group-hover:text-indigo-600 transition-colors line-clamp-2 text-sm leading-snug">
+                              {p.name}
+                            </h3>
+                          </div>
 
-                          {cleanDescriptionForDisplay(p.description) && (
-                            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full inline-block mt-1 bg-slate-50 text-slate-600">
-                              {cleanDescriptionForDisplay(p.description)}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Precios: Regular vs Oferta */}
-                        {p.adjustedPrice && Number(p.adjustedPrice) > 0 && Number(p.adjustedPrice) < Number(p.salePrice) ? (
-                          <div className="flex items-baseline gap-2 mt-2">
-                            <span className="text-xs line-through text-gray-400 font-bold">
-                              S/ {p.salePrice.toFixed(2)}
-                            </span>
-                            <span className="text-base font-black text-rose-600 flex items-center gap-1">
-                              S/ {Number(p.adjustedPrice).toFixed(2)}
-                              <span className="text-[9px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded-full uppercase font-black tracking-wider">
-                                🔥 Oferta
+                          {/* Marca, Familia y Código */}
+                          <div className="flex flex-wrap items-center gap-1 mb-2">
+                            {p.brand && (
+                              <span className="text-[9px] font-black text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded-md border border-indigo-100/80">
+                                {p.brand.name}
                               </span>
+                            )}
+                            {p.family && (
+                              <span className="text-[9px] font-bold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded-md border border-purple-100/80">
+                                {p.family.name}
+                              </span>
+                            )}
+                            <span className="text-[9px] font-mono font-bold text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded-md">
+                              Cód: #{String(p.customCode || 0).padStart(4, "0")}
                             </span>
                           </div>
-                        ) : (
-                          <p className="text-base font-black text-gray-900 mt-2">
-                            S/ {p.salePrice.toFixed(2)}
-                          </p>
-                        )}
+
+                          {/* Barra de Stock Real-Time Exacto */}
+                          <div className="flex items-center justify-between text-[10px] font-bold px-2.5 py-1.5 bg-slate-50 text-slate-700 rounded-xl border border-slate-100 mb-2">
+                            <span className="flex items-center gap-1.5 font-black">
+                              <span className={`w-2 h-2 rounded-full ${availableStock > 0 ? "bg-emerald-500" : "bg-rose-500"}`} />
+                              {availableStock > 0 ? "Disponible" : "Sin Stock"}
+                            </span>
+                            <span className="font-mono font-black text-indigo-600">
+                              {activeShift?.branchId ? "Sede: " : "Stock: "}{availableStock} {p.unit || "Unidad"}
+                            </span>
+                          </div>
+
+                          {/* Descripción limpia */}
+                          {cleanDescriptionForDisplay(p.description) && (
+                            <p className="text-[10px] text-gray-500 line-clamp-2 italic mb-2 bg-slate-50/70 px-2 py-1 rounded-lg border border-slate-100" title={cleanDescriptionForDisplay(p.description)}>
+                              📝 {cleanDescriptionForDisplay(p.description)}
+                            </p>
+                          )}
+
+                          {/* Datos Esenciales para la Venta */}
+                          <div className="grid grid-cols-2 gap-1.5 mb-2 bg-slate-50/70 p-2 rounded-xl border border-slate-100 text-[10px]">
+                            <div>
+                              <span className="text-[8px] uppercase font-bold text-gray-400 block">Unidad de Venta</span>
+                              <span className="font-bold text-gray-700 capitalize truncate block">{p.unit || "Unidad"}</span>
+                            </div>
+                            {p.barcode ? (
+                              <div>
+                                <span className="text-[8px] uppercase font-bold text-gray-400 block">Cód. Barras</span>
+                                <span className="font-mono font-bold text-gray-700 truncate block" title={p.barcode}>{p.barcode}</span>
+                              </div>
+                            ) : p.gender ? (
+                              <div>
+                                <span className="text-[8px] uppercase font-bold text-gray-400 block">Línea / Género</span>
+                                <span className="font-bold text-gray-700 capitalize truncate block">{p.gender}</span>
+                              </div>
+                            ) : (
+                              <div>
+                                <span className="text-[8px] uppercase font-bold text-gray-400 block">Estado</span>
+                                <span className="font-bold text-emerald-600 block">Disponible</span>
+                              </div>
+                            )}
+                            {user?.profiles?.includes("BUSINESS_BRANCHES") && (
+                              <div className="col-span-2 pt-1 border-t border-slate-200/50 flex justify-between items-center text-[9px]">
+                                <span className="text-gray-400 font-bold">Stock Global Empresa:</span>
+                                <span className="font-black text-cyan-600">{p.stock} {p.unit || "Unidad"}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Precios y Botón Agregar a la Venta */}
+                        <div className="border-t border-gray-100 pt-2 mt-auto">
+                          <div className="flex items-center justify-between text-xs mb-1.5">
+                            <span className="text-[10px] text-gray-500 font-bold">Precio Venta:</span>
+                            {p.adjustedPrice && Number(p.adjustedPrice) > 0 && Number(p.adjustedPrice) < Number(p.salePrice) ? (
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] line-through text-gray-400 font-bold">
+                                  S/ {p.salePrice.toFixed(2)}
+                                </span>
+                                <span className="font-black text-rose-600 flex items-center gap-1">
+                                  S/ {Number(p.adjustedPrice).toFixed(2)}
+                                  <span className="text-[8px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded-full uppercase font-black tracking-wider">
+                                    🔥 Oferta
+                                  </span>
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="font-black text-indigo-600">S/ {p.salePrice.toFixed(2)}</span>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            disabled={availableStock <= 0}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              addToCart(p);
+                              toast.success(`🛒 Agregado a la venta: ${p.name}`);
+                              playBeep();
+                            }}
+                            className={`w-full py-2 px-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-xs ${
+                              availableStock > 0
+                                ? "bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white active:scale-[0.98]"
+                                : "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200"
+                            }`}
+                            title={availableStock > 0 ? `Agregar ${p.name} a la venta` : "Producto agotado"}
+                          >
+                            <ShoppingCart className="w-3.5 h-3.5" />
+                            <span>{availableStock > 0 ? "Agregar a la Venta" : "Agotado"}</span>
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -2868,7 +2941,7 @@ export default function BusinessPosPage() {
         <div className={`w-full lg:w-[420px] xl:w-[460px] flex flex-col bg-white rounded-[2rem] shadow-sm border border-gray-100 overflow-hidden ${mobileTab === "cart" ? "flex" : "hidden lg:flex"}`}>
           <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-slate-50/90">
             <h2 className="text-xl font-black text-gray-900 flex items-center gap-2">
-              <ShoppingCart className="w-5 h-5" /> Ticket Actual
+              <ShoppingCart className="w-5 h-5" /> Venta Actual
             </h2>
             <span className="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-lg text-sm font-bold">
               {cart.length} items
@@ -2879,7 +2952,7 @@ export default function BusinessPosPage() {
             {cart.length === 0 ? (
               <div className="h-[200px] flex flex-col items-center justify-center text-gray-400">
                 <ShoppingCart className="w-12 h-12 mb-3 text-gray-300" />
-                <p className="font-bold">No hay productos en el ticket</p>
+                <p className="font-bold">No hay productos en la venta</p>
               </div>
             ) : (
               cart.map((item, index) => (
@@ -4257,15 +4330,7 @@ export default function BusinessPosPage() {
                       </span>
                     )}
                     {posLightboxProduct.color && (
-                      <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 flex items-center gap-1">
-                        <span
-                          className="w-2.5 h-2.5 rounded-full border border-black/20 shrink-0"
-                          style={{
-                            backgroundColor: posLightboxProduct.color.startsWith("#") ? posLightboxProduct.color : undefined,
-                          }}
-                        />
-                        Color: {posLightboxProduct.color}
-                      </span>
+                      <ProductColorBadge color={posLightboxProduct.color} size="sm" />
                     )}
                   </div>
                 </div>
@@ -4513,7 +4578,7 @@ export default function BusinessPosPage() {
 
             <div className="grid grid-cols-2 gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100 text-xs">
               <div>
-                <span className="text-gray-500 block font-medium">Precio Base:</span>
+                <span className="text-gray-500 block font-medium">Precio Venta Base:</span>
                 <span className="font-bold text-gray-800">
                   S/ {(cart[adjustingCartIndex].presentationId
                     ? (cart[adjustingCartIndex].presentations?.find(
@@ -4524,61 +4589,27 @@ export default function BusinessPosPage() {
                 </span>
               </div>
               <div>
-                <span className="text-gray-500 block font-medium">Precio Ajustado Registrado:</span>
-                <span className="font-bold text-gray-800">
+                <span className="text-gray-500 block font-medium">Precio Ajustado / Oferta:</span>
+                <span className="font-bold text-rose-600">
                   {cart[adjustingCartIndex].adjustedPrice && cart[adjustingCartIndex].adjustedPrice > 0
                     ? `S/ ${Number(cart[adjustingCartIndex].adjustedPrice).toFixed(2)}`
                     : "No registrado"}
                 </span>
               </div>
-              <div className="col-span-2 border-t border-gray-200 pt-2 mt-1">
-                <span className="text-gray-500 block font-medium">Precio de Costo Base:</span>
-                <span className="font-bold text-rose-600">
-                  S/ {Number(cart[adjustingCartIndex].costPrice || 0).toFixed(2)}
-                </span>
-              </div>
-            </div>
-
-            {/* Recommendations */}
-            <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-xl text-xs space-y-2">
-              <p className="font-bold text-indigo-900 flex items-center gap-1.5">
-                💡 Recomendaciones de Rentabilidad
-              </p>
-              <div className="space-y-1 text-[11px] text-indigo-700">
-                <p>
-                  • Para **no perder dinero**, el precio debe ser al menos el costo:{" "}
-                  <strong className="text-indigo-900">
-                    S/ {Number(cart[adjustingCartIndex].costPrice || 0).toFixed(2)}
-                  </strong>
-                </p>
-                <p>
-                  • Para mantener un **10% de margen de ganancia**:{" "}
-                  <strong className="text-indigo-900">
-                    S/ {((cart[adjustingCartIndex].costPrice || 0) / 0.9).toFixed(2)}
-                  </strong>
-                </p>
-              </div>
             </div>
 
             {/* Quick shortcuts */}
-            <div className="flex flex-wrap gap-2">
-              {cart[adjustingCartIndex].adjustedPrice && cart[adjustingCartIndex].adjustedPrice > 0 && (
+            {cart[adjustingCartIndex].adjustedPrice && cart[adjustingCartIndex].adjustedPrice > 0 && (
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={() => setCustomAdjustedPrice(Number(cart[adjustingCartIndex].adjustedPrice))}
-                  className="px-3 py-1.5 bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 rounded-lg text-[10px] font-bold transition-all"
+                  className="px-3 py-1.5 bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100 rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
                 >
-                  Usar Ajustado (S/ {Number(cart[adjustingCartIndex].adjustedPrice).toFixed(2)})
+                  <span>🔥 Usar Precio de Oferta (S/ {Number(cart[adjustingCartIndex].adjustedPrice).toFixed(2)})</span>
                 </button>
-              )}
-              <button
-                type="button"
-                onClick={() => setCustomAdjustedPrice(parseFloat(((cart[adjustingCartIndex].costPrice || 0) / 0.9).toFixed(2)))}
-                className="px-3 py-1.5 bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 rounded-lg text-[10px] font-bold transition-all"
-              >
-                Usar Margen 10% (S/ {((cart[adjustingCartIndex].costPrice || 0) / 0.9).toFixed(2)})
-              </button>
-            </div>
+              </div>
+            )}
 
             {/* Input field */}
             <div>
@@ -4593,17 +4624,6 @@ export default function BusinessPosPage() {
                   onChange={(e) => setCustomAdjustedPrice(parseFloat(e.target.value) || 0)}
                   className="w-full p-2.5 rounded-xl border border-gray-200 focus:border-indigo-500 outline-none text-sm font-bold bg-white"
                 />
-                {customAdjustedPrice > 0 && customAdjustedPrice <= (cart[adjustingCartIndex].costPrice || 0) && (
-                  <p className="text-[10px] text-rose-500 font-bold mt-1">
-                    ⚠️ Alerta: El precio es menor o igual al costo de adquisición (S/ {Number(cart[adjustingCartIndex].costPrice || 0).toFixed(2)}). ¡Pérdida inminente!
-                  </p>
-                )}
-                {customAdjustedPrice > (cart[adjustingCartIndex].costPrice || 0) &&
-                  customAdjustedPrice < ((cart[adjustingCartIndex].costPrice || 0) / 0.9) && (
-                    <p className="text-[10px] text-amber-600 font-bold mt-1">
-                      ⚠️ Alerta: Margen de rentabilidad bajo (menor al 10%).
-                    </p>
-                  )}
               </div>
             </div>
 
@@ -4759,14 +4779,11 @@ export default function BusinessPosPage() {
           }}
         >
           <div className="flex items-center justify-between border-b border-slate-700 pb-1.5">
-            <h4 className="font-extrabold text-sm text-indigo-400 truncate max-w-[70%]">
+            <h4 className="font-extrabold text-sm text-indigo-400 truncate max-w-[65%]">
               {hoveredProduct.name}
             </h4>
             {hoveredProduct.color && (
-              <span
-                className="w-3.5 h-3.5 rounded-full border border-white"
-                style={{ backgroundColor: hoveredProduct.color }}
-              />
+              <ProductColorBadge color={hoveredProduct.color} size="xs" className="!bg-slate-800 !text-white !border-slate-600" />
             )}
           </div>
 
@@ -4803,21 +4820,40 @@ export default function BusinessPosPage() {
                 </div>
               </>
             ) : (
-              <div>
-                <span className="block text-[9px] uppercase font-black text-slate-400">Stock</span>
-                <span className="font-bold text-emerald-400">{hoveredProduct.stock}</span>
+              <div className="col-span-2">
+                <span className="block text-[9px] uppercase font-black text-slate-400">Stock Disponible</span>
+                <span className="font-bold text-emerald-400">{hoveredProduct.stock} {hoveredProduct.unit}</span>
               </div>
             )}
 
-            <div>
-              <span className="block text-[9px] uppercase font-black text-slate-400">Precio Costo</span>
-              <span className="font-bold text-rose-300">S/ {hoveredProduct.costPrice.toFixed(2)}</span>
-            </div>
-
-            <div>
-              <span className="block text-[9px] uppercase font-black text-slate-400">Precio Venta</span>
-              <span className="font-bold text-emerald-300 font-extrabold">S/ {hoveredProduct.salePrice.toFixed(2)}</span>
-            </div>
+            {/* PRECIO VENTA Y OFERTA (NUNCA PRECIO COSTO EN POS) */}
+            {hoveredProduct.adjustedPrice &&
+            Number(hoveredProduct.adjustedPrice) > 0 &&
+            Number(hoveredProduct.adjustedPrice) < Number(hoveredProduct.salePrice) ? (
+              <>
+                <div>
+                  <span className="block text-[9px] uppercase font-black text-slate-400">Precio Regular</span>
+                  <span className="font-bold text-slate-400 line-through">
+                    S/ {hoveredProduct.salePrice.toFixed(2)}
+                  </span>
+                </div>
+                <div>
+                  <span className="block text-[9px] uppercase font-black text-rose-400 flex items-center gap-1">
+                    🔥 Precio Oferta
+                  </span>
+                  <span className="font-black text-rose-400 font-extrabold text-sm">
+                    S/ {Number(hoveredProduct.adjustedPrice).toFixed(2)}
+                  </span>
+                </div>
+              </>
+            ) : (
+              <div className="col-span-2">
+                <span className="block text-[9px] uppercase font-black text-slate-400">Precio de Venta</span>
+                <span className="font-black text-emerald-300 font-extrabold text-sm">
+                  S/ {hoveredProduct.salePrice.toFixed(2)}
+                </span>
+              </div>
+            )}
 
             <div className="col-span-2">
               <span className="block text-[9px] uppercase font-black text-slate-400">Marca / Familia</span>

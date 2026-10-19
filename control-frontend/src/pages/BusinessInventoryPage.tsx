@@ -83,6 +83,7 @@ import {
   uploadProductImageFile,
 } from "../components/ui/ImageUploader";
 import { format } from "date-fns";
+import { ProductColorBadge } from "../utils/colorUtils";
 import SeriesConfigurator from "../components/inventory/SeriesConfigurator";
 import {
   decodeSeriesMetadata,
@@ -133,37 +134,14 @@ const loadQrCodeGenerator = (): Promise<any> => {
   });
 };
 
-// Helper to format stock quantities into mixed presentations dynamically
+// Helper to format stock quantities accurately without confusing decomposition
 export function formatStock(
   stock: number,
   unit: string,
-  presentations?: Presentation[],
+  _presentations?: Presentation[],
 ) {
-  if (!presentations || presentations.length === 0) {
-    return `${parseFloat(stock.toFixed(2))} ${unit}`;
-  }
-
-  const sorted = [...presentations]
-    .filter((p) => p.equivalence > 1)
-    .sort((a, b) => b.equivalence - a.equivalence);
-
-  let remaining = stock;
-  const parts: string[] = [];
-
-  for (const p of sorted) {
-    if (remaining >= p.equivalence) {
-      const qty = Math.floor(remaining / p.equivalence);
-      remaining = remaining % p.equivalence;
-      parts.push(`${qty} ${p.name}`);
-    }
-  }
-
-  const rounded = parseFloat(remaining.toFixed(2));
-  if (rounded > 0 || parts.length === 0) {
-    parts.push(`${rounded} ${unit}`);
-  }
-
-  return parts.join(" + ");
+  const cleanStock = parseFloat(Number(stock || 0).toFixed(2));
+  return `${cleanStock} ${unit || "Unidad"}`;
 }
 
 export const playScannerBeep = (freq = 800, duration = 0.08) => {
@@ -3266,6 +3244,16 @@ export default function BusinessInventoryPage() {
                                     </div>
                                   )}
 
+                                  {/* Color badge over image (visible desde afuera sin hacer nada) */}
+                                  {(p.color || (isSeries && siblings.find((s) => s.color)?.color)) && (
+                                    <div className="absolute top-3 left-3 z-20">
+                                      <ProductColorBadge
+                                        color={p.color || siblings.find((s) => s.color)?.color}
+                                        size="xs"
+                                      />
+                                    </div>
+                                  )}
+
                                   {/* Stock status badge */}
                                   {isSeries && seriesSummary ? (
                                     <div
@@ -3330,6 +3318,12 @@ export default function BusinessInventoryPage() {
                                         >
                                           📦 SERIE ({seriesSummary.unitsPerSeries} pares)
                                         </span>
+                                      )}
+                                      {(p.color || (isSeries && siblings.find((s) => s.color)?.color)) && (
+                                        <ProductColorBadge
+                                          color={p.color || siblings.find((s) => s.color)?.color}
+                                          size="xs"
+                                        />
                                       )}
                                       {p.brand && (
                                         <span
@@ -3931,7 +3925,10 @@ export default function BusinessInventoryPage() {
                                         )}
                                         <div>
                                           <div className="font-extrabold text-gray-900 flex items-center gap-1.5">
-                                            {item.name}
+                                            <span>{item.name}</span>
+                                            {(item as any).color && (
+                                              <ProductColorBadge color={(item as any).color} size="xs" />
+                                            )}
                                             {isExtra && (
                                               <span className="text-[9px] bg-blue-100 text-blue-700 font-black px-1.5 py-0.5 rounded-md">
                                                 {(item as any).isNew
@@ -5001,9 +4998,7 @@ export default function BusinessInventoryPage() {
                   Color del Producto (Opcional)
                 </label>
                 {formData.color && (
-                  <span className="text-xs font-black text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-200">
-                    Seleccionado: {formData.color}
-                  </span>
+                  <ProductColorBadge color={formData.color} size="sm" />
                 )}
               </div>
               <div className="flex flex-wrap items-center gap-1.5">
