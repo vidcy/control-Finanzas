@@ -345,7 +345,7 @@ export default function ProfessionalBarcodeCenter({
   const addToQueue = (product: Product, copies = 1, customSpec?: string) => {
     const spec = customSpec !== undefined ? customSpec : resolveItemBadge(product);
     const color = resolveItemColor(product, customColorOverride);
-    const code = product.sku || String((product as any).customCode || 0).padStart(4, "0");
+    const code = product.barcode || product.sku || String((product as any).customCode || 0).padStart(4, "0");
 
     setPrintQueue((prev) => {
       const idx = prev.findIndex((q) => q.productId === product.id);
@@ -1195,11 +1195,14 @@ export default function ProfessionalBarcodeCenter({
               className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
             >
               <option value="">-- Elige un producto --</option>
-              {filteredProducts.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({p.sku || `Cód #${p.customCode || ""}`})
-                </option>
-              ))}
+              {filteredProducts.map((p) => {
+                const pStock = Math.max(0, Math.round(Number(p.stock) || 0));
+                return (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.sku || `Cód #${p.customCode || ""}`}) • Stock: {pStock} {p.unit || "und"}
+                  </option>
+                );
+              })}
             </select>
           </div>
         </div>
@@ -1220,7 +1223,7 @@ export default function ProfessionalBarcodeCenter({
                     </span>
                   </h4>
                   <p className="text-xs text-emerald-700 font-medium">
-                    Busca por nombre, SKU o código # y presiona <strong>"Adicionar"</strong> con la cantidad exacta que vas a rotular.
+                    Busca por nombre, SKU o código y agrega las etiquetas exactas según el stock real que tienes en almacén.
                   </p>
                 </div>
               </div>
@@ -1240,28 +1243,44 @@ export default function ProfessionalBarcodeCenter({
             {/* Resultados rápidos de búsqueda para adicionar en 1 clic */}
             {filteredProducts.length > 0 ? (
               <div className="bg-white rounded-2xl border border-emerald-200 p-3 shadow-xs">
-                <div className="text-[11px] font-black uppercase text-slate-500 mb-2 px-1 flex items-center justify-between">
+                <div className="text-[11px] font-black uppercase text-slate-500 mb-2 px-1 flex flex-wrap items-center justify-between gap-2">
                   <span>Productos disponibles para adicionar ({Math.min(filteredProducts.length, 6)} de {filteredProducts.length})</span>
                   {searchTerm && filteredProducts.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        filteredProducts.slice(0, 10).forEach((p) => addToQueue(p, 1));
-                        toast.success(`Se adicionaron ${Math.min(filteredProducts.length, 10)} productos a la lista`);
-                      }}
-                      className="text-[11px] font-black text-emerald-700 hover:underline flex items-center gap-1 cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      Adicionar los primeros {Math.min(filteredProducts.length, 10)}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          filteredProducts.slice(0, 10).forEach((p) => addToQueue(p, 1));
+                          toast.success(`Se adicionaron ${Math.min(filteredProducts.length, 10)} productos a la lista`);
+                        }}
+                        className="text-[11px] font-black text-emerald-700 hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        Adicionar {Math.min(filteredProducts.length, 10)} (1 c/u)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          filteredProducts.slice(0, 10).forEach((p) => {
+                            const st = Math.max(1, Math.round(Number(p.stock) || 0));
+                            addToQueue(p, st);
+                          });
+                          toast.success(`Se adicionaron según el stock real de almacén`);
+                        }}
+                        className="text-[11px] font-black text-indigo-700 hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        📦 Según stock almacén
+                      </button>
+                    </div>
                   )}
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-60 overflow-y-auto pr-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-72 overflow-y-auto pr-1">
                   {filteredProducts.slice(0, 12).map((p) => {
                     const inQueue = printQueue.find((q) => q.productId === p.id);
                     const pSpec = resolveItemBadge(p);
                     const pColor = resolveItemColor(p);
+                    const currentStock = Math.max(0, Math.round(Number(p.stock) || 0));
 
                     return (
                       <div
@@ -1273,44 +1292,66 @@ export default function ProfessionalBarcodeCenter({
                         }`}
                       >
                         <div className="min-w-0 flex-1">
-                          <div className="text-xs font-black text-slate-900 truncate">
+                          <div className="text-xs font-black text-slate-900 truncate" title={p.name}>
                             {cleanModelName(p.name, isApparelOrFootwear)}
                           </div>
-                          <div className="flex flex-wrap items-center gap-1.5 mt-0.5 text-[10px] text-slate-500 font-semibold">
-                            <span className="font-mono bg-white px-1.5 py-0.2 rounded border border-slate-200 text-slate-700 font-bold">
+                          <div className="flex flex-wrap items-center gap-1.5 mt-1 text-[10px] text-slate-500 font-semibold">
+                            <span className="font-mono bg-white px-1.5 py-0.5 rounded border border-slate-200 text-slate-700 font-bold">
                               {p.sku || `Cód #${p.customCode || ""}`}
                             </span>
+                            {/* Stock destacado para guiar la impresión */}
+                            <span
+                              className={`px-1.5 py-0.5 rounded font-black border flex items-center gap-1 ${
+                                currentStock > 0
+                                  ? "bg-emerald-100 text-emerald-900 border-emerald-300"
+                                  : "bg-rose-100 text-rose-800 border-rose-300"
+                              }`}
+                              title={`Stock en almacén: ${currentStock} ${p.unit || "und"}`}
+                            >
+                              <span className={`w-1.5 h-1.5 rounded-full ${currentStock > 0 ? "bg-emerald-600" : "bg-rose-600"}`} />
+                              Stock: {currentStock} {p.unit || "und"}
+                            </span>
                             {pSpec && (
-                              <span className="bg-indigo-50 text-indigo-700 px-1.5 py-0.2 rounded font-bold">
+                              <span className="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded font-bold">
                                 {pSpec}
                               </span>
                             )}
                             {pColor && (
-                              <span className="bg-slate-200 text-slate-800 px-1 py-0.2 rounded font-bold">
+                              <span className="bg-slate-200 text-slate-800 px-1 py-0.5 rounded font-bold">
                                 {pColor}
                               </span>
                             )}
-                            <span className="font-black text-emerald-700">
+                            <span className="font-black text-emerald-700 bg-white px-1 py-0.5 rounded border border-slate-100">
                               S/ {Number(p.salePrice || 0).toFixed(2)}
                             </span>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-1.5 shrink-0">
+                        <div className="flex items-center gap-1 shrink-0">
                           {inQueue && (
-                            <span className="px-2 py-1 bg-emerald-600 text-white rounded-lg text-xs font-black">
+                            <span className="px-1.5 py-1 bg-emerald-600 text-white rounded-lg text-[10px] font-black">
                               {inQueue.copies} en lista
                             </span>
                           )}
                           <button
                             type="button"
                             onClick={() => addToQueue(p, 1)}
-                            className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition-all active:scale-95 flex items-center gap-1 shadow-2xs cursor-pointer"
-                            title="Agregar a la lista para imprimir"
+                            className="px-2 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition-all active:scale-95 flex items-center gap-1 shadow-2xs cursor-pointer"
+                            title="Agregar 1 etiqueta a la lista"
                           >
                             <Plus className="w-3.5 h-3.5" />
                             <span>{inQueue ? "+1" : "Adicionar"}</span>
                           </button>
+                          {currentStock > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => addToQueue(p, currentStock)}
+                              className="px-2 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-[10px] font-black transition-all active:scale-95 flex items-center gap-0.5 shadow-2xs cursor-pointer"
+                              title={`Adicionar ${currentStock} etiquetas (igual al stock de almacén)`}
+                            >
+                              <span>+{currentStock} stock</span>
+                            </button>
+                          )}
                         </div>
                       </div>
                     );
@@ -1360,6 +1401,16 @@ export default function ProfessionalBarcodeCenter({
                           <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded font-bold text-slate-800">
                             {item.sku}
                           </span>
+                          {/* Stock real visible en la cola */}
+                          <span
+                            className={`px-2 py-0.5 rounded-md font-black border text-[10px] ${
+                              item.stock > 0
+                                ? "bg-emerald-50 text-emerald-900 border-emerald-200"
+                                : "bg-rose-50 text-rose-800 border-rose-200"
+                            }`}
+                          >
+                            📦 Stock: {item.stock} {item.unit || "und"}
+                          </span>
                           {item.brandName && (
                             <span className="text-slate-600 font-bold">{item.brandName}</span>
                           )}
@@ -1380,7 +1431,18 @@ export default function ProfessionalBarcodeCenter({
                       </div>
 
                       {/* Control de copias */}
-                      <div className="flex items-center gap-3 shrink-0">
+                      <div className="flex items-center gap-2 shrink-0">
+                        {/* Botón rápido para igualar al stock */}
+                        {item.stock > 0 && item.copies !== item.stock && (
+                          <button
+                            type="button"
+                            onClick={() => updateQueueCopies(item.productId, item.stock)}
+                            className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-[10px] font-black transition-all active:scale-95 cursor-pointer"
+                            title={`Ajustar copias a la cantidad exacta de stock (${item.stock} etiquetas)`}
+                          >
+                            = Stock ({item.stock})
+                          </button>
+                        )}
                         <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
                           <button
                             type="button"
@@ -1497,9 +1559,23 @@ export default function ProfessionalBarcodeCenter({
                   </button>
                   <button
                     type="button"
+                    onClick={() => {
+                      setCustomSelectionMode("custom");
+                      setCustomCopies(Math.max(1, Math.round(Number(activeProduct.stock) || 1)));
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                      customSelectionMode === "custom" && customCopies === Math.max(1, Math.round(Number(activeProduct.stock) || 1))
+                        ? "bg-violet-600 text-white shadow-xs"
+                        : "bg-white text-violet-900 border border-violet-200 hover:bg-violet-100"
+                    }`}
+                  >
+                    📦 Todo el stock ({activeProduct.stock || 0})
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setCustomSelectionMode("custom")}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                      customSelectionMode === "custom"
+                      customSelectionMode === "custom" && customCopies !== Math.max(1, Math.round(Number(activeProduct.stock) || 1))
                         ? "bg-violet-600 text-white shadow-xs"
                         : "bg-white text-violet-900 border border-violet-200 hover:bg-violet-100"
                     }`}
