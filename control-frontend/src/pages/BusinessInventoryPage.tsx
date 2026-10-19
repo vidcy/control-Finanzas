@@ -100,7 +100,12 @@ import {
 } from "../utils/seriesUtils";
 import { shareProductOfferViaWhatsApp } from "../utils/whatsappUtils";
 import { useHardwareScanner } from "../hooks/useHardwareScanner";
-import { playScannerSound } from "../utils/hardwareScanner";
+import {
+  playScannerSound,
+  findProductByBarcode,
+  sanitizeBarcode,
+  hardwareScanner,
+} from "../utils/hardwareScanner";
 import ProfessionalBarcodeCenter from "../components/inventory/ProfessionalBarcodeCenter";
 
 // Helper dynamically loading CDN scripts to bypass React 19 dependency conflict issues
@@ -779,44 +784,23 @@ export default function BusinessInventoryPage() {
 
   const handleBarcodeScanned = (code: string) => {
     if (!code) return;
-    const cleanCode = code.trim().toLowerCase();
-    setScanTestResult(code);
-    setLastScannedCode(code);
+    const cleanCode = sanitizeBarcode(code).trim();
+    setScanTestResult(cleanCode);
+    setLastScannedCode(cleanCode);
 
     // Si el modal de creación o edición de producto está abierto, asignar el código escaneado directamente
     if (isModalOpen) {
       setFormData((prev) => ({
         ...prev,
-        sku: prev.sku || code.trim(),
-        barcode: code.trim(),
+        sku: prev.sku || cleanCode,
+        barcode: cleanCode,
       }));
       playScannerSound("success");
-      toast.success(`🎯 Código asignado al producto: ${code.trim()}`);
+      toast.success(`🎯 Código asignado al producto: ${cleanCode}`);
       return;
     }
 
-    let match = products.find((p) => {
-      const matchesSku = p.sku && p.sku.trim().toLowerCase() === cleanCode;
-      const matchesCodeRaw = p.customCode && String(p.customCode).trim() === cleanCode;
-      const matchesCodePadded =
-        p.customCode && String(p.customCode).trim().padStart(4, "0") === cleanCode;
-      const matchesId = p.id && p.id.toLowerCase() === cleanCode;
-      const matchesBarcode = (p as any).barcode && String((p as any).barcode).trim().toLowerCase() === cleanCode;
-      const matchesPres = p.presentations?.some((pres: any) =>
-        (pres.sku && pres.sku.trim().toLowerCase() === cleanCode) ||
-        (pres.code && String(pres.code).trim().toLowerCase() === cleanCode)
-      );
-      return matchesSku || matchesCodeRaw || matchesCodePadded || matchesId || matchesBarcode || matchesPres;
-    });
-
-    // Fallback: búsqueda por prefijo de serie o modelo
-    if (!match) {
-      match = products.find((p) => {
-        const skuPrefix = p.sku && p.sku.trim().toLowerCase().startsWith(cleanCode);
-        const nameMatch = cleanModelName(p.name).toLowerCase() === cleanCode;
-        return skuPrefix || nameMatch;
-      });
-    }
+    const match = findProductByBarcode(products, cleanCode);
 
     if (match) {
       playScannerSound("success");
@@ -824,22 +808,26 @@ export default function BusinessInventoryPage() {
         setTicketProductId(match.id);
         toast.success(`🏷️ Producto seleccionado en rotulado: ${match.name}`);
       } else {
-        setSearchTerm(match.name);
+        setSearchTerm(cleanModelName(match.name));
         handleOpenModal(match);
         toast.success(`📦 Producto encontrado: ${match.name}`);
       }
     } else {
       playScannerSound("error");
-      toast.error(`❌ Código escaneado con pistola: "${code}". No coincide con ningún producto.`);
-      setFormData((prev) => ({ ...prev, sku: code.trim(), barcode: code.trim() }));
+      toast.error(`❌ Código escaneado: "${cleanCode}". No coincide con ningún producto.`);
+      setFormData((prev) => ({ ...prev, sku: cleanCode, barcode: cleanCode }));
     }
   };
 
   // Hardware Barcode & QR Scanner Listener (Pistola USB / Bluetooth)
-  useHardwareScanner((code) => {
-    if (!scannerEnabled) return;
-    handleBarcodeScanned(code);
-  }, scannerEnabled);
+  useHardwareScanner(
+    (code) => {
+      if (!scannerEnabled) return;
+      handleBarcodeScanned(code);
+    },
+    scannerEnabled,
+    { sensitivity: scannerSensitivity }
+  );
 
   // Premium metrics computations
   const totalProducts = products.length;
@@ -7665,114 +7653,106 @@ export default function BusinessInventoryPage() {
         </div>
       </Modal>
 
-      {/* PANEL FLOTANTE: CONFIGURACIÓN LECTOR CÓDIGO DE BARRAS FÍSICO */}
-      <motion.div drag dragMomentum={false} className="fixed bottom-6 right-6 z-[999] no-print">
-        {/* Floating Trigger Button */}
-        <button
-          type="button"
-          onClick={() => setIsScannerConfigOpen(!isScannerConfigOpen)}
-          className={`flex items-center gap-2 px-4 py-3 rounded-full text-white font-bold text-xs shadow-2xl transition-all hover:scale-105 active:scale-95 cursor-pointer ${isScannerConfigOpen ? "bg-red-500" : "bg-indigo-600 hover:bg-indigo-750"}`}
-        >
-          <span>
-            {isScannerConfigOpen ? "Cerrar Panel ✖" : "Configurar Lector 🔌"}
-          </span>
-          {scannerEnabled && !isScannerConfigOpen && (
-            <span className="w-2.5 h-2.5 bg-emerald-400 rounded-full animate-ping"></span>
-          )}
-        </button>
+      {/* MODAL CONFIGURACIÓN LECTOR CÓDIGO DE BARRAS FÍSICO */}
+      <Modal
+        isOpen={isScannerConfigOpen}
+        onClose={() => setIsScannerConfigOpen(false)}
+        title="🔌 Configuración del Lector Físico (USB / Bluetooth)"
+        maxWidth="max-w-md"
+      >
+        <div className="space-y-4">
+          <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+            <span className="text-xs font-semibold text-gray-600">Estado de detección automática:</span>
+            <span
+              className={`text-xs px-2.5 py-1 rounded-full font-black ${scannerEnabled ? "bg-emerald-50 text-emerald-600 border border-emerald-200" : "bg-red-50 text-red-600 border border-red-200"}`}
+            >
+              {scannerEnabled ? "✓ ACTIVO Y CONECTADO" : "APAGADO"}
+            </span>
+          </div>
 
-        {/* Floating Config Card */}
-        {isScannerConfigOpen && (
-          <div className="absolute bottom-16 right-0 w-80 bg-white/95 backdrop-blur-md rounded-3xl border border-gray-150 p-5 shadow-2xl space-y-4 animate-in fade-in slide-in-from-bottom-5 duration-200" onPointerDown={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b border-gray-100 pb-2">
-              <h4 className="font-extrabold text-sm text-gray-800 flex items-center gap-1.5">
-                <span>Lector Físico (Teclado)</span>
-              </h4>
-              <span
-                className={`text-[10px] px-2 py-0.5 rounded-full font-black ${scannerEnabled ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600"}`}
-              >
-                {scannerEnabled ? "ACTIVO" : "APAGADO"}
-              </span>
+          <div className="space-y-3.5">
+            {/* Toggle Enable */}
+            <label className="flex items-center justify-between cursor-pointer p-3 bg-slate-50 rounded-xl border border-slate-100 hover:bg-slate-100/80 transition-colors">
+              <div>
+                <span className="text-xs font-bold text-gray-800 block">
+                  Escuchar Lector Globalmente
+                </span>
+                <span className="text-[10px] text-gray-500">
+                  Detecta disparos de pistola para inventariar y rotular al instante.
+                </span>
+              </div>
+              <input
+                type="checkbox"
+                checked={scannerEnabled}
+                onChange={(e) => {
+                  setScannerEnabled(e.target.checked);
+                  playScannerSound(e.target.checked ? "success" : "error");
+                }}
+                className="w-4 h-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded cursor-pointer ml-3"
+              />
+            </label>
+
+            {/* Sensitivity Slider */}
+            <div className="space-y-1.5 p-3 bg-slate-50 rounded-xl border border-slate-100">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-gray-700">
+                  Sensibilidad entre caracteres
+                </span>
+                <span className="text-xs font-black text-indigo-600">
+                  {scannerSensitivity} ms
+                </span>
+              </div>
+              <input
+                type="range"
+                min="20"
+                max="150"
+                step="5"
+                value={scannerSensitivity}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  setScannerSensitivity(val);
+                  hardwareScanner.setSensitivity(val);
+                }}
+                className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+              />
+              <p className="text-[10px] text-gray-400 leading-tight">
+                El valor óptimo es 70-85ms. Detecta pistolas industriales y Bluetooth sin confundir escritura manual.
+              </p>
             </div>
 
-            <div className="space-y-3.5">
-              {/* Toggle Enable */}
-              <label className="flex items-center justify-between cursor-pointer">
-                <span className="text-xs font-semibold text-gray-600">
-                  Escuchar teclado global
-                </span>
-                <input
-                  type="checkbox"
-                  checked={scannerEnabled}
-                  onChange={(e) => {
-                    setScannerEnabled(e.target.checked);
-                    playScannerBeep(e.target.checked ? 900 : 600, 0.1);
-                  }}
-                  className="w-4 h-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded cursor-pointer"
-                />
-              </label>
-
-              {/* Sensitivity Slider */}
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-gray-655">
-                    Sensibilidad (Max entre teclas)
+            {/* Scan Test Box */}
+            <div className="bg-slate-50 p-3.5 rounded-2xl border border-gray-100 text-center space-y-2">
+              <span className="block text-[10px] font-black uppercase text-gray-500 tracking-wider">
+                Prueba de Lectura en Vivo
+              </span>
+              {scanTestResult ? (
+                <div className="space-y-1.5">
+                  <span className="block text-sm font-black text-gray-900 break-all bg-white px-3 py-2 rounded-xl border border-gray-200 font-mono shadow-xs">
+                    {scanTestResult}
                   </span>
-                  <span className="text-xs font-black text-indigo-600">
-                    {scannerSensitivity}ms
+                  <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-full">
+                    ✓ Lectura Exitosa y Verificada
                   </span>
                 </div>
-                <input
-                  type="range"
-                  min="20"
-                  max="150"
-                  step="5"
-                  value={scannerSensitivity}
-                  onChange={(e) =>
-                    setScannerSensitivity(Number(e.target.value))
-                  }
-                  className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
-                />
-                <p className="text-[10px] text-gray-400 leading-tight">
-                  Valores más bajos (ej. 40ms) evitan que la escritura manual
-                  sea detectada como escaneo.
-                </p>
-              </div>
-
-              {/* Scan Test Box */}
-              <div className="bg-slate-50 p-3 rounded-2xl border border-gray-100 text-center space-y-1.5">
-                <span className="block text-[10px] font-black uppercase text-gray-450">
-                  Prueba de Lectura
+              ) : (
+                <span className="block text-[11px] text-gray-400 italic leading-snug">
+                  Apunta tu lector a cualquier código o QR y presiona el gatillo para comprobar la lectura.
                 </span>
-                {scanTestResult ? (
-                  <div className="space-y-1">
-                    <span className="block text-xs font-bold text-gray-800 break-all bg-white px-2 py-1 rounded-lg border border-gray-200 font-mono">
-                      {scanTestResult}
-                    </span>
-                    <span className="block text-[9px] text-emerald-600 font-bold">
-                      Beep! Lectura Exitosa ✓
-                    </span>
-                  </div>
-                ) : (
-                  <span className="block text-[10px] text-gray-450 italic leading-snug">
-                    Escanea un código con el lector físico para probar el pitido
-                    y ver el resultado.
-                  </span>
-                )}
-                {scanTestResult && (
-                  <button
-                    type="button"
-                    onClick={() => setScanTestResult("")}
-                    className="text-[10px] text-gray-400 underline hover:text-gray-600 cursor-pointer"
-                  >
-                    Limpiar prueba
-                  </button>
-                )}
-              </div>
+              )}
             </div>
           </div>
-        )}
-      </motion.div>
+
+          <div className="pt-2 flex justify-end">
+            <button
+              type="button"
+              onClick={() => setIsScannerConfigOpen(false)}
+              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition-colors shadow-sm"
+            >
+              Listo
+            </button>
+          </div>
+        </div>
+      </Modal>
     </Appshell>
   );
 }

@@ -39,6 +39,8 @@ import API from "../services/axios";
 import { format } from "date-fns";
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
+import { useHardwareScanner } from "../hooks/useHardwareScanner";
+import { findProductByBarcode, playScannerSound } from "../utils/hardwareScanner";
 import {
   AreaChart,
   Area,
@@ -81,6 +83,19 @@ export default function BusinessKardexPage() {
   const [dateTo, setDateTo] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 6;
+
+  // Hardware Scanner Listener en Kardex para seleccionar producto al instante
+  useHardwareScanner((code) => {
+    const match = findProductByBarcode(products, code);
+    if (match) {
+      setSelectedProductId(match.id);
+      playScannerSound("success");
+      toast.success(`📦 Kardex filtrado: ${match.name}`);
+    } else {
+      playScannerSound("error");
+      toast.error(`❌ Código no coincide: "${code}"`);
+    }
+  });
 
   // UI Control States
   const [isExporting, setIsExporting] = useState(false);
