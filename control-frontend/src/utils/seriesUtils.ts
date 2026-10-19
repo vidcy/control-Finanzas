@@ -688,19 +688,22 @@ export function extractProductSpecBadge(product: any, businessRubro?: string | n
     const capMatch = desc.match(/\b(\d+(?:\.\d)?\s*(?:l|litros?|kg|kilos?|watts?|w|btu|v|voltios?|gb|tb|mah))\b/i);
     if (capMatch) return capMatch[1].toUpperCase();
 
+    // Hornillas / quemadores para cocinas
+    const burnerMatch = desc.match(/\b(\d+\s*(?:hornillas?|quemadores?|platos?))\b/i);
+    if (burnerMatch) return burnerMatch[1].toUpperCase();
+
+    // Tipo de combustible / energía
+    const gasMatch = desc.match(/\b(glp|gnv|a gas|gas natural|inducción|eléctrica|electrica)\b/i);
+    if (gasMatch) return gasMatch[1].toUpperCase();
+
     // Tecnologías clave
     const techMatch = desc.match(/\b(4k\s*uhd|4k|uhd|fhd|oled|qled|smart\s*tv|inverter|no\s*frost)\b/i);
     if (techMatch) return techMatch[1].toUpperCase();
 
-    // Si tiene color registrado
-    if (product.color && product.color.trim()) {
-      return product.color.toUpperCase();
-    }
-
     if (product.unit && product.unit !== "Unidad" && product.unit !== "UNIDAD") {
       return product.unit.toUpperCase();
     }
-    return "EQUIPO ORIGINAL";
+    return "";
   }
 
   // 3. Farmacia

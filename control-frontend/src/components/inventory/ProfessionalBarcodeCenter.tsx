@@ -171,7 +171,7 @@ export const SingleLabelSticker: React.FC<{
             <span>{item.color}</span>
           </div>
         )}
-        {showBadge && item.specBadge && (
+        {showBadge && item.specBadge && item.specBadge.trim().toUpperCase() !== (item.color || "").trim().toUpperCase() && (
           <div className="border-2 border-black text-black text-[10px] font-black px-2 py-0.5 rounded-md tracking-wider uppercase bg-white">
             {item.specBadge}
           </div>
@@ -344,7 +344,12 @@ export default function ProfessionalBarcodeCenter({
   // Funciones de gestión de la cola de impresión
   const addToQueue = (product: Product, copies = 1, customSpec?: string) => {
     const spec = customSpec !== undefined ? customSpec : resolveItemBadge(product);
-    const color = resolveItemColor(product, customColorOverride);
+    // Solo aplicar customColorOverride si se está en modo manual y sobre el producto actualmente activo
+    const isManualForThisProd =
+      strategy === "custom_selection" &&
+      activeProduct?.id === product.id &&
+      Boolean(customColorOverride?.trim());
+    const color = isManualForThisProd ? customColorOverride.trim().toUpperCase() : resolveItemColor(product);
     const code = product.barcode || product.sku || String((product as any).customCode || 0).padStart(4, "0");
 
     setPrintQueue((prev) => {
@@ -380,6 +385,43 @@ export default function ProfessionalBarcodeCenter({
       duration: 2000,
     });
   };
+
+  // Reconciliación automática: limpia cualquier color o badge desactualizado/contaminado en localStorage
+  useEffect(() => {
+    if (products.length === 0 || printQueue.length === 0) return;
+    setPrintQueue((prev) => {
+      let changed = false;
+      const next = prev.map((item) => {
+        const fresh = products.find((p) => p.id === item.productId);
+        if (!fresh) return item;
+        const realColor = resolveItemColor(fresh);
+        const realSpec = resolveItemBadge(fresh);
+        const realPrice = Number(fresh.salePrice) || 0;
+        const realCode = fresh.barcode || fresh.sku || String((fresh as any).customCode || 0).padStart(4, "0");
+        const realStock = Number(fresh.stock) || 0;
+
+        if (
+          item.color !== realColor ||
+          item.specBadge !== realSpec ||
+          item.salePrice !== realPrice ||
+          item.sku !== realCode ||
+          item.stock !== realStock
+        ) {
+          changed = true;
+          return {
+            ...item,
+            color: realColor,
+            specBadge: realSpec,
+            salePrice: realPrice,
+            sku: realCode,
+            stock: realStock,
+          };
+        }
+        return item;
+      });
+      return changed ? next : prev;
+    });
+  }, [products]);
 
   const updateQueueCopies = (productId: string, copies: number) => {
     if (copies <= 0) {
@@ -717,7 +759,7 @@ export default function ProfessionalBarcodeCenter({
 
           // 3. COLOR, BADGE Y PRECIO (Clarísimo y bien pronunciado en papel térmico)
           const hasColor = showColor && Boolean(item.color);
-          const hasBadge = showBadge && Boolean(item.specBadge);
+          const hasBadge = showBadge && Boolean(item.specBadge) && item.specBadge.trim().toUpperCase() !== (item.color || "").trim().toUpperCase();
           const hasPrice = showPrice && Number(item.price) > 0;
           if (hasColor || hasBadge || hasPrice) {
             if (hasColor) {
@@ -858,7 +900,7 @@ export default function ProfessionalBarcodeCenter({
 
           // 3. COLOR, BADGE Y PRECIO (Clarísimo)
           const hasColor = showColor && Boolean(item.color);
-          const hasBadge = showBadge && Boolean(item.specBadge);
+          const hasBadge = showBadge && Boolean(item.specBadge) && item.specBadge.trim().toUpperCase() !== (item.color || "").trim().toUpperCase();
           const hasPrice = showPrice && Number(item.price) > 0;
           if (hasColor || hasBadge || hasPrice) {
             if (hasColor) {
