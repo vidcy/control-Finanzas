@@ -5063,13 +5063,11 @@ export default function BusinessInventoryPage() {
                   seriesConfig={seriesConfig}
                   onChange={(newCfg) => {
                     setSeriesConfig(newCfg);
-                    if (newCfg.salePricePerUnit > 0) {
-                      setFormData((prev) => ({
-                        ...prev,
-                        salePrice: newCfg.salePricePerUnit,
-                        costPrice: newCfg.costPricePerUnit > 0 ? newCfg.costPricePerUnit : prev.costPrice,
-                      }));
-                    }
+                    setFormData((prev) => ({
+                      ...prev,
+                      salePrice: newCfg.salePricePerUnit > 0 ? newCfg.salePricePerUnit : prev.salePrice,
+                      costPrice: newCfg.costPricePerUnit > 0 ? newCfg.costPricePerUnit : prev.costPrice,
+                    }));
                   }}
                   isEditing={Boolean(editingProduct)}
                 />

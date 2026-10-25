@@ -10,6 +10,8 @@ import {
   Check,
   AlertTriangle,
   X,
+  ArrowRightLeft,
+  Package,
 } from "lucide-react";
 import {
   STANDARD_SERIES_PRESETS,
@@ -85,6 +87,8 @@ export default function SeriesConfigurator({
   const [activePresetId, setActivePresetId] = useState<string | null>(null);
   const [showPresets, setShowPresets] = useState(false);
   const [sizeToRemove, setSizeToRemove] = useState<string | null>(null);
+  // Modo de ingreso: "SERIES" (por serie completa) o "UNIT" (por par/unidad)
+  const [priceMode, setPriceMode] = useState<"SERIES" | "UNIT">("SERIES");
 
   const {
     curve: rawCurve = [],
@@ -109,28 +113,43 @@ export default function SeriesConfigurator({
     }, 0);
   }, [curve, seriesStock]);
 
-  // Sincronizar cambios preservando cantidades de stock real
+  // Sincronizar cambios preservando cantidades de stock real y precios según el modo activo
   const syncNormalizedConfig = (newCurve: SizeRatio[], newSeriesStock?: number) => {
     const newTotalUnits = newCurve.reduce((acc, item) => acc + (Number(item.ratio) || 1), 0);
     const stockToUse = newSeriesStock !== undefined ? newSeriesStock : (seriesStock > 0 ? seriesStock : 1);
 
-    const newCostPerUnit =
-      newTotalUnits > 0 && costPricePerSeries > 0
-        ? Number((costPricePerSeries / newTotalUnits).toFixed(2))
-        : costPricePerUnit;
+    let newCostSeries = costPricePerSeries;
+    let newCostUnit = costPricePerUnit;
+    let newSaleSeries = salePricePerSeries;
+    let newSaleUnit = salePricePerUnit;
 
-    const newSalePerUnit =
-      newTotalUnits > 0 && salePricePerSeries > 0
-        ? Number((salePricePerSeries / newTotalUnits).toFixed(2))
-        : salePricePerUnit;
+    if (priceMode === "UNIT") {
+      // Modo por unidad: conserva precio unitario y recalcula el total de la serie
+      if (newTotalUnits > 0 && costPricePerUnit > 0) {
+        newCostSeries = Number((costPricePerUnit * newTotalUnits).toFixed(2));
+      }
+      if (newTotalUnits > 0 && salePricePerUnit > 0) {
+        newSaleSeries = Number((salePricePerUnit * newTotalUnits).toFixed(2));
+      }
+    } else {
+      // Modo por serie: conserva precio de serie y recalcula el precio por unidad
+      if (newTotalUnits > 0 && costPricePerSeries > 0) {
+        newCostUnit = Number((costPricePerSeries / newTotalUnits).toFixed(2));
+      }
+      if (newTotalUnits > 0 && salePricePerSeries > 0) {
+        newSaleUnit = Number((salePricePerSeries / newTotalUnits).toFixed(2));
+      }
+    }
 
     onChange({
       ...seriesConfig,
       unitsPerSeries: newTotalUnits,
       curve: newCurve,
       seriesStock: stockToUse,
-      costPricePerUnit: newCostPerUnit,
-      salePricePerUnit: newSalePerUnit,
+      costPricePerSeries: newCostSeries,
+      costPricePerUnit: newCostUnit,
+      salePricePerSeries: newSaleSeries,
+      salePricePerUnit: newSaleUnit,
     });
   };
 
@@ -241,7 +260,7 @@ export default function SeriesConfigurator({
     }
   };
 
-  // Handlers para precios y stock
+  // Handlers para precios y stock con cálculo bidireccional
   const handleCostSeriesChange = (costSeries: number) => {
     const safeCost = isNaN(costSeries) ? 0 : Math.max(0, costSeries);
     const costUnit =
@@ -252,6 +271,16 @@ export default function SeriesConfigurator({
       ...seriesConfig,
       costPricePerSeries: safeCost,
       costPricePerUnit: costUnit,
+    });
+  };
+
+  const handleCostUnitChange = (costUnit: number) => {
+    const safeUnit = isNaN(costUnit) ? 0 : Math.max(0, costUnit);
+    const calculatedSeries = Number((safeUnit * totalUnitsPerSeries).toFixed(2));
+    onChange({
+      ...seriesConfig,
+      costPricePerUnit: safeUnit,
+      costPricePerSeries: calculatedSeries,
     });
   };
 
@@ -268,14 +297,13 @@ export default function SeriesConfigurator({
     });
   };
 
-  const handleSaleUnitChange = (saleUnit: number) => {
+  const handleSaleUnitChange = (saleUnit: number, syncSeries = true) => {
     const safeUnit = isNaN(saleUnit) ? 0 : Math.max(0, saleUnit);
-    const recalculatedSeries = Number((safeUnit * totalUnitsPerSeries).toFixed(2));
+    const calculatedSeries = Number((safeUnit * totalUnitsPerSeries).toFixed(2));
     onChange({
       ...seriesConfig,
       salePricePerUnit: safeUnit,
-      salePricePerSeries:
-        salePricePerSeries > 0 ? salePricePerSeries : recalculatedSeries,
+      salePricePerSeries: syncSeries ? calculatedSeries : (salePricePerSeries > 0 ? salePricePerSeries : calculatedSeries),
     });
   };
 
@@ -574,10 +602,10 @@ export default function SeriesConfigurator({
         </div>
       </div>
 
-      {/* 3. Configuración de Stock Inicial, Taco y Precios de la Serie */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* 3. Configuración de Stock Inicial y Taco */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {/* Stock de Series */}
-        <div className="bg-white p-3 rounded-xl border border-indigo-100">
+        <div className="bg-white p-3 rounded-xl border border-indigo-100 shadow-2xs">
           <label className="block text-xs font-bold text-gray-700 mb-1">
             📦 Stock (Nº Series) *
           </label>
@@ -592,13 +620,13 @@ export default function SeriesConfigurator({
             className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-black text-indigo-700 focus:ring-2 focus:ring-indigo-500 outline-none"
             placeholder="Ej. 10 series"
           />
-          <p className="text-[10px] text-gray-400 mt-1">
-            = {totalPairsToRegister} pares totales
+          <p className="text-[10px] text-gray-400 mt-1 font-medium">
+            = {totalPairsToRegister} pares totales a registrar
           </p>
         </div>
 
         {/* Taco / Altura de Taco */}
-        <div className="bg-white p-3 rounded-xl border border-indigo-100">
+        <div className="bg-white p-3 rounded-xl border border-indigo-100 shadow-2xs">
           <label className="block text-xs font-bold text-gray-700 mb-1 flex items-center gap-1">
             👠 Taco / Altura
           </label>
@@ -619,77 +647,301 @@ export default function SeriesConfigurator({
             <option value="Cuña / Wedge">Cuña / Wedge</option>
             <option value="Aguja / Stiletto">Aguja / Stiletto</option>
           </select>
-          <p className="text-[10px] text-gray-400 mt-1">
-            Visible en tickets y filtros
+          <p className="text-[10px] text-gray-400 mt-1 font-medium">
+            Visible en etiquetas, tickets y filtros
           </p>
         </div>
+      </div>
 
-        {/* Precio Costo */}
-        <div className="bg-white p-3 rounded-xl border border-indigo-100">
-          <label className="block text-xs font-bold text-gray-700 mb-1">
-            P. Costo por Serie (S/)
-          </label>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            disabled={disabled}
-            value={costPricePerSeries || ""}
-            onChange={(e) => handleCostSeriesChange(e.target.valueAsNumber)}
-            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-bold text-gray-800 focus:ring-2 focus:ring-indigo-500 outline-none"
-            placeholder="Ej. 240.00"
-          />
-          <p className="text-[10px] text-gray-500 font-semibold mt-1">
-            Equivale a{" "}
-            <span className="text-gray-900 font-black">
-              S/ {costPricePerUnit.toFixed(2)}
-            </span>{" "}
-            costo por par
-          </p>
-        </div>
-
-        {/* Precios de Venta */}
-        <div className="bg-white p-3 rounded-xl border border-indigo-100">
-          <div className="flex justify-between items-center mb-1">
-            <label className="text-xs font-bold text-gray-700">
-              P. Venta Serie S/ (Mayoreo)
-            </label>
-            <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-1.5 rounded">
-              Serie
-            </span>
+      {/* 4. MODOS DE PRECIOS: POR SERIE COMPLETA O POR PAR / UNIDAD */}
+      <div className="bg-white p-3.5 sm:p-4 rounded-2xl border-2 border-indigo-200 shadow-xs space-y-3.5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-indigo-100">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center text-xs font-black">
+                S/
+              </span>
+              <h5 className="text-xs sm:text-sm font-black text-gray-900 uppercase tracking-tight">
+                Esquema de Precios de la Serie
+              </h5>
+            </div>
+            <p className="text-[11px] text-gray-500 font-medium mt-0.5">
+              Elige cómo compras/vendes esta mercadería ({totalUnitsPerSeries} pares por serie):
+            </p>
           </div>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            required
-            disabled={disabled}
-            value={salePricePerSeries || ""}
-            onChange={(e) => handleSaleSeriesChange(e.target.valueAsNumber)}
-            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-bold text-gray-800 focus:ring-2 focus:ring-indigo-500 outline-none"
-            placeholder="Ej. 360.00"
-          />
 
-          {/* Venta por Par Suelto */}
-          <div className="mt-2 pt-2 border-t border-gray-100">
-            <div className="flex justify-between items-center mb-1">
-              <label className="text-[11px] font-bold text-gray-700">
-                P. Venta por Par Suelto (S/)
-              </label>
-              <span className="text-[9px] font-bold text-amber-700 bg-amber-100 px-1 rounded">
-                Menudeo
+          {/* Selector de Modo de Precios */}
+          <div className="inline-flex p-1 bg-slate-100 rounded-xl border border-slate-200 shrink-0">
+            <button
+              type="button"
+              onClick={() => setPriceMode("SERIES")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+                priceMode === "SERIES"
+                  ? "bg-indigo-600 text-white shadow-xs"
+                  : "text-gray-600 hover:text-indigo-600"
+              }`}
+            >
+              <Package className="w-3.5 h-3.5" />
+              <span>Por Serie Completa</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setPriceMode("UNIT")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+                priceMode === "UNIT"
+                  ? "bg-indigo-600 text-white shadow-xs"
+                  : "text-gray-600 hover:text-indigo-600"
+              }`}
+            >
+              <ArrowRightLeft className="w-3.5 h-3.5" />
+              <span>Por Par / Unidad</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Tarjetas de Precios de Compra y Venta */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+          {/* PRECIO DE COMPRA / COSTO */}
+          <div className="bg-slate-50/80 p-3.5 rounded-xl border border-slate-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                Precio de Costo / Compra
+              </span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
+                {priceMode === "UNIT" ? "Entrada por Par ➔ Calcula Serie" : "Entrada por Serie ➔ Calcula Par"}
               </span>
             </div>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              disabled={disabled}
-              value={salePricePerUnit || ""}
-              onChange={(e) => handleSaleUnitChange(e.target.valueAsNumber)}
-              className="w-full px-2.5 py-1.5 border border-amber-200 bg-amber-50/30 rounded-lg text-xs font-bold text-amber-900 focus:ring-2 focus:ring-amber-500 outline-none"
-              placeholder="Ej. 65.00"
-            />
+
+            {priceMode === "UNIT" ? (
+              <>
+                {/* Modo UNIT: Usuario ingresa costo por par */}
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-xs font-black text-emerald-800">
+                      P. Compra por Par / Unidad (S/) *
+                    </label>
+                    <span className="text-[9px] font-black uppercase tracking-wider bg-emerald-600 text-white px-1.5 py-0.5 rounded">
+                      Principal
+                    </span>
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    disabled={disabled}
+                    value={costPricePerUnit || ""}
+                    onChange={(e) => handleCostUnitChange(e.target.valueAsNumber)}
+                    className="w-full px-3 py-2 bg-white border-2 border-emerald-400 text-emerald-950 rounded-lg text-base font-black focus:ring-2 focus:ring-emerald-500 outline-none shadow-2xs"
+                    placeholder="Ej. 40.00"
+                  />
+                </div>
+
+                {/* Resultado automático: Costo por serie */}
+                <div className="pt-2 border-t border-slate-200">
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-xs font-bold text-gray-700 flex items-center gap-1">
+                      <ArrowRightLeft className="w-3 h-3 text-indigo-500" />
+                      P. Costo por Serie Completa (S/)
+                    </label>
+                    <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
+                      Autocalculado
+                    </span>
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    disabled={disabled}
+                    value={costPricePerSeries || ""}
+                    onChange={(e) => handleCostSeriesChange(e.target.valueAsNumber)}
+                    className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-sm font-bold text-gray-800 focus:ring-2 focus:ring-indigo-500 outline-none"
+                    placeholder="Ej. 240.00"
+                  />
+                  <p className="text-[10px] text-gray-500 font-semibold mt-1">
+                    ⚡ {totalUnitsPerSeries} pares × S/ {(costPricePerUnit || 0).toFixed(2)} ={" "}
+                    <strong className="text-emerald-700 font-black">
+                      S/ {(costPricePerSeries || 0).toFixed(2)}
+                    </strong>{" "}
+                    costo total de la serie
+                  </p>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Modo SERIES: Usuario ingresa costo por serie */}
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-xs font-black text-indigo-900">
+                      P. Costo por Serie Completa (S/) *
+                    </label>
+                    <span className="text-[9px] font-black uppercase tracking-wider bg-indigo-600 text-white px-1.5 py-0.5 rounded">
+                      Principal
+                    </span>
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    disabled={disabled}
+                    value={costPricePerSeries || ""}
+                    onChange={(e) => handleCostSeriesChange(e.target.valueAsNumber)}
+                    className="w-full px-3 py-2 bg-white border-2 border-indigo-400 text-indigo-950 rounded-lg text-base font-black focus:ring-2 focus:ring-indigo-500 outline-none shadow-2xs"
+                    placeholder="Ej. 240.00"
+                  />
+                </div>
+
+                {/* Resultado automático: Costo por par */}
+                <div className="pt-2 border-t border-slate-200">
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-xs font-bold text-gray-700 flex items-center gap-1">
+                      <ArrowRightLeft className="w-3 h-3 text-emerald-500" />
+                      Equivale a Costo por Par / Unidad (S/)
+                    </label>
+                    <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">
+                      Autocalculado
+                    </span>
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    disabled={disabled}
+                    value={costPricePerUnit || ""}
+                    onChange={(e) => handleCostUnitChange(e.target.valueAsNumber)}
+                    className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-sm font-bold text-gray-800 focus:ring-2 focus:ring-emerald-500 outline-none"
+                    placeholder="Ej. 40.00"
+                  />
+                  <p className="text-[10px] text-gray-500 font-semibold mt-1">
+                    ⚡ S/ {(costPricePerSeries || 0).toFixed(2)} ÷ {totalUnitsPerSeries} pares ={" "}
+                    <strong className="text-indigo-700 font-black">
+                      S/ {(costPricePerUnit || 0).toFixed(2)}
+                    </strong>{" "}
+                    costo unitario
+                  </p>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* PRECIO DE VENTA */}
+          <div className="bg-slate-50/80 p-3.5 rounded-xl border border-slate-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                Precios de Venta
+              </span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200">
+                {priceMode === "UNIT" ? "Entrada por Par ➔ Calcula Serie" : "Entrada por Serie ➔ Calcula Par"}
+              </span>
+            </div>
+
+            {priceMode === "UNIT" ? (
+              <>
+                {/* Modo UNIT: Usuario ingresa venta por par */}
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-xs font-black text-blue-900">
+                      P. Venta por Par / Unidad (S/) *
+                    </label>
+                    <span className="text-[9px] font-black uppercase tracking-wider bg-blue-600 text-white px-1.5 py-0.5 rounded">
+                      Principal
+                    </span>
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    disabled={disabled}
+                    value={salePricePerUnit || ""}
+                    onChange={(e) => handleSaleUnitChange(e.target.valueAsNumber, true)}
+                    className="w-full px-3 py-2 bg-white border-2 border-blue-400 text-blue-950 rounded-lg text-base font-black focus:ring-2 focus:ring-blue-500 outline-none shadow-2xs"
+                    placeholder="Ej. 60.00"
+                  />
+                </div>
+
+                {/* Resultado automático: Venta por serie completa */}
+                <div className="pt-2 border-t border-slate-200">
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-xs font-bold text-gray-700 flex items-center gap-1">
+                      <ArrowRightLeft className="w-3 h-3 text-indigo-500" />
+                      P. Venta Serie Completa S/ (Mayoreo)
+                    </label>
+                    <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
+                      Autocalculado
+                    </span>
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    disabled={disabled}
+                    value={salePricePerSeries || ""}
+                    onChange={(e) => handleSaleSeriesChange(e.target.valueAsNumber)}
+                    className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-sm font-bold text-gray-800 focus:ring-2 focus:ring-indigo-500 outline-none"
+                    placeholder="Ej. 360.00"
+                  />
+                  <p className="text-[10px] text-gray-500 font-semibold mt-1">
+                    ⚡ {totalUnitsPerSeries} pares × S/ {(salePricePerUnit || 0).toFixed(2)} ={" "}
+                    <strong className="text-blue-700 font-black">
+                      S/ {(salePricePerSeries || 0).toFixed(2)}
+                    </strong>{" "}
+                    precio total serie
+                  </p>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Modo SERIES: Usuario ingresa venta por serie */}
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-xs font-black text-indigo-900">
+                      P. Venta Serie S/ (Mayoreo) *
+                    </label>
+                    <span className="text-[9px] font-black uppercase tracking-wider bg-indigo-600 text-white px-1.5 py-0.5 rounded">
+                      Principal
+                    </span>
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    required
+                    disabled={disabled}
+                    value={salePricePerSeries || ""}
+                    onChange={(e) => handleSaleSeriesChange(e.target.valueAsNumber)}
+                    className="w-full px-3 py-2 bg-white border-2 border-indigo-400 text-indigo-950 rounded-lg text-base font-black focus:ring-2 focus:ring-indigo-500 outline-none shadow-2xs"
+                    placeholder="Ej. 360.00"
+                  />
+                </div>
+
+                {/* Venta por par suelto / menudeo */}
+                <div className="pt-2 border-t border-slate-200">
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-xs font-bold text-gray-700 flex items-center gap-1">
+                      <ArrowRightLeft className="w-3 h-3 text-amber-500" />
+                      P. Venta por Par Suelto (S/) (Menudeo)
+                    </label>
+                    <span className="text-[9px] font-bold text-amber-700 bg-amber-100 px-1 rounded">
+                      Menudeo
+                    </span>
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    disabled={disabled}
+                    value={salePricePerUnit || ""}
+                    onChange={(e) => handleSaleUnitChange(e.target.valueAsNumber, false)}
+                    className="w-full px-3 py-1.5 border border-amber-200 bg-amber-50/30 rounded-lg text-sm font-bold text-amber-900 focus:ring-2 focus:ring-amber-500 outline-none"
+                    placeholder="Ej. 65.00"
+                  />
+                  <p className="text-[10px] text-gray-500 font-semibold mt-1">
+                    Equivale en serie a: S/ {((salePricePerSeries || 0) / (totalUnitsPerSeries || 1)).toFixed(2)} / par
+                  </p>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
