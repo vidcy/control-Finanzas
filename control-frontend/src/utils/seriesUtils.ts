@@ -158,8 +158,6 @@ export function calculateCurveTotalUnits(curve: SizeRatio[]): number {
   return curve.reduce((acc, item) => {
     const r = Number(item.ratio);
     if (!isNaN(r) && r > 0) return acc + r;
-    const s = Number(item.stock);
-    if (!isNaN(s) && s > 0) return acc + s;
     return acc + 1;
   }, 0);
 }
@@ -998,19 +996,39 @@ export function groupProductsBySeries(products: any[], activeBranchId?: string):
       }));
     }
 
+    // Inspect presentations for explicit "Serie Completa (X pares)" or equivalence
+    let presUnits = 0;
+    for (const v of group.variants) {
+      if (Array.isArray(v.presentations)) {
+        const sPres = v.presentations.find(
+          (pr: any) =>
+            (Number(pr.equivalence) > 1 && String(pr.name || "").toLowerCase().includes("serie")) ||
+            String(pr.name || "").toLowerCase().includes("serie completa")
+        );
+        if (sPres && Number(sPres.equivalence) > 1) {
+          presUnits = Number(sPres.equivalence);
+          break;
+        }
+      }
+    }
+
     // 3. True total units in 1 series curve
     const curveTotal = calculateCurveTotalUnits(group.curve);
     if (curveTotal > 0) {
       group.unitsPerSeries = curveTotal;
     } else if (bestMeta?.unitsPerSeries && bestMeta.unitsPerSeries > 0) {
       group.unitsPerSeries = bestMeta.unitsPerSeries;
+    } else if (presUnits > 0) {
+      group.unitsPerSeries = presUnits;
     } else {
       group.unitsPerSeries = Math.max(1, group.variants.length);
     }
 
-    // If bestMeta specified a larger total unit count (e.g. 6) than distinct curve sizes (e.g. 5)
     if (bestMeta?.unitsPerSeries && bestMeta.unitsPerSeries > group.unitsPerSeries) {
       group.unitsPerSeries = bestMeta.unitsPerSeries;
+    }
+    if (presUnits > group.unitsPerSeries) {
+      group.unitsPerSeries = presUnits;
     }
 
     // 4. Exact pricing & cost calculation per series
@@ -1033,22 +1051,44 @@ export function groupProductsBySeries(products: any[], activeBranchId?: string):
       : Number((unitCost * group.unitsPerSeries).toFixed(2));
 
     // 5. Complete series stock summary with real branch/global stock
-    const sizesData = group.variants.map((v) => {
+    // Aggregate multiple variant records per size to preserve accurate cumulative stock
+    const sizeMapData = new Map<string, { size: string; stock: number; ratio: number; productId?: string; salePrice?: number; costPrice?: number }>();
+
+    group.variants.forEach((v) => {
       const vSize = extractSizeFromProduct(v);
+      if (!vSize) return;
       const vBranchStock = activeBranchId
         ? (v.branchStocks?.find((bs: any) => bs.branchId === activeBranchId)?.stock ?? 0)
         : v.stock;
       const vRatio = group.curve.find((c) => String(c.size).trim() === String(vSize).trim())?.ratio || 1;
-      return {
-        size: vSize,
-        stock: Number(vBranchStock) || 0,
-        ratio: vRatio,
-        productId: v.id,
-        salePrice: v.salePrice,
-        costPrice: v.costPrice,
-      };
+
+      if (sizeMapData.has(vSize)) {
+        const existing = sizeMapData.get(vSize)!;
+        existing.stock += Math.max(0, Number(vBranchStock) || 0);
+      } else {
+        sizeMapData.set(vSize, {
+          size: vSize,
+          stock: Math.max(0, Number(vBranchStock) || 0),
+          ratio: vRatio,
+          productId: v.id,
+          salePrice: Number(v.salePrice) || 0,
+          costPrice: Number(v.costPrice) || 0,
+        });
+      }
     });
 
+    // Also ensure all curve sizes are represented
+    group.curve.forEach((c) => {
+      if (!sizeMapData.has(c.size)) {
+        sizeMapData.set(c.size, {
+          size: c.size,
+          stock: 0,
+          ratio: c.ratio || 1,
+        });
+      }
+    });
+
+    const sizesData = Array.from(sizeMapData.values());
     group.summary = computeSeriesStockSummary(sizesData, group.curve);
   });
 

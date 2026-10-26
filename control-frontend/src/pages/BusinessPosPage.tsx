@@ -136,6 +136,162 @@ const parseDescription = (desc: string) => {
   ];
 };
 
+const PosSizeScrollRail: React.FC<{
+  sizes: Array<{
+    size: string;
+    stock: number;
+    ratio: number;
+    isLimiting: boolean;
+  }>;
+  completeSeries: number;
+  onSelectSize: (size: string) => void;
+}> = ({ sizes, completeSeries, onSelectSize }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const scrollAnimRef = useRef<number | null>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const checkScroll = () => {
+    const el = containerRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 4);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+  };
+
+  useEffect(() => {
+    checkScroll();
+  }, [sizes]);
+
+  const stopAutoScroll = () => {
+    if (scrollAnimRef.current !== null) {
+      cancelAnimationFrame(scrollAnimRef.current);
+      scrollAnimRef.current = null;
+    }
+  };
+
+  const startAutoScroll = (direction: -1 | 1, speed: number = 3.5) => {
+    stopAutoScroll();
+    const step = () => {
+      if (containerRef.current) {
+        containerRef.current.scrollLeft += direction * speed;
+        checkScroll();
+      }
+      scrollAnimRef.current = requestAnimationFrame(step);
+    };
+    scrollAnimRef.current = requestAnimationFrame(step);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const el = containerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const mouseX = e.clientX;
+    const edgeZone = 40;
+
+    if (mouseX <= rect.left + edgeZone) {
+      const dist = Math.max(1, mouseX - rect.left);
+      const speed = Math.max(2, 6 - dist / 10);
+      startAutoScroll(-1, speed);
+    } else if (mouseX >= rect.right - edgeZone) {
+      const dist = Math.max(1, rect.right - mouseX);
+      const speed = Math.max(2, 6 - dist / 10);
+      startAutoScroll(1, speed);
+    } else {
+      stopAutoScroll();
+    }
+  };
+
+  return (
+    <div
+      className="relative group/rail py-1"
+      onMouseMove={handleMouseMove}
+      onMouseLeave={stopAutoScroll}
+    >
+      {canScrollLeft && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (containerRef.current) {
+              containerRef.current.scrollBy({ left: -80, behavior: "smooth" });
+            }
+          }}
+          className="absolute -left-1 top-1/2 -translate-y-1/2 z-10 w-5 h-6 bg-amber-600/90 hover:bg-amber-700 text-white rounded-r flex items-center justify-center text-[10px] shadow-sm transition-all cursor-pointer"
+          title="Tallas anteriores"
+        >
+          ‹
+        </button>
+      )}
+
+      <div
+        ref={containerRef}
+        onScroll={checkScroll}
+        onWheel={(e) => {
+          if (containerRef.current && e.deltaY !== 0) {
+            containerRef.current.scrollLeft += e.deltaY;
+            checkScroll();
+          }
+        }}
+        className="flex gap-1.5 overflow-x-auto no-scrollbar py-0.5 scroll-smooth select-none"
+      >
+        {sizes.map((s) => {
+          const hasStock = s.stock > 0;
+          const isMultiple = Boolean(s.ratio && s.ratio > 1);
+          return (
+            <button
+              key={s.size}
+              type="button"
+              disabled={!hasStock}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectSize(s.size);
+              }}
+              className={`min-w-[44px] h-[32px] px-2 py-0.5 rounded-lg border text-xs font-black transition-all flex items-center justify-center gap-1 shrink-0 shadow-2xs ${
+                hasStock
+                  ? s.isLimiting && completeSeries > 0
+                    ? "bg-amber-100/90 hover:bg-amber-200 text-amber-950 border-amber-300 hover:scale-105 active:scale-95 cursor-pointer"
+                    : "bg-white hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-400 text-slate-800 border-gray-200 hover:scale-105 active:scale-95 cursor-pointer"
+                  : "bg-gray-100 text-gray-300 border-gray-200 cursor-not-allowed line-through"
+              }`}
+              title={
+                hasStock
+                  ? `Vender 1 par Talla ${s.size}${isMultiple ? ` (${s.ratio} pares por serie)` : ""} - Stock: ${s.stock}`
+                  : `Talla ${s.size} agotada`
+              }
+            >
+              <span>{s.size}</span>
+              {isMultiple && (
+                <span className="text-[8px] px-1 py-0.2 bg-amber-200/90 text-amber-900 rounded font-black">
+                  x{s.ratio}
+                </span>
+              )}
+              <span className={`text-[10px] font-mono ${hasStock ? "text-gray-500 font-bold" : "text-gray-300"}`}>
+                ({s.stock})
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {canScrollRight && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (containerRef.current) {
+              containerRef.current.scrollBy({ left: 80, behavior: "smooth" });
+            }
+          }}
+          className="absolute -right-1 top-1/2 -translate-y-1/2 z-10 w-5 h-6 bg-amber-600/90 hover:bg-amber-700 text-white rounded-l flex items-center justify-center text-[10px] shadow-sm transition-all cursor-pointer"
+          title="Ver más tallas"
+        >
+          ›
+        </button>
+      )}
+    </div>
+  );
+};
+
 interface CartItem extends Product {
   quantity: number;
   presentationId?: string;
@@ -1169,9 +1325,14 @@ export default function BusinessPosPage() {
       return;
     }
     if (cart.length === 0) return;
-    if (!selectedCategory) {
-      toast.error("Selecciona una Categoría de Ingreso");
-      return;
+    // Pre-seleccionar categoría contable si aún no está elegida
+    if (!selectedCategory && categories.length > 0) {
+      const defaultCat = categories.find((c) => /venta|ingreso/i.test(c.name)) || categories[0];
+      if (defaultCat) {
+        setSelectedCategory(defaultCat.id);
+        const firstSub = defaultCat.children?.[0]?.id || "";
+        setSelectedSubCategory(firstSub);
+      }
     }
     setAmountPaid(total.toString());
     setIsCheckoutOpen(true);
@@ -1878,86 +2039,99 @@ export default function BusinessPosPage() {
     )
   );
 
-  const filteredProducts = products.filter((p) => {
+  const allGroupedCatalog = useMemo(() => {
+    return groupProductsBySeries(products, activeShift?.branchId);
+  }, [products, activeShift?.branchId]);
+
+  const groupedCatalog = useMemo(() => {
     const term = searchTerm.toLowerCase().trim();
     const cleanTerm = term.replace(/^#/, "");
 
-    // Extraer valores para Marca, Talla, Color, Taco y Grupo/Familia
-    const pMarca = String(
-      (p as any).brand?.name || (p as any).brand || (p as any).marca || ""
-    ).toLowerCase();
-    const pTalla = String(
-      extractSizeFromProduct(p) || (p as any).size || (p as any).talla || ""
-    ).toLowerCase();
-    const pColor = String(p.color || "").toLowerCase();
-    const pTaco = String(extractTacoFromProduct(p) || "").toLowerCase();
-    const pGrupo = String(
-      (p as any).group ||
-      (p as any).family?.name ||
-      (p as any).family ||
-      (p as any).grupo ||
-      (p as any).category?.name ||
-      ""
-    ).toLowerCase();
+    return allGroupedCatalog.filter((item) => {
+      // 1. FILTRO DE BÚSQUEDA UNIVERSAL
+      let matchesSearch = true;
+      if (term) {
+        const matchesModel = item.modelName.toLowerCase().includes(term);
+        const matchesBrand = (item.brandName || "").toLowerCase().includes(term);
+        const matchesColor = (item.color || "").toLowerCase().includes(term);
+        const matchesTaco = (item.taco || "").toLowerCase().includes(term);
+        const matchesFamily = (item.familyName || "").toLowerCase().includes(term);
+        const matchesCodeRaw =
+          item.customCode &&
+          (String(item.customCode) === term || String(item.customCode) === cleanTerm);
+        const matchesCodePadded =
+          item.customCode &&
+          (String(item.customCode).padStart(4, "0") === term ||
+            String(item.customCode).padStart(4, "0") === cleanTerm);
+        const matchesSku = item.sku && item.sku.toLowerCase().includes(term);
 
-    // 1. LÓGICA DE BÚSQUEDA POR TEXTO UNIVERSAL
-    let matchesSearch = true;
-    if (term) {
-      const matchesName = p.name.toLowerCase().includes(term);
-      const matchesSku = p.sku && p.sku.toLowerCase().includes(term);
-      const matchesCodeRaw =
-        (p as any).customCode &&
-        (String((p as any).customCode) === term ||
-          String((p as any).customCode) === cleanTerm);
-      const matchesCodePadded =
-        (p as any).customCode &&
-        (String((p as any).customCode).padStart(4, "0") === term ||
-          String((p as any).customCode).padStart(4, "0") === cleanTerm);
+        const matchesAnyVariant = item.variants.some((v) => {
+          const vName = (v.name || "").toLowerCase();
+          const vSku = (v.sku || "").toLowerCase();
+          const vSize = String(extractSizeFromProduct(v) || "").toLowerCase();
+          return (
+            vName.includes(term) ||
+            vSku.includes(term) ||
+            vSize === term ||
+            `talla ${vSize}`.includes(term)
+          );
+        });
 
-      const matchesMarcaText = pMarca.includes(term);
-      const matchesTallaText = pTalla.includes(term);
-      const matchesGrupoText = pGrupo.includes(term);
-      const matchesColorText = pColor.includes(term);
-      const matchesTacoText = pTaco.includes(term);
+        matchesSearch =
+          matchesModel ||
+          matchesBrand ||
+          matchesColor ||
+          matchesTaco ||
+          matchesFamily ||
+          matchesCodeRaw ||
+          matchesCodePadded ||
+          matchesSku ||
+          matchesAnyVariant;
+      }
 
-      matchesSearch =
-        matchesName ||
-        matchesSku ||
-        matchesCodeRaw ||
-        matchesCodePadded ||
-        matchesMarcaText ||
-        matchesTallaText ||
-        matchesGrupoText ||
-        matchesColorText ||
-        matchesTacoText;
-    }
+      // 2. FILTROS POR DESPLEGABLE
+      const itemMarca = (item.brandName || "").toLowerCase();
+      const matchesSelectedMarca = !selectedMarca || itemMarca === selectedMarca.toLowerCase();
 
-    // 2. FILTROS POR DESPLEGABLE (Dropdowns)
-    const matchesSelectedMarca =
-      !selectedMarca || pMarca === selectedMarca.toLowerCase();
-    const matchesSelectedTalla =
-      !selectedTalla || pTalla === selectedTalla.toLowerCase();
-    const matchesSelectedColor =
-      !selectedColor || pColor === selectedColor.toLowerCase();
-    const matchesSelectedTaco =
-      !selectedTaco || pTaco === selectedTaco.toLowerCase();
-    const matchesSelectedGrupo =
-      !selectedGrupo || pGrupo === selectedGrupo.toLowerCase();
+      const itemColor = (item.color || "").toLowerCase();
+      const matchesSelectedColor = !selectedColor || itemColor === selectedColor.toLowerCase();
 
-    // Cumple la búsqueda de texto Y los desplegables seleccionados
-    return (
-      matchesSearch &&
-      matchesSelectedMarca &&
-      matchesSelectedTalla &&
-      matchesSelectedColor &&
-      matchesSelectedTaco &&
-      matchesSelectedGrupo
-    );
-  });
+      const itemTaco = (item.taco || "").toLowerCase();
+      const matchesSelectedTaco = !selectedTaco || itemTaco === selectedTaco.toLowerCase();
 
-  const groupedCatalog = useMemo(() => {
-    return groupProductsBySeries(filteredProducts, activeShift?.branchId);
-  }, [filteredProducts, activeShift?.branchId]);
+      const itemGrupo = (item.familyName || "").toLowerCase();
+      const matchesSelectedGrupo = !selectedGrupo || itemGrupo === selectedGrupo.toLowerCase();
+
+      let matchesSelectedTalla = true;
+      if (selectedTalla) {
+        const normSelected = selectedTalla.toLowerCase().trim();
+        matchesSelectedTalla =
+          item.summary.sizes.some(
+            (s) => s.size.toLowerCase().trim() === normSelected
+          ) ||
+          item.variants.some(
+            (v) => String(extractSizeFromProduct(v) || "").toLowerCase().trim() === normSelected
+          );
+      }
+
+      return (
+        matchesSearch &&
+        matchesSelectedMarca &&
+        matchesSelectedTalla &&
+        matchesSelectedColor &&
+        matchesSelectedTaco &&
+        matchesSelectedGrupo
+      );
+    });
+  }, [
+    allGroupedCatalog,
+    searchTerm,
+    selectedMarca,
+    selectedTalla,
+    selectedColor,
+    selectedTaco,
+    selectedGrupo,
+  ]);
 
   const paymentLabel: Record<string, string> = {
     CASH: "Efectivo",
@@ -2580,39 +2754,47 @@ export default function BusinessPosPage() {
                     return (
                       <div
                         key={item.groupKey}
-                        className="bg-white rounded-2xl border-2 border-amber-200/90 hover:border-amber-400 hover:shadow-lg transition-all flex flex-col justify-between overflow-hidden shadow-xs relative group h-[320px]"
+                        className="bg-white rounded-2xl border-2 border-amber-200/90 hover:border-amber-400 hover:shadow-lg transition-all flex flex-col overflow-hidden shadow-xs relative group h-[390px]"
                       >
-                        {/* Contenedor de la Imagen */}
-                        <div className="w-full h-28 bg-gradient-to-br from-amber-50/60 via-slate-50 to-orange-50/40 overflow-hidden relative rounded-t-2xl border-b border-amber-100 flex items-center justify-center">
-                          {/* Badges Principales: Código Único + Serie + Taco */}
-                          <div className="absolute top-2 left-2 z-20 flex flex-wrap gap-1 items-center max-w-[75%]">
-                            {item.customCode ? (
-                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase bg-slate-900/90 text-amber-300 shadow-sm border border-amber-400/40">
-                                #{String(item.customCode).padStart(4, "0")}
+                        {/* Contenedor de la Imagen con zoom interactivo y altura dinámica */}
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPosLightboxProduct(item);
+                          }}
+                          className="w-full flex-1 min-h-[140px] bg-gradient-to-br from-amber-50/60 via-slate-50 to-orange-50/40 overflow-hidden relative rounded-t-2xl border-b border-amber-100 flex items-center justify-center p-2 cursor-zoom-in"
+                          title="Clic en la foto para ver en detalle"
+                        >
+                          {/* Top Bar: Badges Izquierda y Color Derecha (Sin colisiones ni superposiciones) */}
+                          <div className="absolute top-2 inset-x-2 z-20 flex items-center justify-between gap-1 pointer-events-none">
+                            <div className="flex items-center gap-1 min-w-0 flex-wrap pointer-events-auto">
+                              {item.customCode ? (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase bg-slate-900/90 text-amber-300 shadow-sm border border-amber-400/40 shrink-0">
+                                  #{String(item.customCode).padStart(4, "0")}
+                                </span>
+                              ) : null}
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase bg-amber-600 text-white shadow-xs shrink-0">
+                                📦 Serie: {item.unitsPerSeries}p
                               </span>
-                            ) : null}
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9.5px] font-black uppercase bg-amber-600 text-white shadow-xs">
-                              📦 Serie: {item.unitsPerSeries}p
-                            </span>
-                            {item.taco && (
-                              <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded-md text-[9px] font-bold bg-pink-600 text-white shadow-xs">
-                                👠 {item.taco}
-                              </span>
+                              {item.taco && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-pink-600 text-white shadow-xs shrink-0">
+                                  👠 {item.taco}
+                                </span>
+                              )}
+                            </div>
+
+                            {item.color && (
+                              <div className="shrink-0 pointer-events-auto max-w-[45%]">
+                                <ProductColorBadge color={item.color} size="xs" />
+                              </div>
                             )}
                           </div>
-
-                          {/* Color del calzado con nombre y círculo */}
-                          {item.color && (
-                            <div className="absolute top-2 right-2 z-20">
-                              <ProductColorBadge color={item.color} size="xs" />
-                            </div>
-                          )}
 
                           {item.imageUrl ? (
                             <img
                               src={getReceiptAbsoluteUrl(item.imageUrl) || item.imageUrl}
                               alt={item.modelName}
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
                               onError={(e) => {
                                 (e.target as HTMLImageElement).style.display = "none";
                               }}
@@ -2624,7 +2806,8 @@ export default function BusinessPosPage() {
                           )}
                         </div>
 
-                        <div className="p-2.5 flex-1 flex flex-col justify-between overflow-hidden">
+                        {/* Contenido inferior compacto: Flujo continuo sin espacios en blanco */}
+                        <div className="p-3 bg-white shrink-0 flex flex-col gap-2">
                           <div>
                             <div className="flex items-center justify-between gap-1 mb-1">
                               <h3
@@ -2640,71 +2823,61 @@ export default function BusinessPosPage() {
                               )}
                             </div>
 
-                            {/* Stock Real-Time Summary */}
-                            <div className="flex items-center justify-between text-[10px] font-black px-2 py-1 bg-amber-50/90 text-amber-900 rounded-lg border border-amber-200/70 mb-1.5">
-                              <span>🏆 {item.summary.completeSeries} {item.summary.completeSeries === 1 ? "Serie" : "Series"}</span>
-                              <span className="text-amber-700 font-bold text-[9px]">
-                                {item.summary.looseUnits > 0 ? `+${item.summary.looseUnits} sueltos` : "Curva completa"}
-                              </span>
+                            {/* Stock Real-Time Summary con desglose exacto */}
+                            <div className="bg-amber-50/90 border border-amber-200/80 rounded-xl px-2 py-1 mb-1.5 space-y-0.5">
+                              <div className="flex items-center justify-between text-[10px] font-black text-amber-950">
+                                <span className="flex items-center gap-1">
+                                  <span className="text-amber-700 font-extrabold">👟 Stock:</span> {item.summary.totalUnits} {item.summary.totalUnits === 1 ? "par" : "pares"}
+                                </span>
+                                <span className="text-amber-700 font-extrabold">
+                                  {item.summary.completeSeries > 0
+                                    ? `🏆 ${item.summary.completeSeries} ${item.summary.completeSeries === 1 ? "Serie" : "Series"}`
+                                    : "⚠️ Incompleta"}
+                                </span>
+                              </div>
+                              <div className="text-[9px] font-bold text-amber-800/80 flex items-center justify-between">
+                                <span className="truncate">
+                                  {item.summary.completeSeries > 0
+                                    ? item.summary.looseUnits > 0
+                                      ? `+${item.summary.looseUnits} sueltos extra`
+                                      : "Curva completa exacta"
+                                    : `${item.summary.totalUnits} sueltos en tienda`}
+                                </span>
+                                <span className="text-amber-600 font-mono shrink-0">({item.unitsPerSeries}p/serie)</span>
+                              </div>
                             </div>
 
-                            {/* Size Pills (Venta por Talla Suelta) */}
+                            {/* Size Pills con PosSizeScrollRail (Desplazamiento horizontal automático al acercar el cursor al borde) */}
                             <div>
-                              <div className="text-[8px] font-bold text-gray-400 uppercase tracking-wider flex justify-between mb-0.5">
-                                <span>Talla Suelta:</span>
+                              <div className="text-[9px] font-black text-gray-500 uppercase tracking-wider flex justify-between items-center mb-0.5">
+                                <span>Tallas Sueltas:</span>
                                 {item.summary.sizes.some((s) => s.isLimiting && item.summary.completeSeries > 0) && (
-                                  <span className="text-amber-600">● Limita serie</span>
+                                  <span className="text-amber-600 text-[8.5px] font-extrabold">● Limita serie</span>
                                 )}
                               </div>
-                              <div className="flex gap-1 overflow-x-auto pb-1 no-scrollbar max-w-full">
-                                {item.summary.sizes.map((s) => {
-                                  const hasStock = s.stock > 0;
-                                  const isMultiple = Boolean(s.ratio && s.ratio > 1);
-                                  return (
-                                    <button
-                                      key={s.size}
-                                      type="button"
-                                      disabled={!hasStock}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        const variantProd =
-                                          item.variants.find(
-                                            (v) => extractSizeFromProduct(v) === s.size
-                                          ) || item.primaryProduct;
-                                        addToCart(variantProd);
-                                        toast.success(`🛒 Agregado: ${variantProd.name}`);
-                                        playBeep();
-                                      }}
-                                      className={`text-[9.5px] font-black px-1.5 py-0.5 rounded border transition-all flex items-center gap-0.5 shrink-0 ${hasStock
-                                        ? s.isLimiting && item.summary.completeSeries > 0
-                                          ? "bg-amber-100 hover:bg-amber-200 text-amber-950 border-amber-300"
-                                          : "bg-white hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-300 text-gray-800 border-gray-200"
-                                        : "bg-gray-100 text-gray-300 border-gray-200 cursor-not-allowed line-through"
-                                        }`}
-                                      title={
-                                        hasStock
-                                          ? `Vender 1 par Talla ${s.size}${isMultiple ? ` (${s.ratio} pares por serie)` : ""} a S/ ${(item.hasOffer && item.adjustedPrice ? item.adjustedPrice : item.salePricePerUnit).toFixed(2)} (Stock: ${s.stock})`
-                                          : `Talla ${s.size} agotada`
-                                      }
-                                    >
-                                      <span>T.{s.size}{isMultiple ? ` (x${s.ratio})` : ""}</span>
-                                      <span className={`font-mono ${hasStock ? "text-gray-500 font-bold" : "text-gray-300"}`}>
-                                        ({s.stock})
-                                      </span>
-                                    </button>
-                                  );
-                                })}
-                              </div>
+                              <PosSizeScrollRail
+                                sizes={item.summary.sizes}
+                                completeSeries={item.summary.completeSeries}
+                                onSelectSize={(sz) => {
+                                  const variantProd =
+                                    item.variants.find(
+                                      (v) => String(extractSizeFromProduct(v)).trim() === String(sz).trim()
+                                    ) || item.primaryProduct;
+                                  addToCart(variantProd);
+                                  toast.success(`🛒 Agregado: ${variantProd.name}`);
+                                  playBeep();
+                                }}
+                              />
                             </div>
                           </div>
 
-                          {/* Precios y Botón Serie Compacto */}
-                          <div className="border-t border-amber-100 pt-1.5 mt-auto flex items-center justify-between gap-2">
+                          {/* Precios y Botón Serie Compacto: De seguido inmediato tras las tallas */}
+                          <div className="border-t border-amber-100 pt-2 flex items-center justify-between gap-2">
                             <div className="min-w-0">
-                              <div className="text-[8.5px] font-bold text-gray-500 uppercase tracking-tight">
-                                Par: <span className="font-black text-slate-800">S/ {(item.hasOffer && item.adjustedPrice ? item.adjustedPrice : item.salePricePerUnit).toFixed(2)}</span>
+                              <div className="text-[9px] font-bold text-gray-500 uppercase tracking-tight">
+                                Par: <span className="font-black text-slate-900">S/ {(item.hasOffer && item.adjustedPrice ? item.adjustedPrice : item.salePricePerUnit).toFixed(2)}</span>
                               </div>
-                              <div className="text-xs font-black text-amber-700 truncate" title={`Precio de Serie Completa (${item.unitsPerSeries} pares)`}>
+                              <div className="text-xs font-black text-amber-800 truncate" title={`Precio de Serie Completa (${item.unitsPerSeries} pares)`}>
                                 Serie: S/ {item.salePricePerSeries.toFixed(2)} <span className="text-[9px] text-amber-600 font-bold">({item.unitsPerSeries}p)</span>
                               </div>
                             </div>
@@ -2715,8 +2888,8 @@ export default function BusinessPosPage() {
                                 e.stopPropagation();
                                 addSeriesCurveToCart(item);
                               }}
-                              className={`px-2.5 py-1.5 rounded-lg text-[9.5px] font-black uppercase tracking-wider flex items-center gap-1 transition-all shrink-0 ${item.summary.completeSeries > 0
-                                ? "bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-xs active:scale-95 cursor-pointer"
+                              className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-1 transition-all shrink-0 shadow-sm ${item.summary.completeSeries > 0
+                                ? "bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white active:scale-95 cursor-pointer hover:shadow-amber-200"
                                 : "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200"
                                 }`}
                               title={
@@ -2725,7 +2898,7 @@ export default function BusinessPosPage() {
                                   : "Stock insuficiente para armar una serie completa"
                               }
                             >
-                              <Package className="w-3 h-3" />
+                              <Package className="w-3.5 h-3.5" />
                               <span>+ Serie ({item.unitsPerSeries}p)</span>
                             </button>
                           </div>
@@ -2763,37 +2936,39 @@ export default function BusinessPosPage() {
                       onMouseLeave={() => {
                         setHoveredProduct(null);
                       }}
-                      className={`bg-white rounded-2xl border border-slate-200/90 hover:border-indigo-400 hover:shadow-lg transition-all cursor-pointer group flex flex-col justify-between overflow-hidden shadow-xs relative h-[320px] ${availableStock <= 0 ? "opacity-60 cursor-not-allowed" : ""}`}
+                      className={`bg-white rounded-2xl border border-slate-200/90 hover:border-indigo-400 hover:shadow-lg transition-all cursor-pointer group flex flex-col overflow-hidden shadow-xs relative h-[390px] ${availableStock <= 0 ? "opacity-60 cursor-not-allowed" : ""}`}
                     >
-                      {/* Contenedor de Imagen */}
+                      {/* Contenedor de Imagen con altura dinámica uniforme */}
                       <div
                         onClick={(e) => {
                           e.stopPropagation();
                           setPosLightboxProduct(p);
                         }}
-                        className="w-full h-28 bg-slate-50/90 overflow-hidden relative rounded-t-2xl border-b border-slate-100 flex items-center justify-center p-1 cursor-zoom-in"
+                        className="w-full flex-1 min-h-[140px] bg-slate-50/90 overflow-hidden relative rounded-t-2xl border-b border-slate-100 flex items-center justify-center p-2 cursor-zoom-in"
                         title="Clic en la foto para ver en detalle"
                       >
-                        {/* Badges: SKU y Taco */}
-                        <div className="absolute top-2 left-2 z-20 flex flex-wrap gap-1 items-center max-w-[75%]">
-                          {p.sku && p.sku.length > 0 ? (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-black tracking-wider uppercase bg-slate-900/90 text-white border border-slate-700 shadow-xs truncate max-w-[110px]">
-                              SKU: {p.sku}
-                            </span>
-                          ) : null}
-                          {isFootwearRubro && extractTacoFromProduct(p) ? (
-                            <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded-md text-[9px] font-bold bg-pink-600 text-white shadow-xs">
-                              👠 {extractTacoFromProduct(p)}
-                            </span>
-                          ) : null}
+                        {/* Top Bar: SKU Izquierda y Color Derecha (Sin colisiones) */}
+                        <div className="absolute top-2 inset-x-2 z-20 flex items-center justify-between gap-1 pointer-events-none">
+                          <div className="flex items-center gap-1 min-w-0 flex-wrap pointer-events-auto">
+                            {p.sku && p.sku.length > 0 ? (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-black tracking-wider uppercase bg-slate-900/90 text-white border border-slate-700 shadow-xs truncate max-w-[110px]">
+                                SKU: {p.sku}
+                              </span>
+                            ) : null}
+                            {isFootwearRubro && extractTacoFromProduct(p) ? (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-pink-600 text-white shadow-xs">
+                                👠 {extractTacoFromProduct(p)}
+                              </span>
+                            ) : null}
+                          </div>
+
+                          {p.color && (
+                            <div className="shrink-0 pointer-events-auto max-w-[45%]">
+                              <ProductColorBadge color={p.color} size="xs" />
+                            </div>
+                          )}
                         </div>
 
-                        {/* Color con nombre y círculo visible sin hacer nada */}
-                        {p.color && (
-                          <div className="absolute top-2 right-2 z-20">
-                            <ProductColorBadge color={p.color} size="xs" />
-                          </div>
-                        )}
                         {p.imageUrl ? (
                           <img
                             src={getReceiptAbsoluteUrl(p.imageUrl) || p.imageUrl}
@@ -2805,12 +2980,12 @@ export default function BusinessPosPage() {
                           />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center bg-slate-50/80">
-                            <Package className="w-8 h-8 text-indigo-300/80 stroke-[1.5]" />
+                            <Package className="w-12 h-12 text-indigo-300/80 stroke-[1.5]" />
                           </div>
                         )}
                       </div>
 
-                      <div className="p-2.5 flex-1 flex flex-col justify-between overflow-hidden">
+                      <div className="p-3 bg-white shrink-0 flex flex-col gap-2">
                         <div>
                           <div className="flex items-start justify-between gap-1 mb-1">
                             <h3 className="font-bold text-gray-900 group-hover:text-indigo-600 transition-colors line-clamp-2 text-xs leading-snug h-8" title={p.name}>
@@ -2847,8 +3022,8 @@ export default function BusinessPosPage() {
                           </div>
                         </div>
 
-                        {/* Estructura de Precio Profesional y Botón Quick-Add */}
-                        <div className="border-t border-slate-100 pt-2 mt-auto flex items-center justify-between gap-2">
+                        {/* Estructura de Precio Profesional y Botón Quick-Add: De seguido inmediato */}
+                        <div className="border-t border-slate-100 pt-2 flex items-center justify-between gap-2">
                           <div className="min-w-0">
                             <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block leading-none mb-1">
                               Precio Venta
@@ -3079,89 +3254,11 @@ export default function BusinessPosPage() {
             )}
           </div>
 
-          <div className="p-3.5 border-t border-gray-100 bg-slate-50/90 space-y-2.5">
-            {/* Payment Method */}
-            <div>
-              <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wider">
-                1. Método de Pago
-              </p>
-              <div className="grid grid-cols-5 gap-1">
-                {[
-                  { id: "CASH", icon: Banknote, label: "Efectivo" },
-                  { id: "YAPE", icon: Smartphone, label: "Yape" },
-                  { id: "PLIN", icon: Smartphone, label: "Plin" },
-                  { id: "CARD", icon: CreditCard, label: "Tarjeta" },
-                  { id: "TRANSFER", icon: Landmark, label: "Transf." },
-                ].map((method) => (
-                  <button
-                    key={method.id}
-                    onClick={() => setPaymentMethod(method.id)}
-                    className={`flex flex-col items-center gap-1 p-2 rounded-xl border transition-all ${paymentMethod === method.id ? "bg-indigo-600 text-white border-indigo-600 shadow-md" : "bg-white text-gray-500 border-gray-200 hover:border-indigo-300 hover:text-indigo-600"}`}
-                  >
-                    <method.icon className="w-4 h-4" />
-                    <span className="text-[8px] font-black uppercase">
-                      {method.label}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Category */}
-            <div>
-              <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wider">
-                2. Categoría Contable
-              </p>
-              <select
-                value={selectedCategory}
-                onChange={(e) => {
-                  const catId = e.target.value;
-                  setSelectedCategory(catId);
-                  const catObj = categories.find(c => c.id === catId);
-                  const firstSub = catObj?.children?.[0]?.id || "";
-                  setSelectedSubCategory(firstSub);
-                }}
-                className="w-full p-2.5 rounded-xl border border-gray-200 focus:border-indigo-500 outline-none text-sm font-medium bg-white"
-              >
-                <option value="">Seleccionar Categoría...</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Subcategory */}
-            {(() => {
-              const selectedCategoryObj = categories.find(c => c.id === selectedCategory);
-              const subcategories = selectedCategoryObj?.children || [];
-              if (subcategories.length === 0) return null;
-              return (
-                <div>
-                  <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wider">
-                    Subcategoría Contable
-                  </p>
-                  <select
-                    value={selectedSubCategory}
-                    onChange={(e) => setSelectedSubCategory(e.target.value)}
-                    className="w-full p-2.5 rounded-xl border border-gray-200 focus:border-indigo-500 outline-none text-sm font-medium bg-white"
-                  >
-                    <option value="">Seleccionar Subcategoría...</option>
-                    {subcategories.map((sub: any) => (
-                      <option key={sub.id} value={sub.id}>
-                        {sub.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              );
-            })()}
-
+          <div className="p-4 border-t border-gray-100 bg-white space-y-3 shadow-lg">
             {/* Total */}
-            <div className="flex justify-between items-end pt-3 border-t border-gray-200 border-dashed">
-              <span className="text-gray-500 font-medium">Total a cobrar:</span>
-              <span className="text-3xl font-black text-gray-900">
+            <div className="flex justify-between items-baseline pt-1">
+              <span className="text-gray-500 font-bold text-sm uppercase tracking-wider">Total a cobrar:</span>
+              <span className="text-3xl font-black text-gray-900 tracking-tight">
                 S/ {total.toFixed(2)}
               </span>
             </div>
@@ -3169,17 +3266,18 @@ export default function BusinessPosPage() {
             <button
               onClick={handleOpenCheckoutModal}
               disabled={cart.length === 0 || !activeShift}
-              className={`w-full py-3 rounded-xl font-black text-base flex items-center justify-center gap-2 transition-all ${cart.length === 0 || !activeShift
+              className={`w-full py-3.5 rounded-2xl font-black text-base flex items-center justify-center gap-2 transition-all ${cart.length === 0 || !activeShift
                 ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-xl shadow-indigo-200 hover:-translate-y-1"
+                : "bg-indigo-600 hover:bg-indigo-700 text-white shadow-xl shadow-indigo-200 hover:-translate-y-0.5 active:scale-95 cursor-pointer"
                 }`}
             >
-              Cobrar Venta
+              <ShoppingCart className="w-5 h-5" />
+              Cobrar Venta ({cart.reduce((sum, item) => sum + item.quantity, 0)} items)
             </button>
 
             <button
               onClick={() => setIsSalesListOpen(true)}
-              className="w-full mt-1.5 py-2 border border-indigo-200 text-indigo-600 rounded-xl font-black text-[11px] flex items-center justify-center gap-2 hover:bg-indigo-50 transition-all shadow-xs"
+              className="w-full py-2 border border-indigo-200 text-indigo-600 rounded-xl font-black text-[11px] flex items-center justify-center gap-2 hover:bg-indigo-50 transition-all shadow-xs"
             >
               <FileText className="w-4 h-4" /> Ver Ventas Recientes (Editar/Anular/Notas F.E.)
             </button>
@@ -3593,6 +3691,60 @@ export default function BusinessPosPage() {
                   <span className="text-[9px] font-black uppercase">{method.label}</span>
                 </button>
               ))}
+            </div>
+          </div>
+
+          {/* CATEGORÍA CONTABLE Y SUBCATEGORÍA EN EL MODAL DE COBRO */}
+          <div className="space-y-3 pt-3 border-t border-gray-100">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                  <span>📂 Categoría Contable *</span>
+                </label>
+                <select
+                  value={selectedCategory}
+                  onChange={(e) => {
+                    const catId = e.target.value;
+                    setSelectedCategory(catId);
+                    const catObj = categories.find((c) => c.id === catId);
+                    const firstSub = catObj?.children?.[0]?.id || "";
+                    setSelectedSubCategory(firstSub);
+                  }}
+                  className="w-full p-3 rounded-xl border-2 border-gray-200 focus:border-indigo-500 outline-none text-xs font-bold bg-white text-gray-800 shadow-xs"
+                >
+                  <option value="">-- Seleccionar Categoría --</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {(() => {
+                const selectedCategoryObj = categories.find((c) => c.id === selectedCategory);
+                const subcategories = selectedCategoryObj?.children || [];
+                return (
+                  <div>
+                    <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                      <span>🏷️ Subcategoría (Opcional)</span>
+                    </label>
+                    <select
+                      value={selectedSubCategory}
+                      onChange={(e) => setSelectedSubCategory(e.target.value)}
+                      disabled={subcategories.length === 0}
+                      className="w-full p-3 rounded-xl border-2 border-gray-200 focus:border-indigo-500 outline-none text-xs font-bold bg-white text-gray-800 shadow-xs disabled:opacity-50 disabled:bg-gray-50"
+                    >
+                      <option value="">{subcategories.length > 0 ? "-- Seleccionar Subcategoría --" : "Sin subcategorías"}</option>
+                      {subcategories.map((sub: any) => (
+                        <option key={sub.id} value={sub.id}>
+                          {sub.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })()}
             </div>
           </div>
 

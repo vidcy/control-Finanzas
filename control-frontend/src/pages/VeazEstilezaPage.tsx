@@ -101,6 +101,7 @@ export default function VeazEstilezaPage() {
 
   // Store metadata
   const [storeInfo, setStoreInfo] = useState<CatalogStoreInfo | null>(null);
+  const [isLoadingCatalog, setIsLoadingCatalog] = useState<boolean>(true);
 
   // States
   const [products, setProducts] = useState<Product[]>([]);
@@ -152,6 +153,7 @@ export default function VeazEstilezaPage() {
   useEffect(() => {
     let isMounted = true;
     window.scrollTo(0, 0);
+    setIsLoadingCatalog(true);
 
     async function loadData() {
       try {
@@ -171,6 +173,12 @@ export default function VeazEstilezaPage() {
           } else {
             document.title = `${storeData.businessName} | ${storeData.catalogConfig?.catalogTitle || storeData.businessRubro || "Catálogo Oficial"}`;
           }
+        } else if (!isDirectVeazRoute && targetIdentifier !== "veaz-estileza") {
+          setStoreInfo({
+            businessName: targetIdentifier,
+            isOfficialStore: false,
+            notFound: true,
+          } as any);
         }
 
         if (Array.isArray(prodsData)) {
@@ -198,6 +206,10 @@ export default function VeazEstilezaPage() {
         setAvailableFamilies(Array.from(famNames).sort());
       } catch (err) {
         console.error("Error loading catalog data:", err);
+      } finally {
+        if (isMounted) {
+          setIsLoadingCatalog(false);
+        }
       }
     }
 
@@ -543,6 +555,17 @@ export default function VeazEstilezaPage() {
     setOnlyInStock(false);
     setSearchTerm("");
   };
+
+  if (isLoadingCatalog) {
+    return (
+      <div className="min-h-screen bg-[#FAF8F5] flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-12 h-12 border-4 border-amber-300 border-t-amber-700 rounded-full animate-spin mb-4" />
+        <p className="font-outfit text-sm font-bold text-amber-950 uppercase tracking-widest">
+          Cargando catálogo...
+        </p>
+      </div>
+    );
+  }
 
   if (storeInfo?.notFound && !isDirectVeazRoute) {
     return (

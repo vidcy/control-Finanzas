@@ -245,6 +245,9 @@ export default function AppRoutes() {
         }
       />
 
+      {/* Catálogo de negocio por ruta directa: think.ccoplex.com/electrodomesticos-ayca */}
+      <Route path="/:identifier" element={<VeazEstilezaPage />} />
+
       {/* redirección automática */}
       <Route path="*" element={<Navigate to="/dashboard" />} />
     </Routes>
