@@ -96,9 +96,14 @@ export default function VeazEstilezaPage() {
 
   const params = useParams<{ identifier?: string }>();
   const isDirectVeazRoute = window.location.pathname.startsWith("/veaz-estileza");
-  const targetIdentifier = isDirectVeazRoute
-    ? "veaz-estileza"
-    : params.identifier || "veaz-estileza";
+  const targetIdentifier = useMemo(() => {
+    if (isDirectVeazRoute) return "veaz-estileza";
+    try {
+      return decodeURIComponent(params.identifier || "").trim() || "veaz-estileza";
+    } catch {
+      return (params.identifier || "").trim() || "veaz-estileza";
+    }
+  }, [isDirectVeazRoute, params.identifier]);
 
   // Store metadata
   const [storeInfo, setStoreInfo] = useState<CatalogStoreInfo | null>(null);

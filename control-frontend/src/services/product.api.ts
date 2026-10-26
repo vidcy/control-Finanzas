@@ -77,12 +77,26 @@ export interface CatalogStoreInfo {
 }
 
 export const getCatalogStoreInfoRequest = async (identifier = "veaz-estileza"): Promise<CatalogStoreInfo> => {
-  const res = await API.get("/catalog/store-info", { params: { identifier, email: identifier } });
+  const cleanId = (() => {
+    try {
+      return decodeURIComponent(identifier || "").trim();
+    } catch {
+      return (identifier || "").trim();
+    }
+  })();
+  const res = await API.get("/catalog/store-info", { params: { identifier: cleanId, email: cleanId } });
   return res.data;
 };
 
 export const getCatalogProductsRequest = async (identifier = "beaz.estileza@gmail.com"): Promise<Product[]> => {
-  const res = await API.get("/catalog/products", { params: { identifier, email: identifier } });
+  const cleanId = (() => {
+    try {
+      return decodeURIComponent(identifier || "").trim();
+    } catch {
+      return (identifier || "").trim();
+    }
+  })();
+  const res = await API.get("/catalog/products", { params: { identifier: cleanId, email: cleanId } });
   return res.data;
 };
 
@@ -285,12 +299,26 @@ export const updatePurchaseOrderRequest = async (
 };
 
 export const getCatalogBrandsRequest = async (identifier = "beaz.estileza@gmail.com"): Promise<any[]> => {
-  const res = await API.get("/catalog/brands", { params: { identifier, email: identifier } });
+  const cleanId = (() => {
+    try {
+      return decodeURIComponent(identifier || "").trim();
+    } catch {
+      return (identifier || "").trim();
+    }
+  })();
+  const res = await API.get("/catalog/brands", { params: { identifier: cleanId, email: cleanId } });
   return res.data;
 };
 
 export const getCatalogFamiliesRequest = async (identifier = "beaz.estileza@gmail.com"): Promise<any[]> => {
-  const res = await API.get("/catalog/families", { params: { identifier, email: identifier } });
+  const cleanId = (() => {
+    try {
+      return decodeURIComponent(identifier || "").trim();
+    } catch {
+      return (identifier || "").trim();
+    }
+  })();
+  const res = await API.get("/catalog/families", { params: { identifier: cleanId, email: cleanId } });
   return res.data;
 };
 
