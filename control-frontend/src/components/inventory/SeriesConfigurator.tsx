@@ -42,17 +42,20 @@ const normalizeCurve = (rawCurve: any[]): SizeRatio[] => {
     const size = String(item.size ?? item.talla ?? "").trim();
     if (!size) return;
 
-    const ratio = Math.max(1, Number(item.ratio || 1));
+    let ratio = Math.max(1, Number(item.ratio || 1));
     const stock = item.stock !== undefined ? Math.max(0, Number(item.stock)) : undefined;
+
+    // Si viene stock definido > 1 y ratio quedó en 1, sincronizar ratio con stock
+    if ((!item.ratio || Number(item.ratio) <= 1) && stock !== undefined && stock > 1) {
+      ratio = stock;
+    }
 
     if (map.has(size)) {
       const existing = map.get(size)!;
       if (stock !== undefined) {
         existing.stock = stock;
       }
-      if (item.ratio) {
-        existing.ratio = Math.max(existing.ratio, ratio);
-      }
+      existing.ratio = Math.max(existing.ratio, ratio);
       if (item.productId && !existing.productId) existing.productId = item.productId;
       if (item.sku && !existing.sku) existing.sku = item.sku;
       if (item.costPrice !== undefined) existing.costPrice = item.costPrice;
@@ -61,7 +64,7 @@ const normalizeCurve = (rawCurve: any[]): SizeRatio[] => {
       map.set(size, {
         size,
         ratio,
-        stock,
+        stock: stock !== undefined ? stock : ratio,
         productId: item.productId,
         sku: item.sku,
         costPrice: item.costPrice,
@@ -153,22 +156,29 @@ export default function SeriesConfigurator({
     });
   };
 
-  // Modificar stock físico real de una talla específica
+  // Modificar cantidad de pares de una talla en la serie
   const handleUpdateStock = (size: string, val: number) => {
-    const safeStock = isNaN(val) ? 0 : Math.max(0, Math.round(val));
+    const safePares = isNaN(val) ? 1 : Math.max(1, Math.round(val));
+    const newStock = (seriesStock || 1) * safePares;
     const updatedCurve = curve.map((item) =>
-      item.size === size ? { ...item, stock: safeStock } : item
+      item.size === size
+        ? { ...item, ratio: safePares, stock: newStock }
+        : item
     );
     syncNormalizedConfig(updatedCurve);
   };
 
-  // Delta (+1 / -1) sobre el stock físico real de una talla
+  // Delta (+1 / -1) sobre la cantidad de pares de una talla
   const handleDeltaStock = (size: string, delta: number) => {
     const targetItem = curve.find((c) => c.size === size);
     if (!targetItem) return;
-    const currentStock = targetItem.stock !== undefined ? Number(targetItem.stock) : ((seriesStock || 0) * (targetItem.ratio || 1));
-    const newStock = Math.max(0, currentStock + delta);
-    handleUpdateStock(size, newStock);
+    const currentRatio = targetItem.ratio || 1;
+    if (currentRatio <= 1 && delta < 0) {
+      setSizeToRemove(size);
+      return;
+    }
+    const newRatio = Math.max(1, currentRatio + delta);
+    handleUpdateStock(size, newRatio);
   };
 
   // Aplicar plantilla preset
@@ -176,10 +186,11 @@ export default function SeriesConfigurator({
     setActivePresetId(preset.id);
     const newCurve: SizeRatio[] = preset.curve.map((item) => {
       const existing = curve.find((c) => c.size === item.size);
+      const ratio = item.ratio || 1;
       return {
         size: item.size,
-        ratio: item.ratio,
-        stock: existing?.stock !== undefined ? existing.stock : (seriesStock * item.ratio),
+        ratio,
+        stock: existing?.stock !== undefined ? existing.stock : ((seriesStock || 1) * ratio),
       };
     });
     syncNormalizedConfig(newCurve);
@@ -195,11 +206,16 @@ export default function SeriesConfigurator({
     let updatedCurve: SizeRatio[];
 
     if (existingIndex >= 0) {
-      updatedCurve = curve.map((item, idx) =>
-        idx === existingIndex ? { ...item, ratio: item.ratio + 1 } : item
-      );
+      updatedCurve = curve.map((item, idx) => {
+        if (idx === existingIndex) {
+          const newRatio = (item.ratio || 1) + 1;
+          const newStock = (seriesStock || 1) * newRatio;
+          return { ...item, ratio: newRatio, stock: newStock };
+        }
+        return item;
+      });
     } else {
-      const defaultStock = isEditing ? 0 : ((seriesStock || 1) * 1);
+      const defaultStock = (seriesStock || 1) * 1;
       updatedCurve = [...curve, { size: cleanSize, ratio: 1, stock: defaultStock }];
       const sorted = sortSizes(updatedCurve.map((c) => c.size));
       updatedCurve = sorted.map(
@@ -213,26 +229,7 @@ export default function SeriesConfigurator({
 
   // Disminuir ratio de talla (-1)
   const handleUpdateRatio = (size: string, delta: number) => {
-    setActivePresetId(null);
-    const targetItem = curve.find((c) => c.size === size);
-    if (!targetItem) return;
-
-    if (targetItem.ratio <= 1 && delta < 0) {
-      setSizeToRemove(size);
-      return;
-    }
-
-    const updatedCurve = curve
-      .map((item) => {
-        if (item.size === size) {
-          const newRatio = Math.max(1, item.ratio + delta);
-          return { ...item, ratio: newRatio };
-        }
-        return item;
-      })
-      .filter((item) => item.ratio > 0);
-
-    syncNormalizedConfig(updatedCurve);
+    handleDeltaStock(size, delta);
   };
 
   // Confirmar eliminación de la talla en el modal
@@ -468,73 +465,46 @@ export default function SeriesConfigurator({
                   )}
                 </div>
 
-                {/* Ratio en la serie */}
-                <div className="bg-slate-50 border border-slate-100 rounded-lg p-1 mb-1.5">
-                  <div className="flex items-center justify-between text-[9px] font-bold text-gray-500 mb-0.5 px-0.5">
-                    <span>Ratio en Serie:</span>
-                    <span className="text-indigo-600 font-black">{item.ratio} {item.ratio === 1 ? "par" : "pares"}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <button
-                      type="button"
-                      disabled={disabled || item.ratio <= 1}
-                      onClick={() => handleUpdateRatio(item.size, -1)}
-                      className="w-5 h-5 flex items-center justify-center rounded bg-white hover:bg-gray-100 text-gray-700 border border-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
-                      title="Reducir ratio en la serie"
-                    >
-                      <Minus className="w-2.5 h-2.5" />
-                    </button>
-                    <span className="text-[11px] font-black text-indigo-900">
-                      x{item.ratio}
-                    </span>
-                    <button
-                      type="button"
-                      disabled={disabled}
-                      onClick={() => handleAddSize(item.size)}
-                      className="w-5 h-5 flex items-center justify-center rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-600 border border-indigo-200 transition-all cursor-pointer"
-                      title="Aumentar ratio en la serie"
-                    >
-                      <Plus className="w-2.5 h-2.5" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Stock Real en Almacén (Pares Físicos Guardados) */}
-                <div className="bg-indigo-50/50 border border-indigo-100/80 rounded-xl p-1.5 space-y-1">
-                  <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-wider text-indigo-950 px-0.5">
-                    <span>Stock Real:</span>
-                    <span className="text-indigo-700 font-extrabold">{currentStock} pares</span>
+                {/* Cantidad de Pares por Serie */}
+                <div className="bg-indigo-50/70 border border-indigo-200/90 rounded-xl p-2 space-y-1.5 shadow-2xs">
+                  <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-indigo-950 px-0.5">
+                    <span>Pares en Serie:</span>
+                    <span className="text-indigo-700 font-extrabold">{item.ratio} {item.ratio === 1 ? "par" : "pares"}</span>
                   </div>
                   <div className="flex items-center justify-between gap-1">
                     <button
                       type="button"
-                      disabled={disabled || currentStock <= 0}
+                      disabled={disabled || item.ratio <= 1}
                       onClick={() => handleDeltaStock(item.size, -1)}
-                      className="w-6 h-6 rounded-md bg-white hover:bg-rose-500 hover:text-white text-gray-700 border border-gray-200 font-bold flex items-center justify-center transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer shadow-2xs"
-                      title="Disminuir / Bajar 1 par (-1)"
+                      className="w-7 h-7 rounded-lg bg-white hover:bg-rose-500 hover:text-white text-gray-700 border border-indigo-200 font-black flex items-center justify-center transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer shadow-2xs"
+                      title="Quitar 1 par de esta talla (-1)"
                     >
-                      <Minus className="w-3 h-3" />
+                      <Minus className="w-3.5 h-3.5" />
                     </button>
                     <input
                       type="number"
-                      min="0"
+                      min="1"
                       step="1"
                       disabled={disabled}
-                      value={currentStock}
+                      value={item.ratio}
                       onChange={(e) => handleUpdateStock(item.size, Number(e.target.value))}
-                      className="w-12 text-center font-black text-xs py-0.5 border border-indigo-200 rounded-md bg-white text-indigo-950 outline-none focus:ring-1 focus:ring-indigo-500"
-                      title="Escribir stock exacto de esta talla"
+                      className="w-12 text-center font-black text-sm py-1 border border-indigo-300 rounded-lg bg-white text-indigo-950 outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs"
+                      title="Cantidad de pares de esta talla en cada serie"
                     />
                     <button
                       type="button"
                       disabled={disabled}
                       onClick={() => handleDeltaStock(item.size, 1)}
-                      className="w-6 h-6 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white font-bold flex items-center justify-center transition-all cursor-pointer shadow-2xs"
-                      title="Aumentar 1 par (+1)"
+                      className="w-7 h-7 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-black flex items-center justify-center transition-all cursor-pointer shadow-xs"
+                      title="Añadir 1 par de esta talla (+1)"
                     >
-                      <Plus className="w-3 h-3" />
+                      <Plus className="w-3.5 h-3.5" />
                     </button>
                   </div>
+                  <p className="text-[10px] text-gray-500 font-bold text-center">
+                    Total almacén: <strong className="text-indigo-900">{item.ratio * (seriesStock || 1)} pares</strong>
+                    {seriesStock > 1 ? ` (${seriesStock} series)` : ""}
+                  </p>
                 </div>
               </div>
             );

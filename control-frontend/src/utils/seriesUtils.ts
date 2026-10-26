@@ -151,10 +151,17 @@ export const POPULAR_SHOE_SIZES = [
 ];
 
 /**
- * Calculates total units in a curve by summing the ratios
+ * Calculates total units in a curve by summing the ratios/pairs
  */
 export function calculateCurveTotalUnits(curve: SizeRatio[]): number {
-  return curve.reduce((acc, item) => acc + (Number(item.ratio) || 0), 0);
+  if (!Array.isArray(curve)) return 0;
+  return curve.reduce((acc, item) => {
+    const r = Number(item.ratio);
+    if (!isNaN(r) && r > 0) return acc + r;
+    const s = Number(item.stock);
+    if (!isNaN(s) && s > 0) return acc + s;
+    return acc + 1;
+  }, 0);
 }
 
 /**
