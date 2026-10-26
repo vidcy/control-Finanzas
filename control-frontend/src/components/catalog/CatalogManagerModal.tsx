@@ -18,6 +18,7 @@ import {
   Megaphone,
   Wand2,
   LayoutGrid,
+  Clock,
 } from "lucide-react";
 import { FaInstagram, FaFacebookF, FaTiktok } from "react-icons/fa6";
 import toast from "react-hot-toast";
@@ -525,7 +526,7 @@ export default function CatalogManagerModal({ isOpen, onClose }: CatalogManagerM
             { id: "ticker", label: "Marquesina & Anuncios", icon: Megaphone },
             { id: "lookbook", label: "Galería Destacada", icon: Sparkles },
             { id: "rail", label: "Vitrina Inferior / Pasarela", icon: LayoutGrid },
-            { id: "location", label: "Ubicación & Showroom", icon: MapPin },
+            { id: "location", label: "Ubicación & Horarios", icon: Clock },
             { id: "contact", label: "Contacto & Redes", icon: Phone },
           ].map((tab) => {
             const Icon = tab.icon;
@@ -1255,6 +1256,70 @@ export default function CatalogManagerModal({ isOpen, onClose }: CatalogManagerM
           ────────────────────────────────────────────────────────── */}
           {activeTab === "location" && (
             <div className="space-y-6 animate-fadeIn">
+
+              {/* TARJETA DESTACADA: CONFIGURACIÓN DE HORARIOS DE ATENCIÓN */}
+              <div className="p-5 rounded-2xl bg-gradient-to-r from-amber-50/80 via-white to-amber-50/50 border border-amber-200/90 shadow-xs space-y-4">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-amber-600 text-white flex items-center justify-center shadow-xs">
+                      <Clock className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-900 text-xs uppercase tracking-wider">
+                        Horarios de Atención al Cliente & Tienda
+                      </h4>
+                      <p className="text-[11px] text-slate-500">
+                        Se muestra en la cabecera, bloque comercial y pie de página de tu catálogo oficial.
+                      </p>
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 text-[10px] font-bold border border-amber-200">
+                    Sincronizado Oficial
+                  </span>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Horario de Atención Vigente
+                  </label>
+                  <div className="flex items-center rounded-xl border border-slate-300 bg-white overflow-hidden shadow-xs focus-within:border-amber-500 focus-within:ring-1 focus-within:ring-amber-500">
+                    <span className="bg-slate-100 text-slate-600 px-3 py-2.5 border-r border-slate-200 flex items-center gap-1.5 text-xs font-medium">
+                      <Clock className="w-3.5 h-3.5 text-amber-700" />
+                      <span>Horario</span>
+                    </span>
+                    <input
+                      type="text"
+                      value={locationSchedule}
+                      onChange={(e) => setLocationSchedule(e.target.value)}
+                      placeholder="Ej. Lunes a Sábado: 8:30 am - 8:30 pm / Domingo: 9:00 am - 2:00 pm"
+                      className="w-full px-3 py-2 text-xs text-slate-900 focus:outline-none font-medium"
+                    />
+                  </div>
+                  
+                  {/* PRESETS RÁPIDOS */}
+                  <div className="mt-2.5 flex items-center flex-wrap gap-1.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mr-1">
+                      Plantillas Rápidas:
+                    </span>
+                    {[
+                      "Lunes a Sábado: 8:30 am - 8:30 pm",
+                      "Lunes a Domingo: 8:00 am - 9:30 pm",
+                      "Lunes a Viernes: 9:00 am - 7:00 pm | Sáb: 9:00 am - 2:00 pm",
+                      "Atención 24/7 por WhatsApp & Despachos Express",
+                    ].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setLocationSchedule(preset)}
+                        className="px-2.5 py-1 rounded-lg bg-white hover:bg-amber-100/70 border border-slate-200 hover:border-amber-300 text-[10px] font-medium text-slate-700 hover:text-amber-950 transition-all cursor-pointer shadow-2xs"
+                      >
+                        {preset.length > 32 ? preset.substring(0, 30) + '...' : preset}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
               <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-200">
                 <div>
                   <h4 className="font-bold text-slate-900 text-xs uppercase tracking-wider flex items-center gap-2">
@@ -1424,6 +1489,41 @@ export default function CatalogManagerModal({ isOpen, onClose }: CatalogManagerM
                   </div>
                   <span className="text-[10px] text-slate-500 mt-1 block">
                     Todos los botones de pedido del catálogo y el botón flotante abrirán chat directo a este número.
+                  </span>
+                </div>
+              </div>
+
+              {/* HORARIO DE ATENCIÓN DE CLIENTES Y WHATSAPP */}
+              <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-amber-700" />
+                    <h4 className="font-bold text-slate-900 text-xs uppercase tracking-wider">
+                      Horario de Atención & Respuestas WhatsApp
+                    </h4>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("location")}
+                    className="text-[11px] font-bold text-amber-800 hover:text-amber-900 underline cursor-pointer"
+                  >
+                    Ver en módulo de Ubicación
+                  </button>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Horario de Atención
+                  </label>
+                  <input
+                    type="text"
+                    value={locationSchedule}
+                    onChange={(e) => setLocationSchedule(e.target.value)}
+                    placeholder="Ej. Lunes a Sábado: 8:30 am - 8:30 pm"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs text-slate-900 focus:outline-none focus:border-amber-500 shadow-xs"
+                  />
+                  <span className="text-[10px] text-slate-500 mt-1 block">
+                    Informa a tus clientes el rango horario en que respondes cotizaciones y despachos.
                   </span>
                 </div>
               </div>

@@ -157,26 +157,54 @@ export class LeadsService {
     };
   }
 
-  private buildScopeWhere(user: any) {
+  private buildScopeWhere(user: any, scope?: string) {
     const isAdmin = user && (user.role === 'ADMIN' || user.role === 'SUPERADMIN');
     const effectiveUserId = user ? (user.parentId || user.id) : null;
 
     if (isAdmin) {
-      // System Admins ONLY see leads captured for the THINK ERP platform.
-      // Strict multi-tenant isolation: Admins do NOT see or access private merchant store leads.
+      if (scope === 'STORE' || scope === 'MERCHANT') {
+        const userConditions: any[] = [
+          { targetUserId: user.id },
+        ];
+        if (effectiveUserId && effectiveUserId !== user.id) {
+          userConditions.push({ targetUserId: effectiveUserId });
+        }
+        if (user.businessSlug) {
+          userConditions.push({ storeIdentifier: user.businessSlug });
+        }
+        return {
+          isPlatformLead: false,
+          OR: userConditions,
+        };
+      }
+
+      if (scope === 'ALL') {
+        return {};
+      }
+
+      // Default for platform admins: System Leads
       return {
         isPlatformLead: true,
       };
     }
 
     // Merchants ONLY see customer leads belonging strictly to their own business catalog.
-    // Strict multi-tenant isolation: Merchants NEVER see THINK ERP platform leads or other businesses' leads.
+    const userConditions: any[] = [
+      { targetUserId: user ? user.id : 'NONE' },
+    ];
+    if (effectiveUserId && effectiveUserId !== user?.id) {
+      userConditions.push({ targetUserId: effectiveUserId });
+    }
+    if (user?.businessSlug) {
+      userConditions.push({ storeIdentifier: user.businessSlug });
+    }
+    if (user?.id) {
+      userConditions.push({ storeIdentifier: user.id });
+    }
+
     return {
       isPlatformLead: false,
-      OR: [
-        { targetUserId: user ? user.id : 'NONE' },
-        { targetUserId: effectiveUserId || 'NONE' },
-      ],
+      OR: userConditions,
     };
   }
 

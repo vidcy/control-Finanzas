@@ -910,7 +910,7 @@ export const RUBRO_PRESETS: Record<string, RubroPreset> = {
     label: "Comercio General y Servicios",
     icon: "🛍️",
     variantLabel: "Variantes / Opciones",
-    catalogBadge: "VITRINA OFICIAL DE PRODUCTOS",
+    catalogBadge: "CATÁLOGO OFICIAL DE PRODUCTOS",
     catalogTitle: "Catálogo Oficial de Productos",
     catalogSubtitle: "Explora nuestra selección completa de artículos con garantía de calidad y atención directa.",
     announcement: "¡Bienvenidos a nuestro catálogo virtual! Realiza tus consultas y pedidos por WhatsApp.",

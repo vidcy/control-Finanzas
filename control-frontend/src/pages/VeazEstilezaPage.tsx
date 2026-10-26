@@ -763,7 +763,7 @@ export default function VeazEstilezaPage() {
               </>
             ) : (
               <>
-                Vitrina <span className="bg-gradient-to-r from-amber-800 to-amber-600 bg-clip-text text-transparent">{storeInfo?.businessName || "Oficial"}</span>
+                Catálogo <span className="bg-gradient-to-r from-amber-800 to-amber-600 bg-clip-text text-transparent">{storeInfo?.businessName || "Oficial"}</span>
               </>
             )}
           </h2>
