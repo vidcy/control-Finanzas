@@ -34,13 +34,12 @@ export class AppController {
 
       try {
         const fallback = await this.prisma.user.findFirst({
-          where: { isActive: true },
-          orderBy: { createdAt: 'asc' },
+          where: { isActive: true, email: { contains: 'estileza', mode: 'insensitive' } },
         });
-        return fallback || null;
-      } catch (e) {
-        return null;
-      }
+        if (fallback) return fallback;
+      } catch (e) {}
+
+      return null;
     }
 
     try {
@@ -53,69 +52,91 @@ export class AppController {
         .replace(/-+/g, '-')
         .replace(/^-|-$/g, '');
 
-      // 1. Match by exact businessSlug
-      let user = await this.prisma.user.findFirst({
-        where: { businessSlug: { equals: cleanRaw, mode: 'insensitive' } },
-      });
+      let user: any = null;
 
-      // 2. Match by user ID
-      if (!user) {
+      // 1. Match by exact businessSlug (safely with try/catch in case of VPS schema cache)
+      try {
         user = await this.prisma.user.findFirst({
-          where: { id: cleanRaw },
+          where: { businessSlug: { equals: cleanRaw, mode: 'insensitive' } },
         });
+      } catch (e) {
+        try {
+          const rawSlug: any = await this.prisma.$queryRawUnsafe(
+            'SELECT * FROM "User" WHERE LOWER("businessSlug") = LOWER($1) LIMIT 1',
+            cleanRaw,
+          );
+          if (rawSlug && rawSlug.length > 0) user = rawSlug[0];
+        } catch (err) {}
+      }
+
+      // 2. Match by user ID (UUID)
+      if (!user) {
+        try {
+          user = await this.prisma.user.findFirst({
+            where: { id: cleanRaw },
+          });
+        } catch (e) {}
       }
 
       // 3. Match by email or email prefix
       if (!user) {
-        user = await this.prisma.user.findFirst({
-          where: {
-            OR: [
-              { email: { equals: cleanRaw, mode: 'insensitive' } },
-              { email: { startsWith: cleanRaw + '@', mode: 'insensitive' } },
-            ],
-          },
-        });
+        try {
+          user = await this.prisma.user.findFirst({
+            where: {
+              OR: [
+                { email: { equals: cleanRaw, mode: 'insensitive' } },
+                { email: { startsWith: cleanRaw + '@', mode: 'insensitive' } },
+              ],
+            },
+          });
+        } catch (e) {}
       }
 
       // 4. Match by exact businessName
       if (!user) {
-        user = await this.prisma.user.findFirst({
-          where: { businessName: { equals: cleanRaw, mode: 'insensitive' } },
-        });
+        try {
+          user = await this.prisma.user.findFirst({
+            where: { businessName: { equals: cleanRaw, mode: 'insensitive' } },
+          });
+        } catch (e) {}
       }
 
       // 5. Match by slugified businessName or slug
       if (!user && slugifiedRaw) {
-        const users = await this.prisma.user.findMany({
-          where: { isActive: true, businessName: { not: null } },
-          select: { id: true, businessName: true, businessSlug: true },
-        });
-        const matched = users.find((u) => {
-          if (u.businessSlug && u.businessSlug.toLowerCase() === slugifiedRaw) return true;
-          if (u.businessName) {
-            const bSlug = u.businessName
-              .toLowerCase()
-              .normalize('NFD')
-              .replace(/[\u0300-\u036f]/g, '')
-              .replace(/[^a-z0-9]/g, '-')
-              .replace(/-+/g, '-')
-              .replace(/^-|-$/g, '');
-            if (bSlug === slugifiedRaw || bSlug.includes(slugifiedRaw) || slugifiedRaw.includes(bSlug)) {
-              return true;
+        try {
+          const users = await this.prisma.user.findMany({
+            where: { isActive: true, businessName: { not: null } },
+            select: { id: true, businessName: true, businessSlug: true },
+          });
+          const matched = users.find((u) => {
+            if (u.businessSlug && u.businessSlug.toLowerCase() === slugifiedRaw) return true;
+            if (u.businessName) {
+              const bSlug = u.businessName
+                .toLowerCase()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .replace(/[^a-z0-9]/g, '-')
+                .replace(/-+/g, '-')
+                .replace(/^-|-$/g, '');
+              if (bSlug === slugifiedRaw || bSlug.includes(slugifiedRaw) || slugifiedRaw.includes(bSlug)) {
+                return true;
+              }
             }
+            return false;
+          });
+          if (matched) {
+            user = await this.prisma.user.findUnique({ where: { id: matched.id } });
           }
-          return false;
-        });
-        if (matched) {
-          user = await this.prisma.user.findUnique({ where: { id: matched.id } });
-        }
+        } catch (e) {}
       }
 
       // 6. Partial match on businessName if cleanRaw has at least 3 characters
       if (!user && cleanRaw.length >= 3) {
-        user = await this.prisma.user.findFirst({
-          where: { businessName: { contains: cleanRaw, mode: 'insensitive' } },
-        });
+        try {
+          user = await this.prisma.user.findFirst({
+            where: { businessName: { contains: cleanRaw, mode: 'insensitive' } },
+          });
+        } catch (e) {}
       }
 
       // If user is a worker/branch account, resolve to the store owner
@@ -175,6 +196,10 @@ export class AppController {
       businessBanner: user.businessBanner || null,
       businessSlug: user.businessSlug || null,
       businessPhone: user.businessPhone || null,
+      businessAddress: user.businessAddress || null,
+      businessDepartment: user.businessDepartment || null,
+      businessProvince: user.businessProvince || null,
+      businessDistrict: user.businessDistrict || null,
       catalogConfig: user.catalogConfig || null,
       isOfficialStore: isOfficial,
     };

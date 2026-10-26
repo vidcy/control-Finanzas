@@ -101,11 +101,15 @@ export default function VeazShoeCard({
 
   const handleWhatsAppInquiry = (e: React.MouseEvent) => {
     e.stopPropagation();
-    // Use merchant phone or default to Veaz Estileza
-    const rawPhone = storePhone || "51929962458";
+    // Use merchant phone or default to Veaz Estileza only when official store
+    const rawPhone = storePhone || (isOfficialStore ? "51929962458" : "");
+    if (!rawPhone) {
+      alert("Este negocio aún no ha configurado su número de WhatsApp para pedidos.");
+      return;
+    }
     const cleanPhone = rawPhone.replace(/\D/g, "");
     const formattedPhone = cleanPhone.startsWith("51") ? cleanPhone : `51${cleanPhone}`;
-    const targetStore = storeName || "VEAZ ESTILEZA";
+    const targetStore = storeName || (isOfficialStore ? "VEAZ ESTILEZA" : "la tienda");
 
     const finalPrice = (currentOfferPrice || currentSalePrice).toFixed(2);
     const offerTag = isOfferActive ? ` ¡PRECIO DE OFERTA!` : "";

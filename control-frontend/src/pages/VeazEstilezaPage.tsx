@@ -24,6 +24,7 @@ import {
   ExternalLink,
   Crown,
   Calendar,
+  Store,
 } from "lucide-react";
 import { FaInstagram, FaFacebookF, FaTiktok } from "react-icons/fa6";
 import VeazLogo, { VeazCrownIcon } from "../components/veaz/VeazLogo";
@@ -114,6 +115,23 @@ export default function VeazEstilezaPage() {
   const [sortBy, setSortBy] = useState<"featured" | "price-asc" | "price-desc" | "stock">("featured");
   const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
 
+  // Flag: ONLY true if visiting the Veaz Estileza flagship shoe boutique
+  const isOfficialVeazStore = useMemo(() => {
+    if (isDirectVeazRoute) return true;
+    const idLower = (targetIdentifier || "").toLowerCase().trim();
+    if (
+      idLower === "veaz-estileza" ||
+      idLower === "beaz.estileza@gmail.com" ||
+      idLower === "estileza"
+    ) {
+      return true;
+    }
+    if (storeInfo?.email && storeInfo.email.toLowerCase().includes("estileza")) {
+      return true;
+    }
+    return false;
+  }, [isDirectVeazRoute, targetIdentifier, storeInfo]);
+
   // Lightbox state
   const [activeLightboxShoe, setActiveLightboxShoe] = useState<GroupedShoeModel | null>(null);
 
@@ -168,10 +186,16 @@ export default function VeazEstilezaPage() {
 
         if (storeData) {
           setStoreInfo(storeData);
-          if (storeData.isOfficialStore || targetIdentifier === "veaz-estileza") {
+          const isVeaz =
+            isDirectVeazRoute ||
+            targetIdentifier === "veaz-estileza" ||
+            Boolean(storeData.isOfficialStore) ||
+            Boolean(storeData.email && storeData.email.toLowerCase().includes("estileza"));
+
+          if (isVeaz) {
             document.title = "VEAZ ESTILEZA | Alta Costura en Calzados Femeninos, Tacos & Stilettos";
           } else {
-            document.title = `${storeData.businessName} | ${storeData.catalogConfig?.catalogTitle || storeData.businessRubro || "Catálogo Oficial"}`;
+            document.title = `${storeData.businessName} | ${storeData.catalogConfig?.catalogTitle || storeData.businessRubro || "Catálogo Virtual Oficial"}`;
           }
         } else if (!isDirectVeazRoute && targetIdentifier !== "veaz-estileza") {
           setStoreInfo({
@@ -217,7 +241,7 @@ export default function VeazEstilezaPage() {
     return () => {
       isMounted = false;
     };
-  }, [targetIdentifier]);
+  }, [targetIdentifier, isDirectVeazRoute]);
 
   // Convert custom merchant banners to hero slides if configured
   const customHeroSlides = useMemo<HeroSlide[] | undefined>(() => {
@@ -239,7 +263,7 @@ export default function VeazEstilezaPage() {
         {
           id: "slide-banner-custom",
           title: storeInfo.businessName,
-          highlight: storeInfo.businessRubro || "COLECCIÓN EXCLUSIVA 2026",
+          highlight: storeInfo.businessRubro || "PRODUCTOS & ATENCIÓN DIRECTA",
           subtitle: "Encuentra tus artículos favoritos en nuestro catálogo digital oficial.",
           category: "Colección",
           badge: "TIENDA OFICIAL",
@@ -249,28 +273,28 @@ export default function VeazEstilezaPage() {
         },
       ];
     }
-    if (storeInfo && !storeInfo.isOfficialStore && rubroPreset.banners.length > 0) {
+    if (!isOfficialVeazStore && rubroPreset.banners.length > 0) {
       return rubroPreset.banners.map((b, idx) => ({
         id: b.id || `rubro-slide-${idx}`,
-        title: storeInfo.businessName || b.title,
+        title: storeInfo?.businessName || b.title,
         highlight: b.highlight,
         subtitle: b.subtitle,
         category: "Colección",
         badge: b.badge,
         image: b.image,
-        modelLook: storeInfo.businessName,
+        modelLook: storeInfo?.businessName || "Tienda Oficial",
         ctaText: b.ctaText,
       }));
     }
     return undefined;
-  }, [storeInfo, rubroPreset]);
+  }, [storeInfo, isOfficialVeazStore, rubroPreset]);
 
   // Dynamic Ticker Phrases
   const tickerItems = useMemo<string[]>(() => {
     if (storeInfo?.catalogConfig?.tickerPhrases && storeInfo.catalogConfig.tickerPhrases.length > 0) {
       return storeInfo.catalogConfig.tickerPhrases;
     }
-    if (storeInfo && !storeInfo.isOfficialStore) {
+    if (!isOfficialVeazStore) {
       return rubroPreset.tickerPhrases;
     }
     return [
@@ -280,33 +304,22 @@ export default function VeazEstilezaPage() {
       "ENVÍOS SEGUROS A TODO EL PERÚ",
       "COLECCIÓN PASARELA 2026",
     ];
-  }, [storeInfo, rubroPreset]);
+  }, [storeInfo, isOfficialVeazStore, rubroPreset]);
 
   // Dynamic WhatsApp Phone
   const storeWhatsAppPhone = useMemo(() => {
     const raw =
       storeInfo?.catalogConfig?.whatsappPhone ||
       (storeInfo as any)?.businessPhone ||
-      (storeInfo?.isOfficialStore || isDirectVeazRoute ? "51929962458" : "");
+      (isOfficialVeazStore ? "51929962458" : "");
     const clean = raw ? raw.replace(/\D/g, "") : "";
     if (!clean) return "";
     return clean.startsWith("51") ? clean : `51${clean}`;
-  }, [storeInfo, isDirectVeazRoute]);
-
-  // Dynamic Showcase Rail items (bottom carrusel de marcas/categorías)
-  const showcaseRailItems = useMemo<CatalogShowcaseRailItem[]>(() => {
-    if (storeInfo?.catalogConfig?.showcaseRailItems && storeInfo.catalogConfig.showcaseRailItems.length > 0) {
-      return storeInfo.catalogConfig.showcaseRailItems;
-    }
-    if (storeInfo && !storeInfo.isOfficialStore) {
-      return rubroPreset.showcaseRailItems || [];
-    }
-    return DEFAULT_VEAZ_RAIL;
-  }, [storeInfo, rubroPreset]);
+  }, [storeInfo, isOfficialVeazStore]);
 
   // Detect whether the store rubro is shoes or general merchandise/appliances
   const isShoeRubro = useMemo(() => {
-    if (isDirectVeazRoute || targetIdentifier === "veaz-estileza" || storeInfo?.isOfficialStore) {
+    if (isOfficialVeazStore) {
       return true;
     }
     const rubroKey = (storeInfo?.catalogConfig?.rubroKey || storeInfo?.businessRubro || "").toLowerCase();
@@ -320,7 +333,8 @@ export default function VeazEstilezaPage() {
       rubroKey.includes("ferreter") ||
       rubroKey.includes("abarrot") ||
       rubroKey.includes("farmac") ||
-      rubroKey.includes("retail")
+      rubroKey.includes("retail") ||
+      rubroKey.includes("general")
     ) {
       return false;
     }
@@ -340,7 +354,30 @@ export default function VeazEstilezaPage() {
       );
     });
     return hasShoeSeries;
-  }, [isDirectVeazRoute, targetIdentifier, storeInfo, products]);
+  }, [isOfficialVeazStore, storeInfo, products]);
+
+  // Dynamic Showcase Rail items (bottom carrusel de marcas/categorías)
+  const showcaseRailItems = useMemo<CatalogShowcaseRailItem[]>(() => {
+    if (storeInfo?.catalogConfig?.showcaseRailItems && storeInfo.catalogConfig.showcaseRailItems.length > 0) {
+      return storeInfo.catalogConfig.showcaseRailItems;
+    }
+    if (!isOfficialVeazStore) {
+      if (rubroPreset.showcaseRailItems && rubroPreset.showcaseRailItems.length > 0 && !isShoeRubro) {
+        return rubroPreset.showcaseRailItems;
+      }
+      if (availableBrands.length > 0) {
+        return availableBrands.map((b, idx) => ({
+          id: `merchant-brand-${idx}`,
+          brand: b.toUpperCase(),
+          title: b,
+          desc: "Garantía oficial y disponibilidad en tienda",
+          img: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=600&auto=format&fit=crop",
+        }));
+      }
+      return rubroPreset.showcaseRailItems || [];
+    }
+    return DEFAULT_VEAZ_RAIL;
+  }, [storeInfo, isOfficialVeazStore, rubroPreset, isShoeRubro, availableBrands]);
 
   // Consolidate and group products by model name and series dynamically
   const groupedShoeModels = useMemo(() => {
@@ -608,20 +645,13 @@ export default function VeazEstilezaPage() {
           <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
           <span>{storeInfo.catalogConfig.announcement}</span>
         </div>
-      ) : storeInfo && !storeInfo.isOfficialStore ? (
-        <div className="fixed top-0 inset-x-0 z-50 bg-gradient-to-r from-slate-900 via-[#151722] to-slate-900 text-amber-300 text-[11px] py-1.5 px-4 text-center font-cinzel tracking-wider flex items-center justify-between border-b border-amber-500/20">
+      ) : storeInfo && !isOfficialVeazStore ? (
+        <div className="fixed top-0 inset-x-0 z-50 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-amber-300 text-[11px] py-1.5 px-4 text-center font-outfit tracking-wide flex items-center justify-center border-b border-white/10">
           <div className="flex items-center gap-2 mx-auto">
-            <span>✨ Catálogo Oficial de <strong>{storeInfo.businessName}</strong></span>
+            <span>✨ Catálogo Virtual Oficial de <strong>{storeInfo.businessName}</strong></span>
             <span className="text-slate-500">•</span>
-            <span className="text-slate-300">Impulsado por CCoplex THINK ERP</span>
+            <span className="text-slate-300">Pedidos directos y disponibilidad en tiempo real</span>
           </div>
-          <Link
-            to="/veaz-estileza"
-            target="_blank"
-            className="text-[10px] text-amber-400 hover:text-amber-200 underline font-bold hidden sm:inline"
-          >
-            Visitar Tienda de Prendas Y Calzados VEAZ ESTILEZA 👑
-          </Link>
         </div>
       ) : null}
 
@@ -629,14 +659,14 @@ export default function VeazEstilezaPage() {
           1. LUXURY LIGHT GLASS NAVBAR (FULL SCREEN WIDTH)
       ────────────────────────────────────────────────────────── */}
       <header className={`fixed inset-x-0 z-40 bg-white/95 backdrop-blur-xl border-b border-[#EDE2D4] shadow-[0_4px_30px_rgba(0,0,0,0.03)] transition-all ${
-        storeInfo?.catalogConfig?.announcement || (storeInfo && !storeInfo.isOfficialStore) ? "top-7" : "top-0"
+        storeInfo?.catalogConfig?.announcement || (storeInfo && !isOfficialVeazStore) ? "top-7" : "top-0"
       }`}>
         <div className="w-full px-4 sm:px-8 lg:px-12 2xl:px-16 h-20 md:h-24 flex items-center justify-between gap-4">
           <div
             onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
             className="cursor-pointer group flex items-center"
           >
-            {storeInfo && !storeInfo.isOfficialStore ? (
+            {storeInfo && !isOfficialVeazStore ? (
               <div className="flex items-center gap-3">
                 {storeInfo.businessLogo ? (
                   <img
@@ -659,7 +689,7 @@ export default function VeazEstilezaPage() {
                     </span>
                   </div>
                   <span className="text-[10px] text-slate-500 tracking-wider font-outfit uppercase">
-                    {storeInfo.businessRubro || "Calzados & Moda"}
+                    {storeInfo.businessRubro || "Comercio Oficial"}
                   </span>
                 </div>
               </div>
@@ -673,7 +703,7 @@ export default function VeazEstilezaPage() {
               onClick={scrollToCatalog}
               className="hover:text-amber-800 transition-colors cursor-pointer"
             >
-              {storeInfo?.isOfficialStore ? "Colección Calzados" : (rubroPreset.navCatalogTitle || "Catálogo de Productos")}
+              {isOfficialVeazStore ? "Colección Calzados" : (rubroPreset.navCatalogTitle || "Catálogo de Productos")}
             </button>
             <button
               onClick={() => {
@@ -682,7 +712,7 @@ export default function VeazEstilezaPage() {
               }}
               className="hover:text-amber-800 transition-colors cursor-pointer"
             >
-              {storeInfo?.isOfficialStore ? "Pasarela Editorial" : (rubroPreset.navLookbookTitle || "Líneas Destacadas")}
+              {isOfficialVeazStore ? "Pasarela Editorial" : (rubroPreset.navLookbookTitle || "Líneas Destacadas")}
             </button>
             <button
               onClick={() => {
@@ -691,7 +721,7 @@ export default function VeazEstilezaPage() {
               }}
               className="hover:text-amber-800 transition-colors cursor-pointer"
             >
-              {storeInfo?.isOfficialStore ? "Ubicación Boutique" : (rubroPreset.navLocationTitle || "Ubicación & Local")}
+              {isOfficialVeazStore ? "Ubicación Boutique" : (rubroPreset.navLocationTitle || "Ubicación & Local")}
             </button>
             <button
               onClick={() => {
@@ -713,7 +743,7 @@ export default function VeazEstilezaPage() {
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder={storeInfo?.isOfficialStore ? "Buscar modelo, SKU, taco..." : (rubroPreset.searchPlaceholder || "Buscar producto, modelo, código...")}
+                placeholder={isOfficialVeazStore ? "Buscar modelo, SKU, taco..." : (rubroPreset.searchPlaceholder || "Buscar producto, modelo, código...")}
                 className="w-full pl-9 pr-8 py-2 rounded-full bg-[#FAF7F2] border border-[#E8DCBE] text-xs text-slate-900 placeholder:text-slate-400 font-outfit focus:outline-none focus:border-amber-500 focus:bg-white transition-all shadow-xs"
               />
               {searchTerm && (
@@ -738,7 +768,7 @@ export default function VeazEstilezaPage() {
 
             <a
               href={`https://wa.me/${storeWhatsAppPhone}?text=${encodeURIComponent(
-                `Hola *${storeInfo?.businessName || "VEAZ ESTILEZA"}*, deseo consultar su catálogo oficial de ${storeInfo?.isOfficialStore ? "calzados" : "productos"} y modelos disponibles.`
+                `Hola *${storeInfo?.businessName || (isOfficialVeazStore ? "VEAZ ESTILEZA" : "la tienda")}*, deseo consultar su catálogo oficial de ${isOfficialVeazStore ? "calzados" : "productos"} y modelos disponibles.`
               )}`}
               target="_blank"
               rel="noopener noreferrer"
@@ -764,12 +794,12 @@ export default function VeazEstilezaPage() {
           2. HORIZONTAL HERO SLIDER
       ────────────────────────────────────────────────────────── */}
       <div className={`w-full ${
-        storeInfo?.catalogConfig?.announcement || (storeInfo && !storeInfo.isOfficialStore) ? "pt-28 md:pt-32" : "pt-20 md:pt-24"
+        storeInfo?.catalogConfig?.announcement || (storeInfo && !isOfficialVeazStore) ? "pt-28 md:pt-32" : "pt-20 md:pt-24"
       }`}>
         <VeazHeroSlider
           slides={customHeroSlides}
-          storeName={storeInfo?.businessName || (isDirectVeazRoute ? "VEAZ ESTILEZA" : "Catálogo Oficial")}
-          isOfficialStore={storeInfo?.isOfficialStore ?? isDirectVeazRoute}
+          storeName={storeInfo?.businessName || (isOfficialVeazStore ? "VEAZ ESTILEZA" : "Catálogo Oficial")}
+          isOfficialStore={isOfficialVeazStore}
           onSelectCategory={handleSelectCategoryFromHeroOrModel}
           onExploreCatalog={scrollToCatalog}
         />
@@ -802,10 +832,10 @@ export default function VeazEstilezaPage() {
       <section ref={catalogRef} className="py-16 sm:py-20 w-full px-4 sm:px-8 lg:px-12 2xl:px-16">
         <div className="text-center max-w-3xl mx-auto mb-12 sm:mb-14">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white border border-amber-300 text-amber-900 text-xs font-cinzel font-bold tracking-[0.25em] uppercase mb-4 shadow-xs">
-            <VeazCrownIcon size={14} />
+            {isOfficialVeazStore ? <VeazCrownIcon size={14} /> : <Store className="w-3.5 h-3.5 text-amber-700" />}
             <span>
               {storeInfo?.catalogConfig?.catalogBadge ||
-                (storeInfo?.isOfficialStore
+                (isOfficialVeazStore
                   ? "VITRINA EXCLUSIVA DE CALZADOS ORIGINALES"
                   : rubroPreset.catalogBadge)}
             </span>
@@ -815,7 +845,7 @@ export default function VeazEstilezaPage() {
           <h2 className="font-playfair text-3xl sm:text-5xl lg:text-6xl font-black text-slate-900 tracking-tight leading-tight">
             {storeInfo?.catalogConfig?.catalogTitle ? (
               <span>{storeInfo.catalogConfig.catalogTitle}</span>
-            ) : storeInfo?.isOfficialStore ? (
+            ) : isOfficialVeazStore ? (
               <>
                 Colección <span className="bg-gradient-to-r from-amber-800 to-amber-600 bg-clip-text text-transparent">VEAZ ESTILEZA</span>
               </>
@@ -828,7 +858,7 @@ export default function VeazEstilezaPage() {
 
           <p className="font-outfit text-base sm:text-lg text-slate-600 font-normal mt-3 leading-relaxed">
             {storeInfo?.catalogConfig?.catalogSubtitle ||
-              (storeInfo?.isOfficialStore
+              (isOfficialVeazStore
                 ? "Stilettos, tacos aguja, modelos calados troquelados y TACONES de gala. Cada modelo agrupa su serie completa de tallas y stock en tiempo real."
                 : rubroPreset.catalogSubtitle)}
           </p>
@@ -1122,9 +1152,9 @@ export default function VeazEstilezaPage() {
                 key={shoe.key}
                 shoe={shoe}
                 storePhone={storeWhatsAppPhone}
-                storeName={storeInfo?.businessName || (isDirectVeazRoute ? "VEAZ ESTILEZA" : "Catálogo Oficial")}
+                storeName={storeInfo?.businessName || (isOfficialVeazStore ? "VEAZ ESTILEZA" : "Catálogo Oficial")}
                 variantLabel={storeInfo?.catalogConfig?.variantLabel || rubroPreset.variantLabel}
-                isOfficialStore={storeInfo?.isOfficialStore ?? isDirectVeazRoute}
+                isOfficialStore={isOfficialVeazStore}
                 onOpenLightbox={(selected) => setActiveLightboxShoe(selected)}
                 onRequestLead={(selectedShoe, selectedSize) => handleOpenLeadModal(selectedShoe, selectedSize)}
               />
@@ -1152,36 +1182,39 @@ export default function VeazEstilezaPage() {
       </section>
 
       {/* ──────────────────────────────────────────────────────────
-          5. PASARELA EDITORIAL / GALERÍA DESTACADA
+          5. PASARELA EDITORIAL / GALERÍA DESTACADA (SOLO SI APLICA)
       ────────────────────────────────────────────────────────── */}
-      {storeInfo?.catalogConfig?.showLookbook !== false && (
+      {storeInfo?.catalogConfig?.showLookbook !== false &&
+        (isOfficialVeazStore ||
+          (storeInfo?.catalogConfig?.lookbookItems && storeInfo.catalogConfig.lookbookItems.length > 0) ||
+          (!isShoeRubro && rubroPreset.lookbookItems && rubroPreset.lookbookItems.length > 0)) && (
         <div id="pasarela-section">
           <VeazModelGallery
             onSelectBrand={handleSelectBrand}
             onSelectCategory={handleSelectCategoryFromHeroOrModel}
-            isOfficialStore={storeInfo?.isOfficialStore ?? isDirectVeazRoute}
+            isOfficialStore={isOfficialVeazStore}
             customTitle={
               storeInfo?.catalogConfig?.lookbookTitle ||
-              (!storeInfo?.isOfficialStore ? rubroPreset.lookbookTitle : undefined)
+              (!isOfficialVeazStore ? rubroPreset.lookbookTitle : undefined)
             }
             customSubtitle={
               storeInfo?.catalogConfig?.lookbookSubtitle ||
-              (!storeInfo?.isOfficialStore ? rubroPreset.lookbookSubtitle : undefined)
+              (!isOfficialVeazStore ? rubroPreset.lookbookSubtitle : undefined)
             }
             customBadge={
               storeInfo?.catalogConfig?.lookbookBadge ||
-              (!storeInfo?.isOfficialStore ? rubroPreset.lookbookBadge : undefined)
+              (!isOfficialVeazStore ? rubroPreset.lookbookBadge : undefined)
             }
             customLooks={
               storeInfo?.catalogConfig?.lookbookItems ||
-              (!storeInfo?.isOfficialStore ? rubroPreset.lookbookItems : undefined)
+              (!isOfficialVeazStore ? rubroPreset.lookbookItems : undefined)
             }
           />
         </div>
       )}
 
       {/* ──────────────────────────────────────────────────────────
-          6. SECCIÓN DE UBICACIÓN FÍSICA & SHOWROOM
+          6. SECCIÓN DE UBICACIÓN FÍSICA & ATENCIÓN
       ────────────────────────────────────────────────────────── */}
       {storeInfo?.catalogConfig?.showLocation !== false && (
         <section id="ubicacion-section" className="py-20 w-full px-4 sm:px-8 lg:px-12 2xl:px-16 bg-gradient-to-b from-[#FAF8F5] via-[#F4EDE2] to-[#FAF8F5] border-y border-[#EDE2D4] relative overflow-hidden">
@@ -1195,7 +1228,7 @@ export default function VeazEstilezaPage() {
               <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white border border-amber-300 text-amber-900 text-xs font-cinzel font-bold tracking-[0.25em] uppercase mb-4 shadow-xs">
                 <Compass className="w-3.5 h-3.5 text-amber-700 animate-spin" style={{ animationDuration: "12s" }} />
                 <span>
-                  {storeInfo?.isOfficialStore
+                  {isOfficialVeazStore
                     ? "SHOWROOM & BOUTIQUE EXCLUSIVA"
                     : "LOCAL DE ATENCIÓN & UBICACIÓN"}
                 </span>
@@ -1204,13 +1237,13 @@ export default function VeazEstilezaPage() {
               <h2 className="font-playfair text-3xl sm:text-5xl font-black text-slate-900 tracking-tight">
                 Visita Nuestro{" "}
                 <span className="bg-gradient-to-r from-amber-800 to-amber-600 bg-clip-text text-transparent">
-                  {storeInfo?.isOfficialStore ? "Salón de Exhibición" : "Punto de Venta"}
+                  {isOfficialVeazStore ? "Salón de Exhibición" : "Punto de Venta"}
                 </span>
               </h2>
               <p className="font-outfit text-sm sm:text-base text-slate-600 mt-3">
-                {storeInfo?.isOfficialStore
+                {isOfficialVeazStore
                   ? "Vive la experiencia de alta costura en persona. Te esperamos en nuestro local principal en Puerto Maldonado."
-                  : `Conoce nuestros productos y recibe atención personalizada en ${storeInfo?.catalogConfig?.locationCity || "nuestro local comercial"}.`}
+                  : `Conoce nuestros productos y recibe atención personalizada en ${storeInfo?.catalogConfig?.locationCity || (storeInfo as any)?.businessDepartment || "nuestro local comercial"}.`}
               </p>
             </div>
 
@@ -1228,7 +1261,11 @@ export default function VeazEstilezaPage() {
                     </span>
                     <h3 className="font-playfair text-xl sm:text-2xl font-bold text-slate-900">
                       {storeInfo?.catalogConfig?.locationCity ||
-                        (storeInfo?.isOfficialStore ? "Puerto Maldonado, Madre de Dios" : "Atención Presencial")}
+                        ((storeInfo as any)?.businessDepartment
+                          ? `${(storeInfo as any).businessDepartment}${(storeInfo as any).businessProvince ? ", " + (storeInfo as any).businessProvince : ""}`
+                          : isOfficialVeazStore
+                          ? "Puerto Maldonado, Madre de Dios"
+                          : "Atención Presencial")}
                     </h3>
                   </div>
                 </div>
@@ -1237,14 +1274,15 @@ export default function VeazEstilezaPage() {
                 <div className="p-4 sm:p-5 rounded-2xl bg-[#FAF7F2] border border-[#E8DCBE] mb-6">
                   <p className="font-playfair text-lg sm:text-xl font-bold text-slate-900 leading-snug">
                     {storeInfo?.catalogConfig?.locationAddress ||
-                      (storeInfo?.isOfficialStore
+                      (storeInfo as any)?.businessAddress ||
+                      (isOfficialVeazStore
                         ? "Av. Madre de Dios, Con Pasaje Fonavi"
                         : "Visítanos en nuestro local comercial")}
                   </p>
-                  {(storeInfo?.catalogConfig?.locationLandmarks || storeInfo?.isOfficialStore) && (
+                  {(storeInfo?.catalogConfig?.locationLandmarks || isOfficialVeazStore) && (
                     <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-amber-200/60">
                       <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-900 font-outfit text-xs font-semibold">
-                        📍 {storeInfo?.catalogConfig?.locationLandmarks || "Frente a Proversa / Al costado de Pollería Todo a Leña"}
+                        📍 {storeInfo?.catalogConfig?.locationLandmarks || (isOfficialVeazStore ? "Frente a Proversa / Al costado de Pollería Todo a Leña" : "")}
                       </span>
                     </div>
                   )}
@@ -1258,7 +1296,7 @@ export default function VeazEstilezaPage() {
                       <h4 className="font-cinzel text-xs font-bold text-slate-900 uppercase">Horario de Atención</h4>
                       <p className="font-outfit text-xs text-slate-600 mt-0.5">
                         {storeInfo?.catalogConfig?.locationSchedule ||
-                          (storeInfo?.isOfficialStore ? "Domingo a Viernes: 8:00 am - 9:30 pm" : "Lunes a Sábado: 8:30 am - 8:30 pm")}
+                          (isOfficialVeazStore ? "Domingo a Viernes: 8:00 am - 9:30 pm" : "Lunes a Sábado: 8:30 am - 8:30 pm")}
                       </p>
                     </div>
                   </div>
@@ -1268,7 +1306,7 @@ export default function VeazEstilezaPage() {
                     <div>
                       <h4 className="font-cinzel text-xs font-bold text-slate-900 uppercase">Asesoría Directa</h4>
                       <p className="font-outfit text-xs text-slate-600 mt-0.5">
-                        {storeInfo?.isOfficialStore ? "Prueba de tallas y series completas" : "Atención personalizada y pedidos al momento"}
+                        {isOfficialVeazStore ? "Prueba de tallas y series completas" : "Atención personalizada y pedidos al momento"}
                       </p>
                     </div>
                   </div>
@@ -1276,9 +1314,9 @@ export default function VeazEstilezaPage() {
 
                 {/* Action Buttons */}
                 <div className="flex flex-wrap items-center gap-4">
-                  {(storeInfo?.catalogConfig?.locationMapsUrl || storeInfo?.isOfficialStore) && (
+                  {(storeInfo?.catalogConfig?.locationMapsUrl || isOfficialVeazStore) && (
                     <a
-                      href={storeInfo?.catalogConfig?.locationMapsUrl || "https://maps.app.goo.gl/p9uX1yW7n2FgFj9bA"}
+                      href={storeInfo?.catalogConfig?.locationMapsUrl || (isOfficialVeazStore ? "https://maps.app.goo.gl/p9uX1yW7n2FgFj9bA" : "#")}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex-1 min-w-[200px] px-6 py-3.5 rounded-2xl bg-gradient-to-r from-amber-700 to-amber-900 hover:from-amber-800 hover:to-amber-950 text-white font-cinzel text-xs font-bold tracking-wider uppercase flex items-center justify-center gap-2.5 shadow-lg hover:shadow-xl transition-all cursor-pointer group"
@@ -1291,7 +1329,7 @@ export default function VeazEstilezaPage() {
 
                   <a
                     href={`https://wa.me/${storeWhatsAppPhone}?text=${encodeURIComponent(
-                      `Hola *${storeInfo?.businessName || "VEAZ ESTILEZA"}*, deseo consultar sobre la atención en su local.`
+                      `Hola *${storeInfo?.businessName || (isOfficialVeazStore ? "VEAZ ESTILEZA" : "Tienda Oficial")}*, deseo consultar sobre la atención en su local.`
                     )}`}
                     target="_blank"
                     rel="noopener noreferrer"
@@ -1310,13 +1348,15 @@ export default function VeazEstilezaPage() {
                     src={
                       (storeInfo?.catalogConfig?.locationImage && getReceiptAbsoluteUrl(storeInfo.catalogConfig.locationImage)) ||
                       storeInfo?.catalogConfig?.locationImage ||
-                      "https://images.unsplash.com/photo-1524758631624-e2822e304c36?q=80&w=800&auto=format&fit=crop"
+                      (isOfficialVeazStore
+                        ? "https://images.unsplash.com/photo-1524758631624-e2822e304c36?q=80&w=800&auto=format&fit=crop"
+                        : "https://images.unsplash.com/photo-1441986300917-64674bd600d8?q=80&w=800&auto=format&fit=crop")
                     }
                     alt={storeInfo?.businessName || "Local"}
                     className="w-full h-full object-cover opacity-60 group-hover:scale-105 transition-transform duration-700"
                     onError={(e) => {
                       (e.target as any).src =
-                        "https://images.unsplash.com/photo-1524758631624-e2822e304c36?q=80&w=800&auto=format&fit=crop";
+                        "https://images.unsplash.com/photo-1441986300917-64674bd600d8?q=80&w=800&auto=format&fit=crop";
                     }}
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent"></div>
@@ -1325,7 +1365,7 @@ export default function VeazEstilezaPage() {
                   <div className="absolute top-4 left-4 right-4 flex items-center justify-between">
                     <span className="px-3 py-1.5 rounded-full bg-white/90 backdrop-blur-md text-[10px] font-cinzel font-bold tracking-widest text-slate-900 uppercase shadow-md flex items-center gap-1.5">
                       <MapPin className="w-3.5 h-3.5 text-rose-600 animate-bounce" />
-                      <span>{storeInfo?.catalogConfig?.locationCity || "Perú"}</span>
+                      <span>{storeInfo?.catalogConfig?.locationCity || (storeInfo as any)?.businessDepartment || "Perú"}</span>
                     </span>
                     <div className="w-9 h-9 rounded-full bg-amber-500 text-slate-950 flex items-center justify-center font-bold shadow-lg">
                       <VeazCrownIcon size={16} />
@@ -1342,7 +1382,7 @@ export default function VeazEstilezaPage() {
                         Inicia navegación GPS para trazar tu ruta directa.
                       </p>
                       <a
-                        href={storeInfo?.catalogConfig?.locationMapsUrl || "https://maps.app.goo.gl/p9uX1yW7n2FgFj9bA"}
+                        href={storeInfo?.catalogConfig?.locationMapsUrl || (isOfficialVeazStore ? "https://maps.app.goo.gl/p9uX1yW7n2FgFj9bA" : `https://maps.google.com/?q=${encodeURIComponent(storeInfo?.businessName || "")}`)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-cinzel text-xs font-bold tracking-wider uppercase shadow-md transition-all cursor-pointer"
@@ -1367,9 +1407,9 @@ export default function VeazEstilezaPage() {
         isOpen={!!activeLightboxShoe}
         onClose={() => setActiveLightboxShoe(null)}
         storePhone={storeWhatsAppPhone}
-        storeName={storeInfo?.businessName || "VEAZ ESTILEZA"}
+        storeName={storeInfo?.businessName || (isOfficialVeazStore ? "VEAZ ESTILEZA" : "Catálogo Oficial")}
         variantLabel={storeInfo?.catalogConfig?.variantLabel || rubroPreset.variantLabel}
-        isOfficialStore={storeInfo?.isOfficialStore ?? true}
+        isOfficialStore={isOfficialVeazStore}
         onRequestLead={(selectedShoe, selectedSize) => {
           setActiveLightboxShoe(null);
           handleOpenLeadModal(selectedShoe, selectedSize);
@@ -1416,14 +1456,14 @@ export default function VeazEstilezaPage() {
                 <div className="inline-flex items-center gap-2 text-xs font-cinzel tracking-[0.25em] text-amber-900 font-bold uppercase mb-1">
                   <VeazCrownIcon size={13} />
                   <span>
-                    {storeInfo?.isOfficialStore
+                    {isOfficialVeazStore
                       ? "UNIVERSO VEAZ ESTILEZA"
                       : (storeInfo?.businessName ? `UNIVERSO ${storeInfo.businessName.toUpperCase()}` : "LÍNEAS DESTACADAS")}
                   </span>
                 </div>
                 <h3 className="font-playfair text-2xl font-black text-slate-900">
                   {storeInfo?.catalogConfig?.showcaseRailTitle ||
-                    (storeInfo?.isOfficialStore
+                    (isOfficialVeazStore
                       ? "Marcas Oficiales & Líneas de Colección"
                       : rubroPreset.showcaseRailTitle || "Líneas de Productos & Marcas Oficiales")}
                 </h3>
@@ -1490,7 +1530,7 @@ export default function VeazEstilezaPage() {
 
         <div className="w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12 mb-16">
           <div className="flex flex-col gap-4">
-            {storeInfo && !storeInfo.isOfficialStore ? (
+            {!isOfficialVeazStore && storeInfo ? (
               <>
                 <div className="flex items-center gap-3">
                   {storeInfo.businessLogo ? (
@@ -1558,7 +1598,7 @@ export default function VeazEstilezaPage() {
               </a>
               <a
                 href={`https://wa.me/${storeWhatsAppPhone}?text=${encodeURIComponent(
-                  `Hola *${storeInfo?.businessName || "VEAZ ESTILEZA"}*, deseo consultar su catálogo oficial de ${storeInfo?.isOfficialStore ? "calzados" : "productos"} y modelos disponibles.`
+                  `Hola *${storeInfo?.businessName || (isOfficialVeazStore ? "VEAZ ESTILEZA" : "Tienda Oficial")}*, deseo consultar su catálogo oficial de ${isOfficialVeazStore ? "calzados" : "productos"} y modelos disponibles.`
                 )}`}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -1568,26 +1608,14 @@ export default function VeazEstilezaPage() {
                 <MessageCircle className="w-4 h-4" />
               </a>
             </div>
-
-            {storeInfo && !storeInfo.isOfficialStore && (
-              <div className="pt-2 border-t border-slate-100">
-                <Link
-                  to="/veaz-estileza"
-                  className="inline-flex items-center gap-1.5 text-xs text-amber-800 hover:text-amber-950 font-cinzel font-bold hover:underline"
-                >
-                  <Crown className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Visitar Tienda de Prendas Y Calzados VEAZ ESTILEZA 👑</span>
-                </Link>
-              </div>
-            )}
           </div>
 
           <div>
             <h4 className="font-cinzel text-xs uppercase tracking-[0.25em] text-amber-900 font-bold mb-5">
-              {storeInfo?.isOfficialStore ? "Líneas Exclusivas" : "Categorías Principales"}
+              {isOfficialVeazStore ? "Líneas Exclusivas" : "Categorías Principales"}
             </h4>
             <ul className="space-y-3 text-xs text-slate-600 font-outfit">
-              {storeInfo?.isOfficialStore ? (
+              {isOfficialVeazStore ? (
                 <>
                   <li>
                     <button
@@ -1681,7 +1709,11 @@ export default function VeazEstilezaPage() {
               </li>
               <li className="flex items-center gap-2">
                 <MapPin className="w-4 h-4 text-amber-700 shrink-0" />
-                <span>{storeInfo?.catalogConfig?.locationAddress || (storeInfo?.isOfficialStore ? "Av. Madre de Dios, Pasaje Fonavi" : rubroPreset.locationAddress || "Atención directa y envíos")}</span>
+                <span>
+                  {storeInfo?.catalogConfig?.locationAddress ||
+                    (storeInfo as any)?.businessAddress ||
+                    (isOfficialVeazStore ? "Av. Madre de Dios, Pasaje Fonavi" : "Atención directa y envíos")}
+                </span>
               </li>
             </ul>
           </div>
@@ -1691,7 +1723,7 @@ export default function VeazEstilezaPage() {
               Conexión THINK ERP
             </h4>
             <p className="text-xs text-slate-600 font-outfit leading-relaxed mb-4">
-              {storeInfo?.isOfficialStore
+              {isOfficialVeazStore
                 ? "Este catálogo sincroniza directamente las series de tallas y el inventario en tiempo real con el panel financiero THINK."
                 : "Este catálogo sincroniza el stock disponible y precios oficiales en tiempo real con el sistema THINK ERP."}
             </p>
@@ -1707,13 +1739,13 @@ export default function VeazEstilezaPage() {
 
         <div className="w-full pt-8 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
           <p className="text-xs text-slate-500 font-outfit">
-            © {new Date().getFullYear()} {storeInfo?.businessName || "VEAZ ESTILEZA"}. Todos los derechos reservados.
+            © {new Date().getFullYear()} {storeInfo?.businessName || (isOfficialVeazStore ? "VEAZ ESTILEZA" : "Tienda Oficial")}. Todos los derechos reservados.
           </p>
           <p className="text-xs text-slate-500 font-outfit flex items-center gap-1.5 justify-center">
-            {storeInfo?.isOfficialStore ? (
+            {isOfficialVeazStore ? (
               <>Confección con <Sparkles className="w-3.5 h-3.5 text-amber-600" /> para damas distinguidas.</>
             ) : (
-              <>Catálogo oficial y garantizado de <span className="font-semibold text-slate-700">{storeInfo?.businessName || "la tienda"}</span>.</>
+              <>Catálogo digital oficial sincronizado con <span className="font-semibold text-slate-700">THINK ERP</span>.</>
             )}
           </p>
         </div>

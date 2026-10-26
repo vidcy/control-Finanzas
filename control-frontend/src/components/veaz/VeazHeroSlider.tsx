@@ -91,7 +91,24 @@ export default function VeazHeroSlider({
   onSelectCategory,
   onExploreCatalog,
 }: VeazHeroSliderProps) {
-  const activeSlides = slides && slides.length > 0 ? slides : HERO_SLIDES;
+  const activeSlides =
+    slides && slides.length > 0
+      ? slides
+      : isOfficialStore
+      ? HERO_SLIDES
+      : [
+          {
+            id: "slide-merchant-default-1",
+            title: storeName || "CATÁLOGO DIGITAL OFICIAL",
+            highlight: "CALIDAD, GARANTÍA & MEJORES PRECIOS",
+            subtitle: "Explora nuestra selección completa de artículos con atención y pedidos directos por WhatsApp.",
+            category: "Catálogo",
+            badge: storeBadge || "TIENDA OFICIAL",
+            image: "https://images.unsplash.com/photo-1441986300917-64674bd600d8?q=80&w=1800&auto=format&fit=crop",
+            modelLook: storeName || "Tienda Oficial",
+            ctaText: "Explorar Catálogo",
+          },
+        ];
   const [currentIndex, setCurrentIndex] = useState(0);
   const [direction, setDirection] = useState<"left" | "right">("right");
   const [isPlaying, setIsPlaying] = useState(true);

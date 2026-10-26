@@ -989,7 +989,7 @@ export const RUBRO_PRESETS: Record<string, RubroPreset> = {
 };
 
 export function getRubroPreset(rubroString?: string | null): RubroPreset {
-  if (!rubroString) return RUBRO_PRESETS.CALZADOS;
+  if (!rubroString) return RUBRO_PRESETS.GENERAL;
   const s = rubroString.toLowerCase();
 
   // Match Electrodomésticos first (including user's database value 'LECTRODOMESTICOS')
