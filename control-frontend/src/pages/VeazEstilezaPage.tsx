@@ -272,10 +272,14 @@ export default function VeazEstilezaPage() {
 
   // Dynamic WhatsApp Phone
   const storeWhatsAppPhone = useMemo(() => {
-    const raw = storeInfo?.catalogConfig?.whatsappPhone || (storeInfo?.isOfficialStore ? "51929962458" : "51929962458");
-    const clean = raw.replace(/\D/g, "");
+    const raw =
+      storeInfo?.catalogConfig?.whatsappPhone ||
+      (storeInfo as any)?.businessPhone ||
+      (storeInfo?.isOfficialStore || isDirectVeazRoute ? "51929962458" : "");
+    const clean = raw ? raw.replace(/\D/g, "") : "";
+    if (!clean) return "";
     return clean.startsWith("51") ? clean : `51${clean}`;
-  }, [storeInfo]);
+  }, [storeInfo, isDirectVeazRoute]);
 
   // Dynamic Showcase Rail items (bottom carrusel de marcas/categorías)
   const showcaseRailItems = useMemo<CatalogShowcaseRailItem[]>(() => {
@@ -540,6 +544,37 @@ export default function VeazEstilezaPage() {
     setSearchTerm("");
   };
 
+  if (storeInfo?.notFound && !isDirectVeazRoute) {
+    return (
+      <div className="min-h-screen bg-[#FAF8F5] text-slate-900 font-sans flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-20 h-20 rounded-3xl bg-amber-100 border border-amber-300 text-amber-900 flex items-center justify-center text-3xl mb-6 shadow-md">
+          🏪
+        </div>
+        <h1 className="font-playfair text-3xl sm:text-4xl font-black text-slate-900 mb-3">
+          Catálogo No Encontrado
+        </h1>
+        <p className="font-outfit text-slate-600 max-w-md mb-8 text-sm sm:text-base">
+          No pudimos localizar la tienda pública con el identificador <code className="bg-amber-100 text-amber-900 px-2 py-0.5 rounded font-mono text-xs">{targetIdentifier}</code>.
+          Verifica que el enlace sea el correcto o que el negocio tenga su catálogo activado.
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <Link
+            to="/dashboard"
+            className="px-6 py-3 rounded-2xl bg-slate-900 hover:bg-black text-white text-xs font-cinzel font-bold tracking-wider uppercase transition-all shadow-md"
+          >
+            Ir a mi Panel de Control
+          </Link>
+          <Link
+            to="/veaz-estileza"
+            className="px-6 py-3 rounded-2xl bg-amber-700 hover:bg-amber-800 text-white text-xs font-cinzel font-bold tracking-wider uppercase transition-all shadow-md"
+          >
+            Ver Tienda VEAZ ESTILEZA 👑
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#FAF8F5] text-slate-900 font-sans selection:bg-amber-200 selection:text-amber-950 overflow-x-hidden">
       {/* ──────────────────────────────────────────────────────────
@@ -710,8 +745,8 @@ export default function VeazEstilezaPage() {
       }`}>
         <VeazHeroSlider
           slides={customHeroSlides}
-          storeName={storeInfo?.businessName}
-          isOfficialStore={storeInfo?.isOfficialStore ?? true}
+          storeName={storeInfo?.businessName || (isDirectVeazRoute ? "VEAZ ESTILEZA" : "Catálogo Oficial")}
+          isOfficialStore={storeInfo?.isOfficialStore ?? isDirectVeazRoute}
           onSelectCategory={handleSelectCategoryFromHeroOrModel}
           onExploreCatalog={scrollToCatalog}
         />
@@ -1064,9 +1099,9 @@ export default function VeazEstilezaPage() {
                 key={shoe.key}
                 shoe={shoe}
                 storePhone={storeWhatsAppPhone}
-                storeName={storeInfo?.businessName || "VEAZ ESTILEZA"}
+                storeName={storeInfo?.businessName || (isDirectVeazRoute ? "VEAZ ESTILEZA" : "Catálogo Oficial")}
                 variantLabel={storeInfo?.catalogConfig?.variantLabel || rubroPreset.variantLabel}
-                isOfficialStore={storeInfo?.isOfficialStore ?? true}
+                isOfficialStore={storeInfo?.isOfficialStore ?? isDirectVeazRoute}
                 onOpenLightbox={(selected) => setActiveLightboxShoe(selected)}
                 onRequestLead={(selectedShoe, selectedSize) => handleOpenLeadModal(selectedShoe, selectedSize)}
               />
@@ -1101,7 +1136,7 @@ export default function VeazEstilezaPage() {
           <VeazModelGallery
             onSelectBrand={handleSelectBrand}
             onSelectCategory={handleSelectCategoryFromHeroOrModel}
-            isOfficialStore={storeInfo?.isOfficialStore ?? true}
+            isOfficialStore={storeInfo?.isOfficialStore ?? isDirectVeazRoute}
             customTitle={
               storeInfo?.catalogConfig?.lookbookTitle ||
               (!storeInfo?.isOfficialStore ? rubroPreset.lookbookTitle : undefined)

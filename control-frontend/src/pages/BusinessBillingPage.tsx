@@ -42,7 +42,6 @@ import {
   type BillingStats,
   type BillingItem,
 } from "../services/billing.api";
-import * as XLSX from "xlsx";
 import QRCode from "qrcode";
 
 export default function BusinessBillingPage() {
@@ -333,7 +332,7 @@ export default function BusinessBillingPage() {
   };
 
   // Export to Excel / SIRE
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
     if (filteredDocuments.length === 0) {
       toast.error("No hay comprobantes para exportar con los filtros seleccionados");
       return;
@@ -357,6 +356,7 @@ export default function BusinessBillingPage() {
       "Descripción SUNAT": doc.sunatDescription || "Aceptado",
     }));
 
+    const XLSX = await import("xlsx");
     const ws = XLSX.utils.json_to_sheet(dataToExport);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Libro_Ventas_SUNAT");

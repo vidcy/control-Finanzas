@@ -918,7 +918,17 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
               <button
                 type="button"
                 onClick={() => {
-                  const mySlug = user?.businessSlug || user?.id || "mi-tienda";
+                  const mySlug =
+                    user?.businessSlug ||
+                    (user?.businessName
+                      ? user.businessName
+                          .toLowerCase()
+                          .normalize("NFD")
+                          .replace(/[\u0300-\u036f]/g, "")
+                          .replace(/[^a-z0-9]/g, "-")
+                          .replace(/-+/g, "-")
+                          .replace(/^-|-$/g, "")
+                      : user?.id || "mi-tienda");
                   window.open(`/catalogo/${mySlug}`, "_blank");
                 }}
                 className="w-full py-1.5 px-2 rounded-xl bg-slate-950 hover:bg-black text-amber-300 hover:text-amber-200 text-[11px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
@@ -1618,7 +1628,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                     </p>
                     <div className="pt-1 flex items-center gap-2">
                       <span className="text-[11px] font-mono font-bold text-slate-700 bg-white/90 px-2.5 py-1 rounded-lg border border-amber-200/90 shadow-2xs">
-                        {window.location.origin}/catalogo/{user?.businessSlug || (user?.businessName ? user.businessName.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-") : user?.id || "mi-tienda")}
+                        {window.location.origin}/catalogo/{user?.businessSlug || (user?.businessName ? user.businessName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") : user?.id || "mi-tienda")}
                       </span>
                     </div>
                   </div>
@@ -1627,7 +1637,17 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                     <button
                       type="button"
                       onClick={() => {
-                        const mySlug = user?.businessSlug || user?.id || "mi-tienda";
+                        const mySlug =
+                          user?.businessSlug ||
+                          (user?.businessName
+                            ? user.businessName
+                                .toLowerCase()
+                                .normalize("NFD")
+                                .replace(/[\u0300-\u036f]/g, "")
+                                .replace(/[^a-z0-9]/g, "-")
+                                .replace(/-+/g, "-")
+                                .replace(/^-|-$/g, "")
+                            : user?.id || "mi-tienda");
                         window.open(`/catalogo/${mySlug}`, "_blank");
                       }}
                       className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-slate-950 hover:bg-black text-amber-300 hover:text-amber-200 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm"
