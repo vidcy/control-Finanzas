@@ -2,7 +2,8 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface CreateLeadDto {
-  name: string;
+  name?: string;
+  fullName?: string;
   phone: string;
   email?: string;
   businessName?: string;
@@ -35,44 +36,62 @@ export class LeadsService {
 
   async create(data: CreateLeadDto) {
     let resolvedTargetUserId = data.targetUserId || null;
-    let isPlatform = data.isPlatformLead !== undefined ? data.isPlatformLead : true;
+    let isPlatform = true;
 
-    if (data.storeIdentifier && data.storeIdentifier !== 'think' && data.storeIdentifier !== 'veaz-estileza') {
+    // If explicit isPlatformLead is provided, respect it
+    if (data.isPlatformLead !== undefined) {
+      isPlatform = Boolean(data.isPlatformLead);
+    } else if (data.productName || data.productSku || (data.storeIdentifier && data.storeIdentifier !== 'think')) {
+      // Inquiries made from a store catalog or for a specific product belong to that store
       isPlatform = false;
-      if (!resolvedTargetUserId) {
-        try {
-          const storeUser = await (this.prisma as any).user.findFirst({
+    }
+
+    if (data.storeIdentifier && !resolvedTargetUserId) {
+      try {
+        let storeUser = await (this.prisma as any).user.findFirst({
+          where: {
+            OR: [
+              { id: data.storeIdentifier },
+              { businessSlug: data.storeIdentifier },
+              { email: data.storeIdentifier },
+            ],
+          },
+          select: { id: true },
+        });
+
+        if (!storeUser && data.storeIdentifier === 'veaz-estileza') {
+          // Default to the first superadmin/admin owner for the official showcase store
+          storeUser = await (this.prisma as any).user.findFirst({
             where: {
-              OR: [
-                { id: data.storeIdentifier },
-                { businessSlug: data.storeIdentifier },
-                { email: data.storeIdentifier },
-              ],
+              role: { in: ['SUPERADMIN', 'ADMIN'] },
             },
             select: { id: true },
           });
-          if (storeUser) {
-            resolvedTargetUserId = storeUser.id;
-          }
-        } catch {
-          // fallback
         }
+
+        if (storeUser) {
+          resolvedTargetUserId = storeUser.id;
+        }
+      } catch {
+        // fallback
       }
     }
 
+    const dateStr = data.appointmentDate ? String(data.appointmentDate) : null;
+
     return (this.prisma as any).lead.create({
       data: {
-        name: data.name || 'Prospecto Web',
+        name: data.name || data.fullName || 'Prospecto Web',
         phone: data.phone,
         email: data.email || null,
         businessName: data.businessName || null,
         businessType: data.businessType || null,
-        interestType: data.interestType || 'DEMO',
-        appointmentDate: data.appointmentDate || null,
+        interestType: data.interestType || (data.productName ? 'COTIZACION' : 'DEMO'),
+        appointmentDate: dateStr,
         appointmentTime: data.appointmentTime || null,
         notes: data.notes || null,
         monthlySalesVolume: data.monthlySalesVolume || null,
-        utmSource: data.utmSource || 'LandingPage',
+        utmSource: data.utmSource || (isPlatform ? 'LandingPage' : 'CatalogoWeb'),
         utmCampaign: data.utmCampaign || null,
         targetUserId: resolvedTargetUserId,
         storeIdentifier: data.storeIdentifier || null,
@@ -108,23 +127,23 @@ export class LeadsService {
     }
 
     if (text.includes('precio') || text.includes('costo') || text.includes('plan') || text.includes('cuanto')) {
-      reply = '¡Excelente pregunta! 🚀 THINK ofrece planes diseñados para emprendedores y empresas en crecimiento, con acceso a POS ultrarrápido, inventario con tallas/series, kardex, reportes y boletas/facturas electrónicas ilimitadas. ¿Te gustaría agendar una demo en vivo de 15 minutos o recibir un descuento especial por WhatsApp?';
+      reply = '¡Excelente pregunta! THINK ofrece planes diseñados para emprendedores y empresas en crecimiento, con acceso a POS ultrarrápido, inventario con tallas/series, kardex, reportes y boletas/facturas electrónicas ilimitadas. ¿Te gustaría agendar una demo en vivo de 15 minutos o recibir un descuento especial por WhatsApp?';
       quickActions = ['Separar Demostración Gratuita', 'Ver Planes y Descuentos', 'Hablar con un Asesor Humano'];
       suggestedAction = 'SCHEDULE_DEMO';
     } else if (text.includes('calzado') || text.includes('serie') || text.includes('talla') || text.includes('zapato')) {
-      reply = '👠 ¡Somos especialistas en calzado y moda! THINK cuenta con el motor de Series más avanzado del mercado: gestiona curvas de tallas (34 al 39, repeticiones), control de tacos, códigos de barra por par o por serie, y etiquetas listas para vitrina o caja. ¿Deseas ver cómo funciona en tu tienda?';
+      reply = '¡Somos especialistas en calzado y moda! THINK cuenta con el motor de Series más avanzado del mercado: gestiona curvas de tallas (34 al 39, repeticiones), control de tacos, códigos de barra por par o por serie, y etiquetas listas para vitrina o caja. ¿Deseas ver cómo funciona en tu tienda?';
       quickActions = ['Agendar Demo de Calzado', '¿Cómo imprime etiquetas?', 'Consultar Precios'];
       suggestedAction = 'SCHEDULE_DEMO';
     } else if (text.includes('demo') || text.includes('cita') || text.includes('probar') || text.includes('reunion')) {
-      reply = '📅 ¡Perfecto! Podemos coordinar una videollamada personalizada o una demostración guiada donde te enseñaremos a configurar tu inventario, ventas y caja en minutos. Déjanos tu número de WhatsApp y la hora en que te convenga.';
+      reply = '¡Perfecto! Podemos coordinar una videollamada personalizada o una demostración guiada donde te enseñaremos a configurar tu inventario, ventas y caja en minutos. Déjanos tu número de WhatsApp y la hora en que te convenga.';
       quickActions = ['Agendar Cita Ahora', 'Enviar WhatsApp Express', '¿Qué requisitos necesito?'];
       suggestedAction = 'SCHEDULE_DEMO';
     } else if (text.includes('boleta') || text.includes('factura') || text.includes('sunat')) {
-      reply = '⚡ Sí, THINK se integra con facturación electrónica SUNAT para emitir boletas, facturas y notas de crédito en segundos directamente desde tu punto de venta en PC, tablet o celular.';
+      reply = 'Sí, THINK se integra con facturación electrónica SUNAT para emitir boletas, facturas y notas de crédito en segundos directamente desde tu punto de venta en PC, tablet o celular.';
       quickActions = ['¿Cómo se activa SUNAT?', 'Agendar Demostración', 'Hablar con Ventas'];
       suggestedAction = 'GENERAL';
     } else {
-      reply = '¡Hola! 👋 Soy tu Asesor Virtual THINK. Puedo mostrarte cómo controlar tu stock en tiempo real, evitar robos y fugas de dinero, vender a la velocidad de la luz y emitir comprobantes. ¿De qué rubro es tu negocio (calzados, electrodomésticos, ropa, minimarket u otro)?';
+      reply = '¡Hola! Soy tu Asesor Virtual THINK. Puedo mostrarte cómo controlar tu stock en tiempo real, evitar robos y fugas de dinero, vender a la velocidad de la luz y emitir comprobantes. ¿De qué rubro es tu negocio (calzados, electrodomésticos, ropa, minimarket u otro)?';
       quickActions = ['Tienda de Calzados / Moda', 'Electrodomésticos / Tecnología', 'Minimarket / Abarrotes', 'Agendar Demo'];
       suggestedAction = 'ASK_PHONE';
     }
@@ -138,36 +157,27 @@ export class LeadsService {
     };
   }
 
-  private buildScopeWhere(user: any, scope?: string) {
+  private buildScopeWhere(user: any) {
     const isAdmin = user && (user.role === 'ADMIN' || user.role === 'SUPERADMIN');
     const effectiveUserId = user ? (user.parentId || user.id) : null;
 
-    if (!isAdmin) {
+    if (isAdmin) {
+      // System Admins ONLY see leads captured for the THINK ERP platform.
+      // Strict multi-tenant isolation: Admins do NOT see or access private merchant store leads.
       return {
-        OR: [
-          { targetUserId: user ? user.id : 'NONE' },
-          { targetUserId: effectiveUserId || 'NONE' },
-        ],
+        isPlatformLead: true,
       };
     }
 
-    if (scope === 'STORE') {
-      return {
-        OR: [
-          { targetUserId: user.id },
-          { targetUserId: effectiveUserId },
-        ],
-      };
-    } else if (scope === 'ALL') {
-      return {};
-    } else {
-      return {
-        OR: [
-          { isPlatformLead: true },
-          { targetUserId: null },
-        ],
-      };
-    }
+    // Merchants ONLY see customer leads belonging strictly to their own business catalog.
+    // Strict multi-tenant isolation: Merchants NEVER see THINK ERP platform leads or other businesses' leads.
+    return {
+      isPlatformLead: false,
+      OR: [
+        { targetUserId: user ? user.id : 'NONE' },
+        { targetUserId: effectiveUserId || 'NONE' },
+      ],
+    };
   }
 
   async findAll(user: any, status?: string, scope?: string) {

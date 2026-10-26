@@ -40,10 +40,12 @@ export class AppController {
       const matched: any[] = await this.prisma.$queryRawUnsafe(
         `SELECT * FROM "User" 
          WHERE "id" = $1 
+            OR LOWER(COALESCE("businessSlug", '')) = LOWER($1)
             OR LOWER(email) = LOWER($1) 
             OR LOWER(email) LIKE LOWER($1 || '@%')
-            OR LOWER("businessName") = LOWER($1)
-            OR LOWER(COALESCE("businessSlug", '')) = LOWER($1)
+            OR LOWER(COALESCE("businessName", '')) = LOWER($1)
+            OR LOWER(REPLACE(COALESCE("businessName", ''), ' ', '-')) = LOWER($1)
+            OR LOWER(REPLACE(COALESCE("businessName", ''), '-', ' ')) = LOWER(REPLACE($1, '-', ' '))
             OR LOWER("businessName") LIKE LOWER('%' || $1 || '%')
          LIMIT 1`,
         raw

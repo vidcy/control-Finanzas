@@ -118,13 +118,20 @@ export default function VeazEstilezaPage() {
 
   // Catalog Lead & Appointment Modal state
   const [isLeadModalOpen, setIsLeadModalOpen] = useState<boolean>(false);
-  const [leadProduct, setLeadProduct] = useState<{ name: string; sku?: string } | null>(null);
+  const [leadProduct, setLeadProduct] = useState<{
+    name: string;
+    sku?: string;
+    price?: number;
+    size?: string;
+  } | null>(null);
 
   const handleOpenLeadModal = (selectedShoe?: GroupedShoeModel, selectedSize?: string) => {
     if (selectedShoe) {
       setLeadProduct({
-        name: `${selectedShoe.brand ? selectedShoe.brand + " - " : ""}${selectedShoe.baseName} ${selectedSize ? `(Talla/Mod: ${selectedSize})` : ""}`.trim(),
+        name: `${selectedShoe.brand ? selectedShoe.brand + " - " : ""}${selectedShoe.name}`,
         sku: selectedShoe.sku,
+        price: selectedShoe.adjustedPrice || selectedShoe.minPrice,
+        size: selectedSize || (selectedShoe.availableSizes.length > 0 ? selectedShoe.availableSizes[0] : undefined),
       });
     } else {
       setLeadProduct(null);
@@ -301,17 +308,20 @@ export default function VeazEstilezaPage() {
     ) {
       return false;
     }
-    // Also inspect products series metadata
+    // Also inspect products for footwear or series indicators
     const hasShoeSeries = products.some((p) => {
-      const meta = (p as any).seriesMetadata;
-      if (meta && typeof meta === "object") {
-        const sizes = meta.sizes || meta.tallas || [];
-        return sizes.some((s: any) => {
-          const num = parseFloat(String(s.size || s.talla || ""));
-          return num >= 30 && num <= 46;
-        });
-      }
-      return false;
+      const name = (p.name || "").toLowerCase();
+      const unit = (p.unit || "").toLowerCase();
+      const desc = (p.description || "").toLowerCase();
+      const sku = (p.sku || "").toLowerCase();
+      return (
+        unit === "serie" ||
+        unit === "par" ||
+        desc.includes("[serie") ||
+        /(?:calzad|zapato|sandalia|bota|botin|stiletto|tac[oó]n|zapatilla)/i.test(name) ||
+        /\b(?:talla|t:)\s*(?:3[0-9]|4[0-5])\b/i.test(name) ||
+        /[-_/\s](3[0-9]|4[0-5])$/i.test(sku)
+      );
     });
     return hasShoeSeries;
   }, [isDirectVeazRoute, targetIdentifier, storeInfo, products]);
@@ -1661,8 +1671,7 @@ export default function VeazEstilezaPage() {
         storePhone={storeWhatsAppPhone}
         targetUserId={storeInfo?.id}
         storeIdentifier={targetIdentifier}
-        productName={leadProduct?.name}
-        productSku={leadProduct?.sku}
+        initialProduct={leadProduct}
       />
     </div>
   );

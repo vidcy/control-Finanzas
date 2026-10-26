@@ -2591,8 +2591,8 @@ export default function BusinessPosPage() {
                                 #{String(item.customCode).padStart(4, "0")}
                               </span>
                             ) : null}
-                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase bg-amber-600 text-white shadow-xs">
-                              📦 {item.unitsPerSeries}p
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9.5px] font-black uppercase bg-amber-600 text-white shadow-xs">
+                              📦 Serie: {item.unitsPerSeries}p
                             </span>
                             {item.taco && (
                               <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded-md text-[9px] font-bold bg-pink-600 text-white shadow-xs">
@@ -2659,6 +2659,7 @@ export default function BusinessPosPage() {
                               <div className="flex gap-1 overflow-x-auto pb-1 no-scrollbar max-w-full">
                                 {item.summary.sizes.map((s) => {
                                   const hasStock = s.stock > 0;
+                                  const isMultiple = Boolean(s.ratio && s.ratio > 1);
                                   return (
                                     <button
                                       key={s.size}
@@ -2674,7 +2675,7 @@ export default function BusinessPosPage() {
                                         toast.success(`🛒 Agregado: ${variantProd.name}`);
                                         playBeep();
                                       }}
-                                      className={`text-[9px] font-black px-1.5 py-0.5 rounded border transition-all flex items-center gap-0.5 shrink-0 ${hasStock
+                                      className={`text-[9.5px] font-black px-1.5 py-0.5 rounded border transition-all flex items-center gap-0.5 shrink-0 ${hasStock
                                         ? s.isLimiting && item.summary.completeSeries > 0
                                           ? "bg-amber-100 hover:bg-amber-200 text-amber-950 border-amber-300"
                                           : "bg-white hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-300 text-gray-800 border-gray-200"
@@ -2682,11 +2683,11 @@ export default function BusinessPosPage() {
                                         }`}
                                       title={
                                         hasStock
-                                          ? `Vender 1 par Talla ${s.size} a S/ ${(item.hasOffer && item.adjustedPrice ? item.adjustedPrice : item.salePricePerUnit).toFixed(2)} (Stock: ${s.stock})`
+                                          ? `Vender 1 par Talla ${s.size}${isMultiple ? ` (${s.ratio} pares por serie)` : ""} a S/ ${(item.hasOffer && item.adjustedPrice ? item.adjustedPrice : item.salePricePerUnit).toFixed(2)} (Stock: ${s.stock})`
                                           : `Talla ${s.size} agotada`
                                       }
                                     >
-                                      <span>T.{s.size}</span>
+                                      <span>T.{s.size}{isMultiple ? ` (x${s.ratio})` : ""}</span>
                                       <span className={`font-mono ${hasStock ? "text-gray-500 font-bold" : "text-gray-300"}`}>
                                         ({s.stock})
                                       </span>
@@ -2700,11 +2701,11 @@ export default function BusinessPosPage() {
                           {/* Precios y Botón Serie Compacto */}
                           <div className="border-t border-amber-100 pt-1.5 mt-auto flex items-center justify-between gap-2">
                             <div className="min-w-0">
-                              <div className="text-[8px] font-bold text-gray-400 uppercase tracking-tight">
+                              <div className="text-[8.5px] font-bold text-gray-500 uppercase tracking-tight">
                                 Par: <span className="font-black text-slate-800">S/ {(item.hasOffer && item.adjustedPrice ? item.adjustedPrice : item.salePricePerUnit).toFixed(2)}</span>
                               </div>
-                              <div className="text-xs font-black text-amber-600 truncate">
-                                Serie: S/ {item.salePricePerSeries.toFixed(2)}
+                              <div className="text-xs font-black text-amber-700 truncate" title={`Precio de Serie Completa (${item.unitsPerSeries} pares)`}>
+                                Serie: S/ {item.salePricePerSeries.toFixed(2)} <span className="text-[9px] text-amber-600 font-bold">({item.unitsPerSeries}p)</span>
                               </div>
                             </div>
                             <button
@@ -2714,8 +2715,8 @@ export default function BusinessPosPage() {
                                 e.stopPropagation();
                                 addSeriesCurveToCart(item);
                               }}
-                              className={`px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider flex items-center gap-1 transition-all shrink-0 ${item.summary.completeSeries > 0
-                                ? "bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-xs active:scale-95"
+                              className={`px-2.5 py-1.5 rounded-lg text-[9.5px] font-black uppercase tracking-wider flex items-center gap-1 transition-all shrink-0 ${item.summary.completeSeries > 0
+                                ? "bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-xs active:scale-95 cursor-pointer"
                                 : "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200"
                                 }`}
                               title={
@@ -2725,7 +2726,7 @@ export default function BusinessPosPage() {
                               }
                             >
                               <Package className="w-3 h-3" />
-                              <span>+ Serie</span>
+                              <span>+ Serie ({item.unitsPerSeries}p)</span>
                             </button>
                           </div>
                         </div>
@@ -4387,7 +4388,7 @@ export default function BusinessPosPage() {
                   className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 disabled:opacity-40 text-white font-black rounded-2xl text-xs flex items-center gap-2 shadow-sm cursor-pointer"
                 >
                   <Package className="w-4 h-4" />
-                  Vender Serie Completa (S/ {Number(posLightboxProduct.salePricePerSeries || 0).toFixed(2)})
+                  Vender Serie Completa ({posLightboxProduct.unitsPerSeries} pares) - S/ {Number(posLightboxProduct.salePricePerSeries || 0).toFixed(2)}
                 </button>
               ) : (
                 <button

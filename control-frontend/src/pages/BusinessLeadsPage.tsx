@@ -101,8 +101,8 @@ export default function BusinessLeadsPage() {
     try {
       setLoading(true);
       const [leadsData, statsData] = await Promise.all([
-        getLeadsRequest(statusFilter, activeScope),
-        getLeadStatsRequest(activeScope),
+        getLeadsRequest(statusFilter),
+        getLeadStatsRequest(),
       ]);
       setLeads(leadsData);
       setStats(statsData);
@@ -115,7 +115,7 @@ export default function BusinessLeadsPage() {
 
   useEffect(() => {
     loadData();
-  }, [statusFilter, activeScope]);
+  }, [statusFilter]);
 
   const handleStatusChange = async (leadId: string, newStatus: any) => {
     try {
@@ -306,70 +306,14 @@ export default function BusinessLeadsPage() {
   return (
     <Appshell>
       <div className="space-y-6">
-        {/* SCOPE SELECTOR TABS (EXCLUSIVO ADMIN / SUPERADMIN) */}
-        {isAdmin && (
-          <div className="bg-slate-900 p-2 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-white shadow-md">
-            <div className="flex items-center gap-2">
-              <span className="px-3 py-1 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
-                <Crown className="w-3 h-3 text-amber-300" />
-                Panel Admin
-              </span>
-              <span className="text-xs font-bold text-slate-300 hidden sm:inline">
-                Filtrar origen de prospectos:
-              </span>
-            </div>
-
-            <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
-              <button
-                type="button"
-                onClick={() => handleScopeChange("PLATFORM")}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
-                  activeScope === "PLATFORM"
-                    ? "bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-sm"
-                    : "text-slate-400 hover:text-white"
-                }`}
-              >
-                <Zap className="w-3.5 h-3.5 text-amber-300" />
-                <span>Prospectos THINK ERP (Plataforma)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleScopeChange("STORE")}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
-                  activeScope === "STORE"
-                    ? "bg-gradient-to-r from-amber-500 to-orange-600 text-slate-950 shadow-sm"
-                    : "text-slate-400 hover:text-white"
-                }`}
-              >
-                <Store className="w-3.5 h-3.5" />
-                <span>Clientes de mi Tienda</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleScopeChange("ALL")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
-                  activeScope === "ALL"
-                    ? "bg-slate-800 text-white shadow-sm"
-                    : "text-slate-400 hover:text-white"
-                }`}
-              >
-                <Globe className="w-3.5 h-3.5" />
-                <span>Todos</span>
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* HEADER */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-gray-100 shadow-xs">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              {activeScope === "PLATFORM" ? (
+              {isAdmin ? (
                 <span className="px-3 py-1 bg-purple-50 text-purple-700 rounded-full text-xs font-black uppercase tracking-wider border border-purple-100 flex items-center gap-1.5">
                   <Crown className="w-3.5 h-3.5 text-amber-600" />
-                  Módulo de Captación THINK ERP (Admin Oficial)
+                  Módulo Exclusivo Admin - Captación THINK ERP
                 </span>
               ) : (
                 <span className="px-3 py-1 bg-amber-50 text-amber-800 rounded-full text-xs font-black uppercase tracking-wider border border-amber-200 flex items-center gap-1.5">
@@ -379,14 +323,14 @@ export default function BusinessLeadsPage() {
               )}
             </div>
             <h1 className="text-2xl md:text-3xl font-black text-gray-900 tracking-tight">
-              {activeScope === "PLATFORM"
-                ? "Prospectos & Citas de Clientes THINK ERP"
-                : `Prospectos & Citas de ${user?.businessName || "mi Tienda"}`}
+              {isAdmin
+                ? "Prospectos & Citas - Plataforma THINK ERP"
+                : `Clientes & Citas de ${user?.businessName || "mi Tienda"}`}
             </h1>
             <p className="text-sm text-gray-500 font-medium">
-              {activeScope === "PLATFORM"
-                ? "Clientes que solicitaron demostraciones, cotizaciones de planes o escribieron por el chat de la Landing Page de THINK."
-                : "Clientes que han solicitado cotizaciones de productos, consultado disponibilidad o agendado citas desde tu catálogo web."}
+              {isAdmin
+                ? "Prospectos y empresas interesadas en contratar el sistema THINK ERP (captados por Landing Page, Asesor Chat o Demostraciones)."
+                : "Clientes interesados en tus productos, cotizaciones y citas de atención captadas en tu catálogo virtual."}
             </p>
           </div>
 

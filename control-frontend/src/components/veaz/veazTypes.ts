@@ -300,28 +300,38 @@ export function groupProductsBySku(
     const rawSku = (prod.sku || "").trim();
     const baseSku = cleanBaseSku(rawSku);
 
-    // En calzado se limpia la talla para agrupar la curva.
+    const hasShoeSize =
+      prod.unit === "Serie" ||
+      prod.unit === "Par" ||
+      Boolean(prod.description && prod.description.includes("[SERIE")) ||
+      /(?:calzad|zapato|sandalia|stiletto|taco|zapatilla|botin|bota)/i.test(prod.name || "") ||
+      /\b(?:talla|t:)\s*(?:3[0-9]|4[0-5])\b/i.test(prod.name || "") ||
+      /[-_/\s](3[0-9]|4[0-5])$/i.test(rawSku);
+
+    const isShoeItem = isShoeStore || hasShoeSize;
+
+    // En calzado se limpia la talla para agrupar la curva en una sola vitrina.
     // En electrodomésticos y otros rubros, se respeta el nombre completo original (ej: "Smart TV 55 Pulgadas 4K")
-    const cleanName = isShoeStore
+    const cleanName = isShoeItem
       ? cleanShoeModelName(prod.name || "Calzado Femenino")
       : (prod.name || "Artículo Comercial").trim();
 
     const brandName = prod.brand?.name?.trim() || "Oficial";
-    const familyName = prod.family?.name?.trim() || (isShoeStore ? "Calzado Femenino" : "Equipamiento & Hogar");
+    const familyName = prod.family?.name?.trim() || (isShoeItem ? "Calzado Femenino" : "Equipamiento & Hogar");
 
-    // Para calzados se agrupa por Marca + Nombre (para consolidar tallas).
+    // Para calzados se agrupa por Marca + Nombre (para consolidar tallas en 1 tarjeta).
     // Para electrodomésticos o productos independientes, cada producto conserva su vitrina individual
-    const groupKey = isShoeStore
+    const groupKey = isShoeItem
       ? `${brandName.toUpperCase()}__${cleanName.toUpperCase()}`
       : `${brandName.toUpperCase()}__${cleanName.toUpperCase()}__${prod.id}`;
 
-    const specBadge = isShoeStore
+    const specBadge = isShoeItem
       ? ""
       : extractProductSpecBadge(prod, businessRubro || "electrodomesticos");
 
-    const size = isShoeStore
+    const size = isShoeItem
       ? extractShoeSize(prod)
-      : (specBadge || prod.unit || "Estándar");
+      : (specBadge || (prod.unit && prod.unit !== "Unidad" ? prod.unit : "Disponible"));
 
     const stock = Number(prod.stock) || 0;
     const price = Number(prod.salePrice) || 0;
@@ -335,7 +345,7 @@ export function groupProductsBySku(
       : "";
 
     const colorInfo = extractShoeColor(prod.name, prod.color);
-    const heel = isShoeStore ? extractShoeHeel(prod.description, prod.name) : "";
+    const heel = isShoeItem ? extractShoeHeel(prod.description, prod.name) : "";
 
     const variant: ShoeVariant = {
       id: prod.id,
@@ -384,7 +394,7 @@ export function groupProductsBySku(
         isFeatured: stock > 0,
         specBadge: specBadge || undefined,
         unit: prod.unit || "Unidad",
-        isShoeContext: isShoeStore,
+        isShoeContext: isShoeItem,
       });
     } else {
       const existing = map.get(groupKey)!;
@@ -406,7 +416,7 @@ export function groupProductsBySku(
         }
       }
 
-      if (isShoeStore && size && !existing.availableSizes.includes(size)) {
+      if (isShoeItem && size && !existing.availableSizes.includes(size)) {
         existing.availableSizes.push(size);
         existing.availableSizes.sort((a, b) => {
           const numA = parseFloat(a);

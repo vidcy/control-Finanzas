@@ -889,18 +889,13 @@ export function groupProductsBySeries(products: any[], activeBranchId?: string):
       : prod.stock;
     const stockVal = Number(branchStock) || 0;
 
-    const ratioInCurve = meta?.curve?.find((c: any) => c.size === size)?.ratio || 1;
+    const ratioInCurve = meta?.curve?.find((c: any) => String(c.size).trim() === String(size).trim())?.ratio || 1;
 
     if (!map.has(groupKey)) {
-      const initialCurve = meta?.curve || [{ size, ratio: ratioInCurve }];
-      const unitsPerSeries = calculateCurveTotalUnits(initialCurve) || meta?.unitsPerSeries || 6;
-      const priceUnit = meta?.pricePerUnit || Number(prod.salePrice);
-      const priceSeries =
-        meta?.pricePerSeries ||
-        prod.presentations?.find((p: any) => p.name?.toLowerCase().includes("serie"))?.price ||
-        Number((priceUnit * unitsPerSeries).toFixed(2));
-      const costUnit = meta?.costPricePerUnit || Number(prod.costPrice) || 0;
-      const costSeries = meta?.costPricePerSeries || Number((costUnit * unitsPerSeries).toFixed(2));
+      const initialCurve = meta?.curve && meta.curve.length > 0
+        ? meta.curve.map((c: any) => ({ size: String(c.size).trim(), ratio: Number(c.ratio) > 0 ? Number(c.ratio) : 1 }))
+        : [{ size, ratio: ratioInCurve }];
+
       const taco = meta?.taco || extractTacoFromProduct(prod);
       const hasOffer = Boolean(
         prod.adjustedPrice &&
@@ -921,7 +916,7 @@ export function groupProductsBySeries(products: any[], activeBranchId?: string):
         customCode: prod.customCode,
         description: cleanDescriptionForDisplay(prod.description),
         isSeries: isSeriesUnit,
-        unitsPerSeries,
+        unitsPerSeries: meta?.unitsPerSeries || calculateCurveTotalUnits(initialCurve) || 6,
         curve: initialCurve,
         summary: computeSeriesStockSummary(
           [{ size, stock: stockVal, ratio: ratioInCurve, productId: prod.id, salePrice: prod.salePrice, costPrice: prod.costPrice }],
@@ -929,10 +924,10 @@ export function groupProductsBySeries(products: any[], activeBranchId?: string):
         ),
         variants: [prod],
         primaryProduct: prod,
-        salePricePerSeries: priceSeries,
-        salePricePerUnit: priceUnit,
-        costPricePerSeries: costSeries,
-        costPricePerUnit: costUnit,
+        salePricePerSeries: Number(prod.salePrice || 0),
+        salePricePerUnit: Number(prod.salePrice || 0),
+        costPricePerSeries: Number(prod.costPrice || 0),
+        costPricePerUnit: Number(prod.costPrice || 0),
         adjustedPrice,
         hasOffer,
       });
@@ -962,38 +957,99 @@ export function groupProductsBySeries(products: any[], activeBranchId?: string):
         group.adjustedPrice = Number(prod.adjustedPrice);
       }
 
-      if (!group.curve.some((c) => String(c.size).trim() === String(size).trim())) {
-        group.curve.push({ size, ratio: ratioInCurve });
-      }
-
-      // Sincronizar unidades totales reales de la serie según la curva
-      const curveUnits = calculateCurveTotalUnits(group.curve);
-      if (curveUnits > 0) {
-        group.unitsPerSeries = curveUnits;
-      }
-
-      const sizesData = group.variants.map((v) => {
-        const vSize = extractSizeFromProduct(v);
-        const vBranchStock = activeBranchId
-          ? (v.branchStocks?.find((bs: any) => bs.branchId === activeBranchId)?.stock ?? 0)
-          : v.stock;
-        const vRatio = group.curve.find((c) => c.size === vSize)?.ratio || 1;
-        return {
-          size: vSize,
-          stock: Number(vBranchStock) || 0,
-          ratio: vRatio,
-          productId: v.id,
-          salePrice: v.salePrice,
-          costPrice: v.costPrice,
-        };
-      });
-
-      group.summary = computeSeriesStockSummary(sizesData, group.curve);
-
       if (!group.imageUrl && prod.imageUrl) {
         group.imageUrl = prod.imageUrl;
       }
     }
+  });
+
+  // Final normalization pass across all grouped products
+  map.forEach((group) => {
+    if (!group.isSeries) return;
+
+    // 1. Locate the most comprehensive metadata across all variants
+    let bestMeta: any = null;
+    for (const v of group.variants) {
+      const m = decodeSeriesMetadata(v.description);
+      if (m && (m.curve?.length || m.unitsPerSeries || m.pricePerSeries || m.costPricePerSeries)) {
+        bestMeta = m;
+        break;
+      }
+    }
+
+    // 2. Build the exact curve with accurate ratios per size
+    if (bestMeta?.curve && bestMeta.curve.length > 0) {
+      group.curve = bestMeta.curve.map((c: any) => ({
+        size: String(c.size).trim(),
+        ratio: Number(c.ratio) > 0 ? Number(c.ratio) : 1,
+      }));
+    } else {
+      // Reconstruct curve from variant sizes
+      const sizeMap = new Map<string, number>();
+      group.variants.forEach((v) => {
+        const s = extractSizeFromProduct(v);
+        if (s) {
+          sizeMap.set(s, (sizeMap.get(s) || 0) + 1);
+        }
+      });
+      group.curve = Array.from(sizeMap.entries()).map(([sz, r]) => ({
+        size: sz,
+        ratio: r,
+      }));
+    }
+
+    // 3. True total units in 1 series curve
+    const curveTotal = calculateCurveTotalUnits(group.curve);
+    if (curveTotal > 0) {
+      group.unitsPerSeries = curveTotal;
+    } else if (bestMeta?.unitsPerSeries && bestMeta.unitsPerSeries > 0) {
+      group.unitsPerSeries = bestMeta.unitsPerSeries;
+    } else {
+      group.unitsPerSeries = Math.max(1, group.variants.length);
+    }
+
+    // If bestMeta specified a larger total unit count (e.g. 6) than distinct curve sizes (e.g. 5)
+    if (bestMeta?.unitsPerSeries && bestMeta.unitsPerSeries > group.unitsPerSeries) {
+      group.unitsPerSeries = bestMeta.unitsPerSeries;
+    }
+
+    // 4. Exact pricing & cost calculation per series
+    const unitSale = group.hasOffer && group.adjustedPrice
+      ? Number(group.adjustedPrice)
+      : (bestMeta?.pricePerUnit ? Number(bestMeta.pricePerUnit) : Number(group.primaryProduct.salePrice || 0));
+
+    group.salePricePerUnit = unitSale;
+    group.salePricePerSeries = bestMeta?.pricePerSeries && Number(bestMeta.pricePerSeries) > 0
+      ? Number(bestMeta.pricePerSeries)
+      : Number((unitSale * group.unitsPerSeries).toFixed(2));
+
+    const unitCost = bestMeta?.costPricePerUnit
+      ? Number(bestMeta.costPricePerUnit)
+      : Number(group.primaryProduct.costPrice || 0);
+
+    group.costPricePerUnit = unitCost;
+    group.costPricePerSeries = bestMeta?.costPricePerSeries && Number(bestMeta.costPricePerSeries) > 0
+      ? Number(bestMeta.costPricePerSeries)
+      : Number((unitCost * group.unitsPerSeries).toFixed(2));
+
+    // 5. Complete series stock summary with real branch/global stock
+    const sizesData = group.variants.map((v) => {
+      const vSize = extractSizeFromProduct(v);
+      const vBranchStock = activeBranchId
+        ? (v.branchStocks?.find((bs: any) => bs.branchId === activeBranchId)?.stock ?? 0)
+        : v.stock;
+      const vRatio = group.curve.find((c) => String(c.size).trim() === String(vSize).trim())?.ratio || 1;
+      return {
+        size: vSize,
+        stock: Number(vBranchStock) || 0,
+        ratio: vRatio,
+        productId: v.id,
+        salePrice: v.salePrice,
+        costPrice: v.costPrice,
+      };
+    });
+
+    group.summary = computeSeriesStockSummary(sizesData, group.curve);
   });
 
   return Array.from(map.values());

@@ -638,14 +638,27 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
           profile: "BUSINESS_WORKERS",
         }
       ] : []),
-    {
-      name: "Clientes & Citas de mi Tienda",
-      path: "/business-leads?scope=STORE",
-      icon: Zap,
-      color: "from-amber-500 to-orange-600",
-      bgActive: "bg-amber-50 text-amber-700",
-      profile: "BUSINESS",
-    },
+    ...(isAdmin
+      ? [
+        {
+          name: "👑 Prospectos THINK ERP",
+          path: "/leads",
+          icon: Zap,
+          color: "from-purple-600 to-indigo-600",
+          bgActive: "bg-purple-50 text-purple-700",
+          adminOnly: true,
+        },
+      ]
+      : [
+        {
+          name: "🎯 Clientes & Citas de mi Tienda",
+          path: "/business-leads",
+          icon: Zap,
+          color: "from-amber-500 to-orange-600",
+          bgActive: "bg-amber-50 text-amber-700",
+          profile: "BUSINESS",
+        },
+      ]),
     ...(isAdmin
       ? [
         {
@@ -905,11 +918,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
               <button
                 type="button"
                 onClick={() => {
-                  const mySlug =
-                    user?.businessSlug ||
-                    (user?.businessName
-                      ? user.businessName.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-")
-                      : user?.id || "mi-tienda");
+                  const mySlug = user?.businessSlug || user?.id || "mi-tienda";
                   window.open(`/catalogo/${mySlug}`, "_blank");
                 }}
                 className="w-full py-1.5 px-2 rounded-xl bg-slate-950 hover:bg-black text-amber-300 hover:text-amber-200 text-[11px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
@@ -1618,11 +1627,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                     <button
                       type="button"
                       onClick={() => {
-                        const mySlug =
-                          user?.businessSlug ||
-                          (user?.businessName
-                            ? user.businessName.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-")
-                            : user?.id || "mi-tienda");
+                        const mySlug = user?.businessSlug || user?.id || "mi-tienda";
                         window.open(`/catalogo/${mySlug}`, "_blank");
                       }}
                       className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-slate-950 hover:bg-black text-amber-300 hover:text-amber-200 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm"
