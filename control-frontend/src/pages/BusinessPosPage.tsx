@@ -145,6 +145,7 @@ interface CartItem extends Product {
   commissionType?: string;
   commissionValue?: number;
   allowManualEdit?: boolean;
+  isSeriesItem?: boolean;
 }
 
 interface FrontendEngineInput {
@@ -901,20 +902,30 @@ export default function BusinessPosPage() {
       return;
     }
 
-    const wholesaleUnitPrice =
-      groupedItem.hasOffer && groupedItem.adjustedPrice
-        ? Number(groupedItem.adjustedPrice)
-        : Number(
-          (groupedItem.salePricePerSeries / groupedItem.unitsPerSeries).toFixed(2)
-        );
+    const totalSeriesPrice = groupedItem.hasOffer && groupedItem.adjustedPrice
+      ? Number(groupedItem.adjustedPrice) * groupedItem.unitsPerSeries
+      : groupedItem.salePricePerSeries;
+
+    const totalUnits = groupedItem.unitsPerSeries > 0 ? groupedItem.unitsPerSeries : 1;
+    const baseCents = Math.floor((totalSeriesPrice / totalUnits) * 100);
+    let remainderCents = Math.round(totalSeriesPrice * 100) - (baseCents * totalUnits);
+
     let updatedCart = [...cart];
 
     for (const curveItem of groupedItem.curve) {
       const variantProd =
         groupedItem.variants.find(
-          (v) => extractSizeFromProduct(v) === curveItem.size
+          (v) => String(extractSizeFromProduct(v)).trim() === String(curveItem.size).trim()
         ) || groupedItem.primaryProduct;
-      const qtyNeeded = curveItem.ratio;
+      const qtyNeeded = curveItem.ratio || 1;
+
+      let itemPriceCents = baseCents;
+      if (remainderCents > 0) {
+        const centsToGive = Math.min(remainderCents, qtyNeeded);
+        itemPriceCents += Math.round(centsToGive / qtyNeeded);
+        remainderCents -= centsToGive;
+      }
+      const wholesaleUnitPrice = Number((itemPriceCents / 100).toFixed(2));
 
       const availableStock = activeShift?.branchId
         ? variantProd.branchStocks?.find(
@@ -938,13 +949,16 @@ export default function BusinessPosPage() {
           ...updatedCart[existingIdx],
           quantity: newQty,
           salePrice: wholesaleUnitPrice,
+          originalSalePrice: wholesaleUnitPrice,
+          isSeriesItem: true,
         };
       } else {
         updatedCart.push({
           ...variantProd,
           quantity: qtyNeeded,
           salePrice: wholesaleUnitPrice,
-          originalSalePrice: variantProd.salePrice,
+          originalSalePrice: wholesaleUnitPrice,
+          isSeriesItem: true,
         });
       }
     }
@@ -2196,7 +2210,7 @@ export default function BusinessPosPage() {
                 const pres = item.presentations?.find(
                   (p: any) => p.id === item.presentationId,
                 );
-                const presName = pres ? pres.name : item.unit;
+                const presName = item.isSeriesItem ? "Serie" : (pres ? pres.name : (item.unit === "Serie" ? "Par" : item.unit));
                 return (
                   <div
                     key={i}
@@ -2925,75 +2939,95 @@ export default function BusinessPosPage() {
                       {item.name}
                     </h4>
 
-                    {!item.isCustom &&
-                      item.presentations &&
-                      item.presentations.length > 0 ? (
-                      <select
-                        value={item.presentationId || ""}
-                        onChange={(e) => {
-                          const presId = e.target.value;
-                          const pres = item.presentations?.find(
-                            (p: any) => p.id === presId,
-                          );
-                          const equivalence = pres ? pres.equivalence : 1;
-                          const availableStock = activeShift?.branchId
-                            ? (item.branchStocks?.find((bs: any) => bs.branchId === activeShift.branchId)?.stock || 0)
-                            : item.stock;
+                    {(() => {
+                      const isSeriesProduct = item.unit === "Serie" || Boolean(decodeSeriesMetadata(item.description));
+                      const validPresentations = (item.presentations || []).filter((p: any) => {
+                        if (isSeriesProduct) {
+                          const pName = (p.name || "").toLowerCase();
+                          return !pName.includes("serie") && !pName.includes("curva");
+                        }
+                        return true;
+                      });
 
-                          if (item.quantity * equivalence > availableStock) {
-                            const maxQty = Math.floor(availableStock / equivalence);
-                            if (maxQty < 1) {
-                              toast.error("No hay stock suficiente en esta sede para esta presentación.");
-                              return;
-                            }
-                            toast.error(`La cantidad supera el stock de la sede. Ajustando cantidad a ${maxQty}.`);
-                            const newPrice = pres ? pres.price : item.originalSalePrice;
-                            setCart(
-                              cart.map((c, i) =>
-                                i === index
-                                  ? {
-                                    ...c,
-                                    presentationId: presId || undefined,
-                                    salePrice: newPrice,
-                                    quantity: maxQty
-                                  }
-                                  : c,
-                              ),
-                            );
-                            return;
-                          }
+                      if (!item.isCustom && validPresentations.length > 0) {
+                        return (
+                          <select
+                            value={item.presentationId || ""}
+                            onChange={(e) => {
+                              const presId = e.target.value;
+                              const pres = validPresentations.find(
+                                (p: any) => p.id === presId,
+                              );
+                              const equivalence = pres ? pres.equivalence : 1;
+                              const availableStock = activeShift?.branchId
+                                ? (item.branchStocks?.find((bs: any) => bs.branchId === activeShift.branchId)?.stock || 0)
+                                : item.stock;
 
-                          const newPrice = pres
-                            ? pres.price
-                            : item.originalSalePrice;
-                          setCart(
-                            cart.map((c, i) =>
-                              i === index
-                                ? {
-                                  ...c,
-                                  presentationId: presId || undefined,
-                                  salePrice: newPrice,
+                              if (item.quantity * equivalence > availableStock) {
+                                const maxQty = Math.floor(availableStock / equivalence);
+                                if (maxQty < 1) {
+                                  toast.error("No hay stock suficiente en esta sede para esta presentación.");
+                                  return;
                                 }
-                                : c,
-                            ),
-                          );
-                        }}
-                        className="mt-1 text-[10px] border border-gray-200 rounded-lg px-2 py-1 outline-none font-bold text-gray-700 bg-white w-full"
-                      >
-                        <option value="">
-                          {item.unit} (S/ {item.originalSalePrice.toFixed(2)})
-                        </option>
-                        {item.presentations.map((pres: any) => (
-                          <option key={pres.id} value={pres.id}>
-                            {pres.name} (S/ {pres.price.toFixed(2)})
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <span className="text-[10px] text-gray-500 font-bold block mt-1">
-                        {item.unit}
-                      </span>
-                    )}
+                                toast.error(`La cantidad supera el stock de la sede. Ajustando cantidad a ${maxQty}.`);
+                                const newPrice = pres ? pres.price : item.originalSalePrice;
+                                setCart(
+                                  cart.map((c, i) =>
+                                    i === index
+                                      ? {
+                                        ...c,
+                                        presentationId: presId || undefined,
+                                        salePrice: newPrice,
+                                        quantity: maxQty
+                                      }
+                                      : c,
+                                  ),
+                                );
+                                return;
+                              }
+
+                              const newPrice = pres
+                                ? pres.price
+                                : item.originalSalePrice;
+                              setCart(
+                                cart.map((c, i) =>
+                                  i === index
+                                    ? {
+                                      ...c,
+                                      presentationId: presId || undefined,
+                                      salePrice: newPrice,
+                                    }
+                                    : c,
+                                ),
+                              );
+                            }}
+                            className="mt-1 text-[10px] border border-gray-200 rounded-lg px-2 py-1 outline-none font-bold text-gray-700 bg-white w-full"
+                          >
+                            <option value="">
+                              {isSeriesProduct ? "Par" : item.unit} (S/ {item.originalSalePrice.toFixed(2)})
+                            </option>
+                            {validPresentations.map((pres: any) => (
+                              <option key={pres.id} value={pres.id}>
+                                {pres.name} (S/ {pres.price.toFixed(2)})
+                              </option>
+                            ))}
+                          </select>
+                        );
+                      }
+
+                      return (
+                        <div className="flex flex-wrap items-center gap-1 mt-1">
+                          <span className="text-[10px] text-gray-600 font-bold bg-slate-100 px-2 py-0.5 rounded-md inline-block">
+                            {isSeriesProduct ? `Par${extractSizeFromProduct(item) ? ` · Talla ${extractSizeFromProduct(item)}` : ""}` : item.unit}
+                          </span>
+                          {item.isSeriesItem && (
+                            <span className="text-[9px] font-black text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                              📦 Serie Completa
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     <p className="text-indigo-600 font-black text-sm mt-1">
                       S/ {item.salePrice.toFixed(2)} c/u
@@ -3347,7 +3381,7 @@ export default function BusinessPosPage() {
                   const pres = item.presentations?.find(
                     (p: any) => p.id === item.presentationId,
                   );
-                  const presName = pres ? pres.name : item.unit;
+                  const presName = item.isSeriesItem ? "Serie" : (pres ? pres.name : (item.unit === "Serie" ? "Par" : item.unit));
                   return (
                     <div key={i} className="flex justify-between text-[10px]">
                       <span className="flex-1 pr-2 truncate">

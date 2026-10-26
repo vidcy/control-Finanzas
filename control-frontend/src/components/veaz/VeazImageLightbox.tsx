@@ -18,12 +18,20 @@ interface VeazImageLightboxProps {
   shoe: GroupedShoeModel | null;
   isOpen: boolean;
   onClose: () => void;
+  storePhone?: string;
+  storeName?: string;
+  variantLabel?: string;
+  isOfficialStore?: boolean;
 }
 
 export default function VeazImageLightbox({
   shoe,
   isOpen,
   onClose,
+  storePhone,
+  storeName,
+  variantLabel,
+  isOfficialStore = true,
 }: VeazImageLightboxProps) {
   const [zoomLevel, setZoomLevel] = useState(1);
   const [selectedSize, setSelectedSize] = useState<string>("");
@@ -107,13 +115,30 @@ export default function VeazImageLightbox({
   const handleResetZoom = () => setZoomLevel(1);
 
   // WhatsApp order link
-  const whatsappNumber = "51929962458";
+  const rawPhone = storePhone || "51929962458";
+  const cleanPhone = rawPhone.replace(/\D/g, "");
+  const formattedPhone = cleanPhone.startsWith("51") ? cleanPhone : `51${cleanPhone}`;
+  const targetStore = storeName || "VEAZ ESTILEZA";
+
   const finalPrice = (currentOfferPrice || currentSalePrice).toFixed(2);
   const offerTag = isOfferActive ? ` (¡Oferta Especial!)` : "";
+  const isShoe = shoe?.isShoeContext !== false;
+
+  const specLines: string[] = [
+    `• *Producto:* ${shoe?.name}`,
+    shoe?.sku ? `• *SKU:* ${shoe?.sku}` : "",
+    shoe?.brandName ? `• *Marca:* ${shoe?.brandName}` : "",
+    shoe?.color ? `• *Color:* ${shoe?.color}` : "",
+    isShoe && shoe?.heelHeight ? `• *Taco:* ${shoe?.heelHeight}` : "",
+    !isShoe && shoe?.specBadge ? `• *Especificación:* ${shoe?.specBadge}` : "",
+    selectedSize ? `• *${variantLabel || (isShoe ? "Talla" : "Presentación")}:* ${selectedSize}` : "",
+    `• *Precio:* S/ ${finalPrice}${offerTag}`,
+  ].filter(Boolean);
+
   const whatsappMsg = encodeURIComponent(
-    `👑 *CONSULTA VEAZ ESTILEZA*\n\nHola, deseo adquirir el modelo:\n• *Modelo:* ${shoe?.name}\n• *SKU:* ${shoe?.sku}\n• *Marca:* ${shoe?.brandName}\n• *Color:* ${shoe?.color}\n• *Taco:* ${shoe?.heelHeight}\n• *Talla:* ${selectedSize || "Por confirmar"}\n• *Precio:* S/ ${finalPrice}${offerTag}\n\n¿Podrían indicarme disponibilidad y opciones de entrega inmediata?`
+    `🛍️ *CONSULTA OFICIAL - ${targetStore.toUpperCase()}*\n\nHola, deseo consultar el siguiente producto:\n${specLines.join("\n")}\n\n¿Tienen disponibilidad y opciones de entrega inmediata?`
   );
-  const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${whatsappMsg}`;
+  const whatsappUrl = `https://wa.me/${formattedPhone}?text=${whatsappMsg}`;
 
   const displayImage =
     shoe.imageUrl ||
@@ -210,7 +235,7 @@ export default function VeazImageLightbox({
               <div className="flex items-center justify-between gap-2 mb-3">
                 <VeazBrandLogo brandName={shoe.brandName} size="md" showTagline={true} />
                 <span className="text-emerald-700 font-medium bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 text-xs">
-                  {shoe.totalStock > 0 ? `${shoe.totalStock} en serie` : "Bajo Pedido"}
+                  {shoe.totalStock > 0 ? `${shoe.totalStock} ${isShoe ? "en serie" : "en stock"}` : "Consultar Disponibilidad"}
                 </span>
               </div>
 
@@ -228,35 +253,41 @@ export default function VeazImageLightbox({
               <div className="grid grid-cols-2 gap-2 mb-6">
                 <div className="bg-[#FAF8F5] p-3 rounded-xl border border-slate-200/80">
                   <span className="text-[10px] uppercase font-cinzel font-bold text-slate-500 block mb-1">
-                    Color
+                    {shoe.color ? "Color" : "Marca Oficial"}
                   </span>
                   <div className="flex items-center gap-2">
-                    <span
-                      className="w-4 h-4 rounded-full shrink-0 shadow-inner"
-                      style={{
-                        backgroundColor: shoe.colorHex || "#8A7D71",
-                        boxShadow: "0 0 0 1.5px rgba(0,0,0,0.15)",
-                      }}
-                    />
+                    {shoe.color && (
+                      <span
+                        className="w-4 h-4 rounded-full shrink-0 shadow-inner"
+                        style={{
+                          backgroundColor: shoe.colorHex || "#8A7D71",
+                          boxShadow: "0 0 0 1.5px rgba(0,0,0,0.15)",
+                        }}
+                      />
+                    )}
                     <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                      {shoe.color}
+                      {shoe.color || shoe.brandName || "Original"}
                     </span>
                   </div>
                 </div>
+
                 <div className="bg-[#FAF8F5] p-3 rounded-xl border border-slate-200/80">
                   <span className="text-[10px] uppercase font-cinzel font-bold text-slate-500 block mb-0.5">
-                    Altura Taco
+                    {isShoe ? "Altura Taco" : "Especificación"}
                   </span>
                   <span className="text-xs font-bold text-slate-900">
-                    👠 {shoe.heelHeight || "Taco Confort"}
+                    {isShoe ? `👠 ${shoe.heelHeight || "Taco Confort"}` : `⚡ ${shoe.specBadge || "Garantía Oficial"}`}
                   </span>
                 </div>
+
                 <div className="bg-[#FAF8F5] p-3 rounded-xl border border-slate-200/80 col-span-2">
                   <span className="text-[10px] uppercase font-cinzel font-bold text-slate-500 block mb-0.5">
-                    Material Capellada
+                    {isShoe ? "Material Capellada" : "Categoría / Familia"}
                   </span>
                   <span className="text-xs font-bold text-slate-900">
-                    {shoe.material || "Cuero Genuino & Acabados de Lujo"}
+                    {isShoe
+                      ? shoe.material || "Cuero Genuino & Acabados de Lujo"
+                      : shoe.familyName || "Línea Autorizada"}
                   </span>
                 </div>
               </div>
@@ -307,46 +338,99 @@ export default function VeazImageLightbox({
                 )}
               </div>
 
-              {/* SIZES SERIES SELECTION (CRITICAL) */}
-              <div className="mb-6">
-                <div className="flex items-center justify-between text-xs font-cinzel uppercase tracking-wider mb-2.5">
-                  <span className="font-bold text-slate-800 flex items-center gap-1.5">
-                    <Layers className="w-3.5 h-3.5 text-amber-700" /> Selecciona tu Talla:
-                  </span>
-                  {selectedSize && (
-                    <span className="text-xs font-mono font-bold text-amber-800">
-                      {sizeStock > 0 ? `${sizeStock} pares disponibles` : "Sin stock"}
+              {/* SIZES SERIES SELECTION (CRITICAL) OR APPLIANCE PRESENTATIONS */}
+              {isShoe && shoe.availableSizes.length > 0 ? (
+                <div className="mb-6">
+                  <div className="flex items-center justify-between text-xs font-cinzel uppercase tracking-wider mb-2.5">
+                    <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-amber-700" /> Selecciona tu Talla:
                     </span>
-                  )}
-                </div>
+                    {selectedSize && (
+                      <span className="text-xs font-mono font-bold text-amber-800">
+                        {sizeStock > 0 ? `${sizeStock} pares disponibles` : "Sin stock"}
+                      </span>
+                    )}
+                  </div>
 
-                <div className="grid grid-cols-5 gap-2">
-                  {shoe.availableSizes.map((size) => {
-                    const variant = shoe.variants.find((v) => v.size === size);
-                    const hasStock = variant ? variant.stock > 0 : true;
-                    const isSelected = selectedSize === size;
+                  <div className="grid grid-cols-5 gap-2">
+                    {shoe.availableSizes.map((size) => {
+                      const variant = shoe.variants.find((v) => v.size === size);
+                      const hasStock = variant ? variant.stock > 0 : true;
+                      const isSelected = selectedSize === size;
 
-                    return (
-                      <button
-                        key={size}
-                        type="button"
-                        onClick={() => setSelectedSize(size)}
-                        className={`h-11 rounded-xl font-cinzel font-bold text-sm tracking-wider transition-all cursor-pointer flex flex-col items-center justify-center border ${isSelected
-                          ? "bg-slate-900 text-white border-slate-900 shadow-md scale-105"
-                          : hasStock
-                            ? "bg-[#FAF8F5] text-slate-800 border-slate-200 hover:border-amber-500 hover:bg-amber-50"
-                            : "bg-slate-50 text-slate-400 border-slate-200 line-through opacity-50 cursor-not-allowed"
-                          }`}
-                      >
-                        <span>{size}</span>
-                        <span className="text-[9px] font-mono opacity-80">
-                          {variant && variant.stock > 0 ? `${variant.stock}p` : "ok"}
-                        </span>
-                      </button>
-                    );
-                  })}
+                      return (
+                        <button
+                          key={size}
+                          type="button"
+                          onClick={() => setSelectedSize(size)}
+                          className={`h-11 rounded-xl font-cinzel font-bold text-sm tracking-wider transition-all cursor-pointer flex flex-col items-center justify-center border ${isSelected
+                            ? "bg-slate-900 text-white border-slate-900 shadow-md scale-105"
+                            : hasStock
+                              ? "bg-[#FAF8F5] text-slate-800 border-slate-200 hover:border-amber-500 hover:bg-amber-50"
+                              : "bg-slate-50 text-slate-400 border-slate-200 line-through opacity-50 cursor-not-allowed"
+                            }`}
+                        >
+                          <span>{size}</span>
+                          <span className="text-[9px] font-mono opacity-80">
+                            {variant && variant.stock > 0 ? `${variant.stock}p` : "ok"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              ) : shoe.availableSizes && shoe.availableSizes.length > 1 ? (
+                <div className="mb-6">
+                  <div className="flex items-center justify-between text-xs font-outfit uppercase tracking-wider mb-2.5 font-bold">
+                    <span className="text-slate-800 flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-sky-700" /> {variantLabel || "Presentación / Modelo"}:
+                    </span>
+                    {selectedSize && (
+                      <span className="text-xs font-mono font-bold text-sky-800">
+                        {sizeStock > 0 ? `${sizeStock} unid. disp.` : "Agotado"}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {shoe.availableSizes.map((size) => {
+                      const variant = shoe.variants.find((v) => v.size === size);
+                      const hasStock = variant ? variant.stock > 0 : true;
+                      const isSelected = selectedSize === size;
+
+                      return (
+                        <button
+                          key={size}
+                          type="button"
+                          onClick={() => setSelectedSize(size)}
+                          className={`h-10 px-4 rounded-xl font-outfit font-bold text-xs tracking-wide transition-all cursor-pointer flex items-center justify-center border ${isSelected
+                            ? "bg-slate-900 text-white border-slate-900 shadow-md"
+                            : hasStock
+                              ? "bg-[#FAF8F5] text-slate-800 border-slate-200 hover:border-sky-500 hover:bg-sky-50"
+                              : "bg-slate-50 text-slate-400 border-slate-200 line-through opacity-50 cursor-not-allowed"
+                            }`}
+                        >
+                          <span>{size}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="mb-6 p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200/80 flex items-start gap-3">
+                  <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="text-xs font-bold text-emerald-950 uppercase tracking-wide">
+                      Garantía & Disponibilidad Oficial
+                    </h4>
+                    <p className="text-xs text-emerald-800 font-outfit mt-0.5">
+                      {shoe.totalStock > 0
+                        ? `Contamos con ${shoe.totalStock} unidades en stock listas para entrega o despacho inmediato.`
+                        : "Disponible bajo pedido y cotización personalizada por WhatsApp."}
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* FOOTER ACTIONS */}
@@ -358,16 +442,20 @@ export default function VeazImageLightbox({
                 className="w-full py-4 px-6 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-cinzel font-bold text-xs tracking-[0.15em] uppercase flex items-center justify-center gap-3 shadow-md hover:shadow-lg transition-all cursor-pointer"
               >
                 <MessageCircle className="w-5 h-5 fill-white text-emerald-600" />
-                <span>Pedir este Modelo {selectedSize ? `en Talla ${selectedSize}` : "por WhatsApp"}</span>
+                <span>
+                  {isShoe
+                    ? `Pedir este Modelo ${selectedSize ? `en Talla ${selectedSize}` : "por WhatsApp"}`
+                    : "Pedir este Producto por WhatsApp"}
+                </span>
               </a>
 
               <div className="flex items-center justify-center gap-4 text-slate-500 text-[11px] font-outfit pt-1">
                 <span className="flex items-center gap-1">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                  Garantía de Calidad
+                  Garantía de Fábrica
                 </span>
                 <span>•</span>
-                <span>Cambio de Talla Garantizado</span>
+                <span>{isShoe ? "Cambio de Talla Garantizado" : "Soporte y Atención Inmediata"}</span>
               </div>
             </div>
           </div>

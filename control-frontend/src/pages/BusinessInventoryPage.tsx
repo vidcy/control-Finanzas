@@ -1112,7 +1112,7 @@ export default function BusinessInventoryPage() {
         salePrice: initialSale,
         adjustedPrice: product.adjustedPrice ? Number(product.adjustedPrice) : 0,
         stock: product.stock,
-        minStock: product.minStock,
+        minStock: product.minStock !== undefined && product.minStock !== null && !isNaN(Number(product.minStock)) ? Number(product.minStock) : 0,
         unit: isSeries ? "Serie" : (product.unit || "Unidad"),
         imageUrl: product.imageUrl || "",
         presentations: product.presentations || [],
@@ -1440,12 +1440,18 @@ export default function BusinessInventoryPage() {
           ? seriesConfig.salePricePerSeries
           : Number((saleUnit * totalUnits).toFixed(2));
 
+        const costSeries = seriesConfig.costPricePerSeries > 0
+          ? seriesConfig.costPricePerSeries
+          : Number((costUnit * totalUnits).toFixed(2));
+
         const seriesMetaTag = encodeSeriesMetadata({
           seriesId,
           unitsPerSeries: totalUnits,
           curve: seriesConfig.curve.map((item) => ({ size: item.size, ratio: item.ratio })),
           pricePerSeries: saleSeries,
           pricePerUnit: saleUnit,
+          costPricePerSeries: costSeries,
+          costPricePerUnit: costUnit,
           taco: seriesConfig.taco || standaloneTaco || undefined,
         });
         const finalDesc = `${cleanDesc} ${seriesMetaTag}`.trim();

@@ -1,6 +1,6 @@
 import type { Product } from "../../services/product.api";
 import { getReceiptAbsoluteUrl } from "../ui/ImageUploader";
-import { cleanDescriptionForDisplay } from "../../utils/seriesUtils";
+import { cleanDescriptionForDisplay, extractProductSpecBadge } from "../../utils/seriesUtils";
 
 export interface ColorInfo {
   name: string;
@@ -216,6 +216,9 @@ export interface GroupedShoeModel {
   material?: string;
   isNewSeason?: boolean;
   isFeatured?: boolean;
+  specBadge?: string;
+  unit?: string;
+  isShoeContext?: boolean;
 }
 
 /**
@@ -284,7 +287,11 @@ export function cleanBaseSku(rawSku?: string): string {
  * Merges size series so 6-8 entries of the same shoe registered individually
  * become 1 beautiful model card displaying all available sizes and their exact stock.
  */
-export function groupProductsBySku(products: Product[]): GroupedShoeModel[] {
+export function groupProductsBySku(
+  products: Product[],
+  isShoeStore: boolean = true,
+  businessRubro?: string
+): GroupedShoeModel[] {
   if (!products || products.length === 0) return [];
 
   const map = new Map<string, GroupedShoeModel>();
@@ -292,14 +299,30 @@ export function groupProductsBySku(products: Product[]): GroupedShoeModel[] {
   products.forEach((prod) => {
     const rawSku = (prod.sku || "").trim();
     const baseSku = cleanBaseSku(rawSku);
-    const cleanName = cleanShoeModelName(prod.name || "Calzado Femenino");
-    const brandName = prod.brand?.name?.trim() || "Sin Marca";
-    const familyName = prod.family?.name?.trim() || "Calzado Femenino";
 
-    // Grouping key: Brand + Model Name (so same model with multiple sizes aggregates together)
-    const groupKey = `${brandName.toUpperCase()}__${cleanName.toUpperCase()}`;
+    // En calzado se limpia la talla para agrupar la curva.
+    // En electrodomésticos y otros rubros, se respeta el nombre completo original (ej: "Smart TV 55 Pulgadas 4K")
+    const cleanName = isShoeStore
+      ? cleanShoeModelName(prod.name || "Calzado Femenino")
+      : (prod.name || "Artículo Comercial").trim();
 
-    const size = extractShoeSize(prod);
+    const brandName = prod.brand?.name?.trim() || "Oficial";
+    const familyName = prod.family?.name?.trim() || (isShoeStore ? "Calzado Femenino" : "Equipamiento & Hogar");
+
+    // Para calzados se agrupa por Marca + Nombre (para consolidar tallas).
+    // Para electrodomésticos o productos independientes, cada producto conserva su vitrina individual
+    const groupKey = isShoeStore
+      ? `${brandName.toUpperCase()}__${cleanName.toUpperCase()}`
+      : `${brandName.toUpperCase()}__${cleanName.toUpperCase()}__${prod.id}`;
+
+    const specBadge = isShoeStore
+      ? ""
+      : extractProductSpecBadge(prod, businessRubro || "electrodomesticos");
+
+    const size = isShoeStore
+      ? extractShoeSize(prod)
+      : (specBadge || prod.unit || "Estándar");
+
     const stock = Number(prod.stock) || 0;
     const price = Number(prod.salePrice) || 0;
     const adjPrice =
@@ -312,7 +335,7 @@ export function groupProductsBySku(products: Product[]): GroupedShoeModel[] {
       : "";
 
     const colorInfo = extractShoeColor(prod.name, prod.color);
-    const heel = extractShoeHeel(prod.description, prod.name);
+    const heel = isShoeStore ? extractShoeHeel(prod.description, prod.name) : "";
 
     const variant: ShoeVariant = {
       id: prod.id,
@@ -328,16 +351,24 @@ export function groupProductsBySku(products: Product[]): GroupedShoeModel[] {
       const hasOffer = adjPrice !== null && adjPrice > 0;
       const discountPercent = hasOffer ? Math.round(((price - adjPrice) / price) * 100) : 0;
 
+      const fallbackDesc = isShoeStore
+        ? "Calzado femenino de alta calidad con acabados finos y diseño anatómico."
+        : "Producto garantizado con respaldo oficial, eficiencia y servicio de atención inmediata.";
+
+      const material = isShoeStore
+        ? "Acabado Fino & Confort"
+        : (specBadge ? `Especificación: ${specBadge}` : "Garantía de Fábrica Original");
+
       map.set(groupKey, {
         key: groupKey,
-        sku: baseSku || rawSku || `VZ-${String(prod.customCode || 1).padStart(4, "0")}`,
+        sku: baseSku || rawSku || `PR-${String(prod.customCode || 1).padStart(4, "0")}`,
         name: cleanName,
         brandName,
         familyName,
         color: colorInfo.name,
         colorHex: colorInfo.hex,
         colorBorder: colorInfo.border,
-        description: cleanDescriptionForDisplay(prod.description) || "Calzado femenino de alta calidad con acabados finos y diseño anatómico.",
+        description: cleanDescriptionForDisplay(prod.description) || fallbackDesc,
         imageUrl: resolvedImage,
         minPrice: price,
         maxPrice: price,
@@ -345,12 +376,15 @@ export function groupProductsBySku(products: Product[]): GroupedShoeModel[] {
         hasOffer,
         discountPercent,
         totalStock: stock,
-        availableSizes: [size],
+        availableSizes: isShoeStore ? [size] : (prod.presentations && prod.presentations.length > 0 ? prod.presentations.map((p) => p.name) : []),
         variants: [variant],
         heelHeight: heel,
-        material: "Acabado Fino & Confort",
+        material,
         isNewSeason: true,
         isFeatured: stock > 0,
+        specBadge: specBadge || undefined,
+        unit: prod.unit || "Unidad",
+        isShoeContext: isShoeStore,
       });
     } else {
       const existing = map.get(groupKey)!;
@@ -364,7 +398,6 @@ export function groupProductsBySku(products: Product[]): GroupedShoeModel[] {
         existing.maxPrice = price;
       }
 
-      // Track best adjusted offer price
       if (adjPrice !== null && adjPrice > 0) {
         if (!existing.adjustedPrice || adjPrice < existing.adjustedPrice) {
           existing.adjustedPrice = adjPrice;
@@ -373,7 +406,7 @@ export function groupProductsBySku(products: Product[]): GroupedShoeModel[] {
         }
       }
 
-      if (!existing.availableSizes.includes(size)) {
+      if (isShoeStore && size && !existing.availableSizes.includes(size)) {
         existing.availableSizes.push(size);
         existing.availableSizes.sort((a, b) => {
           const numA = parseFloat(a);
@@ -387,7 +420,7 @@ export function groupProductsBySku(products: Product[]): GroupedShoeModel[] {
         existing.imageUrl = resolvedImage;
       }
 
-      if (existing.heelHeight === "Taco Confort" && heel !== "Taco Confort") {
+      if (isShoeStore && existing.heelHeight === "Taco Confort" && heel !== "Taco Confort") {
         existing.heelHeight = heel;
       }
     }

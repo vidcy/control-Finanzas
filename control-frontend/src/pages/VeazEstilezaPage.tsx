@@ -263,13 +263,48 @@ export default function VeazEstilezaPage() {
     return DEFAULT_VEAZ_RAIL;
   }, [storeInfo, rubroPreset]);
 
-  // Consolidate and group products by model name and series
+  // Detect whether the store rubro is shoes or general merchandise/appliances
+  const isShoeRubro = useMemo(() => {
+    if (isDirectVeazRoute || targetIdentifier === "veaz-estileza" || storeInfo?.isOfficialStore) {
+      return true;
+    }
+    const rubroKey = (storeInfo?.catalogConfig?.rubroKey || storeInfo?.businessRubro || "").toLowerCase();
+    if (rubroKey.includes("calzado") || rubroKey.includes("zapato") || rubroKey.includes("botas")) {
+      return true;
+    }
+    if (
+      rubroKey.includes("electro") ||
+      rubroKey.includes("tecnolog") ||
+      rubroKey.includes("linea blanca") ||
+      rubroKey.includes("ferreter") ||
+      rubroKey.includes("abarrot") ||
+      rubroKey.includes("farmac") ||
+      rubroKey.includes("retail")
+    ) {
+      return false;
+    }
+    // Also inspect products series metadata
+    const hasShoeSeries = products.some((p) => {
+      const meta = (p as any).seriesMetadata;
+      if (meta && typeof meta === "object") {
+        const sizes = meta.sizes || meta.tallas || [];
+        return sizes.some((s: any) => {
+          const num = parseFloat(String(s.size || s.talla || ""));
+          return num >= 30 && num <= 46;
+        });
+      }
+      return false;
+    });
+    return hasShoeSeries;
+  }, [isDirectVeazRoute, targetIdentifier, storeInfo, products]);
+
+  // Consolidate and group products by model name and series dynamically
   const groupedShoeModels = useMemo(() => {
     if (products.length > 0) {
-      return groupProductsBySku(products);
+      return groupProductsBySku(products, isShoeRubro, storeInfo?.businessRubro);
     }
     return [];
-  }, [products]);
+  }, [products, isShoeRubro, storeInfo?.businessRubro]);
 
   // Model counts per brand
   const brandCounts = useMemo(() => {
@@ -874,42 +909,51 @@ export default function VeazEstilezaPage() {
           </div>
 
           <div className="pt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[11px] font-cinzel font-bold tracking-widest text-slate-700 uppercase mr-1">
-                {storeInfo?.catalogConfig?.variantLabel || rubroPreset.variantLabel}:
-              </span>
-              <button
-                onClick={() => setSelectedSize("TODAS")}
-                className={`h-8 px-3.5 rounded-xl text-xs font-cinzel font-bold tracking-wider transition-all cursor-pointer border ${selectedSize === "TODAS"
-                  ? "bg-slate-900 text-white border-slate-900 shadow-xs"
-                  : "bg-[#FAF8F5] text-slate-700 border-slate-200 hover:border-amber-500"
-                  }`}
-              >
-                Todas
-              </button>
-              {allSizesWithCounts.map(({ size, count }) => {
-                const isNumeric = !isNaN(Number(size)) && !size.startsWith("T");
-                const displayLabel = isNumeric ? (storeInfo?.isOfficialStore ? `T${size}` : size) : size;
-                return (
-                  <button
-                    key={size}
-                    onClick={() => setSelectedSize(size)}
-                    className={`h-8 min-w-[46px] px-2.5 rounded-xl text-xs font-cinzel font-bold tracking-wider transition-all cursor-pointer border flex items-center justify-center gap-1 ${selectedSize === size
-                      ? "bg-amber-700 text-white border-amber-700 shadow-sm scale-105"
-                      : "bg-[#FAF8F5] text-slate-800 border-[#E8DCBE] hover:border-amber-500 hover:bg-amber-50"
-                      }`}
-                    title={`${count} disponibles en ${size}`}
-                  >
-                    <span>{displayLabel}</span>
-                    <span className="text-[9px] opacity-75 font-normal">({count})</span>
-                  </button>
-                );
-              })}
-            </div>
+            {isShoeRubro || allSizesWithCounts.length > 1 ? (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] font-cinzel font-bold tracking-widest text-slate-700 uppercase mr-1">
+                  {storeInfo?.catalogConfig?.variantLabel || rubroPreset.variantLabel}:
+                </span>
+                <button
+                  onClick={() => setSelectedSize("TODAS")}
+                  className={`h-8 px-3.5 rounded-xl text-xs font-cinzel font-bold tracking-wider transition-all cursor-pointer border ${selectedSize === "TODAS"
+                    ? "bg-slate-900 text-white border-slate-900 shadow-xs"
+                    : "bg-[#FAF8F5] text-slate-700 border-slate-200 hover:border-amber-500"
+                    }`}
+                >
+                  Todas
+                </button>
+                {allSizesWithCounts.map(({ size, count }) => {
+                  const isNumeric = !isNaN(Number(size)) && !size.startsWith("T");
+                  const displayLabel = isNumeric ? (storeInfo?.isOfficialStore ? `T${size}` : size) : size;
+                  return (
+                    <button
+                      key={size}
+                      onClick={() => setSelectedSize(size)}
+                      className={`h-8 min-w-[46px] px-2.5 rounded-xl text-xs font-cinzel font-bold tracking-wider transition-all cursor-pointer border flex items-center justify-center gap-1 ${selectedSize === size
+                        ? "bg-amber-700 text-white border-amber-700 shadow-sm scale-105"
+                        : "bg-[#FAF8F5] text-slate-800 border-[#E8DCBE] hover:border-amber-500 hover:bg-amber-50"
+                        }`}
+                      title={`${count} disponibles en ${size}`}
+                    >
+                      <span>{displayLabel}</span>
+                      <span className="text-[9px] opacity-75 font-normal">({count})</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-outfit text-slate-600 font-semibold flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                  <span>Artículos con stock oficial y garantía directa de tienda</span>
+                </span>
+              </div>
+            )}
 
             <div className="text-right shrink-0">
               <span className="text-xs font-cinzel uppercase tracking-widest text-slate-600 font-bold">
-                Mostrando <span className="text-amber-800 font-black">{filteredShoes.length}</span> modelos
+                Mostrando <span className="text-amber-800 font-black">{filteredShoes.length}</span> {isShoeRubro ? "modelos" : "artículos"}
               </span>
             </div>
           </div>
@@ -1225,6 +1269,10 @@ export default function VeazEstilezaPage() {
         shoe={activeLightboxShoe}
         isOpen={!!activeLightboxShoe}
         onClose={() => setActiveLightboxShoe(null)}
+        storePhone={storeWhatsAppPhone}
+        storeName={storeInfo?.businessName || "VEAZ ESTILEZA"}
+        variantLabel={storeInfo?.catalogConfig?.variantLabel || rubroPreset.variantLabel}
+        isOfficialStore={storeInfo?.isOfficialStore ?? true}
       />
 
       {/* ──────────────────────────────────────────────────────────

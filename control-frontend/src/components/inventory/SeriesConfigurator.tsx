@@ -119,7 +119,7 @@ export default function SeriesConfigurator({
   // Sincronizar cambios preservando cantidades de stock real y precios según el modo activo
   const syncNormalizedConfig = (newCurve: SizeRatio[], newSeriesStock?: number) => {
     const newTotalUnits = newCurve.reduce((acc, item) => acc + (Number(item.ratio) || 1), 0);
-    const stockToUse = newSeriesStock !== undefined ? newSeriesStock : (seriesStock > 0 ? seriesStock : 1);
+    const stockToUse = newSeriesStock !== undefined ? newSeriesStock : (seriesStock !== undefined ? seriesStock : (isEditing ? 0 : 1));
 
     let newCostSeries = costPricePerSeries;
     let newCostUnit = costPricePerUnit;

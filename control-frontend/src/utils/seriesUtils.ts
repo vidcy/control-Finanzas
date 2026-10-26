@@ -240,11 +240,11 @@ export function buildEditSeriesConfig(
   // Calcula pares por serie sumando los ratios de la curva
   const totalUnits = calculateCurveTotalUnits(finalCurve) || 6;
 
-  const costUnit = Number(mainProduct?.costPrice) || 0;
-  const saleUnit = Number(mainProduct?.salePrice || mainProduct?.price) || 0;
+  const costUnit = meta?.costPricePerUnit || Number(mainProduct?.costPrice) || 0;
+  const saleUnit = meta?.pricePerUnit || Number(mainProduct?.salePrice || mainProduct?.price) || 0;
 
-  const costSeries = meta?.pricePerSeries
-    ? Number(meta.pricePerSeries)
+  const costSeries = meta?.costPricePerSeries
+    ? Number(meta.costPricePerSeries)
     : Number((costUnit * totalUnits).toFixed(2));
 
   const saleSeries = meta?.pricePerSeries
@@ -263,7 +263,7 @@ export function buildEditSeriesConfig(
   return {
     curve: finalCurve,
     unitsPerSeries: totalUnits,
-    seriesStock: summary.completeSeries > 0 ? summary.completeSeries : 1,
+    seriesStock: summary.completeSeries,
     taco: meta?.taco || extractTacoFromProduct(mainProduct),
     costPricePerSeries: costSeries,
     salePricePerSeries: saleSeries,
@@ -292,13 +292,44 @@ export function computeSeriesStockSummary(
     curve.forEach((c) => curveMap.set(c.size, c.ratio || 1));
   }
 
-  const sizes = sizesData.map((item) => {
+  // Asegurar que cada talla de la curva esté representada para evitar falsos positivos
+  const sizesMap = new Map<string, {
+    size: string;
+    stock: number;
+    ratio: number;
+    productId?: string;
+    salePrice?: number;
+    costPrice?: number;
+  }>();
+
+  sizesData.forEach((item) => {
     const ratio = item.ratio || curveMap.get(item.size) || 1;
     const stock = Math.max(0, item.stock || 0);
-    const maxSeriesForSize = ratio > 0 ? Math.floor(stock / ratio) : 0;
+    sizesMap.set(item.size, {
+      ...item,
+      ratio,
+      stock,
+    });
+  });
+
+  if (curve && curve.length > 0) {
+    curve.forEach((c) => {
+      if (!sizesMap.has(c.size)) {
+        sizesMap.set(c.size, {
+          size: c.size,
+          stock: 0,
+          ratio: c.ratio || 1,
+        });
+      }
+    });
+  }
+
+  const sizes = Array.from(sizesMap.values()).map((item) => {
+    const ratio = item.ratio > 0 ? item.ratio : 1;
+    const maxSeriesForSize = ratio > 0 ? Math.floor(item.stock / ratio) : 0;
     return {
       size: item.size,
-      stock,
+      stock: item.stock,
       ratio,
       maxSeriesForSize,
       isLimiting: false,
@@ -361,6 +392,8 @@ export function encodeSeriesMetadata(config: {
   curve: Array<{ size: string; ratio: number }>;
   pricePerSeries?: number;
   pricePerUnit?: number;
+  costPricePerSeries?: number;
+  costPricePerUnit?: number;
   taco?: string;
 }): string {
   const payload = {
@@ -369,6 +402,8 @@ export function encodeSeriesMetadata(config: {
     c: config.curve.map((x) => ({ s: x.size, r: x.ratio })),
     pps: config.pricePerSeries,
     ppu: config.pricePerUnit,
+    cps: config.costPricePerSeries,
+    cpu: config.costPricePerUnit,
     t: config.taco,
   };
   return `[SERIE_START]${JSON.stringify(payload)}[SERIE_END]`;
@@ -386,6 +421,8 @@ export function decodeSeriesMetadata(
   curve?: Array<{ size: string; ratio: number }>;
   pricePerSeries?: number;
   pricePerUnit?: number;
+  costPricePerSeries?: number;
+  costPricePerUnit?: number;
   taco?: string;
 } | null {
   if (!description) return null;
@@ -401,6 +438,8 @@ export function decodeSeriesMetadata(
         curve: data.c?.map((x: any) => ({ size: x.s, ratio: x.r })),
         pricePerSeries: data.pps,
         pricePerUnit: data.ppu,
+        costPricePerSeries: data.cps,
+        costPricePerUnit: data.cpu,
         taco: data.t,
       };
     } catch {
@@ -434,6 +473,8 @@ export function decodeSeriesMetadata(
             curve: data.c?.map((x: any) => ({ size: x.s, ratio: x.r })),
             pricePerSeries: data.pps,
             pricePerUnit: data.ppu,
+            costPricePerSeries: data.cps,
+            costPricePerUnit: data.cpu,
             taco: data.t,
           };
         } catch {
@@ -851,12 +892,15 @@ export function groupProductsBySeries(products: any[], activeBranchId?: string):
     const ratioInCurve = meta?.curve?.find((c: any) => c.size === size)?.ratio || 1;
 
     if (!map.has(groupKey)) {
-      const unitsPerSeries = meta?.unitsPerSeries || 6;
       const initialCurve = meta?.curve || [{ size, ratio: ratioInCurve }];
-      const priceSeries = meta?.pricePerSeries || Number(prod.salePrice) * unitsPerSeries;
+      const unitsPerSeries = calculateCurveTotalUnits(initialCurve) || meta?.unitsPerSeries || 6;
       const priceUnit = meta?.pricePerUnit || Number(prod.salePrice);
-      const costUnit = Number(prod.costPrice) || 0;
-      const costSeries = costUnit * unitsPerSeries;
+      const priceSeries =
+        meta?.pricePerSeries ||
+        prod.presentations?.find((p: any) => p.name?.toLowerCase().includes("serie"))?.price ||
+        Number((priceUnit * unitsPerSeries).toFixed(2));
+      const costUnit = meta?.costPricePerUnit || Number(prod.costPrice) || 0;
+      const costSeries = meta?.costPricePerSeries || Number((costUnit * unitsPerSeries).toFixed(2));
       const taco = meta?.taco || extractTacoFromProduct(prod);
       const hasOffer = Boolean(
         prod.adjustedPrice &&
@@ -918,8 +962,14 @@ export function groupProductsBySeries(products: any[], activeBranchId?: string):
         group.adjustedPrice = Number(prod.adjustedPrice);
       }
 
-      if (!group.curve.some((c) => c.size === size)) {
+      if (!group.curve.some((c) => String(c.size).trim() === String(size).trim())) {
         group.curve.push({ size, ratio: ratioInCurve });
+      }
+
+      // Sincronizar unidades totales reales de la serie según la curva
+      const curveUnits = calculateCurveTotalUnits(group.curve);
+      if (curveUnits > 0) {
+        group.unitsPerSeries = curveUnits;
       }
 
       const sizesData = group.variants.map((v) => {

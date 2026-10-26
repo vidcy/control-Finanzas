@@ -212,14 +212,18 @@ export default function VeazShoeCard({
       {/* 2. BODY CONTENT (UNIFORM & COMPACT ACROSS ALL CARDS) */}
       <div className="p-3.5 sm:p-4 flex-1 flex flex-col justify-between bg-white">
         <div>
-          {/* Heel Height (Taco) & Family Header */}
+          {/* Heel Height (Taco) / Spec & Family Header */}
           <div className="flex items-center justify-between text-[11px] font-outfit mb-1 gap-1">
             <span className="text-slate-500 font-cinzel font-bold tracking-wider text-[10px] uppercase truncate">
-              {shoe.familyName || "Calzados Finos"}
+              {shoe.familyName || (shoe.isShoeContext ? "Calzados Finos" : "Línea Oficial")}
             </span>
-            {isOfficialStore && shoe.heelHeight ? (
+            {shoe.isShoeContext && shoe.heelHeight ? (
               <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-amber-950 font-cinzel font-bold text-[10px] tracking-wide">
                 👠 {shoe.heelHeight}
+              </span>
+            ) : shoe.specBadge ? (
+              <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-sky-50 border border-sky-200 text-sky-950 font-outfit font-bold text-[10px] tracking-wide">
+                ⚡ {shoe.specBadge}
               </span>
             ) : shoe.color ? (
               <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-50 border border-slate-200 text-slate-800 font-outfit font-medium text-[10px] tracking-wide">
@@ -297,15 +301,15 @@ export default function VeazShoeCard({
                     <span>Garantía de Fábrica Original</span>
                   </div>
                   <span className="text-[10px] font-mono text-emerald-700 font-semibold">
-                    {shoe.totalStock} {isOfficialStore ? "en serie" : "en stock"}
+                    {shoe.totalStock} {shoe.isShoeContext ? "en serie" : "unidades en stock"}
                   </span>
                 </div>
               </>
             )}
           </div>
 
-          {/* 4. SIZES / VARIANTS PILLS */}
-          {shoe.availableSizes && shoe.availableSizes.length > 0 && (
+          {/* 4. SIZES / VARIANTS PILLS OR SPEC SUMMARY FOR APPLIANCES */}
+          {shoe.isShoeContext !== false && shoe.availableSizes && shoe.availableSizes.length > 0 ? (
             <div className="mb-3">
               <div className="flex items-center justify-between text-[10px] text-slate-700 font-cinzel uppercase tracking-wider mb-1.5">
                 <span className="flex items-center gap-1 font-bold text-slate-800">
@@ -335,7 +339,7 @@ export default function VeazShoeCard({
                           ? "bg-white text-slate-800 border-slate-200 hover:border-amber-400 hover:bg-amber-50/50"
                           : "bg-slate-100 text-slate-400 border-slate-200 line-through opacity-50 cursor-not-allowed"
                         }`}
-                      title={`${variantLabel || (isOfficialStore ? "Talla" : "Variante")} ${size}: ${hasStock ? `${variant?.stock || 0} ${isOfficialStore ? "pares" : "unid."}` : "Agotado"}`}
+                      title={`${variantLabel || (isOfficialStore ? "Talla" : "Variante")} ${size}: ${hasStock ? `${variant?.stock || 0} pares` : "Agotado"}`}
                     >
                       <span>{size}</span>
                       <span
@@ -349,6 +353,53 @@ export default function VeazShoeCard({
                 })}
               </div>
             </div>
+          ) : shoe.availableSizes && shoe.availableSizes.length > 1 ? (
+            /* Multi-variant non-shoe (e.g. capacities or colors) */
+            <div className="mb-3">
+              <div className="flex items-center justify-between text-[10px] text-slate-700 font-outfit uppercase tracking-wider mb-1.5 font-bold">
+                <span className="flex items-center gap-1 text-slate-800">
+                  <Layers className="w-3 h-3 text-sky-600" /> {variantLabel || "Presentación / Modelo"}:
+                </span>
+                {selectedSize && (
+                  <span className="text-[9px] font-mono font-semibold text-slate-600">
+                    {sizeStock > 0 ? `${sizeStock} unid.` : "Agotado"}
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {shoe.availableSizes.map((size) => {
+                  const variant = shoe.variants.find((v) => v.size === size);
+                  const hasStock = variant ? variant.stock > 0 : true;
+                  const isSelected = selectedSize === size;
+                  return (
+                    <button
+                      key={size}
+                      type="button"
+                      onClick={() => setSelectedSize(size)}
+                      className={`h-7 px-2.5 rounded-lg font-outfit font-semibold text-[10.5px] transition-all cursor-pointer flex items-center justify-center gap-1 border ${isSelected
+                        ? "bg-slate-900 text-white border-slate-900 shadow-xs"
+                        : hasStock
+                          ? "bg-white text-slate-700 border-slate-200 hover:border-sky-400 hover:bg-sky-50/50"
+                          : "bg-slate-100 text-slate-400 border-slate-200 line-through opacity-50 cursor-not-allowed"
+                        }`}
+                    >
+                      <span>{size}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            /* Single presentation (appliances, electronics, hardware) */
+            <div className="mb-3 py-1.5 px-3 rounded-xl bg-slate-50 border border-slate-200/60 flex items-center justify-between text-[11px] text-slate-600 font-outfit">
+              <span className="font-medium flex items-center gap-1 text-slate-700 text-[10.5px]">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                {shoe.specBadge ? `Modelo ${shoe.specBadge}` : "Garantía de Fábrica"}
+              </span>
+              <span className="text-emerald-700 font-bold font-mono text-[10.5px]">
+                {sizeStock > 0 ? `${sizeStock} unid. disp.` : "Consultar stock"}
+              </span>
+            </div>
           )}
         </div>
 
@@ -361,7 +412,11 @@ export default function VeazShoeCard({
             title="Pedir por WhatsApp"
           >
             <MessageCircle className="w-3.5 h-3.5 fill-white text-emerald-600" />
-            <span>Pedir {selectedSize ? `${isOfficialStore ? "T." : ""}${selectedSize}` : "por WhatsApp"}</span>
+            <span>
+              {shoe.isShoeContext
+                ? `Pedir ${selectedSize ? `T.${selectedSize}` : "por WhatsApp"}`
+                : "Pedir por WhatsApp"}
+            </span>
           </button>
 
           <button
