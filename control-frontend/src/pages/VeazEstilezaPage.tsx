@@ -23,6 +23,7 @@ import {
   Compass,
   ExternalLink,
   Crown,
+  Calendar,
 } from "lucide-react";
 import { FaInstagram, FaFacebookF, FaTiktok } from "react-icons/fa6";
 import VeazLogo, { VeazCrownIcon } from "../components/veaz/VeazLogo";
@@ -31,6 +32,7 @@ import VeazHeroSlider, { type HeroSlide } from "../components/veaz/VeazHeroSlide
 import VeazModelGallery from "../components/veaz/VeazModelGallery";
 import VeazShoeCard from "../components/veaz/VeazShoeCard";
 import VeazImageLightbox from "../components/veaz/VeazImageLightbox";
+import CatalogLeadModal from "../components/catalog/CatalogLeadModal";
 import { exportCatalogToPdf } from "../utils/veazPdfExport";
 import {
   groupProductsBySku,
@@ -113,6 +115,22 @@ export default function VeazEstilezaPage() {
 
   // Lightbox state
   const [activeLightboxShoe, setActiveLightboxShoe] = useState<GroupedShoeModel | null>(null);
+
+  // Catalog Lead & Appointment Modal state
+  const [isLeadModalOpen, setIsLeadModalOpen] = useState<boolean>(false);
+  const [leadProduct, setLeadProduct] = useState<{ name: string; sku?: string } | null>(null);
+
+  const handleOpenLeadModal = (selectedShoe?: GroupedShoeModel, selectedSize?: string) => {
+    if (selectedShoe) {
+      setLeadProduct({
+        name: `${selectedShoe.brand ? selectedShoe.brand + " - " : ""}${selectedShoe.baseName} ${selectedSize ? `(Talla/Mod: ${selectedSize})` : ""}`.trim(),
+        sku: selectedShoe.sku,
+      });
+    } else {
+      setLeadProduct(null);
+    }
+    setIsLeadModalOpen(true);
+  };
 
   // Brands and families purely from DB
   const [availableBrands, setAvailableBrands] = useState<string[]>([]);
@@ -640,6 +658,16 @@ export default function VeazEstilezaPage() {
               )}
             </div>
 
+            <button
+              type="button"
+              onClick={() => handleOpenLeadModal()}
+              className="hidden md:flex items-center gap-1.5 px-3.5 py-2.5 rounded-full bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 font-cinzel text-xs font-bold tracking-wider shadow-xs hover:shadow-sm transition-all cursor-pointer"
+              title="Agendar cita o solicitar cotización"
+            >
+              <Calendar className="w-3.5 h-3.5 text-amber-700" />
+              <span>Agendar Cita</span>
+            </button>
+
             <a
               href={`https://wa.me/${storeWhatsAppPhone}?text=${encodeURIComponent(
                 `Hola *${storeInfo?.businessName || "VEAZ ESTILEZA"}*, deseo consultar su catálogo oficial de ${storeInfo?.isOfficialStore ? "calzados" : "productos"} y modelos disponibles.`
@@ -1030,6 +1058,7 @@ export default function VeazEstilezaPage() {
                 variantLabel={storeInfo?.catalogConfig?.variantLabel || rubroPreset.variantLabel}
                 isOfficialStore={storeInfo?.isOfficialStore ?? true}
                 onOpenLightbox={(selected) => setActiveLightboxShoe(selected)}
+                onRequestLead={(selectedShoe, selectedSize) => handleOpenLeadModal(selectedShoe, selectedSize)}
               />
             ))}
           </div>
@@ -1273,12 +1302,26 @@ export default function VeazEstilezaPage() {
         storeName={storeInfo?.businessName || "VEAZ ESTILEZA"}
         variantLabel={storeInfo?.catalogConfig?.variantLabel || rubroPreset.variantLabel}
         isOfficialStore={storeInfo?.isOfficialStore ?? true}
+        onRequestLead={(selectedShoe, selectedSize) => {
+          setActiveLightboxShoe(null);
+          handleOpenLeadModal(selectedShoe, selectedSize);
+        }}
       />
 
       {/* ──────────────────────────────────────────────────────────
-          8. FLOATING WHATSAPP VIP BUTTON
+          8. FLOATING WHATSAPP & APPOINTMENT VIP BUTTONS
       ────────────────────────────────────────────────────────── */}
-      <div className="fixed bottom-6 right-6 z-40 flex items-center gap-3">
+      <div className="fixed bottom-6 right-6 z-40 flex items-center gap-2.5">
+        <button
+          type="button"
+          onClick={() => handleOpenLeadModal()}
+          className="flex items-center gap-2 px-4 py-3.5 rounded-full bg-slate-900 hover:bg-amber-600 text-white font-cinzel text-xs font-bold tracking-wider shadow-2xl hover:scale-105 active:scale-95 transition-all cursor-pointer border border-amber-400/40 group"
+          title="Agendar Cita o Cotización"
+        >
+          <Calendar className="w-4 h-4 text-amber-400 group-hover:rotate-12 transition-transform" />
+          <span className="hidden sm:inline">Agendar Cita</span>
+        </button>
+
         <a
           href={`https://wa.me/${storeWhatsAppPhone}?text=${encodeURIComponent(
             `Hola *${storeInfo?.businessName || "VEAZ ESTILEZA"}*, deseo consultar disponibilidad en su catálogo oficial.`
@@ -1607,6 +1650,20 @@ export default function VeazEstilezaPage() {
           </p>
         </div>
       </footer>
+
+      {/* ──────────────────────────────────────────────────────────
+          10. INTERACTIVE LEAD & APPOINTMENT MODAL
+      ────────────────────────────────────────────────────────── */}
+      <CatalogLeadModal
+        isOpen={isLeadModalOpen}
+        onClose={() => setIsLeadModalOpen(false)}
+        storeName={storeInfo?.businessName || (storeInfo?.isOfficialStore ? "VEAZ ESTILEZA" : "Nuestra Tienda")}
+        storePhone={storeWhatsAppPhone}
+        targetUserId={storeInfo?.id}
+        storeIdentifier={targetIdentifier}
+        productName={leadProduct?.name}
+        productSku={leadProduct?.sku}
+      />
     </div>
   );
 }

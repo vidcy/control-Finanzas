@@ -15,6 +15,11 @@ export interface Lead {
   monthlySalesVolume?: string;
   utmSource?: string;
   utmCampaign?: string;
+  targetUserId?: string;
+  storeIdentifier?: string;
+  isPlatformLead?: boolean;
+  productName?: string;
+  productSku?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -25,13 +30,18 @@ export interface CreateLeadPayload {
   email?: string;
   businessName?: string;
   businessType?: string;
-  interestType?: "DEMO" | "CITA" | "CHAT" | "WHATSAPP";
+  interestType?: "DEMO" | "CITA" | "COTIZACION" | "CHAT" | "WHATSAPP" | "PRODUCT_INQUIRY" | string;
   appointmentDate?: string;
   appointmentTime?: string;
   notes?: string;
   monthlySalesVolume?: string;
   utmSource?: string;
   utmCampaign?: string;
+  targetUserId?: string;
+  storeIdentifier?: string;
+  isPlatformLead?: boolean;
+  productName?: string;
+  productSku?: string;
 }
 
 export interface ChatMessagePayload {
@@ -57,7 +67,7 @@ export interface LeadStats {
   won: number;
 }
 
-// PÚBLICO: Crear lead desde Landing Page / Formulario de Citas
+// PÚBLICO: Crear lead desde Landing Page / Formulario de Citas / Catálogo Web
 export const createLeadRequest = async (payload: CreateLeadPayload): Promise<Lead> => {
   const res = await API.post("/leads", payload);
   return res.data;
@@ -69,15 +79,15 @@ export const sendChatMessageRequest = async (payload: ChatMessagePayload): Promi
   return res.data;
 };
 
-// PROTEGIDO: Obtener listado de prospectos para el CRM
-export const getLeadsRequest = async (status?: string): Promise<Lead[]> => {
-  const res = await API.get("/leads", { params: { status } });
+// PROTEGIDO: Obtener listado de prospectos para el CRM (filtrado por scope STORE | PLATFORM | ALL)
+export const getLeadsRequest = async (status?: string, scope?: string): Promise<Lead[]> => {
+  const res = await API.get("/leads", { params: { status, scope } });
   return res.data;
 };
 
-// PROTEGIDO: Estadísticas de leads
-export const getLeadStatsRequest = async (): Promise<LeadStats> => {
-  const res = await API.get("/leads/stats");
+// PROTEGIDO: Estadísticas de leads por scope
+export const getLeadStatsRequest = async (scope?: string): Promise<LeadStats> => {
+  const res = await API.get("/leads/stats", { params: { scope } });
   return res.data;
 };
 

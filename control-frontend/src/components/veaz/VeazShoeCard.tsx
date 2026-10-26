@@ -8,6 +8,7 @@ import {
   Flame,
   Clock,
   ShieldCheck,
+  Calendar,
 } from "lucide-react";
 import type { GroupedShoeModel } from "./veazTypes";
 import { VeazBrandLogo, getBrandConfig } from "./VeazBrandLogo";
@@ -19,6 +20,7 @@ interface VeazShoeCardProps {
   variantLabel?: string;
   isOfficialStore?: boolean;
   onOpenLightbox: (shoe: GroupedShoeModel) => void;
+  onRequestLead?: (shoe: GroupedShoeModel, selectedSize?: string) => void;
 }
 
 export default function VeazShoeCard({
@@ -28,6 +30,7 @@ export default function VeazShoeCard({
   variantLabel,
   isOfficialStore = true,
   onOpenLightbox,
+  onRequestLead,
 }: VeazShoeCardProps) {
   const [selectedSize, setSelectedSize] = useState<string>(
     shoe.availableSizes.length > 0 ? shoe.availableSizes[0] : ""
@@ -419,10 +422,22 @@ export default function VeazShoeCard({
             </span>
           </button>
 
+          {onRequestLead && (
+            <button
+              type="button"
+              onClick={() => onRequestLead(shoe, selectedSize)}
+              className="py-2.5 px-2 rounded-xl bg-amber-50 hover:bg-amber-700 hover:text-white border border-amber-300 text-amber-900 font-cinzel font-bold text-[10.5px] tracking-wider flex items-center justify-center gap-1 shadow-xs transition-all cursor-pointer"
+              title="Agendar cita o cotizar"
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              <span className="hidden xl:inline">Cita</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => onOpenLightbox(shoe)}
-            className="w-9 h-9 rounded-xl bg-slate-50 hover:bg-slate-900 hover:text-white border border-slate-200 text-slate-700 flex items-center justify-center transition-all cursor-pointer"
+            className="w-9 h-9 rounded-xl bg-slate-50 hover:bg-slate-900 hover:text-white border border-slate-200 text-slate-700 flex items-center justify-center transition-all cursor-pointer shrink-0"
             title="Ver detalles"
           >
             <ArrowRight className="w-3.5 h-3.5" />

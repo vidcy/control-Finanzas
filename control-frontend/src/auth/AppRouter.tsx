@@ -165,6 +165,22 @@ export default function AppRoutes() {
         }
       />
       <Route
+        path="/leads"
+        element={
+          <ProtectedRoute>
+            <BusinessLeadsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/leads"
+        element={
+          <ProtectedRoute>
+            <BusinessLeadsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/business-billing"
         element={
           <ProtectedRoute>

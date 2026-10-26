@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   Layers,
   Flame,
+  Calendar,
 } from "lucide-react";
 import type { GroupedShoeModel } from "./veazTypes";
 import { VeazCrownIcon } from "./VeazLogo";
@@ -22,6 +23,7 @@ interface VeazImageLightboxProps {
   storeName?: string;
   variantLabel?: string;
   isOfficialStore?: boolean;
+  onRequestLead?: (shoe: GroupedShoeModel, selectedSize?: string) => void;
 }
 
 export default function VeazImageLightbox({
@@ -32,6 +34,7 @@ export default function VeazImageLightbox({
   storeName,
   variantLabel,
   isOfficialStore = true,
+  onRequestLead,
 }: VeazImageLightboxProps) {
   const [zoomLevel, setZoomLevel] = useState(1);
   const [selectedSize, setSelectedSize] = useState<string>("");
@@ -434,12 +437,12 @@ export default function VeazImageLightbox({
             </div>
 
             {/* FOOTER ACTIONS */}
-            <div className="space-y-3 pt-3 border-t border-slate-100">
+            <div className="space-y-2.5 pt-3 border-t border-slate-100">
               <a
                 href={whatsappUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="w-full py-4 px-6 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-cinzel font-bold text-xs tracking-[0.15em] uppercase flex items-center justify-center gap-3 shadow-md hover:shadow-lg transition-all cursor-pointer"
+                className="w-full py-3.5 px-6 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-cinzel font-bold text-xs tracking-[0.15em] uppercase flex items-center justify-center gap-3 shadow-md hover:shadow-lg transition-all cursor-pointer"
               >
                 <MessageCircle className="w-5 h-5 fill-white text-emerald-600" />
                 <span>
@@ -448,6 +451,17 @@ export default function VeazImageLightbox({
                     : "Pedir este Producto por WhatsApp"}
                 </span>
               </a>
+
+              {onRequestLead && (
+                <button
+                  type="button"
+                  onClick={() => onRequestLead(shoe, selectedSize)}
+                  className="w-full py-3 px-6 rounded-2xl bg-amber-50 hover:bg-amber-600 text-amber-900 hover:text-white border border-amber-300 font-cinzel font-bold text-xs tracking-[0.15em] uppercase flex items-center justify-center gap-2.5 shadow-sm transition-all cursor-pointer"
+                >
+                  <Calendar className="w-4 h-4" />
+                  <span>Agendar Cita / Cotizar Modelo</span>
+                </button>
+              )}
 
               <div className="flex items-center justify-center gap-4 text-slate-500 text-[11px] font-outfit pt-1">
                 <span className="flex items-center gap-1">

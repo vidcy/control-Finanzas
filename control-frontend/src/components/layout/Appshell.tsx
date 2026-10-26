@@ -639,8 +639,8 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
         }
       ] : []),
     {
-      name: "Prospectos & Citas",
-      path: "/business-leads",
+      name: "Clientes & Citas de mi Tienda",
+      path: "/business-leads?scope=STORE",
       icon: Zap,
       color: "from-amber-500 to-orange-600",
       bgActive: "bg-amber-50 text-amber-700",
@@ -818,7 +818,35 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
 
           {/* SECCIÓN EXCLUSIVA PARA ADMINISTRADORES */}
           {isAdmin && (
-            <div className="px-2 pt-3">
+            <div className="px-2 pt-3 space-y-2">
+              <button
+                type="button"
+                onClick={() => {
+                  navigate("/leads?scope=PLATFORM");
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`w-full p-3 rounded-2xl flex items-center justify-between group transition-all cursor-pointer shadow-md border ${
+                  location.pathname === "/leads" && (!location.search || location.search.includes("scope=PLATFORM"))
+                    ? "bg-gradient-to-r from-purple-700 via-indigo-700 to-indigo-900 text-white shadow-purple-500/25 border-purple-500"
+                    : "bg-gradient-to-r from-purple-50 to-indigo-50 hover:from-purple-100 hover:to-indigo-100 text-purple-950 border-purple-200/70"
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className={`p-1.5 rounded-xl ${location.pathname === "/leads" && (!location.search || location.search.includes("scope=PLATFORM")) ? "bg-white/20 text-white" : "bg-purple-600 text-white shadow-sm"}`}>
+                    <Zap className="w-4 h-4" />
+                  </div>
+                  <div className="text-left">
+                    <span className="text-[10px] font-black uppercase tracking-wider block leading-tight">
+                      Prospectos & Citas THINK
+                    </span>
+                    <span className={`text-[9px] font-bold ${location.pathname === "/leads" && (!location.search || location.search.includes("scope=PLATFORM")) ? "text-purple-200" : "text-purple-600"}`}>
+                      Clientes de la Plataforma
+                    </span>
+                  </div>
+                </div>
+                <span className="text-xs font-black">👑</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => {

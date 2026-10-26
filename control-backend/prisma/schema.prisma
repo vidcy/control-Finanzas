@@ -1106,6 +1106,11 @@ model Lead {
   monthlySalesVolume String?
   utmSource          String?
   utmCampaign        String?
+  targetUserId       String?
+  storeIdentifier    String?
+  isPlatformLead     Boolean    @default(true)
+  productName        String?
+  productSku         String?
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt
 }

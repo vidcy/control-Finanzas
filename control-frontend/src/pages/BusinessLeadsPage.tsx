@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import Appshell from "../components/layout/Appshell";
+import { useAuth } from "../auth/AuthContext";
 import {
   Users,
   Calendar,
@@ -15,12 +17,19 @@ import {
   RefreshCw,
   ShoppingBag,
   Zap,
+  Plus,
+  Clock,
+  Crown,
+  Store,
+  Globe,
+  ExternalLink,
 } from "lucide-react";
 import {
   getLeadsRequest,
   getLeadStatsRequest,
   updateLeadRequest,
   deleteLeadRequest,
+  createLeadRequest,
   type Lead,
   type LeadStats,
 } from "../services/lead.api";
@@ -28,6 +37,19 @@ import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
 
 export default function BusinessLeadsPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "ADMIN" || user?.role === "SUPERADMIN";
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const queryScope = searchParams.get("scope");
+
+  // Determine active scope:
+  // If user is admin, allow PLATFORM, STORE or ALL (defaults to PLATFORM).
+  // If not admin, strictly locked to STORE!
+  const [activeScope, setActiveScope] = useState<"PLATFORM" | "STORE" | "ALL">(
+    isAdmin ? (queryScope === "STORE" ? "STORE" : queryScope === "ALL" ? "ALL" : "PLATFORM") : "STORE"
+  );
+
   const [leads, setLeads] = useState<Lead[]>([]);
   const [stats, setStats] = useState<LeadStats>({
     total: 0,
@@ -38,6 +60,8 @@ export default function BusinessLeadsPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
+
+  // Edit / Reschedule Modal
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editNotes, setEditNotes] = useState("");
@@ -45,12 +69,40 @@ export default function BusinessLeadsPage() {
   const [editDate, setEditDate] = useState("");
   const [editTime, setEditTime] = useState("");
 
+  // New Manual Lead Modal
+  const [isNewModalOpen, setIsNewModalOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newPhone, setNewPhone] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [newBusinessName, setNewBusinessName] = useState("");
+  const [newBusinessType, setNewBusinessType] = useState("");
+  const [newInterestType, setNewInterestType] = useState<string>("CITA");
+  const [newAppointmentDate, setNewAppointmentDate] = useState("");
+  const [newAppointmentTime, setNewAppointmentTime] = useState("");
+  const [newProductName, setNewProductName] = useState("");
+  const [newNotes, setNewNotes] = useState("");
+  const [isCreatingLead, setIsCreatingLead] = useState(false);
+
+  // Sync state if query param changes
+  useEffect(() => {
+    if (isAdmin && queryScope) {
+      if (queryScope === "STORE" || queryScope === "PLATFORM" || queryScope === "ALL") {
+        setActiveScope(queryScope as any);
+      }
+    }
+  }, [queryScope, isAdmin]);
+
+  const handleScopeChange = (newScope: "PLATFORM" | "STORE" | "ALL") => {
+    setActiveScope(newScope);
+    setSearchParams({ scope: newScope });
+  };
+
   const loadData = async () => {
     try {
       setLoading(true);
       const [leadsData, statsData] = await Promise.all([
-        getLeadsRequest(statusFilter),
-        getLeadStatsRequest(),
+        getLeadsRequest(statusFilter, activeScope),
+        getLeadStatsRequest(activeScope),
       ]);
       setLeads(leadsData);
       setStats(statsData);
@@ -63,7 +115,7 @@ export default function BusinessLeadsPage() {
 
   useEffect(() => {
     loadData();
-  }, [statusFilter]);
+  }, [statusFilter, activeScope]);
 
   const handleStatusChange = async (leadId: string, newStatus: any) => {
     try {
@@ -72,8 +124,7 @@ export default function BusinessLeadsPage() {
       setLeads((prev) =>
         prev.map((l) => (l.id === leadId ? { ...l, status: newStatus } : l))
       );
-      // Actualizar stats
-      getLeadStatsRequest().then(setStats).catch(() => null);
+      getLeadStatsRequest(activeScope).then(setStats).catch(() => null);
     } catch {
       toast.error("Error al cambiar estado");
     }
@@ -85,7 +136,7 @@ export default function BusinessLeadsPage() {
       await deleteLeadRequest(id);
       toast.success("Prospecto eliminado");
       setLeads((prev) => prev.filter((l) => l.id !== id));
-      getLeadStatsRequest().then(setStats).catch(() => null);
+      getLeadStatsRequest(activeScope).then(setStats).catch(() => null);
     } catch {
       toast.error("Error al eliminar");
     }
@@ -112,9 +163,56 @@ export default function BusinessLeadsPage() {
       setLeads((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
       toast.success("Prospecto actualizado");
       setIsEditModalOpen(false);
-      getLeadStatsRequest().then(setStats).catch(() => null);
+      getLeadStatsRequest(activeScope).then(setStats).catch(() => null);
     } catch {
       toast.error("Error al guardar cambios");
+    }
+  };
+
+  const handleCreateManualLead = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newName.trim() || !newPhone.trim()) {
+      toast.error("Ingresa al menos el nombre y número de teléfono/WhatsApp");
+      return;
+    }
+
+    setIsCreatingLead(true);
+    try {
+      const isPlatform = activeScope === "PLATFORM";
+      await createLeadRequest({
+        name: newName.trim(),
+        phone: newPhone.trim(),
+        email: newEmail.trim() || undefined,
+        businessName: newBusinessName.trim() || undefined,
+        businessType: newBusinessType.trim() || undefined,
+        interestType: newInterestType,
+        appointmentDate: newAppointmentDate || undefined,
+        appointmentTime: newAppointmentTime || undefined,
+        productName: newProductName.trim() || undefined,
+        notes: newNotes.trim() || undefined,
+        utmSource: isPlatform ? "ManualAdmin" : "ManualStore",
+        isPlatformLead: isPlatform,
+        targetUserId: isPlatform ? undefined : user?.id,
+        storeIdentifier: isPlatform ? undefined : (user?.businessSlug || user?.id),
+      });
+
+      toast.success("¡Prospecto registrado exitosamente!");
+      setIsNewModalOpen(false);
+      // Reset form
+      setNewName("");
+      setNewPhone("");
+      setNewEmail("");
+      setNewBusinessName("");
+      setNewBusinessType("");
+      setNewAppointmentDate("");
+      setNewAppointmentTime("");
+      setNewProductName("");
+      setNewNotes("");
+      loadData();
+    } catch {
+      toast.error("Error al registrar el prospecto");
+    } finally {
+      setIsCreatingLead(false);
     }
   };
 
@@ -132,10 +230,23 @@ export default function BusinessLeadsPage() {
     }
 
     let message = "";
-    if (lead.interestType === "CITA" && lead.appointmentDate) {
-      message = `¡Hola ${lead.name}! 👋 Te saluda el equipo de THINK. Vemos que solicitaste agendar una demostración para el día ${lead.appointmentDate} a las ${lead.appointmentTime || "por confirmar"} para tu negocio ${lead.businessName || ""}. ¿Te parece bien coordinar el enlace por aquí?`;
+    if (lead.isPlatformLead) {
+      // Mensaje de Plataforma THINK ERP (para Administrador)
+      if (lead.interestType === "CITA" && lead.appointmentDate) {
+        message = `¡Hola ${lead.name}! 👋 Te saluda el equipo de THINK ERP. Vemos que solicitaste agendar una demostración del sistema para el día ${lead.appointmentDate} a las ${lead.appointmentTime || "por confirmar"} para tu negocio ${lead.businessName || ""}. ¿Te parece bien coordinar el enlace por aquí?`;
+      } else {
+        message = `¡Hola ${lead.name}! 👋 Te saluda el equipo de THINK ERP. Vimos que solicitaste información sobre el sistema financiero y POS para tu negocio ${lead.businessName ? `(${lead.businessName})` : ""}. ¿En qué momento te convendría ver una demostración rápida de 10 minutos?`;
+      }
     } else {
-      message = `¡Hola ${lead.name}! 👋 Te saluda el equipo de THINK. Vimos que solicitaste asesoría sobre el sistema para tu negocio ${lead.businessName ? `(${lead.businessName})` : ""}. ¿En qué momento te convendría ver una demostración de 10 minutos?`;
+      // Mensaje del Negocio / Catálogo (para Clientes de la tienda)
+      const storeName = user?.businessName || lead.businessName || "la tienda";
+      if (lead.productName) {
+        message = `¡Hola ${lead.name}! 👋 Te saluda el equipo de *${storeName}*. Recibimos tu consulta desde nuestro catálogo web sobre *${lead.productName}* ${lead.productSku ? `(SKU: ${lead.productSku})` : ""}${lead.appointmentDate ? `, solicitando cita para el ${lead.appointmentDate} a las ${lead.appointmentTime || "por coordinar"}` : ""}. ¿Te gustaría confirmar disponibilidad y entrega inmediata?`;
+      } else if (lead.appointmentDate) {
+        message = `¡Hola ${lead.name}! 👋 Te saluda el equipo de *${storeName}*. Vemos tu solicitud de cita/visita para el día ${lead.appointmentDate} a las ${lead.appointmentTime || "por coordinar"}. ¿Te gustaría que te confirmemos la atención personalizada?`;
+      } else {
+        message = `¡Hola ${lead.name}! 👋 Te saluda el equipo de *${storeName}*. Recibimos tu solicitud de contacto desde nuestro catálogo web oficial. ¿En qué podemos asesorarte hoy?`;
+      }
     }
 
     const encoded = encodeURIComponent(message);
@@ -147,6 +258,8 @@ export default function BusinessLeadsPage() {
       (l.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
       (l.phone || "").includes(searchTerm) ||
       (l.businessName || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (l.productName || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (l.productSku || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
       (l.businessType || "").toLowerCase().includes(searchTerm.toLowerCase());
     return matchesSearch;
   });
@@ -178,7 +291,7 @@ export default function BusinessLeadsPage() {
         return (
           <span className="px-3 py-1 rounded-full text-xs font-black bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1.5 w-fit">
             <CheckCircle2 className="w-3.5 h-3.5" />
-            Venta Cerrada
+            Venta Cerrada 🎉
           </span>
         );
       default:
@@ -193,29 +306,108 @@ export default function BusinessLeadsPage() {
   return (
     <Appshell>
       <div className="space-y-6">
+        {/* SCOPE SELECTOR TABS (EXCLUSIVO ADMIN / SUPERADMIN) */}
+        {isAdmin && (
+          <div className="bg-slate-900 p-2 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-white shadow-md">
+            <div className="flex items-center gap-2">
+              <span className="px-3 py-1 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
+                <Crown className="w-3 h-3 text-amber-300" />
+                Panel Admin
+              </span>
+              <span className="text-xs font-bold text-slate-300 hidden sm:inline">
+                Filtrar origen de prospectos:
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
+              <button
+                type="button"
+                onClick={() => handleScopeChange("PLATFORM")}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                  activeScope === "PLATFORM"
+                    ? "bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-sm"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                <Zap className="w-3.5 h-3.5 text-amber-300" />
+                <span>Prospectos THINK ERP (Plataforma)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleScopeChange("STORE")}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                  activeScope === "STORE"
+                    ? "bg-gradient-to-r from-amber-500 to-orange-600 text-slate-950 shadow-sm"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                <Store className="w-3.5 h-3.5" />
+                <span>Clientes de mi Tienda</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleScopeChange("ALL")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                  activeScope === "ALL"
+                    ? "bg-slate-800 text-white shadow-sm"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                <Globe className="w-3.5 h-3.5" />
+                <span>Todos</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* HEADER */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-gray-100 shadow-xs">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <span className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full text-xs font-black uppercase tracking-wider border border-indigo-100 flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                Ventas & Marketing THINK
-              </span>
+              {activeScope === "PLATFORM" ? (
+                <span className="px-3 py-1 bg-purple-50 text-purple-700 rounded-full text-xs font-black uppercase tracking-wider border border-purple-100 flex items-center gap-1.5">
+                  <Crown className="w-3.5 h-3.5 text-amber-600" />
+                  Módulo de Captación THINK ERP (Admin Oficial)
+                </span>
+              ) : (
+                <span className="px-3 py-1 bg-amber-50 text-amber-800 rounded-full text-xs font-black uppercase tracking-wider border border-amber-200 flex items-center gap-1.5">
+                  <Store className="w-3.5 h-3.5 text-amber-700" />
+                  Clientes & Citas de mi Tienda Web ({user?.businessName || "Mi Negocio"})
+                </span>
+              )}
             </div>
             <h1 className="text-2xl md:text-3xl font-black text-gray-900 tracking-tight">
-              Prospectos & Citas de Clientes
+              {activeScope === "PLATFORM"
+                ? "Prospectos & Citas de Clientes THINK ERP"
+                : `Prospectos & Citas de ${user?.businessName || "mi Tienda"}`}
             </h1>
             <p className="text-sm text-gray-500 font-medium">
-              Gestiona todos los clientes potenciales captados en la página web, solicitudes de cita y chat en vivo.
+              {activeScope === "PLATFORM"
+                ? "Clientes que solicitaron demostraciones, cotizaciones de planes o escribieron por el chat de la Landing Page de THINK."
+                : "Clientes que han solicitado cotizaciones de productos, consultado disponibilidad o agendado citas desde tu catálogo web."}
             </p>
           </div>
-          <button
-            onClick={loadData}
-            className="px-4 py-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 border border-slate-200 w-fit cursor-pointer"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-            Actualizar Lista
-          </button>
+
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={() => setIsNewModalOpen(true)}
+              className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-black transition-all flex items-center gap-2 shadow-sm shadow-indigo-600/30 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Nuevo Prospecto</span>
+            </button>
+
+            <button
+              onClick={loadData}
+              className="px-4 py-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 border border-slate-200 cursor-pointer"
+              title="Recargar lista"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+              <span className="hidden sm:inline">Actualizar</span>
+            </button>
+          </div>
         </div>
 
         {/* METRICS ROW */}
@@ -226,7 +418,7 @@ export default function BusinessLeadsPage() {
             </div>
             <div>
               <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-                Total Leads
+                Total Prospectos
               </div>
               <div className="text-2xl font-black text-gray-900">{stats.total}</div>
             </div>
@@ -262,7 +454,7 @@ export default function BusinessLeadsPage() {
             </div>
             <div>
               <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-                Ventas Ganadas
+                Ventas Cerradas
               </div>
               <div className="text-2xl font-black text-emerald-600">{stats.won}</div>
             </div>
@@ -275,7 +467,7 @@ export default function BusinessLeadsPage() {
             <Search className="w-4 h-4 text-gray-400 absolute left-4 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Buscar por nombre, teléfono, negocio o rubro..."
+              placeholder="Buscar por nombre, teléfono, artículo o negocio..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -319,7 +511,9 @@ export default function BusinessLeadsPage() {
               <Users className="w-12 h-12 text-slate-300 mb-2" />
               <div className="text-base font-black text-slate-700">No hay prospectos en esta sección</div>
               <div className="text-xs text-slate-400 max-w-sm">
-                Cuando los clientes interactúen con el formulario de citas, chat en vivo o botones de WhatsApp en la página web, aparecerán aquí.
+                {activeScope === "PLATFORM"
+                  ? "Los leads captados en la página web principal de THINK ERP aparecerán aquí."
+                  : "Cuando tus clientes interactúen con tu catálogo web o agenden citas, aparecerán aquí automáticamente."}
               </div>
             </div>
           ) : (
@@ -334,14 +528,23 @@ export default function BusinessLeadsPage() {
                     <div className="flex flex-wrap items-center gap-2.5">
                       <span className="font-black text-base text-slate-900">{lead.name}</span>
                       {getStatusBadge(lead.status)}
-                      <span className="text-[11px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-lg uppercase">
-                        {lead.interestType}
-                      </span>
-                      {lead.utmSource && (
-                        <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-100">
-                          Fuente: {lead.utmSource}
+
+                      {/* Origin Badge */}
+                      {lead.isPlatformLead ? (
+                        <span className="text-[10px] font-black text-purple-700 bg-purple-50 px-2.5 py-0.5 rounded-lg border border-purple-200 flex items-center gap-1">
+                          <Crown className="w-3 h-3 text-amber-500" />
+                          Plataforma THINK ERP
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-black text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-lg border border-amber-200 flex items-center gap-1">
+                          <Store className="w-3 h-3 text-amber-600" />
+                          Catálogo Web: {lead.storeIdentifier || "Tienda"}
                         </span>
                       )}
+
+                      <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-lg uppercase">
+                        {lead.interestType}
+                      </span>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-4 text-xs font-semibold text-slate-600">
@@ -349,24 +552,41 @@ export default function BusinessLeadsPage() {
                         <Phone className="w-3.5 h-3.5" />
                         {lead.phone}
                       </span>
+
+                      {lead.email && (
+                        <span className="text-slate-500">
+                          ✉️ {lead.email}
+                        </span>
+                      )}
+
+                      {lead.productName && (
+                        <span className="flex items-center gap-1.5 text-sky-900 font-bold bg-sky-50 px-2.5 py-0.5 rounded-lg border border-sky-200">
+                          <ShoppingBag className="w-3.5 h-3.5 text-sky-600" />
+                          Artículo: <strong>{lead.productName}</strong>
+                          {lead.productSku ? ` (${lead.productSku})` : ""}
+                        </span>
+                      )}
+
                       {lead.businessName && (
                         <span className="flex items-center gap-1.5 text-slate-700">
                           <Building className="w-3.5 h-3.5 text-slate-400" />
                           Negocio: <strong>{lead.businessName}</strong>
                         </span>
                       )}
+
                       {lead.businessType && (
                         <span className="flex items-center gap-1.5 text-slate-700">
-                          <ShoppingBag className="w-3.5 h-3.5 text-slate-400" />
                           Rubro: <strong>{lead.businessType}</strong>
                         </span>
                       )}
+
                       {lead.appointmentDate && (
                         <span className="flex items-center gap-1.5 text-rose-600 font-black bg-rose-50 px-2.5 py-1 rounded-xl border border-rose-100">
                           <Calendar className="w-3.5 h-3.5" />
                           Cita: {lead.appointmentDate} {lead.appointmentTime ? `a las ${lead.appointmentTime}` : ""}
                         </span>
                       )}
+
                       <span className="text-slate-400 text-[11px]">
                         Captado el {new Date(lead.createdAt).toLocaleDateString()} a las{" "}
                         {new Date(lead.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -385,11 +605,19 @@ export default function BusinessLeadsPage() {
                     <button
                       onClick={() => openWhatsApp(lead)}
                       className="px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-2xl text-xs font-black transition-all shadow-md shadow-emerald-500/20 active:scale-95 flex items-center gap-2 cursor-pointer"
-                      title="Abrir chat de WhatsApp con plantilla de venta lista"
+                      title="Abrir chat de WhatsApp con plantilla personalizada"
                     >
                       <MessageSquare className="w-4 h-4 fill-white" />
                       Contactar por WhatsApp
                     </button>
+
+                    <a
+                      href={`tel:${getCleanPhone(lead.phone)}`}
+                      className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-colors cursor-pointer"
+                      title="Llamar al cliente"
+                    >
+                      <Phone className="w-3.5 h-3.5" />
+                    </a>
 
                     {/* Quick status dropdown */}
                     <select
@@ -400,7 +628,7 @@ export default function BusinessLeadsPage() {
                       <option value="NEW">Nuevo</option>
                       <option value="SCHEDULED">Cita Agendada</option>
                       <option value="CONTACTED">En Negociación</option>
-                      <option value="WON">Venta Cerrada</option>
+                      <option value="WON">Venta Cerrada 🎉</option>
                       <option value="LOST">Descartado</option>
                     </select>
 
@@ -426,6 +654,177 @@ export default function BusinessLeadsPage() {
           )}
         </div>
       </div>
+
+      {/* MODAL: REGISTRAR NUEVO PROSPECTO MANUAL */}
+      <Modal
+        isOpen={isNewModalOpen}
+        onClose={() => setIsNewModalOpen(false)}
+        title={activeScope === "PLATFORM" ? "Nuevo Prospecto THINK ERP" : "Nuevo Cliente / Prospecto de mi Tienda"}
+        maxWidth="max-w-lg"
+      >
+        <form onSubmit={handleCreateManualLead} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-black uppercase text-slate-600 mb-1">
+                Nombre Completo *
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="Ej. María Flores"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-black uppercase text-slate-600 mb-1">
+                WhatsApp / Teléfono *
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="Ej. 987654321"
+                value={newPhone}
+                onChange={(e) => setNewPhone(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-black uppercase text-slate-600 mb-1">
+                Correo Electrónico (Opcional)
+              </label>
+              <input
+                type="email"
+                placeholder="cliente@ejemplo.com"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-black uppercase text-slate-600 mb-1">
+                Tipo de Solicitud
+              </label>
+              <select
+                value={newInterestType}
+                onChange={(e) => setNewInterestType(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
+              >
+                <option value="CITA">Agendar Cita / Visita</option>
+                <option value="COTIZACION">Solicitud de Cotización</option>
+                <option value="DEMO">Demostración en Vivo</option>
+                <option value="WHATSAPP">Consulta WhatsApp</option>
+                <option value="PRODUCT_INQUIRY">Consulta de Producto</option>
+              </select>
+            </div>
+          </div>
+
+          {activeScope === "PLATFORM" ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-black uppercase text-slate-600 mb-1">
+                  Nombre de su Negocio
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej. Calzados El Sol"
+                  value={newBusinessName}
+                  onChange={(e) => setNewBusinessName(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-black uppercase text-slate-600 mb-1">
+                  Rubro del Negocio
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej. Calzado, Abarrotes, etc."
+                  value={newBusinessType}
+                  onChange={(e) => setNewBusinessType(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
+                />
+              </div>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-xs font-black uppercase text-slate-600 mb-1">
+                Artículo / Producto de Interés
+              </label>
+              <input
+                type="text"
+                placeholder="Ej. Stiletto Glamour Rojo o Refrigeradora Mabe"
+                value={newProductName}
+                onChange={(e) => setNewProductName(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
+              />
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-black uppercase text-slate-600 mb-1">
+                Fecha de la Cita (Opcional)
+              </label>
+              <input
+                type="date"
+                value={newAppointmentDate}
+                onChange={(e) => setNewAppointmentDate(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-black uppercase text-slate-600 mb-1">
+                Hora de la Cita (Opcional)
+              </label>
+              <input
+                type="time"
+                value={newAppointmentTime}
+                onChange={(e) => setNewAppointmentTime(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-black uppercase text-slate-600 mb-1">
+              Notas y Observaciones
+            </label>
+            <textarea
+              rows={3}
+              placeholder="Detalles conversados o solicitudes específicas..."
+              value={newNotes}
+              onChange={(e) => setNewNotes(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800"
+            />
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <button
+              type="button"
+              onClick={() => setIsNewModalOpen(false)}
+              className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={isCreatingLead}
+              className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-xl transition-colors shadow-md shadow-indigo-600/30 cursor-pointer disabled:opacity-50"
+            >
+              {isCreatingLead ? "Guardando..." : "Registrar Prospecto"}
+            </button>
+          </div>
+        </form>
+      </Modal>
 
       {/* MODAL DE EDICIÓN Y REPROGRAMACIÓN DE CITA */}
       <Modal

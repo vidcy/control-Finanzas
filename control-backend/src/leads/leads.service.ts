@@ -1,4 +1,4 @@
-﻿import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface CreateLeadDto {
@@ -14,6 +14,11 @@ export interface CreateLeadDto {
   monthlySalesVolume?: string;
   utmSource?: string;
   utmCampaign?: string;
+  targetUserId?: string;
+  storeIdentifier?: string;
+  isPlatformLead?: boolean;
+  productName?: string;
+  productSku?: string;
 }
 
 export interface ChatMessageDto {
@@ -29,7 +34,33 @@ export class LeadsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(data: CreateLeadDto) {
-    return this.prisma.lead.create({
+    let resolvedTargetUserId = data.targetUserId || null;
+    let isPlatform = data.isPlatformLead !== undefined ? data.isPlatformLead : true;
+
+    if (data.storeIdentifier && data.storeIdentifier !== 'think' && data.storeIdentifier !== 'veaz-estileza') {
+      isPlatform = false;
+      if (!resolvedTargetUserId) {
+        try {
+          const storeUser = await (this.prisma as any).user.findFirst({
+            where: {
+              OR: [
+                { id: data.storeIdentifier },
+                { businessSlug: data.storeIdentifier },
+                { email: data.storeIdentifier },
+              ],
+            },
+            select: { id: true },
+          });
+          if (storeUser) {
+            resolvedTargetUserId = storeUser.id;
+          }
+        } catch {
+          // fallback
+        }
+      }
+    }
+
+    return (this.prisma as any).lead.create({
       data: {
         name: data.name || 'Prospecto Web',
         phone: data.phone,
@@ -43,6 +74,11 @@ export class LeadsService {
         monthlySalesVolume: data.monthlySalesVolume || null,
         utmSource: data.utmSource || 'LandingPage',
         utmCampaign: data.utmCampaign || null,
+        targetUserId: resolvedTargetUserId,
+        storeIdentifier: data.storeIdentifier || null,
+        isPlatformLead: isPlatform,
+        productName: data.productName || null,
+        productSku: data.productSku || null,
       },
     });
   }
@@ -53,21 +89,20 @@ export class LeadsService {
     let quickActions: string[] = [];
     let suggestedAction: 'ASK_PHONE' | 'SCHEDULE_DEMO' | 'SHOW_PRICING' | 'GENERAL' = 'GENERAL';
 
-    // Extracción heurística de número si viene en el mensaje
     const phoneMatch = dto.message.match(/(\+?51)?\s?9\d{8}|\b\d{9}\b/);
     const detectedPhone = phoneMatch ? phoneMatch[0].replace(/\s+/g, '') : dto.phone;
 
     let leadRecord: any = null;
     if (detectedPhone || dto.name) {
-      // Registrar o actualizar lead
-      leadRecord = await this.prisma.lead.create({
+      leadRecord = await (this.prisma as any).lead.create({
         data: {
           name: dto.name || 'Prospecto Chat THINK',
           phone: detectedPhone || 'Por confirmar',
           businessType: dto.businessType || 'General',
           interestType: 'CHAT',
-          notes: `Pregunta en Chat: "${dto.message}"`,
+          notes: 'Pregunta en Chat: "' + (dto.message || '') + '"',
           utmSource: 'ChatWidget',
+          isPlatformLead: true,
         },
       });
     }
@@ -77,20 +112,20 @@ export class LeadsService {
       quickActions = ['Separar Demostración Gratuita', 'Ver Planes y Descuentos', 'Hablar con un Asesor Humano'];
       suggestedAction = 'SCHEDULE_DEMO';
     } else if (text.includes('calzado') || text.includes('serie') || text.includes('talla') || text.includes('zapato')) {
-      reply = '👟 ¡Somos especialistas en calzado y moda! THINK cuenta con el motor de Series más avanzado del mercado: gestiona curvas de tallas (34 al 39, repeticiones), control de tacos, códigos de barra por par o por serie, y etiquetas listas para vitrina o caja. ¿Deseas ver cómo funciona en tu tienda?';
+      reply = '👠 ¡Somos especialistas en calzado y moda! THINK cuenta con el motor de Series más avanzado del mercado: gestiona curvas de tallas (34 al 39, repeticiones), control de tacos, códigos de barra por par o por serie, y etiquetas listas para vitrina o caja. ¿Deseas ver cómo funciona en tu tienda?';
       quickActions = ['Agendar Demo de Calzado', '¿Cómo imprime etiquetas?', 'Consultar Precios'];
       suggestedAction = 'SCHEDULE_DEMO';
     } else if (text.includes('demo') || text.includes('cita') || text.includes('probar') || text.includes('reunion')) {
-      reply = '🎯 ¡Perfecto! Podemos coordinar una videollamada personalizada o una demostración guiada donde te enseñaremos a configurar tu inventario, ventas y caja en minutos. Déjanos tu número de WhatsApp y la hora en que te convenga.';
+      reply = '📅 ¡Perfecto! Podemos coordinar una videollamada personalizada o una demostración guiada donde te enseñaremos a configurar tu inventario, ventas y caja en minutos. Déjanos tu número de WhatsApp y la hora en que te convenga.';
       quickActions = ['Agendar Cita Ahora', 'Enviar WhatsApp Express', '¿Qué requisitos necesito?'];
       suggestedAction = 'SCHEDULE_DEMO';
     } else if (text.includes('boleta') || text.includes('factura') || text.includes('sunat')) {
-      reply = '📄 Sí, THINK se integra con facturación electrónica SUNAT para emitir boletas, facturas y notas de crédito en segundos directamente desde tu punto de venta en PC, tablet o celular.';
+      reply = '⚡ Sí, THINK se integra con facturación electrónica SUNAT para emitir boletas, facturas y notas de crédito en segundos directamente desde tu punto de venta en PC, tablet o celular.';
       quickActions = ['¿Cómo se activa SUNAT?', 'Agendar Demostración', 'Hablar con Ventas'];
       suggestedAction = 'GENERAL';
     } else {
-      reply = '¡Hola! 👋 Soy tu Asesor Virtual THINK. Puedo mostrarte cómo controlar tu stock en tiempo real, evitar robos y fugas de dinero, vender a la velocidad de la luz y emitir comprobantes. ¿De qué rubro es tu negocio (calzados, ropa, minimarket, distribuidora u otro)?';
-      quickActions = ['Tienda de Calzados / Moda', 'Minimarket / Abarrotes', 'Ferretería / Distribuidora', 'Agendar Demo'];
+      reply = '¡Hola! 👋 Soy tu Asesor Virtual THINK. Puedo mostrarte cómo controlar tu stock en tiempo real, evitar robos y fugas de dinero, vender a la velocidad de la luz y emitir comprobantes. ¿De qué rubro es tu negocio (calzados, electrodomésticos, ropa, minimarket u otro)?';
+      quickActions = ['Tienda de Calzados / Moda', 'Electrodomésticos / Tecnología', 'Minimarket / Abarrotes', 'Agendar Demo'];
       suggestedAction = 'ASK_PHONE';
     }
 
@@ -103,26 +138,61 @@ export class LeadsService {
     };
   }
 
-  async findAll(status?: string) {
-    const where: any = {};
+  private buildScopeWhere(user: any, scope?: string) {
+    const isAdmin = user && (user.role === 'ADMIN' || user.role === 'SUPERADMIN');
+    const effectiveUserId = user ? (user.parentId || user.id) : null;
+
+    if (!isAdmin) {
+      return {
+        OR: [
+          { targetUserId: user ? user.id : 'NONE' },
+          { targetUserId: effectiveUserId || 'NONE' },
+        ],
+      };
+    }
+
+    if (scope === 'STORE') {
+      return {
+        OR: [
+          { targetUserId: user.id },
+          { targetUserId: effectiveUserId },
+        ],
+      };
+    } else if (scope === 'ALL') {
+      return {};
+    } else {
+      return {
+        OR: [
+          { isPlatformLead: true },
+          { targetUserId: null },
+        ],
+      };
+    }
+  }
+
+  async findAll(user: any, status?: string, scope?: string) {
+    const scopeWhere = this.buildScopeWhere(user, scope);
+    const where: any = { ...scopeWhere };
+
     if (status && status !== 'ALL') {
       where.status = status;
     }
-    return this.prisma.lead.findMany({
+
+    return (this.prisma as any).lead.findMany({
       where,
       orderBy: { createdAt: 'desc' },
     });
   }
 
   async findOne(id: string) {
-    const lead = await this.prisma.lead.findUnique({ where: { id } });
+    const lead = await (this.prisma as any).lead.findUnique({ where: { id } });
     if (!lead) throw new NotFoundException('Lead no encontrado');
     return lead;
   }
 
   async update(id: string, data: any) {
     await this.findOne(id);
-    return this.prisma.lead.update({
+    return (this.prisma as any).lead.update({
       where: { id },
       data,
     });
@@ -130,15 +200,17 @@ export class LeadsService {
 
   async remove(id: string) {
     await this.findOne(id);
-    return this.prisma.lead.delete({ where: { id } });
+    return (this.prisma as any).lead.delete({ where: { id } });
   }
 
-  async getStats() {
+  async getStats(user: any, scope?: string) {
+    const scopeWhere = this.buildScopeWhere(user, scope);
+
     const [total, newCount, scheduled, won] = await Promise.all([
-      this.prisma.lead.count(),
-      this.prisma.lead.count({ where: { status: 'NEW' } }),
-      this.prisma.lead.count({ where: { status: 'SCHEDULED' } }),
-      this.prisma.lead.count({ where: { status: 'WON' } }),
+      (this.prisma as any).lead.count({ where: scopeWhere }),
+      (this.prisma as any).lead.count({ where: { ...scopeWhere, status: 'NEW' } }),
+      (this.prisma as any).lead.count({ where: { ...scopeWhere, status: 'SCHEDULED' } }),
+      (this.prisma as any).lead.count({ where: { ...scopeWhere, status: 'WON' } }),
     ]);
 
     return {
