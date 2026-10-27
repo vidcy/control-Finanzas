@@ -36,6 +36,7 @@ export default function AppRoutes() {
       {/* ruta pública */}
       <Route path="/" element={<LandingPage />} />
       <Route path="/veaz-estileza" element={<VeazEstilezaPage />} />
+      <Route path="/catalogo" element={<VeazEstilezaPage />} />
       <Route path="/catalogo/:identifier" element={<VeazEstilezaPage />} />
       <Route path="/c/:identifier" element={<VeazEstilezaPage />} />
       <Route path="/login" element={<LoginPage />} />

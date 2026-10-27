@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Param } from '@nestjs/common';
+import { Controller, Get, Query, Param, Req } from '@nestjs/common';
 import { PrismaService } from './prisma/prisma.service';
 
 @Controller()
@@ -10,11 +10,46 @@ export class AppController {
     return { message: 'Finance API running 🚀' };
   }
 
-    private async getCatalogUser(queryOrParam?: string) {
+  private async getCatalogUser(queryOrParam?: string, req?: any) {
     const raw = (queryOrParam || '').trim();
-    if (!raw) return null;
+
+    // 0. Extract logged-in userId from JWT Authorization header if available
+    let tokenUserId: string | null = null;
+    if (req?.headers?.authorization) {
+      const authHeader = String(req.headers.authorization);
+      if (authHeader.startsWith('Bearer ')) {
+        try {
+          const token = authHeader.slice(7).trim();
+          const parts = token.split('.');
+          if (parts.length === 3) {
+            const payloadJson = Buffer.from(parts[1], 'base64').toString('utf8');
+            const payload = JSON.parse(payloadJson);
+            tokenUserId = payload.sub || payload.id || payload.userId || null;
+          }
+        } catch (e) {}
+      }
+    }
 
     const lowerRaw = raw.toLowerCase();
+
+    // If query is 'mi-tienda' or empty and user is logged in, resolve directly to the logged-in merchant
+    if ((!raw || lowerRaw === 'mi-tienda' || lowerRaw === 'catalogo') && tokenUserId) {
+      try {
+        let loggedUser: any = await this.prisma.user.findUnique({ where: { id: tokenUserId } });
+        if (loggedUser) {
+          if (loggedUser.parentId) {
+            const parent = await this.prisma.user.findUnique({ where: { id: loggedUser.parentId } });
+            if (parent) loggedUser = parent;
+          }
+          await this.enrichUserCatalogData(loggedUser);
+          return loggedUser;
+        }
+      } catch (e) {}
+    }
+
+    if (!raw) return null;
+
+    // Check for Veaz Estileza flagship boutique
     const isVeazFlagship =
       lowerRaw === 'veaz-estileza' ||
       lowerRaw === 'estileza' ||
@@ -31,14 +66,20 @@ export class AppController {
           },
           take: 1,
         });
-        if (users && users.length > 0) return users[0];
+        if (users && users.length > 0) {
+          await this.enrichUserCatalogData(users[0]);
+          return users[0];
+        }
       } catch (e) {}
 
       try {
         const fallback = await this.prisma.user.findFirst({
           where: { email: { contains: 'estileza', mode: 'insensitive' } },
         });
-        if (fallback) return fallback;
+        if (fallback) {
+          await this.enrichUserCatalogData(fallback);
+          return fallback;
+        }
       } catch (e) {}
 
       return null;
@@ -47,14 +88,14 @@ export class AppController {
     try {
       const slugifiedRaw = lowerRaw
         .normalize('NFD')
-        .replace(/[̀-ͯ]/g, '')
+        .replace(/[\u0300-\u036f]/g, '')
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/-+/g, '-')
         .replace(/^-|-$/g, '');
 
       let user: any = null;
 
-      // 1. Intentar por UUID exacto
+      // 1. Match by exact UUID
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw);
       if (isUuid) {
         try {
@@ -62,14 +103,15 @@ export class AppController {
           if (user) {
             if (user.parentId) {
               const parent = await this.prisma.user.findUnique({ where: { id: user.parentId } });
-              return parent || user;
+              user = parent || user;
             }
+            await this.enrichUserCatalogData(user);
             return user;
           }
         } catch (e) {}
       }
 
-      // 2. Intentar por businessSlug exacto
+      // 2. Match by exact businessSlug (Prisma + Raw SQL fallback)
       try {
         user = await this.prisma.user.findFirst({
           where: {
@@ -90,7 +132,7 @@ export class AppController {
         } catch (err) {}
       }
 
-      // 3. Intentar por Email o prefijo de email
+      // 3. Match by Email or Email prefix
       if (!user) {
         try {
           user = await this.prisma.user.findFirst({
@@ -105,80 +147,126 @@ export class AppController {
         } catch (e) {}
       }
 
-      // 4. Intentar por businessName exacto
+      // 4. Match by exact businessName
       if (!user) {
         try {
           user = await this.prisma.user.findFirst({
-            where: { businessName: { equals: raw, mode: 'insensitive' } },
+            where: {
+              OR: [
+                { businessName: { equals: raw, mode: 'insensitive' } },
+                { businessName: { equals: slugifiedRaw, mode: 'insensitive' } },
+              ],
+            },
           });
         } catch (e) {}
       }
 
-      // 5. BÚSQUEDA INTELIGENTE POR SLUG Y TOKENS (Multi-criterio, sin restricciones de isActive o businessName null)
+      // 5. Intelligent Multi-Criteria Slug & Token Search
       if (!user) {
         try {
           const searchTokens = slugifiedRaw.split('-').filter((t) => t.length >= 3);
-          const allUsers = await this.prisma.user.findMany({
-            select: {
-              id: true,
-              email: true,
-              name: true,
-              lastName: true,
-              businessName: true,
-              businessSlug: true,
-              businessReason: true,
-              parentId: true,
-            },
-          });
 
-          // A) Coincidencia directa de slug generado a partir de businessName
-          let matched = allUsers.find((u) => {
-            if (u.businessSlug) {
-              const uSlug = u.businessSlug.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-');
-              if (uSlug === slugifiedRaw) return true;
+          let allUsers: any[] = [];
+          try {
+            allUsers = await this.prisma.user.findMany({
+              select: {
+                id: true,
+                email: true,
+                name: true,
+                lastName: true,
+                businessName: true,
+                businessSlug: true,
+                businessReason: true,
+                parentId: true,
+              },
+            });
+          } catch (ePrisma) {
+            try {
+              allUsers = await this.prisma.$queryRawUnsafe(
+                'SELECT "id", "email", "name", "lastName", "businessName", "businessSlug", "businessReason", "parentId" FROM "User"',
+              );
+            } catch (eRaw) {
+              allUsers = await this.prisma.user.findMany({
+                select: {
+                  id: true,
+                  email: true,
+                  name: true,
+                  lastName: true,
+                  businessName: true,
+                  parentId: true,
+                },
+              });
             }
-            if (u.businessName) {
-              const uBSlug = u.businessName.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-              if (uBSlug === slugifiedRaw) return true;
+          }
+
+          const targetSlug = slugifiedRaw;
+          const cleanTarget = slugifiedRaw.replace(/-/g, '');
+
+          const toSlug = (text?: string | null) => {
+            if (!text) return '';
+            return String(text)
+              .toLowerCase()
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .replace(/[^a-z0-9]+/g, '-')
+              .replace(/-+/g, '-')
+              .replace(/^-|-$/g, '');
+          };
+
+          // A) Direct exact match on slugified businessSlug, businessName, businessReason, full name or email prefix
+          let matched = allUsers.find((u) => {
+            if (u.businessSlug && toSlug(u.businessSlug) === targetSlug) return true;
+            if (u.businessName && toSlug(u.businessName) === targetSlug) return true;
+            if (u.businessReason && toSlug(u.businessReason) === targetSlug) return true;
+            const fullName = (u.name || '') + ' ' + (u.lastName || '');
+            if (fullName.trim() && toSlug(fullName) === targetSlug) return true;
+            if (u.email) {
+              const prefix = u.email.split('@')[0];
+              if (toSlug(prefix) === targetSlug) return true;
             }
             return false;
           });
 
-          // B) Coincidencia de inclusión mutua (slug contiene o está contenido)
+          // B) Mutual inclusion match
           if (!matched) {
             matched = allUsers.find((u) => {
-              if (u.businessName) {
-                const uBSlug = u.businessName.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-                if (uBSlug.includes(slugifiedRaw) || slugifiedRaw.includes(uBSlug)) return true;
-                const cleanA = uBSlug.replace(/-/g, '');
-                const cleanB = slugifiedRaw.replace(/-/g, '');
-                if (cleanA && cleanB && (cleanA === cleanB || cleanA.includes(cleanB) || cleanB.includes(cleanA))) return true;
+              const bSlug = toSlug(u.businessSlug || u.businessName);
+              if (bSlug) {
+                if (bSlug.includes(targetSlug) || targetSlug.includes(bSlug)) return true;
+                const cleanB = bSlug.replace(/-/g, '');
+                if (cleanB && cleanTarget && (cleanB.includes(cleanTarget) || cleanTarget.includes(cleanB))) return true;
               }
+              const nameSlug = toSlug((u.name || '') + ' ' + (u.lastName || ''));
+              if (nameSlug && (nameSlug.includes(targetSlug) || targetSlug.includes(nameSlug))) return true;
               return false;
             });
           }
 
-          // C) Coincidencia por tokens (ej: tokens = ['electrodomesticos', 'ayca'])
+          // C) Token-based match
           if (!matched && searchTokens.length > 0) {
             matched = allUsers.find((u) => {
-              const fullStr = `${u.businessName || ''} ${u.businessSlug || ''} ${u.businessReason || ''} ${u.name || ''} ${u.lastName || ''} ${u.email || ''}`
+              const fullStr = [u.businessName, u.businessSlug, u.businessReason, u.name, u.lastName, u.email]
+                .filter(Boolean)
+                .join(' ')
                 .toLowerCase()
                 .normalize('NFD')
-                .replace(/[̀-ͯ]/g, '');
+                .replace(/[\u0300-\u036f]/g, '');
               return searchTokens.every((token) => fullStr.includes(token));
             });
           }
 
-          // D) Coincidencia por token representativo más largo (ej: "electrodomesticos" o "ayca")
+          // D) Longest token match
           if (!matched && searchTokens.length > 0) {
             const sortedTokens = [...searchTokens].sort((a, b) => b.length - a.length);
             for (const t of sortedTokens) {
               if (t.length >= 4) {
                 matched = allUsers.find((u) => {
-                  const bNameNorm = `${u.businessName || ''} ${u.name || ''} ${u.lastName || ''}`
+                  const bNameNorm = [u.businessName, u.name, u.lastName]
+                    .filter(Boolean)
+                    .join(' ')
                     .toLowerCase()
                     .normalize('NFD')
-                    .replace(/[̀-ͯ]/g, '');
+                    .replace(/[\u0300-\u036f]/g, '');
                   return bNameNorm.includes(t);
                 });
                 if (matched) break;
@@ -189,7 +277,7 @@ export class AppController {
           if (matched) {
             user = await this.prisma.user.findUnique({ where: { id: matched.id } });
 
-            // Auto-asignar businessSlug si estaba en null para acelerar futuras consultas
+            // Auto-assign businessSlug if it was null to speed up all future visits
             if (user && !user.businessSlug && slugifiedRaw && slugifiedRaw.length <= 50) {
               try {
                 await this.prisma.user.update({
@@ -197,7 +285,16 @@ export class AppController {
                   data: { businessSlug: slugifiedRaw },
                 });
                 user.businessSlug = slugifiedRaw;
-              } catch (err) {}
+              } catch (err) {
+                try {
+                  await this.prisma.$executeRawUnsafe(
+                    'UPDATE "User" SET "businessSlug" = $1 WHERE "id" = $2 AND "businessSlug" IS NULL',
+                    slugifiedRaw,
+                    user.id,
+                  );
+                  user.businessSlug = slugifiedRaw;
+                } catch (e2) {}
+              }
             }
           }
         } catch (e) {
@@ -205,12 +302,28 @@ export class AppController {
         }
       }
 
-      // Si el usuario es trabajador de una sucursal, resolver al dueño del negocio
+      // If user is a worker, resolve to the business owner
       if (user && user.parentId) {
         const parentUser = await this.prisma.user.findUnique({
           where: { id: user.parentId },
         });
         if (parentUser) user = parentUser;
+      }
+
+      // Final fallback: if still not matched but user has valid JWT token, resolve to their account
+      if (!user && tokenUserId) {
+        try {
+          const loggedUser = await this.prisma.user.findUnique({ where: { id: tokenUserId } });
+          if (loggedUser) {
+            user = loggedUser.parentId
+              ? (await this.prisma.user.findUnique({ where: { id: loggedUser.parentId } })) || loggedUser
+              : loggedUser;
+          }
+        } catch (e) {}
+      }
+
+      if (user) {
+        await this.enrichUserCatalogData(user);
       }
 
       return user || null;
@@ -220,21 +333,43 @@ export class AppController {
     }
   }
 
+  // Ensures catalogConfig and businessSlug are always loaded even if Prisma client lacks the fields
+  private async enrichUserCatalogData(user: any) {
+    if (!user) return;
+    if (!user.catalogConfig || !user.businessSlug) {
+      try {
+        const extra: any = await this.prisma.$queryRawUnsafe(
+          'SELECT "catalogConfig", "businessSlug" FROM "User" WHERE "id" = $1',
+          user.id,
+        );
+        if (extra && extra.length > 0) {
+          if (extra[0].catalogConfig && !user.catalogConfig) {
+            user.catalogConfig = extra[0].catalogConfig;
+          }
+          if (extra[0].businessSlug && !user.businessSlug) {
+            user.businessSlug = extra[0].businessSlug;
+          }
+        }
+      } catch (e) {}
+    }
+  }
+
   @Get('catalog/store-info')
   async getStoreInfoQuery(
     @Query('identifier') identifier?: string,
     @Query('email') email?: string,
+    @Req() req?: any,
   ) {
-    return this.resolveStoreInfo(identifier || email);
+    return this.resolveStoreInfo(identifier || email, req);
   }
 
   @Get('catalog/store-info/:identifier')
-  async getStoreInfoParam(@Param('identifier') identifier: string) {
-    return this.resolveStoreInfo(identifier);
+  async getStoreInfoParam(@Param('identifier') identifier: string, @Req() req?: any) {
+    return this.resolveStoreInfo(identifier, req);
   }
 
-  private async resolveStoreInfo(identifier?: string) {
-    const user: any = await this.getCatalogUser(identifier);
+  private async resolveStoreInfo(identifier?: string, req?: any) {
+    const user: any = await this.getCatalogUser(identifier, req);
     if (!user) {
       return {
         notFound: true,
@@ -248,12 +383,17 @@ export class AppController {
       (user.email && user.email.toLowerCase().includes('estileza')) ||
       (identifier || '').toLowerCase() === 'veaz-estileza';
 
+    const displayName =
+      user.businessName ||
+      [user.name, user.lastName].filter(Boolean).join(' ').trim() ||
+      'Catálogo Oficial';
+
     return {
       id: user.id,
       name: user.name,
       lastName: user.lastName,
       email: user.email,
-      businessName: user.businessName || `${user.name} ${user.lastName}`,
+      businessName: displayName,
       businessReason: user.businessReason || '',
       businessRubro: user.businessRubro || 'Comercio General',
       businessLogo: user.businessLogo || null,
@@ -266,6 +406,7 @@ export class AppController {
       businessDistrict: user.businessDistrict || null,
       catalogConfig: user.catalogConfig || null,
       isOfficialStore: isOfficial,
+      notFound: false,
     };
   }
 
@@ -273,71 +414,128 @@ export class AppController {
   async getCatalogProducts(
     @Query('identifier') identifier?: string,
     @Query('email') email?: string,
+    @Req() req?: any,
   ) {
-    const user: any = await this.getCatalogUser(identifier || email);
+    return this.resolveCatalogProducts(identifier || email, req);
+  }
+
+  @Get('catalog/products/:identifier')
+  async getCatalogProductsParam(@Param('identifier') identifier: string, @Req() req?: any) {
+    return this.resolveCatalogProducts(identifier, req);
+  }
+
+  private async resolveCatalogProducts(identifier?: string, req?: any) {
+    const user: any = await this.getCatalogUser(identifier, req);
     if (!user) {
       return [];
     }
 
     const ownerId = user.parentId || user.id;
 
-    return this.prisma.product.findMany({
-      where: {
-        userId: ownerId,
-      },
-      include: {
-        presentations: true,
-        brand: true,
-        family: true,
-        variants: true,
-        seriesCurves: true,
-        branchStocks: {
-          include: {
-            branch: true,
+    try {
+      return await this.prisma.product.findMany({
+        where: {
+          userId: ownerId,
+        },
+        include: {
+          presentations: true,
+          brand: true,
+          family: true,
+          variants: true,
+          seriesCurves: true,
+          branchStocks: {
+            include: {
+              branch: true,
+            },
           },
         },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+        orderBy: { createdAt: 'desc' },
+      });
+    } catch (eFull) {
+      try {
+        return await this.prisma.product.findMany({
+          where: {
+            userId: ownerId,
+          },
+          include: {
+            presentations: true,
+            brand: true,
+            family: true,
+          },
+          orderBy: { createdAt: 'desc' },
+        });
+      } catch (eBasic) {
+        console.error('Error fetching catalog products:', eBasic);
+        return [];
+      }
+    }
   }
 
   @Get('catalog/brands')
   async getCatalogBrands(
     @Query('identifier') identifier?: string,
     @Query('email') email?: string,
+    @Req() req?: any,
   ) {
-    const user: any = await this.getCatalogUser(identifier || email);
+    return this.resolveCatalogBrands(identifier || email, req);
+  }
+
+  @Get('catalog/brands/:identifier')
+  async getCatalogBrandsParam(@Param('identifier') identifier: string, @Req() req?: any) {
+    return this.resolveCatalogBrands(identifier, req);
+  }
+
+  private async resolveCatalogBrands(identifier?: string, req?: any) {
+    const user: any = await this.getCatalogUser(identifier, req);
     if (!user) {
       return [];
     }
 
     const ownerId = user.parentId || user.id;
 
-    return this.prisma.brand.findMany({
-      where: {
-        userId: ownerId,
-      },
-      orderBy: { name: 'asc' },
-    });
+    try {
+      return await this.prisma.brand.findMany({
+        where: {
+          userId: ownerId,
+        },
+        orderBy: { name: 'asc' },
+      });
+    } catch (e) {
+      return [];
+    }
   }
 
   @Get('catalog/families')
   async getCatalogFamilies(
     @Query('identifier') identifier?: string,
     @Query('email') email?: string,
+    @Req() req?: any,
   ) {
-    const user: any = await this.getCatalogUser(identifier || email);
+    return this.resolveCatalogFamilies(identifier || email, req);
+  }
+
+  @Get('catalog/families/:identifier')
+  async getCatalogFamiliesParam(@Param('identifier') identifier: string, @Req() req?: any) {
+    return this.resolveCatalogFamilies(identifier, req);
+  }
+
+  private async resolveCatalogFamilies(identifier?: string, req?: any) {
+    const user: any = await this.getCatalogUser(identifier, req);
     if (!user) {
       return [];
     }
 
     const ownerId = user.parentId || user.id;
 
-    return this.prisma.family.findMany({
-      where: {
-        userId: ownerId,
-      },
-      orderBy: { name: 'asc' },
-    });
+    try {
+      return await this.prisma.family.findMany({
+        where: {
+          userId: ownerId,
+        },
+        orderBy: { name: 'asc' },
+      });
+    } catch (e) {
+      return [];
+    }
   }
 }

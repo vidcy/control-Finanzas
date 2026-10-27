@@ -49,6 +49,7 @@ import {
 } from "../services/product.api";
 import { getReceiptAbsoluteUrl } from "../components/ui/ImageUploader";
 import { getRubroPreset, type CatalogShowcaseRailItem } from "../utils/catalogRubroPresets";
+import { getStoreCatalogSlug } from "../utils/catalogUtils";
 
 const DEFAULT_VEAZ_RAIL: CatalogShowcaseRailItem[] = [
   {
@@ -98,11 +99,28 @@ export default function VeazEstilezaPage() {
   const isDirectVeazRoute = window.location.pathname.startsWith("/veaz-estileza");
   const targetIdentifier = useMemo(() => {
     if (isDirectVeazRoute) return "veaz-estileza";
+    let raw = "";
     try {
-      return decodeURIComponent(params.identifier || "").trim() || "veaz-estileza";
+      raw = decodeURIComponent(params.identifier || "").trim();
     } catch {
-      return (params.identifier || "").trim() || "veaz-estileza";
+      raw = (params.identifier || "").trim();
     }
+    const lower = raw.toLowerCase();
+    if (lower && lower !== "catalogo" && lower !== "mi-tienda") {
+      return raw;
+    }
+    // If visitor is viewing /catalogo or /catalogo/mi-tienda and has logged-in merchant profile, use their store
+    try {
+      const stored = localStorage.getItem("user");
+      if (stored) {
+        const u = JSON.parse(stored);
+        const autoSlug = getStoreCatalogSlug(u);
+        if (autoSlug && autoSlug !== "mi-tienda") {
+          return autoSlug;
+        }
+      }
+    } catch {}
+    return raw || "veaz-estileza";
   }, [isDirectVeazRoute, params.identifier]);
 
   // Store metadata
@@ -189,7 +207,7 @@ export default function VeazEstilezaPage() {
 
         if (!isMounted) return;
 
-        if (storeData) {
+        if (storeData && !storeData.notFound) {
           setStoreInfo(storeData);
           const isVeaz =
             isDirectVeazRoute ||
@@ -202,6 +220,18 @@ export default function VeazEstilezaPage() {
           } else {
             document.title = `${storeData.businessName} | ${storeData.catalogConfig?.catalogTitle || storeData.businessRubro || "Catálogo Virtual Oficial"}`;
           }
+        } else if (Array.isArray(prodsData) && prodsData.length > 0) {
+          const formattedName = targetIdentifier
+            .split("-")
+            .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+            .join(" ");
+          setStoreInfo({
+            id: targetIdentifier,
+            businessName: formattedName,
+            isOfficialStore: false,
+            notFound: false,
+          } as any);
+          document.title = `${formattedName} | Catálogo Virtual Oficial`;
         } else if (!isDirectVeazRoute && targetIdentifier !== "veaz-estileza") {
           setStoreInfo({
             businessName: targetIdentifier,

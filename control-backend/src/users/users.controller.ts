@@ -170,6 +170,8 @@ export class UsersController {
         businessRubro: parent?.businessRubro,
         businessLogo: parent?.businessLogo,
         businessBanner: parent?.businessBanner,
+        businessSlug: parent?.businessSlug,
+        catalogConfig: parent?.catalogConfig,
         agentRoleSingular: parent?.agentRoleSingular,
         agentRolePlural: parent?.agentRolePlural,
         defaultCommissionModel: parent?.defaultCommissionModel,

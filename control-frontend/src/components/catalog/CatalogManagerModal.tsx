@@ -33,6 +33,7 @@ import {
   type CatalogLookItem,
   type CatalogShowcaseRailItem,
 } from "../../utils/catalogRubroPresets";
+import { generateCatalogSlug, getStoreCatalogSlug, getStoreCatalogUrl } from "../../utils/catalogUtils";
 
 interface CatalogManagerModalProps {
   isOpen: boolean;
@@ -99,12 +100,7 @@ export default function CatalogManagerModal({ isOpen, onClose }: CatalogManagerM
   useEffect(() => {
     if (!user || !isOpen) return;
 
-    const defaultSlug =
-      user.businessSlug ||
-      (user.businessName
-        ? user.businessName.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-")
-        : user.email.split("@")[0].toLowerCase().replace(/[^a-z0-9]/g, "-"));
-
+    const defaultSlug = getStoreCatalogSlug(user);
     setSlug(defaultSlug);
 
     const config: CatalogConfig = (user as any).catalogConfig || {};
@@ -173,7 +169,7 @@ export default function CatalogManagerModal({ isOpen, onClose }: CatalogManagerM
 
   if (!isOpen) return null;
 
-  const currentSlug = slug.trim() || user?.id || "mi-tienda";
+  const currentSlug = generateCatalogSlug(slug) || getStoreCatalogSlug(user);
   const catalogPublicUrl = `${window.location.origin}/catalogo/${currentSlug}`;
 
   const handleCopyLink = () => {
@@ -392,11 +388,7 @@ export default function CatalogManagerModal({ isOpen, onClose }: CatalogManagerM
   const handleSaveAll = async () => {
     try {
       setIsSaving(true);
-      const cleanSlug = slug
-        .toLowerCase()
-        .trim()
-        .replace(/\s+/g, "-")
-        .replace(/[^a-z0-9-]/g, "");
+      const cleanSlug = generateCatalogSlug(slug);
 
       const catalogConfig: CatalogConfig = {
         rubroKey: selectedRubroKey,

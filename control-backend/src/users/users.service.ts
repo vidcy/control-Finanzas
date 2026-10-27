@@ -179,6 +179,8 @@ export class UsersService {
         businessRubro: true,
         businessLogo: true,
         businessBanner: true,
+        businessSlug: true,
+        catalogConfig: true,
         parentId: true,
         advisorLabel: true,
         agentRoleSingular: true,
