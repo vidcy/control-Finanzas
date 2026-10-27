@@ -149,7 +149,7 @@ export default function VeazModelGallery({
         <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-6">
           <div>
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-amber-300 text-amber-900 text-xs font-cinzel font-bold uppercase tracking-[0.25em] mb-3 shadow-xs">
-              <VeazCrownIcon size={14} />
+              {isOfficialStore ? <VeazCrownIcon size={14} /> : <Sparkles className="w-3.5 h-3.5 text-amber-600" />}
               <span>{customBadge || (isOfficialStore ? "PASARELA DE CALZADOS & OUTFITS DE ALTA GAMA" : "LÍNEAS DESTACADAS & PRODUCTOS DE ALTA GAMA")}</span>
               <Sparkles className="w-3.5 h-3.5 text-amber-600" />
             </div>

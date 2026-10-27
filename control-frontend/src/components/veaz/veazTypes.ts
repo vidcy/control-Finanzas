@@ -300,15 +300,14 @@ export function groupProductsBySku(
     const rawSku = (prod.sku || "").trim();
     const baseSku = cleanBaseSku(rawSku);
 
-    const hasShoeSize =
-      prod.unit === "Serie" ||
-      prod.unit === "Par" ||
-      Boolean(prod.description && prod.description.includes("[SERIE")) ||
-      /(?:calzad|zapato|sandalia|stiletto|taco|zapatilla|botin|bota)/i.test(prod.name || "") ||
-      /\b(?:talla|t:)\s*(?:3[0-9]|4[0-5])\b/i.test(prod.name || "") ||
-      /[-_/\s](3[0-9]|4[0-5])$/i.test(rawSku);
+    // Si la tienda NO es de calzado, solo consideramos zapato si explícitamente menciona calzado/zapato/taco en su nombre
+    const isExplicitFootwear =
+      /(?:calzad|zapato|sandalia|stiletto|tac[oó]n|zapatilla|botin|bota)/i.test(prod.name || "") ||
+      (prod.unit === "Par" && /(?:calzad|zapato|sandalia|stiletto|tac[oó]n|zapatilla)/i.test(prod.name || ""));
 
-    const isShoeItem = isShoeStore || hasShoeSize;
+    const isShoeItem = isShoeStore
+      ? true
+      : isExplicitFootwear;
 
     // En calzado se limpia la talla para agrupar la curva en una sola vitrina.
     // En electrodomésticos y otros rubros, se respeta el nombre completo original (ej: "Smart TV 55 Pulgadas 4K")

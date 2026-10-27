@@ -161,7 +161,7 @@ export class AppController {
         } catch (e) {}
       }
 
-      // 5. Intelligent Multi-Criteria Slug & Token Search
+      // 5. Intelligent Multi-Criteria Slug, Phonetic & Fuzzy Search
       if (!user) {
         try {
           const searchTokens = slugifiedRaw.split('-').filter((t) => t.length >= 3);
@@ -199,6 +199,14 @@ export class AppController {
             }
           }
 
+          // Strictly exclude flagship Veaz account when searching for other merchants
+          if (!isVeazFlagship) {
+            allUsers = allUsers.filter((u) => {
+              const em = (u.email || '').toLowerCase();
+              return !em.includes('estileza') && em !== 'beaz.estileza@gmail.com';
+            });
+          }
+
           const targetSlug = slugifiedRaw;
           const cleanTarget = slugifiedRaw.replace(/-/g, '');
 
@@ -212,6 +220,23 @@ export class AppController {
               .replace(/-+/g, '-')
               .replace(/^-|-$/g, '');
           };
+
+          const normalizePhonetic = (text?: string | null) => {
+            if (!text) return '';
+            return String(text)
+              .toLowerCase()
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .replace(/[^a-z0-9]/g, '')
+              .replace(/y/g, 'i')
+              .replace(/v/g, 'b')
+              .replace(/z/g, 's')
+              .replace(/c(?=[ie])/g, 's')
+              .replace(/k/g, 'c')
+              .replace(/h/g, '');
+          };
+
+          const targetPhonetic = normalizePhonetic(targetSlug);
 
           // A) Direct exact match on slugified businessSlug, businessName, businessReason, full name or email prefix
           let matched = allUsers.find((u) => {
@@ -227,7 +252,22 @@ export class AppController {
             return false;
           });
 
-          // B) Mutual inclusion match
+          // B) Phonetic Match (e.g. 'ayca' matches 'aica', 'electrodoesticos' matches 'electrodomesticos')
+          if (!matched && targetPhonetic) {
+            matched = allUsers.find((u) => {
+              const bPhonetic = normalizePhonetic(u.businessSlug || u.businessName);
+              if (bPhonetic && (bPhonetic === targetPhonetic || bPhonetic.includes(targetPhonetic) || targetPhonetic.includes(bPhonetic))) {
+                return true;
+              }
+              const namePhonetic = normalizePhonetic((u.name || '') + ' ' + (u.lastName || ''));
+              if (namePhonetic && (namePhonetic === targetPhonetic || namePhonetic.includes(targetPhonetic) || targetPhonetic.includes(namePhonetic))) {
+                return true;
+              }
+              return false;
+            });
+          }
+
+          // C) Mutual inclusion match
           if (!matched) {
             matched = allUsers.find((u) => {
               const bSlug = toSlug(u.businessSlug || u.businessName);
@@ -242,35 +282,34 @@ export class AppController {
             });
           }
 
-          // C) Token-based match
+          // D) Token-based & Scoring match
           if (!matched && searchTokens.length > 0) {
-            matched = allUsers.find((u) => {
+            let bestScore = 0;
+            let bestUser: any = null;
+
+            for (const u of allUsers) {
+              let score = 0;
               const fullStr = [u.businessName, u.businessSlug, u.businessReason, u.name, u.lastName, u.email]
                 .filter(Boolean)
                 .join(' ')
                 .toLowerCase()
                 .normalize('NFD')
                 .replace(/[\u0300-\u036f]/g, '');
-              return searchTokens.every((token) => fullStr.includes(token));
-            });
-          }
+              const fullPhonetic = normalizePhonetic(fullStr);
 
-          // D) Longest token match
-          if (!matched && searchTokens.length > 0) {
-            const sortedTokens = [...searchTokens].sort((a, b) => b.length - a.length);
-            for (const t of sortedTokens) {
-              if (t.length >= 4) {
-                matched = allUsers.find((u) => {
-                  const bNameNorm = [u.businessName, u.name, u.lastName]
-                    .filter(Boolean)
-                    .join(' ')
-                    .toLowerCase()
-                    .normalize('NFD')
-                    .replace(/[\u0300-\u036f]/g, '');
-                  return bNameNorm.includes(t);
-                });
-                if (matched) break;
+              for (const token of searchTokens) {
+                if (fullStr.includes(token)) score += 30;
+                else if (fullPhonetic.includes(normalizePhonetic(token))) score += 20;
               }
+
+              if (score > bestScore) {
+                bestScore = score;
+                bestUser = u;
+              }
+            }
+
+            if (bestUser && bestScore >= 20) {
+              matched = bestUser;
             }
           }
 
