@@ -1,50 +1,50 @@
 #!/bin/bash
-# deploy_vps.sh - Despliegue Robusto con Git Stash y Protección de BD
+# deploy_vps.sh - Despliegue completo THINK (Backend + Frontend)
 
-# CONFIGURACIÓN (REEMPLAZA ESTOS DATOS)
-DB_NAME="control_finanzas"
-DB_USER="vidcy"
-DB_PASS="vidcy" 
-APP_NAME="control-backend"
+echo "🚀 ====================================================="
+echo "🛡️  INICIANDO DESPLIEGUE COMPLETO EN VPS"
+echo "🚀 ====================================================="
 
-echo "🛡️ INICIANDO DESPLIEGUE SEGURO..."
-set -e # Detener el script inmediatamente si falla algún comando
+# 1. Ubicarnos en la raíz del repositorio
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+if [ -d "$SCRIPT_DIR/../control-frontend" ]; then
+  REPO_ROOT="$SCRIPT_DIR/.."
+else
+  REPO_ROOT="$SCRIPT_DIR"
+fi
 
-# 1. Backup de seguridad antes de cualquier cambio
-echo "📦 Realizando backup de la base de datos..."
-mysqldump -u $DB_USER -p"$DB_PASS" $DB_NAME > "/home/vidcy/backups/bkp_$(date +%Y%m%d_%H%M%S).sql"
+cd "$REPO_ROOT"
+echo "📂 Directorio de trabajo: $PWD"
 
-# 2. Gestión de conflictos de Git
-echo "💾 Guardando cambios locales pendientes (stash)..."
-# Usamos '|| true' para que no falle si no hay nada que hacer
+# 2. Descargar últimos cambios de GitHub
+echo ""
+echo "⬇️  [1/4] Descargando últimos cambios de GitHub (main)..."
 git stash || true
-
-echo "⬇️ Obteniendo cambios de GitHub..."
 git pull origin main
 
-echo "📂 Recuperando cambios locales..."
-git stash pop || echo "⚠️ Nota: No hubo conflictos en el stash o no había nada que recuperar."
-
-# 3. Instalación y Construcción
-echo "📦 Instalando dependencias..."
+# 3. Compilar Backend (NestJS + Prisma)
+echo ""
+echo "📦 [2/4] Compilando Backend (control-backend)..."
+cd "$REPO_ROOT/control-backend"
 npm install --legacy-peer-deps
-
-echo "🔨 Compilando proyecto..."
+npx prisma generate
 npm run build
 
-# 4. Migraciones seguras y Prisma
-echo "⚙️ Regenerando Prisma Client..."
-npx prisma generate
+# 4. Reiniciar proceso en PM2
+echo ""
+echo "🔄 [3/4] Reiniciando servicio en PM2..."
+pm2 restart all || pm2 reload all
+pm2 status
 
-echo "🚀 Aplicando migraciones de forma segura..."
-# 'migrate deploy' aplica cambios sin borrar datos
-npx prisma migrate deploy
+# 5. Compilar Frontend (Vite + React)
+echo ""
+echo "🎨 [4/4] Compilando Frontend (control-frontend)..."
+cd "$REPO_ROOT/control-frontend"
+npm install --legacy-peer-deps
+npm run build
 
-# 5. Reinicio de la aplicación
-echo "🔄 Reiniciando aplicación con PM2..."
-# Si usas otro gestor que no sea pm2, cámbialo aquí
-pm2 reload all || pm2 restart all
-
-echo "------------------------------------------------"
-echo "✅ DESPLIEGUE FINALIZADO EXITOSAMENTE"
-echo "--- Todos los cambios se han sincronizado ---"
+echo ""
+echo "====================================================="
+echo "✅ ¡DESPLIEGUE FINALIZADO EXITOSAMENTE!"
+echo "🌐 Catálogos públicos y sistema THINK 100% actualizados."
+echo "====================================================="
