@@ -793,10 +793,10 @@ export default function VeazEstilezaPage() {
             Ir a mi Panel de Control
           </Link>
           <Link
-            to="/veaz-estileza"
+            to="/"
             className="px-6 py-3 rounded-2xl bg-amber-700 hover:bg-amber-800 text-white text-xs font-cinzel font-bold tracking-wider uppercase transition-all shadow-md"
           >
-            Ver Tienda VEAZ ESTILEZA 👑
+            Ir a la Página Principal
           </Link>
         </div>
       </div>
@@ -1205,7 +1205,7 @@ export default function VeazEstilezaPage() {
           </div>
 
           <div className="pt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            {isShoeRubro || allSizesWithCounts.length > 1 ? (
+            {(isShoeRubro && allSizesWithCounts.length > 0) || (allSizesWithCounts.length > 1 && !allSizesWithCounts.every(s => s.size === "Única" || s.size === "Disponible")) ? (
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-[11px] font-cinzel font-bold tracking-widest text-slate-700 uppercase mr-1">
                   {storeInfo?.catalogConfig?.variantLabel || rubroPreset.variantLabel}:
@@ -1221,7 +1221,7 @@ export default function VeazEstilezaPage() {
                 </button>
                 {allSizesWithCounts.map(({ size, count }) => {
                   const isNumeric = !isNaN(Number(size)) && !size.startsWith("T");
-                  const displayLabel = isNumeric ? (storeInfo?.isOfficialStore ? `T${size}` : size) : size;
+                  const displayLabel = isShoeRubro && isNumeric ? (storeInfo?.isOfficialStore ? `T${size}` : size) : size;
                   return (
                     <button
                       key={size}
