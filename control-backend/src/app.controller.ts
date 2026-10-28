@@ -147,14 +147,19 @@ export class AppController {
         } catch (e) {}
       }
 
-      // 4. Match by exact businessName
+      // 4. Match by exact businessName or businessReason with spaces
       if (!user) {
         try {
+          const withSpaces = slugifiedRaw.replace(/-/g, ' ');
           user = await this.prisma.user.findFirst({
             where: {
               OR: [
                 { businessName: { equals: raw, mode: 'insensitive' } },
                 { businessName: { equals: slugifiedRaw, mode: 'insensitive' } },
+                { businessName: { equals: withSpaces, mode: 'insensitive' } },
+                { businessReason: { equals: raw, mode: 'insensitive' } },
+                { businessReason: { equals: slugifiedRaw, mode: 'insensitive' } },
+                { businessReason: { equals: withSpaces, mode: 'insensitive' } },
               ],
             },
           });
@@ -349,8 +354,8 @@ export class AppController {
         if (parentUser) user = parentUser;
       }
 
-      // Final fallback: if still not matched but user has valid JWT token, resolve to their account
-      if (!user && tokenUserId) {
+      // Final fallback: only resolve to JWT token if generic store was requested
+      if (!user && tokenUserId && (!raw || lowerRaw === 'mi-tienda' || lowerRaw === 'catalogo')) {
         try {
           const loggedUser = await this.prisma.user.findUnique({ where: { id: tokenUserId } });
           if (loggedUser) {
@@ -452,10 +457,11 @@ export class AppController {
   @Get('catalog/products')
   async getCatalogProducts(
     @Query('identifier') identifier?: string,
+    @Query('userId') userId?: string,
     @Query('email') email?: string,
     @Req() req?: any,
   ) {
-    return this.resolveCatalogProducts(identifier || email, req);
+    return this.resolveCatalogProducts(userId || identifier || email, req);
   }
 
   @Get('catalog/products/:identifier')
@@ -480,8 +486,6 @@ export class AppController {
           presentations: true,
           brand: true,
           family: true,
-          variants: true,
-          seriesCurves: true,
           branchStocks: {
             include: {
               branch: true,
@@ -513,10 +517,11 @@ export class AppController {
   @Get('catalog/brands')
   async getCatalogBrands(
     @Query('identifier') identifier?: string,
+    @Query('userId') userId?: string,
     @Query('email') email?: string,
     @Req() req?: any,
   ) {
-    return this.resolveCatalogBrands(identifier || email, req);
+    return this.resolveCatalogBrands(userId || identifier || email, req);
   }
 
   @Get('catalog/brands/:identifier')
@@ -547,10 +552,11 @@ export class AppController {
   @Get('catalog/families')
   async getCatalogFamilies(
     @Query('identifier') identifier?: string,
+    @Query('userId') userId?: string,
     @Query('email') email?: string,
     @Req() req?: any,
   ) {
-    return this.resolveCatalogFamilies(identifier || email, req);
+    return this.resolveCatalogFamilies(userId || identifier || email, req);
   }
 
   @Get('catalog/families/:identifier')

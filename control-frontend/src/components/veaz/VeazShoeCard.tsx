@@ -9,6 +9,7 @@ import {
   Clock,
   ShieldCheck,
   Calendar,
+  Package,
 } from "lucide-react";
 import type { GroupedShoeModel } from "./veazTypes";
 import { VeazBrandLogo, getBrandConfig } from "./VeazBrandLogo";
@@ -35,6 +36,12 @@ export default function VeazShoeCard({
   const [selectedSize, setSelectedSize] = useState<string>(
     shoe.availableSizes.length > 0 ? shoe.availableSizes[0] : ""
   );
+
+  useEffect(() => {
+    if (shoe.availableSizes.length > 0 && (!selectedSize || !shoe.availableSizes.includes(selectedSize))) {
+      setSelectedSize(shoe.availableSizes[0]);
+    }
+  }, [shoe.availableSizes, selectedSize]);
 
   const selectedVariant = shoe.variants.find((v) => v.size === selectedSize);
   const sizeStock = selectedVariant ? selectedVariant.stock : shoe.totalStock;
@@ -94,17 +101,20 @@ export default function VeazShoeCard({
   // Brand config styling
   const brandCfg = getBrandConfig(shoe.brandName);
 
-  // Display image fallback
-  const displayImage =
-    shoe.imageUrl ||
-    "https://images.unsplash.com/photo-1543163521-1bf539c55dd2?q=80&w=900&auto=format&fit=crop";
+  // Display image fallback only for official store; other merchants get a clean placeholder
+  const hasRealImage = Boolean(shoe.imageUrl && shoe.imageUrl.trim() !== "");
+  const displayImage = hasRealImage
+    ? shoe.imageUrl
+    : isOfficialStore
+    ? "https://images.unsplash.com/photo-1543163521-1bf539c55dd2?q=80&w=900&auto=format&fit=crop"
+    : null;
 
   const handleWhatsAppInquiry = (e: React.MouseEvent) => {
     e.stopPropagation();
-    // Use merchant phone or default to Veaz Estileza only when official store
-    const rawPhone = storePhone || (isOfficialStore ? "51929962458" : "");
+    // Use merchant phone configured in admin panel
+    const rawPhone = storePhone;
     if (!rawPhone) {
-      alert("Este negocio aún no ha configurado su número de WhatsApp para pedidos.");
+      alert("Este negocio aún no ha configurado su número de WhatsApp para pedidos en su panel de administración.");
       return;
     }
     const cleanPhone = rawPhone.replace(/\D/g, "");
@@ -156,18 +166,37 @@ export default function VeazShoeCard({
           }}
         />
 
-        {/* Shoe Image */}
-        <img
-          src={displayImage}
-          alt={shoe.name}
-          className="w-full h-full object-contain drop-shadow-[0_8px_16px_rgba(0,0,0,0.12)] group-hover:scale-108 transition-transform duration-500 ease-out"
-          loading="lazy"
-        />
+        {/* Shoe Image or Elegant Neutral Product Placeholder */}
+        {displayImage ? (
+          <img
+            src={displayImage}
+            alt={shoe.name}
+            className="w-full h-full object-contain drop-shadow-[0_8px_16px_rgba(0,0,0,0.12)] group-hover:scale-108 transition-transform duration-500 ease-out"
+            loading="lazy"
+          />
+        ) : (
+          <div className="w-full h-full flex flex-col items-center justify-center text-center p-4 rounded-2xl bg-white/60 border border-slate-200/60 shadow-2xs">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-50 to-orange-100 flex items-center justify-center mb-2.5 text-amber-700 shadow-xs group-hover:scale-110 transition-transform duration-300">
+              <Package className="w-7 h-7 stroke-[1.8]" />
+            </div>
+            <span className="text-xs font-bold text-slate-800 line-clamp-1 max-w-[90%]">
+              {shoe.name}
+            </span>
+            <span className="text-[10px] text-slate-400 font-medium mt-0.5">
+              {shoe.familyName || "Disponible en tienda"}
+            </span>
+          </div>
+        )}
 
-        {/* TOP BRAND BADGE (WITH DISTINCT LOGO & PALETTE) */}
-        <div className="absolute top-2.5 left-2.5 sm:top-3 sm:left-3 z-10 pointer-events-none">
-          <VeazBrandLogo brandName={shoe.brandName} size="sm" showTagline={false} />
-        </div>
+        {/* TOP BRAND BADGE (ONLY WHEN BRAND ACTUALLY EXISTS) */}
+        {shoe.brandName &&
+          shoe.brandName.trim() !== "" &&
+          shoe.brandName !== "Sin Marca" &&
+          shoe.brandName !== "Oficial" && (
+            <div className="absolute top-2.5 left-2.5 sm:top-3 sm:left-3 z-10 pointer-events-none">
+              <VeazBrandLogo brandName={shoe.brandName} size="sm" showTagline={false} />
+            </div>
+          )}
 
         {/* SKU BADGE */}
         {shoe.sku && (
@@ -179,17 +208,19 @@ export default function VeazShoeCard({
         )}
 
         {/* COLOR SWATCH BADGE ("REDONDITO BONITO CON EL COLOR") */}
-        <div className="absolute bottom-2.5 left-2.5 sm:bottom-3 sm:left-3 z-10 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/95 backdrop-blur-md border border-slate-200/90 shadow-xs pointer-events-none">
-          <span
-            className="w-3.5 h-3.5 rounded-full shrink-0 shadow-inner ring-1 ring-black/15"
-            style={{
-              backgroundColor: shoe.colorHex || "#8A7D71",
-            }}
-          />
-          <span className="text-[10px] font-cinzel font-bold text-slate-800 tracking-wider uppercase">
-            {shoe.color}
-          </span>
-        </div>
+        {shoe.color && shoe.color !== "Único" && shoe.color !== "Default" && shoe.color !== "Sin Color" && (
+          <div className="absolute bottom-2.5 left-2.5 sm:bottom-3 sm:left-3 z-10 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/95 backdrop-blur-md border border-slate-200/90 shadow-xs pointer-events-none">
+            <span
+              className="w-3.5 h-3.5 rounded-full shrink-0 shadow-inner ring-1 ring-black/15"
+              style={{
+                backgroundColor: shoe.colorHex || "#8A7D71",
+              }}
+            />
+            <span className="text-[10px] font-cinzel font-bold text-slate-800 tracking-wider uppercase">
+              {shoe.color}
+            </span>
+          </div>
+        )}
 
         {/* QUICK EXPAND HOVER BUTTON */}
         <button
@@ -316,11 +347,13 @@ export default function VeazShoeCard({
           </div>
 
           {/* 4. SIZES / VARIANTS PILLS OR SPEC SUMMARY FOR APPLIANCES */}
-          {shoe.isShoeContext !== false && shoe.availableSizes && shoe.availableSizes.length > 0 ? (
+          {shoe.availableSizes &&
+          shoe.availableSizes.length > 0 &&
+          !(shoe.availableSizes.length === 1 && (shoe.availableSizes[0] === "Única" || shoe.availableSizes[0] === "Disponible")) ? (
             <div className="mb-3">
               <div className="flex items-center justify-between text-[10px] text-slate-700 font-cinzel uppercase tracking-wider mb-1.5">
                 <span className="flex items-center gap-1 font-bold text-slate-800">
-                  <Layers className="w-3 h-3 text-amber-600" /> {variantLabel || (isOfficialStore ? "Tallas" : "Variantes / Modelo")}:
+                  <Layers className="w-3 h-3 text-amber-600" /> {variantLabel || "Tallas disponibles"}:
                 </span>
                 {selectedSize && (
                   <span className="text-[9px] font-mono font-semibold text-slate-600">

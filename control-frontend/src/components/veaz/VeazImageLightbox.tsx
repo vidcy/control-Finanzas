@@ -118,10 +118,10 @@ export default function VeazImageLightbox({
   const handleResetZoom = () => setZoomLevel(1);
 
   // WhatsApp order link
-  const rawPhone = storePhone || "51929962458";
+  const rawPhone = storePhone || "";
   const cleanPhone = rawPhone.replace(/\D/g, "");
-  const formattedPhone = cleanPhone.startsWith("51") ? cleanPhone : `51${cleanPhone}`;
-  const targetStore = storeName || "VEAZ ESTILEZA";
+  const formattedPhone = cleanPhone ? (cleanPhone.startsWith("51") ? cleanPhone : `51${cleanPhone}`) : "";
+  const targetStore = storeName || "la tienda";
 
   const finalPrice = (currentOfferPrice || currentSalePrice).toFixed(2);
   const offerTag = isOfferActive ? ` (¡Oferta Especial!)` : "";
@@ -438,10 +438,15 @@ export default function VeazImageLightbox({
 
             {/* FOOTER ACTIONS */}
             <div className="space-y-2.5 pt-3 border-t border-slate-100">
-              <a
-                href={whatsappUrl}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                type="button"
+                onClick={() => {
+                  if (!formattedPhone) {
+                    alert("Este negocio aún no ha configurado su número de WhatsApp para pedidos en su panel de administración.");
+                    return;
+                  }
+                  window.open(whatsappUrl, "_blank");
+                }}
                 className="w-full py-3.5 px-6 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-cinzel font-bold text-xs tracking-[0.15em] uppercase flex items-center justify-center gap-3 shadow-md hover:shadow-lg transition-all cursor-pointer"
               >
                 <MessageCircle className="w-5 h-5 fill-white text-emerald-600" />
@@ -450,7 +455,7 @@ export default function VeazImageLightbox({
                     ? `Pedir este Modelo ${selectedSize ? `en Talla ${selectedSize}` : "por WhatsApp"}`
                     : "Pedir este Producto por WhatsApp"}
                 </span>
-              </a>
+              </button>
 
               {onRequestLead && (
                 <button

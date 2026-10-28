@@ -300,26 +300,33 @@ export function groupProductsBySku(
     const rawSku = (prod.sku || "").trim();
     const baseSku = cleanBaseSku(rawSku);
 
-    // Si la tienda NO es de calzado, solo consideramos zapato si explícitamente menciona calzado/zapato/taco en su nombre
-    const isExplicitFootwear =
-      /(?:calzad|zapato|sandalia|stiletto|tac[oó]n|zapatilla|botin|bota)/i.test(prod.name || "") ||
-      (prod.unit === "Par" && /(?:calzad|zapato|sandalia|stiletto|tac[oó]n|zapatilla)/i.test(prod.name || ""));
+    // Detect if product is part of a size series, footwear, or curve:
+    const hasSizePattern =
+      /(?:talla|t\.|t-|t:)\s*[0-9]{2}(?:\.[0-9])?/i.test(prod.name || "") ||
+      /(?:talla|t\.|t-|t:)\s*[0-9]{2}(?:\.[0-9])?/i.test(prod.description || "") ||
+      /[-_/\s](3[0-9]|4[0-5])$/i.test(rawSku) ||
+      /[-_/\s](3[0-9]|4[0-5])$/i.test(prod.name || "");
 
-    const isShoeItem = isShoeStore
-      ? true
-      : isExplicitFootwear;
+    const isSeriesOrFootwear =
+      isShoeStore ||
+      prod.unit === "Serie" ||
+      prod.unit === "Par" ||
+      hasSizePattern ||
+      /(?:calzad|zapato|sandalia|stiletto|tac[oó]n|zapatilla|botin|bota)/i.test(prod.name || "");
 
-    // En calzado se limpia la talla para agrupar la curva en una sola vitrina.
-    // En electrodomésticos y otros rubros, se respeta el nombre completo original (ej: "Smart TV 55 Pulgadas 4K")
+    const isShoeItem = isSeriesOrFootwear;
+
+    // En calzado y productos por serie se limpia la talla para agrupar la curva en una sola vitrina.
+    // En electrodomésticos y otros rubros unitarios, se respeta el nombre completo original.
     const cleanName = isShoeItem
-      ? cleanShoeModelName(prod.name || "Calzado Femenino")
+      ? cleanShoeModelName(prod.name || "Calzado")
       : (prod.name || "Artículo Comercial").trim();
 
     const brandName = prod.brand?.name?.trim() || "Oficial";
-    const familyName = prod.family?.name?.trim() || (isShoeItem ? "Calzado Femenino" : "Equipamiento & Hogar");
+    const familyName = prod.family?.name?.trim() || (isShoeItem ? "Calzado" : "Equipamiento & Hogar");
 
-    // Para calzados se agrupa por Marca + Nombre (para consolidar tallas en 1 tarjeta).
-    // Para electrodomésticos o productos independientes, cada producto conserva su vitrina individual
+    // Para calzados y series se agrupa por Marca + Nombre Limpio (para consolidar tallas en 1 sola tarjeta).
+    // Para electrodomésticos o productos independientes sin serie, cada producto conserva su vitrina individual
     const groupKey = isShoeItem
       ? `${brandName.toUpperCase()}__${cleanName.toUpperCase()}`
       : `${brandName.toUpperCase()}__${cleanName.toUpperCase()}__${prod.id}`;
@@ -385,7 +392,11 @@ export function groupProductsBySku(
         hasOffer,
         discountPercent,
         totalStock: stock,
-        availableSizes: isShoeStore ? [size] : (prod.presentations && prod.presentations.length > 0 ? prod.presentations.map((p) => p.name) : []),
+        availableSizes: isShoeItem && size && size !== "Única"
+          ? [size]
+          : (prod.presentations && prod.presentations.length > 0
+              ? prod.presentations.map((p) => p.name)
+              : (size && size !== "Única" ? [size] : [])),
         variants: [variant],
         heelHeight: heel,
         material,
@@ -415,7 +426,7 @@ export function groupProductsBySku(
         }
       }
 
-      if (isShoeItem && size && !existing.availableSizes.includes(size)) {
+      if (isShoeItem && size && size !== "Única" && !existing.availableSizes.includes(size)) {
         existing.availableSizes.push(size);
         existing.availableSizes.sort((a, b) => {
           const numA = parseFloat(a);
@@ -423,6 +434,10 @@ export function groupProductsBySku(
           if (isNaN(numA) || isNaN(numB)) return a.localeCompare(b);
           return numA - numB;
         });
+      }
+
+      if (isShoeItem) {
+        existing.isShoeContext = true;
       }
 
       if (!existing.imageUrl && resolvedImage) {

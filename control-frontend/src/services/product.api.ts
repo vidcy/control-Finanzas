@@ -76,27 +76,29 @@ export interface CatalogStoreInfo {
   notFound?: boolean;
 }
 
-export const getCatalogStoreInfoRequest = async (identifier = "veaz-estileza"): Promise<CatalogStoreInfo> => {
+export const getCatalogStoreInfoRequest = async (identifier?: string): Promise<CatalogStoreInfo> => {
   const cleanId = (() => {
     try {
-      return decodeURIComponent(identifier || "").trim();
+      const raw = identifier !== undefined ? identifier : "";
+      return decodeURIComponent(raw || "").trim();
     } catch {
       return (identifier || "").trim();
     }
   })();
-  const res = await API.get("/catalog/store-info", { params: { identifier: cleanId, email: cleanId } });
+  const res = await API.get("/catalog/store-info", { params: { identifier: cleanId, email: cleanId, userId: cleanId } });
   return res.data;
 };
 
-export const getCatalogProductsRequest = async (identifier = "beaz.estileza@gmail.com"): Promise<Product[]> => {
+export const getCatalogProductsRequest = async (identifier?: string): Promise<Product[]> => {
   const cleanId = (() => {
     try {
-      return decodeURIComponent(identifier || "").trim();
+      const raw = identifier !== undefined ? identifier : "";
+      return decodeURIComponent(raw || "").trim();
     } catch {
       return (identifier || "").trim();
     }
   })();
-  const res = await API.get("/catalog/products", { params: { identifier: cleanId, email: cleanId } });
+  const res = await API.get("/catalog/products", { params: { identifier: cleanId, email: cleanId, userId: cleanId } });
   return res.data;
 };
 
@@ -298,27 +300,29 @@ export const updatePurchaseOrderRequest = async (
   return res.data;
 };
 
-export const getCatalogBrandsRequest = async (identifier = "beaz.estileza@gmail.com"): Promise<any[]> => {
+export const getCatalogBrandsRequest = async (identifier?: string): Promise<any[]> => {
   const cleanId = (() => {
     try {
-      return decodeURIComponent(identifier || "").trim();
+      const raw = identifier !== undefined ? identifier : "";
+      return decodeURIComponent(raw || "").trim();
     } catch {
       return (identifier || "").trim();
     }
   })();
-  const res = await API.get("/catalog/brands", { params: { identifier: cleanId, email: cleanId } });
+  const res = await API.get("/catalog/brands", { params: { identifier: cleanId, email: cleanId, userId: cleanId } });
   return res.data;
 };
 
-export const getCatalogFamiliesRequest = async (identifier = "beaz.estileza@gmail.com"): Promise<any[]> => {
+export const getCatalogFamiliesRequest = async (identifier?: string): Promise<any[]> => {
   const cleanId = (() => {
     try {
-      return decodeURIComponent(identifier || "").trim();
+      const raw = identifier !== undefined ? identifier : "";
+      return decodeURIComponent(raw || "").trim();
     } catch {
       return (identifier || "").trim();
     }
   })();
-  const res = await API.get("/catalog/families", { params: { identifier: cleanId, email: cleanId } });
+  const res = await API.get("/catalog/families", { params: { identifier: cleanId, email: cleanId, userId: cleanId } });
   return res.data;
 };
 

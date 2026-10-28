@@ -235,6 +235,12 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
         finalBannerUrl = await uploadProductImageFile(businessBanner);
       }
 
+      const currentConfig = (user as any)?.catalogConfig || {};
+      const updatedConfig = {
+        ...currentConfig,
+        whatsappPhone: (businessPhone || "").trim() || currentConfig.whatsappPhone || "",
+      };
+
       const res = await updateMyProfileRequest({
         name: profileName,
         lastName: profileLastName,
@@ -257,9 +263,10 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
         businessBanner: finalBannerUrl || null,
         nubefactUrl: nubefactUrl || null,
         nubefactToken: nubefactToken || null,
+        catalogConfig: updatedConfig,
       });
 
-      const updatedUser = { ...user, ...res };
+      const updatedUser = { ...user, ...res, catalogConfig: updatedConfig };
       setUser(updatedUser);
       localStorage.setItem("user", JSON.stringify(updatedUser));
       toast.success("Perfil actualizado con éxito");

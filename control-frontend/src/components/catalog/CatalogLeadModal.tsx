@@ -90,8 +90,13 @@ export default function CatalogLeadModal({
   };
 
   const handleOpenWhatsAppAfterSubmit = () => {
-    const raw = storePhone || "51929962458";
+    const raw = storePhone || "";
     const clean = raw.replace(/\D/g, "");
+    if (!clean) {
+      toast.success("¡Tu solicitud fue enviada y registrada con éxito!");
+      handleCloseModal();
+      return;
+    }
     const formattedPhone = clean.startsWith("51") ? clean : `51${clean}`;
 
     const text = `¡Hola *${storeName}*! Mi nombre es *${name}*. Acabo de enviar una solicitud desde su catálogo web (${interestType === "CITA" ? `Cita para el día ${appointmentDate} a las ${appointmentTime}` : "Consulta / Cotización"}${initialProduct ? ` por: ${initialProduct.name}` : ""}). ¿Podrían atenderme por aquí?`;

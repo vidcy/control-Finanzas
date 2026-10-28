@@ -65,15 +65,15 @@ export const BRAND_CONFIGS: Record<string, BrandStyleConfig> = {
 };
 
 export function getBrandConfig(rawBrandName?: string): BrandStyleConfig {
-  if (!rawBrandName) {
+  if (!rawBrandName || !rawBrandName.trim()) {
     return {
-      name: "VEAZ ESTILEZA",
-      badgeBg: "bg-gradient-to-r from-slate-900 via-neutral-900 to-zinc-900",
-      badgeBorder: "border-amber-500/70",
-      badgeText: "text-amber-300",
-      accentColor: "#F59E0B",
-      glowColor: "rgba(245, 158, 11, 0.2)",
-      tagline: "CALZADOS DE LUJO",
+      name: "",
+      badgeBg: "bg-slate-900",
+      badgeBorder: "border-slate-700",
+      badgeText: "text-slate-300",
+      accentColor: "#64748B",
+      glowColor: "rgba(100, 116, 139, 0.15)",
+      tagline: "",
     };
   }
 
@@ -105,11 +105,12 @@ interface VeazBrandLogoProps {
 }
 
 export const VeazBrandLogo: React.FC<VeazBrandLogoProps> = ({
-  brandName = "VIZZANO",
+  brandName,
   size = "md",
   showTagline = false,
   className = "",
 }) => {
+  if (!brandName || !brandName.trim()) return null;
   const cfg = getBrandConfig(brandName);
   const upper = (brandName || "").trim().toUpperCase();
 

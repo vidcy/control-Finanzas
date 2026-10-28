@@ -138,6 +138,10 @@ export default function VeazModelGallery({
 
   const hasCustomLooks = !isOfficialStore && customLooks && customLooks.length > 0;
 
+  if (!isOfficialStore && !hasCustomLooks) {
+    return null;
+  }
+
   return (
     <section className="py-20 w-full px-4 sm:px-8 lg:px-12 2xl:px-16 bg-gradient-to-b from-[#FAF8F5] via-[#FFFDF9] to-[#F5EFEB] border-t border-[#EDE2D4] relative overflow-hidden">
       {/* Ambient background glows */}

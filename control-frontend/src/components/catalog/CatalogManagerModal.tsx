@@ -148,23 +148,28 @@ export default function CatalogManagerModal({ isOpen, onClose }: CatalogManagerM
     }
 
     // Location
+    const isVeazUser = Boolean(user?.email?.toLowerCase()?.includes("estileza"));
     setShowLocation(config.showLocation !== undefined ? config.showLocation : true);
-    setLocationCity(config.locationCity || "Puerto Maldonado, Madre de Dios");
-    setLocationAddress(config.locationAddress || "Av. Madre de Dios, Con Pasaje Fonavi");
-    setLocationLandmarks(config.locationLandmarks || "Frente a Proversa / Al costado de Pollería Todo a Leña");
-    setLocationSchedule(config.locationSchedule || "Lunes a Domingo: 8:00 am - 9:30 pm");
-    setLocationMapsUrl(config.locationMapsUrl || "https://maps.app.goo.gl/p9uX1yW7n2FgFj9bA");
+    setLocationCity(config.locationCity || (user as any).businessDepartment || (isVeazUser ? "Puerto Maldonado, Madre de Dios" : ""));
+    setLocationAddress(config.locationAddress || (user as any).businessAddress || (isVeazUser ? "Av. Madre de Dios, Con Pasaje Fonavi" : ""));
+    setLocationLandmarks(config.locationLandmarks || (isVeazUser ? "Frente a Proversa / Al costado de Pollería Todo a Leña" : ""));
+    setLocationSchedule(config.locationSchedule || "Lunes a Sábado: 8:30 am - 8:30 pm");
+    setLocationMapsUrl(config.locationMapsUrl || (isVeazUser ? "https://maps.app.goo.gl/p9uX1yW7n2FgFj9bA" : ""));
     setLocationImage(
-      config.locationImage ||
-        "https://images.unsplash.com/photo-1524758631624-e2822e304c36?q=80&w=800&auto=format&fit=crop"
+      config.locationImage || (user as any).businessBanner || ""
     );
 
-    // Contact
-    setWhatsappPhone(config.whatsappPhone || (user as any).phone || "929962458");
+    // Contact (pull from catalogConfig first, then user's businessPhone/phone)
+    const userPhone = (user as any).businessPhone || (user as any).phone || "";
+    setWhatsappPhone(
+      config.whatsappPhone ||
+        userPhone ||
+        (isVeazUser ? "929962458" : "")
+    );
     setInstagramUrl(config.instagramUrl || "");
     setFacebookUrl(config.facebookUrl || "");
     setTiktokUrl(config.tiktokUrl || "");
-    setFooterAbout(config.footerAbout || defaultRubro.footerAbout);
+    setFooterAbout(config.footerAbout || defaultRubro.footerAbout || "");
   }, [user, isOpen]);
 
   if (!isOpen) return null;
@@ -422,15 +427,18 @@ export default function CatalogManagerModal({ isOpen, onClose }: CatalogManagerM
         footerAbout: footerAbout.trim(),
       };
 
+      const cleanPhone = whatsappPhone.trim();
       const res = await updateMyProfileRequest({
         businessSlug: cleanSlug || null,
         catalogConfig,
+        businessPhone: cleanPhone || null,
       });
 
       const updatedUser = {
         ...user,
         ...res,
         businessSlug: cleanSlug,
+        businessPhone: cleanPhone || user?.businessPhone,
         catalogConfig,
       };
       setUser(updatedUser);

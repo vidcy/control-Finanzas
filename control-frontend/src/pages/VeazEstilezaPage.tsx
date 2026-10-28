@@ -251,16 +251,16 @@ export default function VeazEstilezaPage() {
 
     async function loadData() {
       try {
-        const [storeData, prodsData, brandsData, familiesData] = await Promise.all([
-          getCatalogStoreInfoRequest(targetIdentifier).catch(() => null),
-          getCatalogProductsRequest(targetIdentifier).catch(() => []),
-          getCatalogBrandsRequest(targetIdentifier).catch(() => []),
-          getCatalogFamiliesRequest(targetIdentifier).catch(() => []),
-        ]);
+        // 1. Resolve store info first to obtain the exact merchant UUID
+        const storeData = await getCatalogStoreInfoRequest(targetIdentifier).catch(() => null);
 
         if (!isMounted) return;
 
-        if (storeData && !storeData.notFound) {
+        let prodsData: Product[] = [];
+        let brandsData: any[] = [];
+        let familiesData: any[] = [];
+
+        if (storeData && !storeData.notFound && storeData.id) {
           setStoreInfo(storeData);
           const isVeaz =
             isDirectVeazRoute ||
@@ -273,28 +273,38 @@ export default function VeazEstilezaPage() {
           } else {
             document.title = `${storeData.businessName} | ${storeData.catalogConfig?.catalogTitle || storeData.businessRubro || "Catálogo Virtual Oficial"}`;
           }
-        } else if (Array.isArray(prodsData) && prodsData.length > 0) {
-          const formattedName = targetIdentifier
-            .split("-")
-            .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-            .join(" ");
-          setStoreInfo({
-            id: targetIdentifier,
-            businessName: formattedName,
-            isOfficialStore: false,
-            notFound: false,
-          } as any);
-          document.title = `${formattedName} | Catálogo Virtual Oficial`;
-        } else if (!isDirectVeazRoute && targetIdentifier !== "veaz-estileza") {
+
+          // 2. Query strictly by the verified merchant UUID to guarantee 100% tenant isolation
+          [prodsData, brandsData, familiesData] = await Promise.all([
+            getCatalogProductsRequest(storeData.id).catch(() => []),
+            getCatalogBrandsRequest(storeData.id).catch(() => []),
+            getCatalogFamiliesRequest(storeData.id).catch(() => []),
+          ]);
+        } else if (storeData && storeData.notFound) {
+          // Explicitly not found: DO NOT load any other tenant's products
           setStoreInfo({
             businessName: targetIdentifier,
             isOfficialStore: false,
             notFound: true,
           } as any);
+          prodsData = [];
+          brandsData = [];
+          familiesData = [];
+        } else {
+          // Network or generic request without store-info, attempt direct fetch with targetIdentifier
+          [prodsData, brandsData, familiesData] = await Promise.all([
+            getCatalogProductsRequest(targetIdentifier).catch(() => []),
+            getCatalogBrandsRequest(targetIdentifier).catch(() => []),
+            getCatalogFamiliesRequest(targetIdentifier).catch(() => []),
+          ]);
         }
+
+        if (!isMounted) return;
 
         if (Array.isArray(prodsData)) {
           setProducts(prodsData);
+        } else {
+          setProducts([]);
         }
 
         // Collect brand names directly from DB data
@@ -410,24 +420,35 @@ export default function VeazEstilezaPage() {
     if (isOfficialVeazStore) {
       return true;
     }
-    if (rubroPreset.key !== "CALZADOS") {
-      return false;
-    }
     const rubroKey = (storeInfo?.catalogConfig?.rubroKey || storeInfo?.businessRubro || "").toLowerCase();
     if (rubroKey.includes("calzado") || rubroKey.includes("zapato") || rubroKey.includes("botas")) {
       return true;
     }
-    // Only check product series if rubro is footwear
+    // Check if products contain series, size patterns or footwear indicators
     const hasShoeSeries = products.some((p) => {
       const name = (p.name || "").toLowerCase();
       const unit = (p.unit || "").toLowerCase();
+      const desc = (p.description || "").toLowerCase();
+      const sku = (p.sku || "").toLowerCase();
       return (
         unit === "serie" ||
         unit === "par" ||
-        /(?:calzad|zapato|sandalia|bota|botin|stiletto|tac[oó]n|zapatilla)/i.test(name)
+        /(?:calzad|zapato|sandalia|bota|botin|stiletto|tac[oó]n|zapatilla)/i.test(name) ||
+        /(?:talla|t\.|t-|t:)\s*[0-9]{2}/i.test(name) ||
+        /(?:talla|t\.|t-|t:)\s*[0-9]{2}/i.test(desc) ||
+        /[-_/\s](3[0-9]|4[0-5])$/i.test(sku) ||
+        /[-_/\s](3[0-9]|4[0-5])$/i.test(name)
       );
     });
-    return hasShoeSeries;
+    if (hasShoeSeries) {
+      return true;
+    }
+
+    if (rubroPreset.key === "CALZADOS") {
+      return true;
+    }
+
+    return false;
   }, [isOfficialVeazStore, rubroPreset, storeInfo, products]);
 
   // Dynamic Showcase Rail items (bottom carrusel de marcas/categorías)
@@ -436,9 +457,6 @@ export default function VeazEstilezaPage() {
       return storeInfo.catalogConfig.showcaseRailItems;
     }
     if (!isOfficialVeazStore) {
-      if (rubroPreset.showcaseRailItems && rubroPreset.showcaseRailItems.length > 0 && !isShoeRubro) {
-        return rubroPreset.showcaseRailItems;
-      }
       if (availableBrands.length > 0) {
         return availableBrands.map((b, idx) => ({
           id: `merchant-brand-${idx}`,
@@ -448,7 +466,10 @@ export default function VeazEstilezaPage() {
           img: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=600&auto=format&fit=crop",
         }));
       }
-      return rubroPreset.showcaseRailItems || [];
+      if (rubroPreset.showcaseRailItems && rubroPreset.showcaseRailItems.length > 0 && !isShoeRubro) {
+        return rubroPreset.showcaseRailItems;
+      }
+      return [];
     }
     return DEFAULT_VEAZ_RAIL;
   }, [storeInfo, isOfficialVeazStore, rubroPreset, isShoeRubro, availableBrands]);
@@ -840,17 +861,19 @@ export default function VeazEstilezaPage() {
               <span>Agendar Cita</span>
             </button>
 
-            <a
-              href={`https://wa.me/${storeWhatsAppPhone}?text=${encodeURIComponent(
-                `Hola *${storeDisplayName}*, deseo consultar su catálogo oficial de ${isOfficialVeazStore ? "calzados" : (rubroPreset.label || "productos")} y modelos disponibles.`
-              )}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hidden sm:flex items-center gap-2 px-4 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-cinzel text-xs font-bold tracking-wider shadow-sm hover:shadow-md transition-all cursor-pointer"
-            >
-              <MessageCircle className="w-4 h-4 fill-white text-emerald-600" />
-              <span>WhatsApp</span>
-            </a>
+            {storeWhatsAppPhone && (
+              <a
+                href={`https://wa.me/${storeWhatsAppPhone}?text=${encodeURIComponent(
+                  `Hola *${storeDisplayName}*, deseo consultar su catálogo oficial de ${isOfficialVeazStore ? "calzados" : (rubroPreset.label || "productos")} y modelos disponibles.`
+                )}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hidden sm:flex items-center gap-2 px-4 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-cinzel text-xs font-bold tracking-wider shadow-sm hover:shadow-md transition-all cursor-pointer"
+              >
+                <MessageCircle className="w-4 h-4 fill-white text-emerald-600" />
+                <span>WhatsApp</span>
+              </a>
+            )}
 
             <Link
               to="/dashboard"
@@ -1401,17 +1424,19 @@ export default function VeazEstilezaPage() {
                     </a>
                   )}
 
-                  <a
-                    href={`https://wa.me/${storeWhatsAppPhone}?text=${encodeURIComponent(
-                      `Hola *${storeInfo?.businessName || (isOfficialVeazStore ? "VEAZ ESTILEZA" : "Tienda Oficial")}*, deseo consultar sobre la atención en su local.`
-                    )}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-6 py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-cinzel text-xs font-bold tracking-wider uppercase flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer"
-                  >
-                    <MessageCircle className="w-4 h-4 fill-white text-emerald-600" />
-                    <span>Contactar por WhatsApp</span>
-                  </a>
+                  {storeWhatsAppPhone && (
+                    <a
+                      href={`https://wa.me/${storeWhatsAppPhone}?text=${encodeURIComponent(
+                        `Hola *${storeInfo?.businessName || (isOfficialVeazStore ? "VEAZ ESTILEZA" : "Tienda Oficial")}*, deseo consultar sobre la atención en su local.`
+                      )}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-6 py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-cinzel text-xs font-bold tracking-wider uppercase flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer"
+                    >
+                      <MessageCircle className="w-4 h-4 fill-white text-emerald-600" />
+                      <span>Contactar por WhatsApp</span>
+                    </a>
+                  )}
                 </div>
               </div>
 
@@ -1504,18 +1529,20 @@ export default function VeazEstilezaPage() {
           <span className="hidden sm:inline">Agendar Cita</span>
         </button>
 
-        <a
-          href={`https://wa.me/${storeWhatsAppPhone}?text=${encodeURIComponent(
-            `Hola *${storeInfo?.businessName || "VEAZ ESTILEZA"}*, deseo consultar disponibilidad en su catálogo oficial.`
-          )}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-2.5 px-5 py-3.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-cinzel text-xs font-bold tracking-wider shadow-2xl hover:scale-105 active:scale-95 transition-all cursor-pointer group"
-          title="Atención inmediata por WhatsApp"
-        >
-          <MessageCircle className="w-5 h-5 fill-white text-emerald-600 group-hover:rotate-12 transition-transform" />
-          <span className="hidden sm:inline">Escribenos</span>
-        </a>
+        {storeWhatsAppPhone && (
+          <a
+            href={`https://wa.me/${storeWhatsAppPhone}?text=${encodeURIComponent(
+              `Hola *${storeDisplayName}*, deseo consultar disponibilidad en su catálogo oficial.`
+            )}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2.5 px-5 py-3.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-cinzel text-xs font-bold tracking-wider shadow-2xl hover:scale-105 active:scale-95 transition-all cursor-pointer group"
+            title="Atención inmediata por WhatsApp"
+          >
+            <MessageCircle className="w-5 h-5 fill-white text-emerald-600 group-hover:rotate-12 transition-transform" />
+            <span className="hidden sm:inline">Escribenos</span>
+          </a>
+        )}
       </div>
 
       {/* ──────────────────────────────────────────────────────────
@@ -1670,17 +1697,19 @@ export default function VeazEstilezaPage() {
               >
                 <FaTiktok className="w-4 h-4" />
               </a>
-              <a
-                href={`https://wa.me/${storeWhatsAppPhone}?text=${encodeURIComponent(
-                  `Hola *${storeDisplayName}*, deseo consultar su catálogo oficial de ${isOfficialVeazStore ? "calzados" : (rubroPreset.label || "productos")} y modelos disponibles.`
-                )}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-10 h-10 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-700 hover:bg-emerald-600 hover:text-white flex items-center justify-center transition-all"
-                aria-label="WhatsApp"
-              >
-                <MessageCircle className="w-4 h-4" />
-              </a>
+              {storeWhatsAppPhone && (
+                <a
+                  href={`https://wa.me/${storeWhatsAppPhone}?text=${encodeURIComponent(
+                    `Hola *${storeDisplayName}*, deseo consultar su catálogo oficial de ${isOfficialVeazStore ? "calzados" : (rubroPreset.label || "productos")} y modelos disponibles.`
+                  )}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-10 h-10 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-700 hover:bg-emerald-600 hover:text-white flex items-center justify-center transition-all"
+                  aria-label="WhatsApp"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                </a>
+              )}
             </div>
           </div>
 
