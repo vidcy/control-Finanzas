@@ -35,6 +35,8 @@ import {
   FileText,
   Sparkles,
   ExternalLink,
+  Globe,
+  Copy,
 } from "lucide-react";
 
 import { toast } from "react-hot-toast";
@@ -159,6 +161,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
   const [businessBanner, setBusinessBanner] = useState<string | File>(user?.businessBanner || "");
   const [nubefactUrl, setNubefactUrl] = useState(user?.nubefactUrl || "");
   const [nubefactToken, setNubefactToken] = useState(user?.nubefactToken || "");
+  const [isCatalogActive, setIsCatalogActive] = useState<boolean>(true);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
   // Temporary states for sub-modal staging
@@ -208,6 +211,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       setBusinessBanner(user.businessBanner || "");
       setNubefactUrl(user.nubefactUrl || "");
       setNubefactToken(user.nubefactToken || "");
+      setIsCatalogActive((user as any)?.catalogConfig?.isEnabled !== false);
 
       // Directly refresh from /users/me to ensure persisted fields from DB are always loaded
       getUserRequest().then((fresh: any) => {
@@ -235,6 +239,9 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
         if (fresh.businessBanner !== undefined) setBusinessBanner(fresh.businessBanner || "");
         if (fresh.nubefactUrl !== undefined) setNubefactUrl(fresh.nubefactUrl || "");
         if (fresh.nubefactToken !== undefined) setNubefactToken(fresh.nubefactToken || "");
+        if (fresh.catalogConfig?.isEnabled !== undefined) {
+          setIsCatalogActive(fresh.catalogConfig.isEnabled !== false);
+        }
       }).catch(() => { });
     }
   }, [isProfileModalOpen]);
@@ -266,6 +273,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       const currentConfig = (user as any)?.catalogConfig || {};
       const updatedConfig = {
         ...currentConfig,
+        isEnabled: isCatalogActive,
         whatsappPhone: (businessPhone || "").trim() || currentConfig.whatsappPhone || "",
       };
 
@@ -951,43 +959,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
             </div>
           )}
 
-          {/* MI TIENDA / CATÁLOGO VIRTUAL DE MI NEGOCIO */}
-          <div className="px-2 pt-3 space-y-1.5">
-            <div className="p-3 rounded-2xl bg-gradient-to-r from-amber-500 via-amber-600 to-amber-700 text-slate-950 shadow-md">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-lg">🏪</span>
-                  <div className="text-left">
-                    <span className="text-[9px] font-black text-amber-950 uppercase tracking-wider block leading-none">
-                      Catálogo de mi Negocio
-                    </span>
-                    <span className="text-xs font-black tracking-wide text-slate-950 truncate max-w-[130px] block mt-0.5">
-                      {user?.businessName || "Mi Tienda Web"}
-                    </span>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsCatalogModalOpen(true)}
-                  className="w-7 h-7 rounded-lg bg-black/20 hover:bg-black/35 text-slate-950 hover:text-white flex items-center justify-center transition-all cursor-pointer"
-                  title="Personalizar diseño y banners de mi catálogo"
-                >
-                  <Settings className="w-3.5 h-3.5" />
-                </button>
-              </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  window.open(getStoreCatalogUrl(user), "_blank");
-                }}
-                className="w-full py-1.5 px-2 rounded-xl bg-slate-950 hover:bg-black text-amber-300 hover:text-amber-200 text-[11px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
-              >
-                <ExternalLink className="w-3 h-3" />
-                <span>Ver mi Catálogo Web</span>
-              </button>
-            </div>
-          </div>
 
           {/* VEAZ ESTILEZA SHORTCUT - TIENDA OFICIAL (SOLO PARA VEAZ) */}
           {Boolean(user?.email?.toLowerCase()?.includes("estileza")) && (
@@ -1663,52 +1635,127 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                   </button>
                 </div>
 
-                {/* WEB & CATÁLOGO DIGITAL DE MI NEGOCIO */}
-                <div className="md:col-span-2 p-5 rounded-2xl bg-gradient-to-br from-amber-50 via-amber-50/40 to-orange-50 border border-amber-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xl">🏪</span>
-                      <h4 className="text-sm font-black text-amber-950 uppercase tracking-wide">
-                        Catálogo Web Oficial de mi Negocio
-                      </h4>
-                      <span className="px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 text-[9px] font-bold uppercase tracking-wider">
-                        Tu Tienda Pública
-                      </span>
+                {/* WEB & CATÁLOGO DIGITAL DE MI NEGOCIO - MÓDULO INTERACTIVO CON ACTIVACIÓN */}
+                <div className={`md:col-span-2 p-5 rounded-3xl border transition-all duration-300 shadow-sm ${
+                  isCatalogActive
+                    ? "bg-gradient-to-br from-[#FFFBF5] via-[#FFFDF9] to-[#FFF7ED] border-amber-200/90 shadow-amber-500/5"
+                    : "bg-slate-50/80 border-slate-200 text-slate-400"
+                }`}>
+                  {/* TOP: TITLE, STATUS & MODERN TOGGLE SWITCH */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-start sm:items-center gap-3">
+                      <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 transition-all duration-300 ${
+                        isCatalogActive
+                          ? "bg-gradient-to-tr from-amber-500 via-amber-600 to-amber-700 text-white shadow-md shadow-amber-500/25 scale-100"
+                          : "bg-slate-200 text-slate-400 scale-95"
+                      }`}>
+                        <Store className="w-5 h-5 stroke-[2.2]" />
+                      </div>
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="text-sm font-black text-slate-900 uppercase tracking-tight">
+                            Catálogo Virtual Oficial
+                          </h4>
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-colors ${
+                            isCatalogActive
+                              ? "bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs"
+                              : "bg-slate-200/80 text-slate-500 border border-slate-300"
+                          }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${isCatalogActive ? "bg-emerald-600 animate-pulse" : "bg-slate-400"}`} />
+                            {isCatalogActive ? "Publicado y Activo" : "Pausado / Oculto"}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-600 mt-0.5 leading-relaxed font-medium">
+                          {isCatalogActive
+                            ? "Tu vitrina virtual pública con tus propios productos, precios y pedidos automáticos por WhatsApp."
+                            : "El catálogo está actualmente pausado. Tus clientes verán que la tienda está fuera de línea."}
+                        </p>
+                      </div>
                     </div>
-                    <p className="text-xs text-amber-900/80 font-medium">
-                      Página web con tus productos, ofertas y pedidos automáticos por WhatsApp adaptada a tu rubro.
-                    </p>
-                    <div className="pt-1 flex items-center gap-2">
-                      <span className="text-[11px] font-mono font-bold text-slate-700 bg-white/90 px-2.5 py-1 rounded-lg border border-amber-200/90 shadow-2xs">
-                        {getStoreCatalogUrl(user)}
+
+                    {/* INTERACTIVE TOGGLE SWITCH */}
+                    <div className="flex items-center gap-2.5 self-end sm:self-auto shrink-0 bg-white/80 p-1.5 px-3 rounded-2xl border border-slate-200/80 shadow-2xs">
+                      <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                        {isCatalogActive ? "Catálogo Activo" : "Desactivado"}
                       </span>
+                      <button
+                        type="button"
+                        onClick={() => setIsCatalogActive(!isCatalogActive)}
+                        className={`relative inline-flex h-7 w-13 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                          isCatalogActive ? "bg-amber-600" : "bg-slate-300"
+                        }`}
+                        role="switch"
+                        aria-checked={isCatalogActive}
+                        title={isCatalogActive ? "Desactivar Catálogo" : "Activar Catálogo"}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                            isCatalogActive ? "translate-x-6" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        window.open(getStoreCatalogUrl(user), "_blank");
-                      }}
-                      className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-slate-950 hover:bg-black text-amber-300 hover:text-amber-200 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      <span>Ver mi Catálogo</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsProfileModalOpen(false);
-                        setIsCatalogModalOpen(true);
-                      }}
-                      className="px-3.5 py-2.5 rounded-xl bg-white hover:bg-amber-100/80 text-amber-950 border border-amber-300 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
-                      title="Configurar Banners y Diseño"
-                    >
-                      <Settings className="w-3.5 h-3.5" />
-                      <span>Configurar</span>
-                    </button>
-                  </div>
+                  {/* ACTIVE STATE: URL + ACTION BUTTONS */}
+                  {isCatalogActive ? (
+                    <div className="mt-4 pt-4 border-t border-amber-200/60 flex flex-col lg:flex-row lg:items-center justify-between gap-3 animate-fadeIn">
+                      <div className="flex-1 min-w-0">
+                        <span className="text-[10px] font-bold text-amber-900/70 uppercase tracking-wider block mb-1">
+                          Enlace Público del Catálogo:
+                        </span>
+                        <div className="flex items-center gap-2 bg-white/95 p-2 px-3 rounded-xl border border-amber-200 shadow-2xs max-w-xl">
+                          <Globe className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                          <span className="text-xs font-mono font-bold text-slate-800 truncate select-all">
+                            {getStoreCatalogUrl(user)}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 shrink-0 pt-2 lg:pt-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(getStoreCatalogUrl(user));
+                            toast.success("¡Enlace público copiado al portapapeles!");
+                          }}
+                          className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs hover:shadow-xs active:scale-95"
+                          title="Copiar URL"
+                        >
+                          <Copy className="w-3.5 h-3.5 text-slate-500" />
+                          <span>Copiar</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            window.open(getStoreCatalogUrl(user), "_blank");
+                          }}
+                          className="px-4 py-2 rounded-xl bg-slate-950 hover:bg-black text-amber-300 hover:text-amber-200 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span>Ver Catálogo Web</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsProfileModalOpen(false);
+                            setIsCatalogModalOpen(true);
+                          }}
+                          className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-600 via-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-amber-600/25 active:scale-95"
+                        >
+                          <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+                          <span>Configurar Vitrina</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-3 p-3.5 rounded-2xl bg-white/70 border border-slate-200/70 text-xs text-slate-500 flex items-center gap-2.5 animate-fadeIn">
+                      <span className="text-base">⏸️</span>
+                      <span className="font-medium">
+                        Tu catálogo virtual está temporalmente desactivado. Activa el interruptor para abrir tu vitrina digital y empezar a recibir pedidos por WhatsApp.
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

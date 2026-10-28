@@ -25,6 +25,7 @@ export interface CatalogShowcaseRailItem {
 }
 
 export interface CatalogConfig {
+  isEnabled?: boolean;
   rubroKey?: string;
   rubroLabel?: string;
   variantLabel?: string; // ej: "Tallas", "Medidas", "Capacidad", "Presentaciones"

@@ -738,6 +738,40 @@ export default function VeazEstilezaPage() {
     );
   }
 
+  if (storeInfo && storeInfo.catalogConfig?.isEnabled === false && !isOfficialVeazStore) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-[#FAF8F5] to-[#F3EDE6] flex flex-col items-center justify-center p-6 text-center select-none">
+        <div className="max-w-md w-full bg-white p-8 rounded-3xl shadow-xl border border-amber-200/80">
+          <div className="w-16 h-16 rounded-2xl bg-amber-100 flex items-center justify-center mx-auto mb-4 text-amber-800 shadow-sm">
+            <Store className="w-8 h-8" />
+          </div>
+          <h2 className="text-xl font-black text-slate-900 tracking-tight mb-2">
+            {storeDisplayName}
+          </h2>
+          <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-bold uppercase tracking-wider inline-block mb-4">
+            Catálogo Pausado Temporalmente
+          </span>
+          <p className="text-sm text-slate-600 leading-relaxed mb-6">
+            Nuestra vitrina virtual se encuentra momentáneamente en mantenimiento o fuera de línea. Puedes comunicarte directamente con nosotros vía WhatsApp.
+          </p>
+          {storeWhatsAppPhone && (
+            <a
+              href={`https://wa.me/${storeWhatsAppPhone}?text=${encodeURIComponent(
+                `Hola *${storeDisplayName}*, deseo consultar sobre sus productos y atención.`
+              )}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full py-3.5 px-6 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm tracking-wider uppercase flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 transition-all cursor-pointer"
+            >
+              <MessageCircle className="w-5 h-5 fill-white text-emerald-600" />
+              <span>Contactar por WhatsApp</span>
+            </a>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   if (storeInfo?.notFound && !isDirectVeazRoute) {
     return (
       <div className="min-h-screen bg-[#FAF8F5] text-slate-900 font-sans flex flex-col items-center justify-center p-6 text-center">
