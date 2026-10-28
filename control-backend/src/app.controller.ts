@@ -47,45 +47,26 @@ export class AppController {
       } catch (e) {}
     }
 
-    // If identifier is completely empty and no logged-in user, return null (DO NOT fallback to Veaz)
+    // If identifier is completely empty and no logged-in user, return null
     if (!raw) return null;
 
-    // 2. Veaz Estileza flagship boutique - ONLY for explicit Veaz identifiers
-    const isVeazFlagship =
-      lowerRaw === 'veaz-estileza' ||
-      lowerRaw === 'estileza' ||
-      lowerRaw === 'beaz.estileza@gmail.com';
-
-    if (isVeazFlagship) {
-      try {
-        const users: any[] = await this.prisma.user.findMany({
-          where: {
-            OR: [
-              { email: 'beaz.estileza@gmail.com' },
-              { email: { contains: 'estileza', mode: 'insensitive' } },
-            ],
-          },
-          take: 1,
-        });
-        if (users && users.length > 0) {
-          await this.enrichUserCatalogData(users[0]);
-          return users[0];
-        }
-      } catch (e) {}
-      return null;
-    }
-
     try {
-      const slugifiedRaw = lowerRaw
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/-+/g, '-')
-        .replace(/^-|-$/g, '');
+      const toSlug = (text?: string | null) => {
+        if (!text) return '';
+        return String(text)
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '');
+      };
+
+      const slugifiedRaw = toSlug(raw);
 
       let user: any = null;
 
-      // 3. Match by exact UUID
+      // 2. Match by exact UUID
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw);
       if (isUuid) {
         try {
@@ -101,7 +82,7 @@ export class AppController {
         } catch (e) {}
       }
 
-      // 4. Match by exact businessSlug
+      // 3. Match by exact businessSlug
       try {
         user = await this.prisma.user.findFirst({
           where: {
@@ -111,18 +92,9 @@ export class AppController {
             ],
           },
         });
-      } catch (e) {
-        try {
-          const rawSlug: any = await this.prisma.$queryRawUnsafe(
-            'SELECT * FROM "User" WHERE LOWER("businessSlug") = LOWER($1) OR LOWER("businessSlug") = LOWER($2) LIMIT 1',
-            raw,
-            slugifiedRaw,
-          );
-          if (rawSlug && rawSlug.length > 0) user = rawSlug[0];
-        } catch (err) {}
-      }
+      } catch (e) {}
 
-      // 5. Match by exact email or email prefix (e.g. david@gmail.com or 'david')
+      // 4. Match by exact email or email prefix (e.g. reydavidylosfelinosdelarpa@gmail.com or 'reydavid')
       if (!user) {
         try {
           user = await this.prisma.user.findFirst({
@@ -137,7 +109,7 @@ export class AppController {
         } catch (e) {}
       }
 
-      // 6. Match by exact businessName or businessReason (with spaces or normalized)
+      // 5. Match by exact businessName or businessReason
       if (!user) {
         try {
           const withSpaces = slugifiedRaw.replace(/-/g, ' ');
@@ -156,20 +128,9 @@ export class AppController {
         } catch (e) {}
       }
 
-      // 7. Strict normalized slug comparison against all merchants
+      // 6. Comprehensive normalized slug and fuzzy match across all users
       if (!user) {
         try {
-          const toSlug = (text?: string | null) => {
-            if (!text) return '';
-            return String(text)
-              .toLowerCase()
-              .normalize('NFD')
-              .replace(/[\u0300-\u036f]/g, '')
-              .replace(/[^a-z0-9]+/g, '-')
-              .replace(/-+/g, '-')
-              .replace(/^-|-$/g, '');
-          };
-
           const allUsers = await this.prisma.user.findMany({
             select: {
               id: true,
@@ -183,14 +144,7 @@ export class AppController {
             },
           });
 
-          // Exclude flagship Veaz unless requested explicitly
-          const candidates = allUsers.filter((u) => {
-            const em = (u.email || '').toLowerCase();
-            return !em.includes('estileza') && em !== 'beaz.estileza@gmail.com';
-          });
-
-          // Match exact slug of businessName, businessSlug, businessReason, or full name
-          const matched = candidates.find((u) => {
+          const matched = allUsers.find((u) => {
             if (u.businessSlug && toSlug(u.businessSlug) === slugifiedRaw) return true;
             if (u.businessName && toSlug(u.businessName) === slugifiedRaw) return true;
             if (u.businessReason && toSlug(u.businessReason) === slugifiedRaw) return true;
@@ -200,12 +154,14 @@ export class AppController {
               const prefix = u.email.split('@')[0];
               if (toSlug(prefix) === slugifiedRaw) return true;
             }
+            // Multi-word contains (e.g. "electrodomesticos ayca" matches "ELECTRODOMÉSTICOS AYCA")
+            const busSlug = toSlug(u.businessName);
+            if (busSlug && (busSlug.includes(slugifiedRaw) || slugifiedRaw.includes(busSlug))) return true;
             return false;
           });
 
           if (matched) {
             user = await this.prisma.user.findUnique({ where: { id: matched.id } });
-            // Safely set businessSlug if it was null
             if (user && !user.businessSlug && slugifiedRaw && slugifiedRaw.length <= 50) {
               try {
                 await this.prisma.user.update({
