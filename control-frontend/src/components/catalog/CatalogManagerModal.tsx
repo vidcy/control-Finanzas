@@ -23,7 +23,7 @@ import {
 import { FaInstagram, FaFacebookF, FaTiktok } from "react-icons/fa6";
 import toast from "react-hot-toast";
 import { useAuth } from "../../auth/AuthContext";
-import { updateMyProfileRequest } from "../../services/user.api";
+import { updateMyProfileRequest, getUserRequest } from "../../services/user.api";
 import { uploadProductImageFile, getReceiptAbsoluteUrl } from "../ui/ImageUploader";
 import {
   RUBRO_PRESETS,
@@ -96,81 +96,108 @@ export default function CatalogManagerModal({ isOpen, onClose }: CatalogManagerM
   const [tiktokUrl, setTiktokUrl] = useState<string>("");
   const [footerAbout, setFooterAbout] = useState<string>("");
 
-  // Load user data on open
+  // Load user data on open and ensure full DB synchronization
   useEffect(() => {
-    if (!user || !isOpen) return;
+    if (!isOpen) return;
 
-    const defaultSlug = getStoreCatalogSlug(user);
-    setSlug(defaultSlug);
+    const populateFromUser = (target: any) => {
+      if (!target) return;
 
-    const config: CatalogConfig = (user as any).catalogConfig || {};
-    const defaultRubro = getRubroPreset(config.rubroKey || user.businessRubro);
+      const defaultSlug = getStoreCatalogSlug(target);
+      setSlug(target.businessSlug || defaultSlug);
 
-    setSelectedRubroKey(config.rubroKey || defaultRubro.key);
-    setVariantLabel(config.variantLabel || defaultRubro.variantLabel);
-    setCatalogTitle(config.catalogTitle || defaultRubro.catalogTitle);
-    setCatalogSubtitle(config.catalogSubtitle || defaultRubro.catalogSubtitle);
-    setCatalogBadge(config.catalogBadge || defaultRubro.catalogBadge);
+      const config: CatalogConfig = target.catalogConfig || {};
+      const defaultRubro = getRubroPreset(config.rubroKey || target.businessRubro);
 
-    // Banners
-    if (config.banners && Array.isArray(config.banners) && config.banners.length > 0) {
-      setBanners(config.banners);
-    } else {
-      setBanners(defaultRubro.banners);
+      setSelectedRubroKey(config.rubroKey || defaultRubro.key);
+      setVariantLabel(config.variantLabel || defaultRubro.variantLabel);
+      setCatalogTitle(config.catalogTitle !== undefined ? config.catalogTitle : defaultRubro.catalogTitle);
+      setCatalogSubtitle(config.catalogSubtitle !== undefined ? config.catalogSubtitle : defaultRubro.catalogSubtitle);
+      setCatalogBadge(config.catalogBadge !== undefined ? config.catalogBadge : defaultRubro.catalogBadge);
+
+      // Banners
+      if (config.banners && Array.isArray(config.banners) && config.banners.length > 0) {
+        setBanners(config.banners);
+      } else {
+        setBanners(defaultRubro.banners);
+      }
+
+      // Ticker & Announcement
+      setAnnouncement(config.announcement !== undefined ? config.announcement : defaultRubro.announcement);
+      if (config.tickerPhrases && Array.isArray(config.tickerPhrases) && config.tickerPhrases.length > 0) {
+        setTickerPhrases(config.tickerPhrases);
+      } else {
+        setTickerPhrases(defaultRubro.tickerPhrases);
+      }
+
+      // Lookbook
+      setShowLookbook(config.showLookbook !== undefined ? config.showLookbook : true);
+      setLookbookTitle(config.lookbookTitle !== undefined ? config.lookbookTitle : defaultRubro.lookbookTitle);
+      setLookbookSubtitle(config.lookbookSubtitle !== undefined ? config.lookbookSubtitle : defaultRubro.lookbookSubtitle);
+      if (config.lookbookItems && Array.isArray(config.lookbookItems) && config.lookbookItems.length > 0) {
+        setLookbookItems(config.lookbookItems);
+      } else {
+        setLookbookItems(defaultRubro.lookbookItems);
+      }
+
+      // Showcase Rail (Vitrina Inferior de Marcas/Líneas)
+      setShowShowcaseRail(config.showShowcaseRail !== undefined ? config.showShowcaseRail : (defaultRubro.showShowcaseRail ?? true));
+      setShowcaseRailTitle(config.showcaseRailTitle !== undefined ? config.showcaseRailTitle : (defaultRubro.showcaseRailTitle || "Líneas de Productos & Marcas Oficiales"));
+      setShowcaseRailSubtitle(config.showcaseRailSubtitle !== undefined ? config.showcaseRailSubtitle : (defaultRubro.showcaseRailSubtitle || "Garantía de fábrica y servicio técnico autorizado."));
+      if (config.showcaseRailItems && Array.isArray(config.showcaseRailItems) && config.showcaseRailItems.length > 0) {
+        setShowcaseRailItems(config.showcaseRailItems);
+      } else {
+        setShowcaseRailItems(defaultRubro.showcaseRailItems || []);
+      }
+
+      // Location
+      const isVeazUser = Boolean(target?.email?.toLowerCase()?.includes("estileza"));
+      setShowLocation(config.showLocation !== undefined ? config.showLocation : true);
+      setLocationCity(config.locationCity || target.businessDepartment || (isVeazUser ? "Puerto Maldonado, Madre de Dios" : ""));
+      setLocationAddress(config.locationAddress || target.businessAddress || (isVeazUser ? "Av. Madre de Dios, Con Pasaje Fonavi" : ""));
+      setLocationLandmarks(config.locationLandmarks || (isVeazUser ? "Frente a Proversa / Al costado de Pollería Todo a Leña" : ""));
+      setLocationSchedule(config.locationSchedule || "Lunes a Sábado: 8:30 am - 8:30 pm");
+      setLocationMapsUrl(config.locationMapsUrl || (isVeazUser ? "https://maps.app.goo.gl/p9uX1yW7n2FgFj9bA" : ""));
+      setLocationImage(
+        config.locationImage || target.businessBanner || ""
+      );
+
+      // Contact & WhatsApp: prioritize saved whatsappPhone, then businessPhone, then profile phone
+      const resolvedPhone =
+        config.whatsappPhone ||
+        target.businessPhone ||
+        target.phone ||
+        (isVeazUser ? "929962458" : "");
+      setWhatsappPhone(resolvedPhone);
+
+      setInstagramUrl(config.instagramUrl || "");
+      setFacebookUrl(config.facebookUrl || "");
+      setTiktokUrl(config.tiktokUrl || "");
+      setFooterAbout(config.footerAbout !== undefined ? config.footerAbout : (defaultRubro.footerAbout || ""));
+    };
+
+    if (user) {
+      populateFromUser(user);
     }
 
-    // Ticker & Announcement
-    setAnnouncement(config.announcement !== undefined ? config.announcement : defaultRubro.announcement);
-    if (config.tickerPhrases && Array.isArray(config.tickerPhrases) && config.tickerPhrases.length > 0) {
-      setTickerPhrases(config.tickerPhrases);
-    } else {
-      setTickerPhrases(defaultRubro.tickerPhrases);
-    }
-
-    // Lookbook
-    setShowLookbook(config.showLookbook !== undefined ? config.showLookbook : true);
-    setLookbookTitle(config.lookbookTitle || defaultRubro.lookbookTitle);
-    setLookbookSubtitle(config.lookbookSubtitle || defaultRubro.lookbookSubtitle);
-    if (config.lookbookItems && Array.isArray(config.lookbookItems) && config.lookbookItems.length > 0) {
-      setLookbookItems(config.lookbookItems);
-    } else {
-      setLookbookItems(defaultRubro.lookbookItems);
-    }
-
-    // Showcase Rail (Vitrina Inferior de Marcas/Líneas)
-    setShowShowcaseRail(config.showShowcaseRail !== undefined ? config.showShowcaseRail : (defaultRubro.showShowcaseRail ?? true));
-    setShowcaseRailTitle(config.showcaseRailTitle || defaultRubro.showcaseRailTitle || "Líneas de Productos & Marcas Oficiales");
-    setShowcaseRailSubtitle(config.showcaseRailSubtitle || defaultRubro.showcaseRailSubtitle || "Garantía de fábrica y servicio técnico autorizado.");
-    if (config.showcaseRailItems && Array.isArray(config.showcaseRailItems) && config.showcaseRailItems.length > 0) {
-      setShowcaseRailItems(config.showcaseRailItems);
-    } else {
-      setShowcaseRailItems(defaultRubro.showcaseRailItems || []);
-    }
-
-    // Location
-    const isVeazUser = Boolean(user?.email?.toLowerCase()?.includes("estileza"));
-    setShowLocation(config.showLocation !== undefined ? config.showLocation : true);
-    setLocationCity(config.locationCity || (user as any).businessDepartment || (isVeazUser ? "Puerto Maldonado, Madre de Dios" : ""));
-    setLocationAddress(config.locationAddress || (user as any).businessAddress || (isVeazUser ? "Av. Madre de Dios, Con Pasaje Fonavi" : ""));
-    setLocationLandmarks(config.locationLandmarks || (isVeazUser ? "Frente a Proversa / Al costado de Pollería Todo a Leña" : ""));
-    setLocationSchedule(config.locationSchedule || "Lunes a Sábado: 8:30 am - 8:30 pm");
-    setLocationMapsUrl(config.locationMapsUrl || (isVeazUser ? "https://maps.app.goo.gl/p9uX1yW7n2FgFj9bA" : ""));
-    setLocationImage(
-      config.locationImage || (user as any).businessBanner || ""
-    );
-
-    // Contact (pull from catalogConfig first, then user's businessPhone/phone)
-    const userPhone = (user as any).businessPhone || (user as any).phone || "";
-    setWhatsappPhone(
-      config.whatsappPhone ||
-        userPhone ||
-        (isVeazUser ? "929962458" : "")
-    );
-    setInstagramUrl(config.instagramUrl || "");
-    setFacebookUrl(config.facebookUrl || "");
-    setTiktokUrl(config.tiktokUrl || "");
-    setFooterAbout(config.footerAbout || defaultRubro.footerAbout || "");
-  }, [user, isOpen]);
+    // Always fetch fresh from backend to ensure data is 100% current
+    getUserRequest()
+      .then((fresh: any) => {
+        if (fresh) {
+          const merged = { ...(user || {}), ...fresh };
+          setUser(merged as any);
+          try {
+            const currentSaved = localStorage.getItem("user");
+            const parsed = currentSaved ? JSON.parse(currentSaved) : {};
+            localStorage.setItem("user", JSON.stringify({ ...parsed, ...fresh }));
+          } catch {}
+          populateFromUser(fresh);
+        }
+      })
+      .catch((err) => {
+        console.warn("Could not fetch fresh user profile:", err);
+      });
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -443,6 +470,7 @@ export default function CatalogManagerModal({ isOpen, onClose }: CatalogManagerM
       };
       setUser(updatedUser);
       localStorage.setItem("user", JSON.stringify(updatedUser));
+      window.dispatchEvent(new Event("user_profile_updated"));
       toast.success("¡Catálogo digital y todos sus módulos actualizados con éxito!");
       onClose();
     } catch (err: any) {
@@ -453,64 +481,65 @@ export default function CatalogManagerModal({ isOpen, onClose }: CatalogManagerM
   };
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-2 sm:p-5 bg-black/70 backdrop-blur-md animate-fadeIn">
-      <div className="bg-white w-full max-w-5xl max-h-[94vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-slate-200">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-2 sm:p-4 bg-black/75 backdrop-blur-md animate-fadeIn">
+      <div className="bg-white w-full max-w-5xl h-[92vh] max-h-[880px] rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-slate-200">
         {/* HEADER */}
-        <div className="p-5 sm:p-6 bg-gradient-to-r from-slate-950 via-[#131625] to-slate-900 text-white flex items-center justify-between relative overflow-hidden shrink-0">
+        <div className="px-5 py-4 sm:px-6 sm:py-5 bg-gradient-to-r from-slate-950 via-[#131625] to-slate-900 text-white flex items-center justify-between relative overflow-hidden shrink-0">
           <div className="absolute top-0 right-0 w-80 h-80 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
-          <div className="flex items-center gap-3.5 z-10">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-400 to-amber-600 flex items-center justify-center text-slate-950 font-bold shadow-md shadow-amber-500/20">
-              <Store className="w-6 h-6" />
+          <div className="flex items-center gap-3 z-10 min-w-0 pr-2">
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-gradient-to-tr from-amber-400 to-amber-600 flex items-center justify-center text-slate-950 font-bold shadow-md shadow-amber-500/20 shrink-0">
+              <Store className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-lg sm:text-xl font-black tracking-tight text-white">
-                  Editor Integral del Catálogo Público
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-base sm:text-lg font-black tracking-tight text-white truncate">
+                  Configuración del Catálogo Digital
                 </h3>
-                <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-2 py-0.5 rounded-full border border-emerald-400/30">
+                <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-2 py-0.5 rounded-full border border-emerald-400/30 shrink-0">
                   {RUBRO_PRESETS[selectedRubroKey]?.icon} {RUBRO_PRESETS[selectedRubroKey]?.label || "Personalizado"}
                 </span>
               </div>
-              <p className="text-xs text-slate-300 mt-0.5">
-                Personaliza cada módulo, textos, banners y ubicación según el rubro de tu negocio.
+              <p className="text-xs text-slate-300 mt-0.5 truncate hidden sm:block">
+                Personaliza títulos, banners, número de WhatsApp para pedidos, horarios y ubicación.
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer z-10"
+            className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer z-10 shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* PUBLIC LINK BANNER */}
-        <div className="bg-[#FAF7F2] border-b border-[#EDE2D4] px-5 py-3 sm:px-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shrink-0">
-          <div className="flex items-center gap-2 text-xs text-slate-700 min-w-0 flex-1">
+        <div className="bg-[#FAF7F2] border-b border-[#EDE2D4] px-4 sm:px-6 py-2.5 sm:py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 shrink-0">
+          <div className="flex items-center gap-2 text-xs text-slate-700 min-w-0 flex-1 w-full">
             <Globe className="w-4 h-4 text-amber-700 shrink-0" />
             <span className="font-semibold text-slate-500 shrink-0">Enlace Público:</span>
             <a
               href={catalogPublicUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-amber-800 font-bold hover:underline truncate inline-flex items-center gap-1"
+              className="text-amber-800 font-bold hover:underline truncate inline-flex items-center gap-1 min-w-0"
+              title={catalogPublicUrl}
             >
-              <span>{catalogPublicUrl}</span>
+              <span className="truncate">{catalogPublicUrl}</span>
               <ExternalLink className="w-3.5 h-3.5 shrink-0" />
             </a>
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0">
             <button
               onClick={handleCopyLink}
-              className="px-3.5 py-1.5 rounded-xl bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              className="px-3 py-1.5 rounded-xl bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
             >
               {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
               <span>{isCopied ? "¡Copiado!" : "Copiar"}</span>
             </button>
             <button
               onClick={handleShareWhatsApp}
-              className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
             >
               <MessageCircle className="w-3.5 h-3.5" />
               <span>Compartir en WhatsApp</span>
@@ -519,13 +548,13 @@ export default function CatalogManagerModal({ isOpen, onClose }: CatalogManagerM
         </div>
 
         {/* NAVIGATION TABS */}
-        <div className="flex items-center gap-1 overflow-x-auto px-5 sm:px-6 pt-3 border-b border-slate-200 bg-slate-50 scrollbar-none shrink-0">
+        <div className="flex items-center gap-1.5 overflow-x-auto px-4 sm:px-6 pt-2.5 border-b border-slate-200 bg-slate-50 shrink-0 scrollbar-thin">
           {[
             { id: "rubro", label: "Rubro & Estilo", icon: Wand2 },
             { id: "banners", label: "Banners Hero", icon: ImageIcon },
             { id: "ticker", label: "Marquesina & Anuncios", icon: Megaphone },
             { id: "lookbook", label: "Galería Destacada", icon: Sparkles },
-            { id: "rail", label: "Vitrina Inferior / Pasarela", icon: LayoutGrid },
+            { id: "rail", label: "Vitrina Inferior", icon: LayoutGrid },
             { id: "location", label: "Ubicación & Horarios", icon: Clock },
             { id: "contact", label: "Contacto & Redes", icon: Phone },
           ].map((tab) => {
@@ -534,14 +563,15 @@ export default function CatalogManagerModal({ isOpen, onClose }: CatalogManagerM
             return (
               <button
                 key={tab.id}
+                type="button"
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`flex items-center gap-2 px-4 py-3 text-xs font-bold rounded-t-xl transition-all cursor-pointer whitespace-nowrap border-b-2 ${
+                className={`flex items-center gap-1.5 sm:gap-2 px-3 py-2 sm:px-4 sm:py-2.5 text-xs font-bold rounded-t-xl transition-all cursor-pointer whitespace-nowrap border-b-2 shrink-0 ${
                   isActive
                     ? "bg-white text-amber-900 border-amber-600 shadow-xs"
                     : "text-slate-500 hover:text-slate-900 border-transparent hover:bg-white/50"
                 }`}
               >
-                <Icon className={`w-4 h-4 ${isActive ? "text-amber-700" : "text-slate-400"}`} />
+                <Icon className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${isActive ? "text-amber-700" : "text-slate-400"}`} />
                 <span>{tab.label}</span>
               </button>
             );
@@ -549,7 +579,7 @@ export default function CatalogManagerModal({ isOpen, onClose }: CatalogManagerM
         </div>
 
         {/* MODAL BODY (SCROLLABLE) */}
-        <div className="flex-1 overflow-y-auto p-5 sm:p-7 space-y-6">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 space-y-6">
           {/* ──────────────────────────────────────────────────────────
               TAB 1: RUBRO & ESTILO GENERAL
           ────────────────────────────────────────────────────────── */}
@@ -739,7 +769,7 @@ export default function CatalogManagerModal({ isOpen, onClose }: CatalogManagerM
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
                       {/* Left: Image preview & uploader */}
                       <div className="lg:col-span-4 space-y-2">
-                        <div className="w-full aspect-16/9 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 relative">
+                        <div className="w-full aspect-video rounded-xl overflow-hidden bg-slate-100 border border-slate-200 relative">
                           <img
                             src={getReceiptAbsoluteUrl(banner.image) || banner.image}
                             alt="Banner preview"
@@ -1006,7 +1036,7 @@ export default function CatalogManagerModal({ isOpen, onClose }: CatalogManagerM
                         key={item.id || idx}
                         className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-3 relative"
                       >
-                        <div className="w-full aspect-4/3 rounded-xl overflow-hidden bg-slate-100 relative">
+                        <div className="w-full aspect-[4/3] rounded-xl overflow-hidden bg-slate-100 relative">
                           <img
                             src={getReceiptAbsoluteUrl(item.image) || item.image}
                             alt={item.title}
@@ -1311,7 +1341,7 @@ export default function CatalogManagerModal({ isOpen, onClose }: CatalogManagerM
                         key={preset}
                         type="button"
                         onClick={() => setLocationSchedule(preset)}
-                        className="px-2.5 py-1 rounded-lg bg-white hover:bg-amber-100/70 border border-slate-200 hover:border-amber-300 text-[10px] font-medium text-slate-700 hover:text-amber-950 transition-all cursor-pointer shadow-2xs"
+                        className="px-2.5 py-1 rounded-lg bg-white hover:bg-amber-100/70 border border-slate-200 hover:border-amber-300 text-[10px] font-medium text-slate-700 hover:text-amber-950 transition-all cursor-pointer shadow-xs"
                       >
                         {preset.length > 32 ? preset.substring(0, 30) + '...' : preset}
                       </button>
@@ -1597,21 +1627,21 @@ export default function CatalogManagerModal({ isOpen, onClose }: CatalogManagerM
         </div>
 
         {/* FOOTER ACTIONS */}
-        <div className="p-4 sm:p-5 bg-slate-100 border-t border-slate-200 flex items-center justify-between gap-3 shrink-0">
+        <div className="p-3.5 sm:p-5 bg-slate-100 border-t border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
           <button
             type="button"
             onClick={onClose}
-            className="px-5 py-2.5 rounded-xl bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-bold transition-colors cursor-pointer"
+            className="px-4 py-2.5 rounded-xl bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-bold transition-colors cursor-pointer text-center"
           >
             Cerrar sin guardar
           </button>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 justify-end">
             <a
               href={catalogPublicUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="px-4 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="px-4 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
             >
               <ExternalLink className="w-3.5 h-3.5" />
               <span>Ver Catálogo</span>
@@ -1621,7 +1651,7 @@ export default function CatalogManagerModal({ isOpen, onClose }: CatalogManagerM
               type="button"
               onClick={handleSaveAll}
               disabled={isSaving}
-              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white text-xs font-black tracking-wide shadow-md hover:shadow-lg transition-all cursor-pointer disabled:opacity-50 flex items-center gap-2"
+              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white text-xs font-black tracking-wide shadow-md hover:shadow-lg transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {isSaving ? (
                 <>

@@ -38,7 +38,7 @@ import {
 } from "lucide-react";
 
 import { toast } from "react-hot-toast";
-import { updateUserProfilesRequest, updateMyProfileRequest } from "../../services/user.api";
+import { updateUserProfilesRequest, updateMyProfileRequest, getUserRequest } from "../../services/user.api";
 import { ProductImageUploader, uploadProductImageFile, getReceiptAbsoluteUrl } from "../ui/ImageUploader";
 import CatalogManagerModal from "../catalog/CatalogManagerModal";
 
@@ -208,6 +208,34 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       setBusinessBanner(user.businessBanner || "");
       setNubefactUrl(user.nubefactUrl || "");
       setNubefactToken(user.nubefactToken || "");
+
+      // Directly refresh from /users/me to ensure persisted fields from DB are always loaded
+      getUserRequest().then((fresh: any) => {
+        if (!fresh) return;
+        if (fresh.name !== undefined) setProfileName(fresh.name || "");
+        if (fresh.lastName !== undefined) setProfileLastName(fresh.lastName || "");
+        if (fresh.personalAvatar !== undefined) setProfileAvatar(fresh.personalAvatar || "");
+        if (fresh.businessName !== undefined) setBusinessName(fresh.businessName || "");
+        if (fresh.businessRuc !== undefined) setBusinessRuc(fresh.businessRuc || "");
+        if (fresh.businessReason !== undefined) setBusinessReason(fresh.businessReason || "");
+        if (fresh.businessRubro !== undefined) setBusinessRubro(fresh.businessRubro || "");
+        if (fresh.businessAddress !== undefined) setBusinessAddress(fresh.businessAddress || "");
+        if (fresh.businessPhone !== undefined) setBusinessPhone(fresh.businessPhone || "");
+        if (fresh.businessEmail !== undefined) setBusinessEmail(fresh.businessEmail || "");
+        if (fresh.businessDepartment !== undefined) setBusinessDepartment(fresh.businessDepartment || "");
+        if (fresh.businessProvince !== undefined) setBusinessProvince(fresh.businessProvince || "");
+        if (fresh.businessDistrict !== undefined) setBusinessDistrict(fresh.businessDistrict || "");
+        if (fresh.billingSerieInvoice !== undefined) setBillingSerieInvoice(fresh.billingSerieInvoice || "F001");
+        if (fresh.billingSerieBoleta !== undefined) setBillingSerieBoleta(fresh.billingSerieBoleta || "B001");
+        if (fresh.taxRegime) {
+          setTaxRegime(fresh.taxRegime);
+          setIgvRate(fresh.igvRate !== undefined ? fresh.igvRate : (fresh.taxRegime === "AMAZONIA_EXONERADO" ? 0 : 18));
+        }
+        if (fresh.businessLogo !== undefined) setBusinessLogo(fresh.businessLogo || "");
+        if (fresh.businessBanner !== undefined) setBusinessBanner(fresh.businessBanner || "");
+        if (fresh.nubefactUrl !== undefined) setNubefactUrl(fresh.nubefactUrl || "");
+        if (fresh.nubefactToken !== undefined) setNubefactToken(fresh.nubefactToken || "");
+      }).catch(() => { });
     }
   }, [isProfileModalOpen]);
 
@@ -266,7 +294,32 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
         catalogConfig: updatedConfig,
       });
 
-      const updatedUser = { ...user, ...res, catalogConfig: updatedConfig };
+      const updatedUser = {
+        ...user,
+        ...res,
+        name: profileName,
+        lastName: profileLastName,
+        personalAvatar: finalAvatarUrl || null,
+        businessName: businessName || null,
+        businessRuc: cleanRuc || null,
+        businessReason: businessReason || null,
+        businessRubro: businessRubro || null,
+        businessAddress: businessAddress || null,
+        businessPhone: businessPhone || null,
+        businessEmail: businessEmail || null,
+        businessDepartment: businessDepartment || null,
+        businessProvince: businessProvince || null,
+        businessDistrict: businessDistrict || null,
+        billingSerieInvoice: billingSerieInvoice || "F001",
+        billingSerieBoleta: billingSerieBoleta || "B001",
+        taxRegime: taxRegime || "GENERAL_18",
+        igvRate: Number(igvRate),
+        businessLogo: finalLogoUrl || null,
+        businessBanner: finalBannerUrl || null,
+        nubefactUrl: nubefactUrl || null,
+        nubefactToken: nubefactToken || null,
+        catalogConfig: updatedConfig,
+      };
       setUser(updatedUser);
       localStorage.setItem("user", JSON.stringify(updatedUser));
       toast.success("Perfil actualizado con éxito");
@@ -936,29 +989,31 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
             </div>
           </div>
 
-          {/* VEAZ ESTILEZA SHORTCUT - TIENDA OFICIAL DE THINK.CCOPLEX */}
-          <div className="px-2 pt-1">
-            <button
-              type="button"
-              onClick={() => window.open("/veaz-estileza", "_blank")}
-              className="w-full p-2.5 rounded-2xl bg-gradient-to-r from-[#0F1118] via-[#151722] to-[#181A28] border border-amber-500/50 text-white flex items-center justify-between group hover:border-amber-400 hover:shadow-lg transition-all cursor-pointer shadow-md"
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-base">👑</span>
-                <div className="text-left">
-                  <span className="text-[9px] font-bold text-amber-300 uppercase tracking-wider block leading-none">
-                    Tienda Oficial Think
-                  </span>
-                  <span className="text-xs font-black tracking-wider text-white group-hover:text-amber-300 transition-colors">
-                    VEAZ ESTILEZA
-                  </span>
+          {/* VEAZ ESTILEZA SHORTCUT - TIENDA OFICIAL (SOLO PARA VEAZ) */}
+          {Boolean(user?.email?.toLowerCase()?.includes("estileza")) && (
+            <div className="px-2 pt-1">
+              <button
+                type="button"
+                onClick={() => window.open("/veaz-estileza", "_blank")}
+                className="w-full p-2.5 rounded-2xl bg-gradient-to-r from-[#0F1118] via-[#151722] to-[#181A28] border border-amber-500/50 text-white flex items-center justify-between group hover:border-amber-400 hover:shadow-lg transition-all cursor-pointer shadow-md"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-base">👑</span>
+                  <div className="text-left">
+                    <span className="text-[9px] font-bold text-amber-300 uppercase tracking-wider block leading-none">
+                      Tienda Oficial Think
+                    </span>
+                    <span className="text-xs font-black tracking-wider text-white group-hover:text-amber-300 transition-colors">
+                      VEAZ ESTILEZA
+                    </span>
+                  </div>
                 </div>
-              </div>
-              <span className="text-[9px] bg-amber-400 text-slate-950 font-bold px-2 py-0.5 rounded-full uppercase tracking-wider group-hover:bg-amber-300">
-                Ver Tienda
-              </span>
-            </button>
-          </div>
+                <span className="text-[9px] bg-amber-400 text-slate-950 font-bold px-2 py-0.5 rounded-full uppercase tracking-wider group-hover:bg-amber-300">
+                  Ver Tienda
+                </span>
+              </button>
+            </div>
+          )}
         </nav>
 
         {/* PROFILE */}

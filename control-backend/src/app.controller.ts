@@ -10,8 +10,8 @@ export class AppController {
     return { message: 'Finance API running 🚀' };
   }
 
-  private async getCatalogUser(queryOrParam?: string, req?: any) {
-    const raw = (queryOrParam || '').trim();
+  private async getCatalogUser(rawIdentifier?: string, req?: any) {
+    const raw = (rawIdentifier || '').trim();
 
     // 0. Extract logged-in userId from JWT Authorization header if available
     let tokenUserId: string | null = null;
@@ -32,7 +32,7 @@ export class AppController {
 
     const lowerRaw = raw.toLowerCase();
 
-    // If query is 'mi-tienda' or empty and user is logged in, resolve directly to the logged-in merchant
+    // 1. If query is 'mi-tienda' or 'catalogo' or empty, and user is logged in, resolve directly to their store
     if ((!raw || lowerRaw === 'mi-tienda' || lowerRaw === 'catalogo') && tokenUserId) {
       try {
         let loggedUser: any = await this.prisma.user.findUnique({ where: { id: tokenUserId } });
@@ -47,9 +47,10 @@ export class AppController {
       } catch (e) {}
     }
 
+    // If identifier is completely empty and no logged-in user, return null (DO NOT fallback to Veaz)
     if (!raw) return null;
 
-    // Check for Veaz Estileza flagship boutique
+    // 2. Veaz Estileza flagship boutique - ONLY for explicit Veaz identifiers
     const isVeazFlagship =
       lowerRaw === 'veaz-estileza' ||
       lowerRaw === 'estileza' ||
@@ -71,17 +72,6 @@ export class AppController {
           return users[0];
         }
       } catch (e) {}
-
-      try {
-        const fallback = await this.prisma.user.findFirst({
-          where: { email: { contains: 'estileza', mode: 'insensitive' } },
-        });
-        if (fallback) {
-          await this.enrichUserCatalogData(fallback);
-          return fallback;
-        }
-      } catch (e) {}
-
       return null;
     }
 
@@ -95,7 +85,7 @@ export class AppController {
 
       let user: any = null;
 
-      // 1. Match by exact UUID
+      // 3. Match by exact UUID
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw);
       if (isUuid) {
         try {
@@ -111,7 +101,7 @@ export class AppController {
         } catch (e) {}
       }
 
-      // 2. Match by exact businessSlug (Prisma + Raw SQL fallback)
+      // 4. Match by exact businessSlug
       try {
         user = await this.prisma.user.findFirst({
           where: {
@@ -132,7 +122,7 @@ export class AppController {
         } catch (err) {}
       }
 
-      // 3. Match by Email or Email prefix
+      // 5. Match by exact email or email prefix (e.g. david@gmail.com or 'david')
       if (!user) {
         try {
           user = await this.prisma.user.findFirst({
@@ -147,7 +137,7 @@ export class AppController {
         } catch (e) {}
       }
 
-      // 4. Match by exact businessName or businessReason with spaces
+      // 6. Match by exact businessName or businessReason (with spaces or normalized)
       if (!user) {
         try {
           const withSpaces = slugifiedRaw.replace(/-/g, ' ');
@@ -166,55 +156,9 @@ export class AppController {
         } catch (e) {}
       }
 
-      // 5. Intelligent Multi-Criteria Slug, Phonetic & Fuzzy Search
+      // 7. Strict normalized slug comparison against all merchants
       if (!user) {
         try {
-          const searchTokens = slugifiedRaw.split('-').filter((t) => t.length >= 3);
-
-          let allUsers: any[] = [];
-          try {
-            allUsers = await this.prisma.user.findMany({
-              select: {
-                id: true,
-                email: true,
-                name: true,
-                lastName: true,
-                businessName: true,
-                businessSlug: true,
-                businessReason: true,
-                parentId: true,
-              },
-            });
-          } catch (ePrisma) {
-            try {
-              allUsers = await this.prisma.$queryRawUnsafe(
-                'SELECT "id", "email", "name", "lastName", "businessName", "businessSlug", "businessReason", "parentId" FROM "User"',
-              );
-            } catch (eRaw) {
-              allUsers = await this.prisma.user.findMany({
-                select: {
-                  id: true,
-                  email: true,
-                  name: true,
-                  lastName: true,
-                  businessName: true,
-                  parentId: true,
-                },
-              });
-            }
-          }
-
-          // Strictly exclude flagship Veaz account when searching for other merchants
-          if (!isVeazFlagship) {
-            allUsers = allUsers.filter((u) => {
-              const em = (u.email || '').toLowerCase();
-              return !em.includes('estileza') && em !== 'beaz.estileza@gmail.com';
-            });
-          }
-
-          const targetSlug = slugifiedRaw;
-          const cleanTarget = slugifiedRaw.replace(/-/g, '');
-
           const toSlug = (text?: string | null) => {
             if (!text) return '';
             return String(text)
@@ -226,102 +170,42 @@ export class AppController {
               .replace(/^-|-$/g, '');
           };
 
-          const normalizePhonetic = (text?: string | null) => {
-            if (!text) return '';
-            return String(text)
-              .toLowerCase()
-              .normalize('NFD')
-              .replace(/[\u0300-\u036f]/g, '')
-              .replace(/[^a-z0-9]/g, '')
-              .replace(/y/g, 'i')
-              .replace(/v/g, 'b')
-              .replace(/z/g, 's')
-              .replace(/c(?=[ie])/g, 's')
-              .replace(/k/g, 'c')
-              .replace(/h/g, '');
-          };
+          const allUsers = await this.prisma.user.findMany({
+            select: {
+              id: true,
+              email: true,
+              name: true,
+              lastName: true,
+              businessName: true,
+              businessSlug: true,
+              businessReason: true,
+              parentId: true,
+            },
+          });
 
-          const targetPhonetic = normalizePhonetic(targetSlug);
+          // Exclude flagship Veaz unless requested explicitly
+          const candidates = allUsers.filter((u) => {
+            const em = (u.email || '').toLowerCase();
+            return !em.includes('estileza') && em !== 'beaz.estileza@gmail.com';
+          });
 
-          // A) Direct exact match on slugified businessSlug, businessName, businessReason, full name or email prefix
-          let matched = allUsers.find((u) => {
-            if (u.businessSlug && toSlug(u.businessSlug) === targetSlug) return true;
-            if (u.businessName && toSlug(u.businessName) === targetSlug) return true;
-            if (u.businessReason && toSlug(u.businessReason) === targetSlug) return true;
-            const fullName = (u.name || '') + ' ' + (u.lastName || '');
-            if (fullName.trim() && toSlug(fullName) === targetSlug) return true;
+          // Match exact slug of businessName, businessSlug, businessReason, or full name
+          const matched = candidates.find((u) => {
+            if (u.businessSlug && toSlug(u.businessSlug) === slugifiedRaw) return true;
+            if (u.businessName && toSlug(u.businessName) === slugifiedRaw) return true;
+            if (u.businessReason && toSlug(u.businessReason) === slugifiedRaw) return true;
+            const fullName = ((u.name || '') + ' ' + (u.lastName || '')).trim();
+            if (fullName && toSlug(fullName) === slugifiedRaw) return true;
             if (u.email) {
               const prefix = u.email.split('@')[0];
-              if (toSlug(prefix) === targetSlug) return true;
+              if (toSlug(prefix) === slugifiedRaw) return true;
             }
             return false;
           });
 
-          // B) Phonetic Match (e.g. 'ayca' matches 'aica', 'electrodoesticos' matches 'electrodomesticos')
-          if (!matched && targetPhonetic) {
-            matched = allUsers.find((u) => {
-              const bPhonetic = normalizePhonetic(u.businessSlug || u.businessName);
-              if (bPhonetic && (bPhonetic === targetPhonetic || bPhonetic.includes(targetPhonetic) || targetPhonetic.includes(bPhonetic))) {
-                return true;
-              }
-              const namePhonetic = normalizePhonetic((u.name || '') + ' ' + (u.lastName || ''));
-              if (namePhonetic && (namePhonetic === targetPhonetic || namePhonetic.includes(targetPhonetic) || targetPhonetic.includes(namePhonetic))) {
-                return true;
-              }
-              return false;
-            });
-          }
-
-          // C) Mutual inclusion match
-          if (!matched) {
-            matched = allUsers.find((u) => {
-              const bSlug = toSlug(u.businessSlug || u.businessName);
-              if (bSlug) {
-                if (bSlug.includes(targetSlug) || targetSlug.includes(bSlug)) return true;
-                const cleanB = bSlug.replace(/-/g, '');
-                if (cleanB && cleanTarget && (cleanB.includes(cleanTarget) || cleanTarget.includes(cleanB))) return true;
-              }
-              const nameSlug = toSlug((u.name || '') + ' ' + (u.lastName || ''));
-              if (nameSlug && (nameSlug.includes(targetSlug) || targetSlug.includes(nameSlug))) return true;
-              return false;
-            });
-          }
-
-          // D) Token-based & Scoring match
-          if (!matched && searchTokens.length > 0) {
-            let bestScore = 0;
-            let bestUser: any = null;
-
-            for (const u of allUsers) {
-              let score = 0;
-              const fullStr = [u.businessName, u.businessSlug, u.businessReason, u.name, u.lastName, u.email]
-                .filter(Boolean)
-                .join(' ')
-                .toLowerCase()
-                .normalize('NFD')
-                .replace(/[\u0300-\u036f]/g, '');
-              const fullPhonetic = normalizePhonetic(fullStr);
-
-              for (const token of searchTokens) {
-                if (fullStr.includes(token)) score += 30;
-                else if (fullPhonetic.includes(normalizePhonetic(token))) score += 20;
-              }
-
-              if (score > bestScore) {
-                bestScore = score;
-                bestUser = u;
-              }
-            }
-
-            if (bestUser && bestScore >= 20) {
-              matched = bestUser;
-            }
-          }
-
           if (matched) {
             user = await this.prisma.user.findUnique({ where: { id: matched.id } });
-
-            // Auto-assign businessSlug if it was null to speed up all future visits
+            // Safely set businessSlug if it was null
             if (user && !user.businessSlug && slugifiedRaw && slugifiedRaw.length <= 50) {
               try {
                 await this.prisma.user.update({
@@ -329,41 +213,20 @@ export class AppController {
                   data: { businessSlug: slugifiedRaw },
                 });
                 user.businessSlug = slugifiedRaw;
-              } catch (err) {
-                try {
-                  await this.prisma.$executeRawUnsafe(
-                    'UPDATE "User" SET "businessSlug" = $1 WHERE "id" = $2 AND "businessSlug" IS NULL',
-                    slugifiedRaw,
-                    user.id,
-                  );
-                  user.businessSlug = slugifiedRaw;
-                } catch (e2) {}
-              }
+              } catch (err) {}
             }
           }
         } catch (e) {
-          console.error('Error in smart slug match:', e);
+          console.error('Error in slug resolution:', e);
         }
       }
 
-      // If user is a worker, resolve to the business owner
+      // If user is a worker, resolve to parent owner
       if (user && user.parentId) {
         const parentUser = await this.prisma.user.findUnique({
           where: { id: user.parentId },
         });
         if (parentUser) user = parentUser;
-      }
-
-      // Final fallback: only resolve to JWT token if generic store was requested
-      if (!user && tokenUserId && (!raw || lowerRaw === 'mi-tienda' || lowerRaw === 'catalogo')) {
-        try {
-          const loggedUser = await this.prisma.user.findUnique({ where: { id: tokenUserId } });
-          if (loggedUser) {
-            user = loggedUser.parentId
-              ? (await this.prisma.user.findUnique({ where: { id: loggedUser.parentId } })) || loggedUser
-              : loggedUser;
-          }
-        } catch (e) {}
       }
 
       if (user) {
@@ -377,7 +240,6 @@ export class AppController {
     }
   }
 
-  // Ensures catalogConfig and businessSlug are always loaded even if Prisma client lacks the fields
   private async enrichUserCatalogData(user: any) {
     if (!user) return;
     if (!user.catalogConfig || !user.businessSlug) {

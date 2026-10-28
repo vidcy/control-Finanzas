@@ -118,9 +118,11 @@ export default function VeazEstilezaPage() {
         if (autoSlug && autoSlug !== "mi-tienda") {
           return autoSlug;
         }
+        if (u.businessSlug) return u.businessSlug;
+        if (u.id) return u.id;
       }
     } catch {}
-    return raw || "veaz-estileza";
+    return raw || (isDirectVeazRoute ? "veaz-estileza" : "");
   }, [isDirectVeazRoute, params.identifier]);
 
   // Store metadata
@@ -194,7 +196,7 @@ export default function VeazEstilezaPage() {
     if (targetIdentifier && targetIdentifier !== "catalogo" && targetIdentifier !== "mi-tienda") {
       return targetIdentifier
         .split("-")
-        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
         .join(" ");
     }
     return "Catálogo Digital Oficial";
@@ -384,6 +386,22 @@ export default function VeazEstilezaPage() {
         },
       ];
     }
+    // Non-official stores should have a clean branded default slide if no custom banners are defined
+    if (!isOfficialVeazStore) {
+      return [
+        {
+          id: "slide-merchant-default",
+          title: storeDisplayName,
+          highlight: rubroPreset.label || "CATÁLOGO DIGITAL OFICIAL",
+          subtitle: "Productos originales garantizados y atención directa por WhatsApp.",
+          category: "Catálogo",
+          badge: "TIENDA VERIFICADA",
+          image: "https://images.unsplash.com/photo-1441986300917-64674bd600d8?q=80&w=1800&auto=format&fit=crop",
+          modelLook: storeDisplayName,
+          ctaText: "Ver Productos",
+        },
+      ];
+    }
     return undefined;
   }, [storeInfo, isOfficialVeazStore, rubroPreset, storeDisplayName]);
 
@@ -406,14 +424,35 @@ export default function VeazEstilezaPage() {
 
   // Dynamic WhatsApp Phone
   const storeWhatsAppPhone = useMemo(() => {
-    const raw =
-      storeInfo?.catalogConfig?.whatsappPhone ||
-      (storeInfo as any)?.businessPhone ||
-      (isOfficialVeazStore ? "51929962458" : "");
-    const clean = raw ? raw.replace(/\D/g, "") : "";
+    let raw = (storeInfo as any)?.businessPhone || storeInfo?.catalogConfig?.whatsappPhone;
+    if (!raw) {
+      try {
+        const stored = localStorage.getItem("user");
+        if (stored) {
+          const u = JSON.parse(stored);
+          const slug = getStoreCatalogSlug(u);
+          if (slug === targetIdentifier || u.id === targetIdentifier || !targetIdentifier) {
+            raw = u.businessPhone || u.catalogConfig?.whatsappPhone || u.phone;
+          }
+        }
+      } catch {}
+    }
+    if (!raw && isOfficialVeazStore) {
+      raw = "51929962458";
+    }
+    const clean = raw ? String(raw).replace(/\D/g, "") : "";
     if (!clean) return "";
-    return clean.startsWith("51") ? clean : `51${clean}`;
-  }, [storeInfo, isOfficialVeazStore]);
+    if (clean.length === 9 && clean.startsWith("9")) {
+      return `51${clean}`;
+    }
+    if (clean.length === 11 && clean.startsWith("519")) {
+      return clean;
+    }
+    if (clean.startsWith("51")) {
+      return clean;
+    }
+    return `51${clean}`;
+  }, [storeInfo, isOfficialVeazStore, targetIdentifier]);
 
   // Detect whether the store rubro is shoes or general merchandise/appliances
   const isShoeRubro = useMemo(() => {

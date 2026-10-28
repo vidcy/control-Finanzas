@@ -390,6 +390,16 @@ export class UsersService {
         hasElectronicBilling: true,
         nubefactUrl: true,
         nubefactToken: true,
+        businessAddress: true,
+        businessPhone: true,
+        businessEmail: true,
+        businessDepartment: true,
+        businessProvince: true,
+        businessDistrict: true,
+        billingSerieInvoice: true,
+        billingSerieBoleta: true,
+        taxRegime: true,
+        igvRate: true,
       },
     });
   }
