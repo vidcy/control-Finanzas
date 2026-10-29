@@ -30,6 +30,8 @@ export default function RegisterPage() {
   const toggleProfile = (profile: WorkspaceType) => {
     setSelectedProfiles((prev) =>
       prev.includes(profile)
+
+
         ? prev.filter((p) => p !== profile)
         : [...prev, profile],
     );
@@ -294,8 +296,8 @@ export default function RegisterPage() {
                   <div
                     onClick={() => toggleProfile("PERSONAL")}
                     className={`cursor-pointer p-6 rounded-2xl border-2 transition-all duration-300 relative overflow-hidden ${selectedProfiles.includes("PERSONAL")
-                        ? "border-blue-500 bg-blue-50 shadow-md shadow-blue-500/10"
-                        : "border-gray-200 bg-white hover:border-blue-200 hover:bg-slate-50"
+                      ? "border-blue-500 bg-blue-50 shadow-md shadow-blue-500/10"
+                      : "border-gray-200 bg-white hover:border-blue-200 hover:bg-slate-50"
                       }`}
                   >
                     {selectedProfiles.includes("PERSONAL") && (
@@ -305,8 +307,8 @@ export default function RegisterPage() {
                     )}
                     <div
                       className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 transition-colors ${selectedProfiles.includes("PERSONAL")
-                          ? "bg-blue-600 text-white"
-                          : "bg-blue-100 text-blue-600"
+                        ? "bg-blue-600 text-white"
+                        : "bg-blue-100 text-blue-600"
                         }`}
                     >
                       <User className="w-6 h-6" />
@@ -324,8 +326,8 @@ export default function RegisterPage() {
                   <div
                     onClick={() => toggleProfile("BUSINESS")}
                     className={`cursor-pointer p-6 rounded-2xl border-2 transition-all duration-300 relative overflow-hidden ${selectedProfiles.includes("BUSINESS")
-                        ? "border-purple-500 bg-purple-50 shadow-md shadow-purple-500/10"
-                        : "border-gray-200 bg-white hover:border-purple-200 hover:bg-slate-50"
+                      ? "border-purple-500 bg-purple-50 shadow-md shadow-purple-500/10"
+                      : "border-gray-200 bg-white hover:border-purple-200 hover:bg-slate-50"
                       }`}
                   >
                     {selectedProfiles.includes("BUSINESS") && (
@@ -335,8 +337,8 @@ export default function RegisterPage() {
                     )}
                     <div
                       className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 transition-colors ${selectedProfiles.includes("BUSINESS")
-                          ? "bg-purple-600 text-white"
-                          : "bg-purple-100 text-purple-600"
+                        ? "bg-purple-600 text-white"
+                        : "bg-purple-100 text-purple-600"
                         }`}
                     >
                       <Briefcase className="w-6 h-6" />

@@ -9,44 +9,124 @@ export interface ColorInfo {
 }
 
 export const SHOE_COLOR_MAP: Record<string, { hex: string; border?: boolean }> = {
-  vino: { hex: "#722F37" },
-  guinda: { hex: "#5B0E2D" },
-  borgoña: { hex: "#800020" },
-  burgundy: { hex: "#800020" },
-  marsala: { hex: "#955251" },
+  // Metálicos, Inox & Electrodomésticos
+  inox: { hex: "#8E9CA3" },
+  "acero inoxidable": { hex: "#8E9CA3" },
+  "acero inox": { hex: "#8E9CA3" },
+  acero: { hex: "#9EABB3" },
+  steel: { hex: "#9EABB3" },
+  "stainless steel": { hex: "#8E9CA3" },
+  titanio: { hex: "#706E6B" },
+  titanium: { hex: "#706E6B" },
+  "gris titanio": { hex: "#706E6B" },
+  grafito: { hex: "#41424C" },
+  graphite: { hex: "#41424C" },
+  "gris grafito": { hex: "#41424C" },
+  cromo: { hex: "#D8D8D8", border: true },
+  cromado: { hex: "#D8D8D8", border: true },
+  chrome: { hex: "#D8D8D8", border: true },
+  aluminio: { hex: "#C0C0C0", border: true },
+  aluminum: { hex: "#C0C0C0", border: true },
+  carbón: { hex: "#333333" },
+  carbon: { hex: "#333333" },
+  charcoal: { hex: "#333333" },
+  plata: { hex: "#C0C0C0", border: true },
+  silver: { hex: "#C0C0C0", border: true },
+  plateado: { hex: "#C0C0C0", border: true },
+  plateada: { hex: "#C0C0C0", border: true },
+  bronce: { hex: "#CD7F32" },
+  cobre: { hex: "#B87333" },
+  cobrizo: { hex: "#B87333" },
+  dorado: { hex: "#D4AF37" },
+  dorada: { hex: "#D4AF37" },
+  oro: { hex: "#D4AF37" },
+  gold: { hex: "#D4AF37" },
+  "oro rosa": { hex: "#B76E79" },
+  "rose gold": { hex: "#B76E79" },
+  champagne: { hex: "#F7E7CE" },
+
+  // Neutros, Blancos y Negros
   negro: { hex: "#1A1A1A" },
+  negra: { hex: "#1A1A1A" },
   black: { hex: "#1A1A1A" },
   noir: { hex: "#1A1A1A" },
   azabache: { hex: "#111111" },
+  "negro mate": { hex: "#1A1A1A" },
+  "matte black": { hex: "#1A1A1A" },
+  blanco: { hex: "#FFFFFF", border: true },
+  blanca: { hex: "#FFFFFF", border: true },
+  white: { hex: "#FFFFFF", border: true },
+  "blanco mate": { hex: "#FFFFFF", border: true },
+  "blanco perla": { hex: "#F8F9FA", border: true },
+  marfil: { hex: "#FFFFF0", border: true },
+  ivory: { hex: "#FFFFF0", border: true },
+  perla: { hex: "#F5F2EB", border: true },
+  hueso: { hex: "#F7F4EB", border: true },
+  crema: { hex: "#FFFDD0", border: true },
+  cream: { hex: "#FFFDD0", border: true },
+  beige: { hex: "#E8D8C8", border: true },
+  arena: { hex: "#D8C5A8" },
+  nude: { hex: "#E3BC9A" },
+  almendra: { hex: "#EFDECD", border: true },
+  almond: { hex: "#EFDECD", border: true },
+
+  // Grises
+  gris: { hex: "#808080" },
+  gray: { hex: "#808080" },
+  grey: { hex: "#808080" },
+  "gris oscuro": { hex: "#374151" },
+  "gris claro": { hex: "#D1D5DB", border: true },
+  "dark grey": { hex: "#374151" },
+  "light grey": { hex: "#D1D5DB", border: true },
+  plomo: { hex: "#5A5A5A" },
+
+  // Rojos, Vinos & Rosas
   rojo: { hex: "#C41E3A" },
+  roja: { hex: "#C41E3A" },
   red: { hex: "#C41E3A" },
   carmesí: { hex: "#A51C30" },
   carmesi: { hex: "#A51C30" },
   carmín: { hex: "#960018" },
   carmin: { hex: "#960018" },
   rosso: { hex: "#C41E3A" },
-  nude: { hex: "#E3BC9A" },
-  beige: { hex: "#E8D8C8" },
-  arena: { hex: "#D8C5A8" },
-  blanco: { hex: "#FFFFFF", border: true },
-  white: { hex: "#FFFFFF", border: true },
-  marfil: { hex: "#FFFFF0", border: true },
-  ivory: { hex: "#FFFFF0", border: true },
-  perla: { hex: "#F5F2EB", border: true },
-  dorado: { hex: "#D4AF37" },
-  oro: { hex: "#D4AF37" },
-  gold: { hex: "#D4AF37" },
-  champagne: { hex: "#F7E7CE" },
-  plata: { hex: "#C0C0C0" },
-  silver: { hex: "#C0C0C0" },
-  plateado: { hex: "#C0C0C0" },
+  vino: { hex: "#722F37" },
+  "vino tinto": { hex: "#581845" },
+  guinda: { hex: "#5B0E2D" },
+  borgoña: { hex: "#800020" },
+  burgundy: { hex: "#800020" },
+  marsala: { hex: "#955251" },
+  coral: { hex: "#FF6F61" },
+  terracota: { hex: "#CC4E33" },
   rosa: { hex: "#E8A598" },
   "palo rosa": { hex: "#D9A0A0" },
   rose: { hex: "#E8A598" },
   rosado: { hex: "#F4C2C2" },
+  rosada: { hex: "#F4C2C2" },
   pink: { hex: "#FFC0CB" },
   fucsia: { hex: "#D9027D" },
   magenta: { hex: "#C2185B" },
+
+  // Azules
+  azul: { hex: "#1B365D" },
+  blue: { hex: "#1B365D" },
+  "azul marino": { hex: "#001F3F" },
+  "azul noche": { hex: "#0F172A" },
+  "azul rey": { hex: "#1D4ED8" },
+  marino: { hex: "#001F3F" },
+  cobalto: { hex: "#0047AB" },
+  navy: { hex: "#001F3F" },
+  celeste: { hex: "#87CEEB" },
+  turquesa: { hex: "#40E0D0" },
+
+  // Verdes
+  verde: { hex: "#2E5A44" },
+  green: { hex: "#2E5A44" },
+  "verde militar": { hex: "#4D5D53" },
+  oliva: { hex: "#556B2F" },
+  esmeralda: { hex: "#50C878" },
+  menta: { hex: "#6EE7B7", border: true },
+
+  // Marrones y Maderas
   camel: { hex: "#C19A6B" },
   marrón: { hex: "#6E473B" },
   marron: { hex: "#6E473B" },
@@ -56,39 +136,71 @@ export const SHOE_COLOR_MAP: Record<string, { hex: string; border?: boolean }> =
   chocolate: { hex: "#3D2314" },
   tan: { hex: "#D2B48C" },
   cuero: { hex: "#8B5A2B" },
-  azul: { hex: "#1B365D" },
-  "azul marino": { hex: "#001F3F" },
-  marino: { hex: "#001F3F" },
-  cobalto: { hex: "#0047AB" },
-  navy: { hex: "#001F3F" },
-  celeste: { hex: "#87CEEB" },
-  verde: { hex: "#2E5A44" },
-  oliva: { hex: "#556B2F" },
-  esmeralda: { hex: "#50C878" },
+
+  // Amarillos y Naranjas
+  amarillo: { hex: "#FFD700" },
+  amarilla: { hex: "#FFD700" },
+  mostaza: { hex: "#E1AD01" },
+  naranja: { hex: "#EA580C" },
+  ámbar: { hex: "#D97706" },
+  ambar: { hex: "#D97706" },
+
+  // Morados
   morado: { hex: "#6A1B9A" },
+  morada: { hex: "#6A1B9A" },
   lila: { hex: "#C8A2C8" },
   violeta: { hex: "#8F00FF" },
-  amarillo: { hex: "#FFD700" },
-  mostaza: { hex: "#E1AD01" },
-  gris: { hex: "#808080" },
-  plomo: { hex: "#5A5A5A" },
-  bronce: { hex: "#CD7F32" },
-  cobre: { hex: "#B87333" },
-  terracota: { hex: "#CC4E33" },
-  coral: { hex: "#FF6F61" },
-  turquesa: { hex: "#40E0D0" },
+  lavanda: { hex: "#C4B5FD" },
+
+  // Varios
+  transparente: { hex: "#E2E8F0", border: true },
 };
 
 /**
- * Extracts shoe color from the end of the product name.
- * E.g. "Charol Vino" -> "Vino" (Hex: #722F37)
- * E.g. "EBOOK SILDE ROJO" -> "Rojo" (Hex: #C41E3A)
+ * Extrae y valida con máxima precisión el Color o Tono de un producto.
+ * GARANTÍA PRO: Jamás toma modelos de equipos (e.g. 'RT38', 'Inverter', 'Smart', 'POGM', '4K') como si fueran colores.
  */
 export function extractShoeColor(name?: string, fallbackColor?: string): ColorInfo {
-  if (!name && !fallbackColor) return { name: "Elegance", hex: "#8A7D71" };
+  // 1. Validar color explícito en inventario (product.color) si existe
+  if (fallbackColor && fallbackColor.trim()) {
+    const rawFb = fallbackColor.trim();
+    // Descartar si parece código de modelo, serial o texto numérico
+    const isModelCode = /[0-9]/.test(rawFb) || /^[A-Z0-9_\-]{4,}$/.test(rawFb);
+    const isGenericWord = [
+      "elegance", "color", "todos", "todas", "unidad", "par", "serie",
+      "default", "ninguno", "modelo", "general", "estándar", "standard"
+    ].includes(rawFb.toLowerCase());
 
-  // 1. Clean out sizes from name
-  const clean = (name || "")
+    if (!isModelCode && !isGenericWord && rawFb.length <= 30) {
+      const fbLower = rawFb.toLowerCase();
+      // Búsqueda directa en diccionario de colores
+      if (SHOE_COLOR_MAP[fbLower]) {
+        const entry = SHOE_COLOR_MAP[fbLower];
+        const capitalized = rawFb.charAt(0).toUpperCase() + rawFb.slice(1);
+        return { name: capitalized, hex: entry.hex, border: !!entry.border };
+      }
+      // Coincidencia de frases compuestas en el diccionario
+      for (const [colKey, colVal] of Object.entries(SHOE_COLOR_MAP)) {
+        if (fbLower === colKey || fbLower.includes(colKey)) {
+          const capitalized = rawFb.charAt(0).toUpperCase() + rawFb.slice(1);
+          return { name: capitalized, hex: colVal.hex, border: !!colVal.border };
+        }
+      }
+      // Si son palabras puramente alfabéticas válidas ingresadas por el usuario (e.g. "Azul Zafiro", "Gris Espacial")
+      if (/^[a-záéíóúñ\s]{3,25}$/i.test(rawFb)) {
+        const capitalized = rawFb
+          .split(/\s+/)
+          .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+          .join(" ");
+        return { name: capitalized, hex: "#8E9CA3", border: false };
+      }
+    }
+  }
+
+  if (!name || !name.trim()) return { name: "", hex: "" };
+
+  // 2. Limpieza de tallas, series y dimensiones comunes en el nombre
+  const clean = name
     .replace(/\s*-\s*talla\s*[0-9]{2}(?:\.[0-9])?/gi, "")
     .replace(/(?:-\s*)?(?:talla|t\.|t-|t:)\s*[0-9]{2}(?:\.[0-9])?/gi, "")
     .replace(/[-_/\s](3[0-9]|4[0-5])$/gi, "")
@@ -96,52 +208,56 @@ export function extractShoeColor(name?: string, fallbackColor?: string): ColorIn
 
   const lower = clean.toLowerCase();
 
-  // 2. Check compound colors (2 words)
-  for (const compound of ["palo rosa", "azul marino", "blanco marfil", "oro rosa"]) {
-    if (lower.endsWith(compound) || lower.includes(compound)) {
-      const entry = SHOE_COLOR_MAP[compound] || { hex: "#D9A0A0" };
+  // 3. Revisar colores compuestos (2 palabras) de mayor a menor longitud
+  const compoundColors = [
+    "acero inoxidable",
+    "acero inox",
+    "stainless steel",
+    "azul marino",
+    "azul noche",
+    "azul rey",
+    "palo rosa",
+    "blanco marfil",
+    "blanco perla",
+    "blanco mate",
+    "oro rosa",
+    "rose gold",
+    "negro mate",
+    "matte black",
+    "gris oscuro",
+    "gris claro",
+    "dark grey",
+    "light grey",
+    "gris titanio",
+    "gris grafito",
+    "verde militar",
+  ];
+
+  for (const compound of compoundColors) {
+    const regex = new RegExp(`(?:^|[\\s,/-])${compound}(?:$|[\\s,/-])`, "i");
+    if (regex.test(lower)) {
+      const entry = SHOE_COLOR_MAP[compound] || { hex: "#8E9CA3" };
       const capitalized = compound.split(" ").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
       return { name: capitalized, hex: entry.hex, border: !!entry.border };
     }
   }
 
-  // 3. Check the LAST word of the clean name (al final del nombre está el color)
-  const words = clean.split(/\s+/);
-  const lastWord = (words[words.length - 1] || "").toLowerCase().replace(/[^a-záéíóúñ]/gi, "");
-  if (lastWord && SHOE_COLOR_MAP[lastWord]) {
-    const entry = SHOE_COLOR_MAP[lastWord];
-    const capitalized = lastWord.charAt(0).toUpperCase() + lastWord.slice(1);
-    return { name: capitalized, hex: entry.hex, border: !!entry.border };
-  }
-
-  // 4. Check if any word in the name matches a known color dictionary
+  // 4. Revisar palabras individuales del nombre contra el diccionario SHOE_COLOR_MAP
+  const words = clean.split(/[\s,/\-_]+/);
   for (let i = words.length - 1; i >= 0; i--) {
-    const w = words[i].toLowerCase().replace(/[^a-záéíóúñ]/gi, "");
-    if (w && SHOE_COLOR_MAP[w]) {
-      const entry = SHOE_COLOR_MAP[w];
-      const capitalized = w.charAt(0).toUpperCase() + w.slice(1);
+    const rawWord = words[i].toLowerCase().replace(/[^a-záéíóúñ]/gi, "");
+    if (!rawWord || rawWord.length < 3) continue;
+
+    if (SHOE_COLOR_MAP[rawWord]) {
+      const entry = SHOE_COLOR_MAP[rawWord];
+      const capitalized = rawWord.charAt(0).toUpperCase() + rawWord.slice(1);
       return { name: capitalized, hex: entry.hex, border: !!entry.border };
     }
   }
 
-  // 5. Fallback to valid word at the end if alphabetic and not generic
-  if (lastWord && lastWord.length >= 3 && !["zapato", "taco", "sandalia", "calzado", "stiletto"].includes(lastWord)) {
-    return {
-      name: lastWord.charAt(0).toUpperCase() + lastWord.slice(1),
-      hex: "#8A7D71",
-      border: false,
-    };
-  }
-
-  // 6. Fallback to product.color if provided
-  if (fallbackColor && fallbackColor.trim()) {
-    const fb = fallbackColor.trim();
-    const fbLower = fb.toLowerCase();
-    const entry = SHOE_COLOR_MAP[fbLower] || { hex: "#8A7D71" };
-    return { name: fb, hex: entry.hex, border: !!entry.border };
-  }
-
-  return { name: "Elegance", hex: "#8A7D71" };
+  // 5. NUNCA inventar un color a partir del modelo del equipo o de la última palabra.
+  // Si el producto no tiene color definido o en su nombre, se devuelve vacío.
+  return { name: "", hex: "" };
 }
 
 /**
@@ -196,10 +312,12 @@ export interface GroupedShoeModel {
   key: string;
   sku: string;
   name: string;
+  cleanName?: string;
   brandName: string;
   brand?: string;
   familyName: string;
   color: string;
+  colorName?: string;
   colorHex: string;
   colorBorder?: boolean;
   description: string;
@@ -379,9 +497,11 @@ export function groupProductsBySku(
         key: groupKey,
         sku: baseSku || rawSku || `PR-${String(prod.customCode || 1).padStart(4, "0")}`,
         name: cleanName,
+        cleanName,
         brandName,
         familyName,
         color: colorInfo.name,
+        colorName: colorInfo.name,
         colorHex: colorInfo.hex,
         colorBorder: colorInfo.border,
         description: cleanDescriptionForDisplay(prod.description) || fallbackDesc,

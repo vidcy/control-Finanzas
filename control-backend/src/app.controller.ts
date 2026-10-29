@@ -47,7 +47,24 @@ export class AppController {
       } catch (e) {}
     }
 
-    // If identifier is completely empty and no logged-in user, return null
+    // Default to official showcase account (beaz.estileza@gmail.com) if empty, catalogo, or demo
+    if (!raw || lowerRaw === 'catalogo' || lowerRaw === 'demo' || lowerRaw === 'veaz' || lowerRaw === 'veaz-estileza') {
+      try {
+        let showcaseUser = await this.prisma.user.findFirst({
+          where: {
+            OR: [
+              { email: { equals: 'beaz.estileza@gmail.com', mode: 'insensitive' } },
+              { businessSlug: 'veaz-estileza' },
+            ],
+          },
+        });
+        if (showcaseUser) {
+          await this.enrichUserCatalogData(showcaseUser);
+          return showcaseUser;
+        }
+      } catch (e) {}
+    }
+
     if (!raw) return null;
 
     try {

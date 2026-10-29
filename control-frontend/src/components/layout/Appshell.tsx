@@ -972,30 +972,29 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
 
 
 
-          {/* ACCESO RÁPIDO A MI TIENDA ONLINE / CATÁLOGO VIRTUAL */}
-          {(activeWorkspace === "BUSINESS" || user?.profiles?.includes("BUSINESS")) && (
-            <div className="px-2 pt-2">
+          {/* ACCESO RÁPIDO A MI CATÁLOGO (SOLO SI ESTÁ ACTIVADO EN EL PERFIL DE NEGOCIO) */}
+          {(activeWorkspace === "BUSINESS" || user?.profiles?.includes("BUSINESS")) &&
+            (user as any)?.catalogConfig?.isEnabled !== false && (
+            <div className="px-2 pt-2 animate-fadeIn">
               <button
                 type="button"
                 onClick={() => window.open(getStoreCatalogUrl(user), "_blank")}
-                className="w-full p-2.5 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border border-amber-500/40 hover:border-amber-400 text-white flex items-center justify-between group hover:shadow-lg transition-all cursor-pointer shadow-md"
-                title="Abrir mi vitrina pública en nueva pestaña"
+                className="w-full p-2.5 rounded-2xl bg-gradient-to-r from-indigo-50/90 via-purple-50/70 to-blue-50/90 border border-indigo-200/80 hover:border-indigo-400 text-slate-800 flex items-center gap-2 group hover:shadow-md transition-all cursor-pointer shadow-xs overflow-hidden"
+                title={`Ver catálogo de ${user?.businessName || "mi negocio"}`}
               >
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-300">
-                    <Store className="w-4 h-4" />
-                  </div>
-                  <div className="text-left">
-                    <span className="text-[9px] font-bold text-amber-300 uppercase tracking-wider block leading-none">
-                      Vitrina Digital
-                    </span>
-                    <span className="text-xs font-black tracking-wide text-white group-hover:text-amber-200 transition-colors truncate max-w-[120px] block">
-                      {user?.businessName || "Mi Tienda Web"}
-                    </span>
-                  </div>
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center text-white shrink-0 shadow-xs">
+                  <Store className="w-4 h-4" />
                 </div>
-                <div className="flex items-center gap-1 text-[10px] bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-2 py-1 rounded-xl uppercase tracking-wider transition-all">
-                  <span>Ver Web</span>
+                <div className="min-w-0 flex-1 text-left overflow-hidden">
+                  <span className="text-[9px] font-black text-indigo-600 uppercase tracking-wider block leading-tight truncate">
+                    Catálogo Web
+                  </span>
+                  <span className="text-xs font-extrabold text-slate-800 group-hover:text-indigo-600 transition-colors block truncate" title={user?.businessName || "Ver mi Catálogo"}>
+                    {user?.businessName || "Ver mi Catálogo"}
+                  </span>
+                </div>
+                <div className="shrink-0 flex items-center gap-1 text-[10px] bg-indigo-600 group-hover:bg-indigo-700 text-white font-extrabold px-2.5 py-1 rounded-xl uppercase tracking-wider transition-all shadow-xs">
+                  <span>Ver</span>
                   <ExternalLink className="w-3 h-3" />
                 </div>
               </button>
@@ -1786,6 +1785,50 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                     <Settings className="w-3 h-3" />
                     Gestionar Banner
                   </button>
+                </div>
+              </div>
+
+              {/* CONFIGURACIÓN Y PERSONALIZACIÓN DEL CATÁLOGO DIGITAL */}
+              <div className="md:col-span-2 p-4 sm:p-5 bg-gradient-to-r from-indigo-50/90 via-purple-50/80 to-pink-50/90 border border-indigo-200/80 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xs">
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 to-purple-600 text-white flex items-center justify-center shadow-md shadow-indigo-500/20 shrink-0">
+                    <Store className="w-6 h-6" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="text-sm font-black text-slate-900">
+                        Catálogo Web Digital
+                      </h4>
+                      <span className="text-[10px] bg-emerald-100 text-emerald-800 font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                        En Línea
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 font-medium mt-0.5 leading-relaxed">
+                      Personaliza el logo, banners hero, anuncios, vitrina y enlace de tu catálogo online sincronizado con tu inventario.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsProfileModalOpen(false);
+                      setIsCatalogModalOpen(true);
+                    }}
+                    className="flex-1 sm:flex-none px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white text-xs font-black rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span>Editar Catálogo</span>
+                  </button>
+                  <a
+                    href={getStoreCatalogUrl(user)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="p-2.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl transition-all shadow-xs"
+                    title="Abrir Catálogo en nueva pestaña"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
                 </div>
               </div>
             </div>

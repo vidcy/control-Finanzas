@@ -25,6 +25,13 @@ import {
   Building2,
   User,
   Trash2,
+  Cpu,
+  Globe,
+  Key,
+  Layers,
+  Zap,
+  Check,
+  HelpCircle,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { isAmazoniaDepartment } from "../utils/fiscalUtils";
@@ -458,7 +465,11 @@ export default function BusinessBillingPage() {
                   <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
                 </span>
                 <span className="text-xs font-mono font-semibold uppercase tracking-wider text-emerald-400">
-                  {stats?.credentialsConfigured ? "CONECTADO CON SUNAT API (NUBEFAC)" : "MODO EMISIÓN BETA / SANDBOX ACTIVO"}
+                  {stats?.credentialsConfigured
+                    ? (user?.nubefactUrl?.toLowerCase().includes("ccofact") || configUrl?.toLowerCase().includes("ccofact")
+                        ? "CONECTADO CON MOTOR SOBERANO CCOFACT PRO (UBL 2.1 SOBERANO)"
+                        : "CONECTADO CON SUNAT API (NUBEFAC PSE)")
+                    : "MODO EMISIÓN BETA / SANDBOX ACTIVO"}
                 </span>
               </div>
               <h2 className="text-xl font-bold tracking-tight text-white">
@@ -1210,88 +1221,271 @@ export default function BusinessBillingPage() {
           )}
         </Modal>
 
-        {/* MODAL 4: CONFIGURACIÓN DE CREDENCIALES SUNAT */}
+        {/* MODAL 4: CONFIGURACIÓN DE CREDENCIALES SUNAT & MOTOR FISCAL */}
         <Modal
           isOpen={isConfigModalOpen}
           onClose={() => setIsConfigModalOpen(false)}
-          title="Configuración de Credenciales SUNAT / Facturador"
-          maxWidth="max-w-md"
+          title="Configuración de Motor Fiscal SUNAT (CCOFACT PRO / NubeFacT)"
+          maxWidth="max-w-2xl"
         >
-          <div className="p-6 space-y-4">
-            <div className="flex items-center justify-between p-3 bg-blue-50 rounded-xl border border-blue-100">
+          <div className="p-6 space-y-5">
+            {/* Switch Habilitar Facturación */}
+            <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl border border-blue-200/80 shadow-2xs">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold shadow-md shadow-blue-500/20">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-sm font-black text-slate-900 block">Facturación Electrónica SUNAT Activa</span>
+                  <p className="text-xs text-slate-600">Habilita la transmisión automática de comprobantes con validez fiscal UBL 2.1</p>
+                </div>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={configHasBilling}
+                  onChange={(e) => setConfigHasBilling(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+
+            {/* Selector Rápido de Motor / Proveedor */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs font-black uppercase text-slate-700 tracking-wider flex items-center gap-1.5">
+                  <Cpu className="w-4 h-4 text-indigo-600" />
+                  Seleccionar Motor / Proveedor de Facturación
+                </label>
+                <span className="text-[11px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-200">
+                  {configUrl.toLowerCase().includes("ccofact/emitir")
+                    ? "🚀 CCOFACT PRO Nativo"
+                    : configUrl.toLowerCase().includes("ccofact") || (configUrl.toLowerCase().includes("nubefact") && configUrl.includes("localhost"))
+                    ? "🔄 CCOFACT PRO Adaptador"
+                    : configUrl.toLowerCase().includes("nubefact.com")
+                    ? "☁️ NubeFacT Oficial"
+                    : "⚙️ Servidor Personalizado"}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {/* Opción 1: CCOFACT PRO Nativo */}
+                <button
+                  type="button"
+                  onClick={() => setConfigUrl("http://localhost:3000/api/v1/ccofact/emitir")}
+                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    configUrl.toLowerCase().includes("ccofact/emitir")
+                      ? "bg-indigo-50/80 border-indigo-500 shadow-sm ring-2 ring-indigo-500/20"
+                      : "bg-slate-50 hover:bg-white border-slate-200"
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                      <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                      CCOFACT PRO (Nativo)
+                    </span>
+                    <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                      Recomendado
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 line-clamp-2">
+                    Motor soberano UBL 2.1 directo SUNAT. Firma X.509, A4/Ticket 80mm y CDR sin cobro por factura.
+                  </p>
+                  <div className="mt-2 text-[10px] font-mono font-bold text-indigo-700 bg-indigo-100/60 px-2 py-0.5 rounded">
+                    :3000/api/v1/ccofact/emitir
+                  </div>
+                </button>
+
+                {/* Opción 2: CCOFACT PRO Nube */}
+                <button
+                  type="button"
+                  onClick={() => setConfigUrl("https://api.ccofact.com/api/v1/ccofact/emitir")}
+                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    configUrl === "https://api.ccofact.com/api/v1/ccofact/emitir"
+                      ? "bg-indigo-50/80 border-indigo-500 shadow-sm ring-2 ring-indigo-500/20"
+                      : "bg-slate-50 hover:bg-white border-slate-200"
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                      <Globe className="w-3.5 h-3.5 text-blue-500" />
+                      CCOFACT Cloud (Producción)
+                    </span>
+                    <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-blue-100 text-blue-800">
+                      Cloud SLA
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 line-clamp-2">
+                    Servidor en la nube de alta disponibilidad con colas transaccionales y reintentos automáticos.
+                  </p>
+                  <div className="mt-2 text-[10px] font-mono font-bold text-blue-700 bg-blue-100/60 px-2 py-0.5 rounded">
+                    api.ccofact.com/api/v1/ccofact/emitir
+                  </div>
+                </button>
+
+                {/* Opción 3: CCOFACT PRO Adaptador NubeFacT */}
+                <button
+                  type="button"
+                  onClick={() => setConfigUrl("http://localhost:3000/api/v1/nubefact")}
+                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    configUrl.toLowerCase().includes("nubefact") && (configUrl.includes("localhost") || configUrl.includes("3000"))
+                      ? "bg-indigo-50/80 border-indigo-500 shadow-sm ring-2 ring-indigo-500/20"
+                      : "bg-slate-50 hover:bg-white border-slate-200"
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-purple-500" />
+                      CCOFACT (Adaptador Legacy)
+                    </span>
+                    <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-purple-100 text-purple-800">
+                      Compatible
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 line-clamp-2">
+                    Acepta esquemas JSON estándar NubeFacT y los traduce internamente al motor UBL 2.1 propio.
+                  </p>
+                  <div className="mt-2 text-[10px] font-mono font-bold text-purple-700 bg-purple-100/60 px-2 py-0.5 rounded">
+                    :3000/api/v1/nubefact
+                  </div>
+                </button>
+
+                {/* Opción 4: NubeFacT PSE Oficial */}
+                <button
+                  type="button"
+                  onClick={() => setConfigUrl("https://api.nubefact.com/api/v1/")}
+                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    configUrl.toLowerCase().includes("nubefact.com")
+                      ? "bg-indigo-50/80 border-indigo-500 shadow-sm ring-2 ring-indigo-500/20"
+                      : "bg-slate-50 hover:bg-white border-slate-200"
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                      <Globe className="w-3.5 h-3.5 text-cyan-600" />
+                      NubeFacT PSE (Oficial)
+                    </span>
+                    <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-cyan-100 text-cyan-800">
+                      PSE Externo
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 line-clamp-2">
+                    Conexión con la nube oficial del proveedor NubeFacT mediante Bearer Token.
+                  </p>
+                  <div className="mt-2 text-[10px] font-mono font-bold text-cyan-700 bg-cyan-100/60 px-2 py-0.5 rounded truncate">
+                    api.nubefact.com/api/v1/...
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* Datos Tributarios Principales */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
-                <span className="text-sm font-bold text-blue-900">Facturación Electrónica Activa</span>
-                <p className="text-xs text-blue-700">Habilita la transmisión automática a SUNAT</p>
+                <label className="block text-xs font-black uppercase text-slate-600 mb-1">
+                  RUC Emisor Oficial (11 dígitos)
+                </label>
+                <div className="relative">
+                  <Building2 className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    maxLength={11}
+                    placeholder="20601234567"
+                    value={configRuc}
+                    onChange={(e) => setConfigRuc(e.target.value.replace(/\D/g, ""))}
+                    className="w-full pl-9 pr-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl font-mono focus:bg-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-black uppercase text-slate-600 mb-1">
+                  Razón Social Registrada en SUNAT
+                </label>
+                <input
+                  type="text"
+                  placeholder="MI EMPRESA S.A.C."
+                  value={configName}
+                  onChange={(e) => setConfigName(e.target.value.toUpperCase())}
+                  className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+            </div>
+
+            {/* Endpoint URL */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-black uppercase text-slate-600">
+                  URL Endpoint API Fiscal
+                </label>
+                <div className="flex items-center gap-1 text-[10px]">
+                  <span className="text-slate-400">Atajos puerto local:</span>
+                  <button
+                    type="button"
+                    onClick={() => setConfigUrl("http://localhost:3000/api/v1/ccofact/emitir")}
+                    className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 font-mono text-slate-700"
+                  >
+                    :3000
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfigUrl("http://localhost:4001/api/v1/ccofact/emitir")}
+                    className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 font-mono text-slate-700"
+                  >
+                    :4001
+                  </button>
+                </div>
               </div>
               <input
-                type="checkbox"
-                checked={configHasBilling}
-                onChange={(e) => setConfigHasBilling(e.target.checked)}
-                className="h-5 w-5 text-blue-600 rounded"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold uppercase text-slate-600 mb-1">
-                RUC de la Empresa (11 dígitos)
-              </label>
-              <input
                 type="text"
-                maxLength={11}
-                placeholder="20601234567"
-                value={configRuc}
-                onChange={(e) => setConfigRuc(e.target.value)}
-                className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold uppercase text-slate-600 mb-1">
-                Razón Social de la Empresa
-              </label>
-              <input
-                type="text"
-                placeholder="MI EMPRESA S.A.C."
-                value={configName}
-                onChange={(e) => setConfigName(e.target.value)}
-                className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold uppercase text-slate-600 mb-1">
-                URL Endpoint API (NubeFacT / OSE / PSE)
-              </label>
-              <input
-                type="text"
-                placeholder="https://app.nubefact.com/api/v1/..."
+                placeholder="http://localhost:3000/api/v1/ccofact/emitir o https://api.ccofact.com/..."
                 value={configUrl}
                 onChange={(e) => setConfigUrl(e.target.value)}
-                className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs"
+                className="w-full px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-mono focus:bg-white focus:outline-none focus:border-indigo-500"
               />
             </div>
 
+            {/* Token Secreto */}
             <div>
-              <label className="block text-xs font-bold uppercase text-slate-600 mb-1">
-                Token Secreto de Autorización API
+              <label className="block text-xs font-black uppercase text-slate-600 mb-1">
+                Clave API / Token Secreto ({configUrl.toLowerCase().includes("ccofact") ? "x-api-key CCOFACT" : "Bearer Token NubeFacT"})
               </label>
-              <input
-                type="password"
-                placeholder="Ingresa tu token secreto"
-                value={configToken}
-                onChange={(e) => setConfigToken(e.target.value)}
-                className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs"
-              />
+              <div className="relative">
+                <Key className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="password"
+                  placeholder="Ingresa tu clave de autorización API"
+                  value={configToken}
+                  onChange={(e) => setConfigToken(e.target.value)}
+                  className="w-full pl-9 pr-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-mono focus:bg-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
               <span className="text-[10px] text-slate-400 mt-1 block">
-                Déjalo vacío si ya está configurado y no deseas cambiarlo.
+                * Las cabeceras se transmiten de forma segura como <code>x-api-key</code> y <code>Authorization: Bearer</code> simultáneamente para garantizar interoperabilidad completa con CCOFACT PRO y NubeFacT.
               </span>
             </div>
 
-            <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
+            {/* Info Card de Especificaciones */}
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5 text-xs text-slate-600">
+              <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                Compatibilidad Garantizada Nivel PRO:
+              </div>
+              <ul className="list-disc pl-5 space-y-0.5 text-[11px] text-slate-600">
+                <li>Series automáticas: <strong>F001</strong> (Factura) y <strong>B001</strong> (Boleta) para CCOFACT PRO.</li>
+                <li>Firma digital X.509 RSA-SHA256 UBL 2.1 y cálculo de código QR oficial SUNAT.</li>
+                <li>Generación instantánea de vistas impresas en <strong>Ticket POS 80mm</strong> y <strong>A4 Ejecutivo</strong>.</li>
+                <li>Bloqueo pesimista ACID PostgreSQL con protección contra doble facturación (Zero-Double-Billing).</li>
+              </ul>
+            </div>
+
+            {/* Footer Actions */}
+            <div className="flex justify-end gap-3 pt-3 border-t border-slate-200">
               <button
                 type="button"
                 onClick={() => setIsConfigModalOpen(false)}
-                className="px-4 py-2 text-sm font-semibold text-slate-600"
+                className="px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-800 cursor-pointer"
               >
                 Cancelar
               </button>
@@ -1299,9 +1493,9 @@ export default function BusinessBillingPage() {
                 type="button"
                 disabled={isSavingConfig}
                 onClick={handleSaveConfig}
-                className="px-5 py-2 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md disabled:opacity-50"
+                className="px-5 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md disabled:opacity-50 cursor-pointer flex items-center gap-2"
               >
-                {isSavingConfig ? "Guardando..." : "Guardar Cambios"}
+                {isSavingConfig ? "Guardando..." : "Guardar Configuración Fiscal"}
               </button>
             </div>
           </div>

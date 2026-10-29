@@ -173,11 +173,9 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
   async onModuleInit() {
     await this.$connect();
     try {
-      await this.$executeRawUnsafe(`
-        ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "businessSlug" TEXT;
-        ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "catalogConfig" JSONB;
-        CREATE UNIQUE INDEX IF NOT EXISTS "User_businessSlug_key" ON "User"("businessSlug");
-      `);
+      await this.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "businessSlug" TEXT`);
+      await this.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "catalogConfig" JSONB`);
+      await this.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "User_businessSlug_key" ON "User"("businessSlug")`);
     } catch (e: any) {
       console.warn('Prisma auto-migration warn:', e?.message || e);
     }

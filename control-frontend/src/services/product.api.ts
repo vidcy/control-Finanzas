@@ -71,6 +71,11 @@ export interface CatalogStoreInfo {
   businessLogo?: string | null;
   businessBanner?: string | null;
   businessSlug?: string | null;
+  businessPhone?: string | null;
+  businessAddress?: string | null;
+  businessDepartment?: string | null;
+  businessProvince?: string | null;
+  businessDistrict?: string | null;
   catalogConfig?: CatalogConfig | null;
   isOfficialStore: boolean;
   notFound?: boolean;

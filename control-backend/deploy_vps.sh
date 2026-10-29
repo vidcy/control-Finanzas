@@ -36,15 +36,3 @@ echo "🔄 [3/4] Reiniciando servicio en PM2..."
 pm2 restart all || pm2 reload all
 pm2 status
 
-# 5. Compilar Frontend (Vite + React)
-echo ""
-echo "🎨 [4/4] Compilando Frontend (control-frontend)..."
-cd "$REPO_ROOT/control-frontend"
-npm install --legacy-peer-deps
-npm run build
-
-echo ""
-echo "====================================================="
-echo "✅ ¡DESPLIEGUE FINALIZADO EXITOSAMENTE!"
-echo "🌐 Catálogos públicos y sistema THINK 100% actualizados."
-echo "====================================================="

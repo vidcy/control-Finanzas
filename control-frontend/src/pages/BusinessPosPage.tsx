@@ -4482,8 +4482,10 @@ export default function BusinessPosPage() {
               {posLightboxProduct.isSeries && posLightboxProduct.summary && (
                 <div className="border-t border-gray-200/60 pt-3">
                   <div className="text-xs font-black text-gray-700 mb-2 flex items-center justify-between">
-                    <span>Tallas en Almacén (Clic para agregar par al carrito):</span>
-                    <span className="text-amber-700 text-[10px]">
+                    <span>
+                      Tallas en Almacén ({posLightboxProduct.summary.sizes.length} tallas • {posLightboxProduct.unitsPerSeries} pares/serie):
+                    </span>
+                    <span className="text-amber-700 text-[10px] font-black">
                       {posLightboxProduct.summary.completeSeries} {posLightboxProduct.summary.completeSeries === 1 ? "serie" : "series"} disponibles
                     </span>
                   </div>

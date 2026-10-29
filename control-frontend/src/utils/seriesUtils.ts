@@ -51,6 +51,19 @@ export interface SeriesPreset {
 
 export const STANDARD_SERIES_PRESETS: SeriesPreset[] = [
   {
+    id: "preset_6_35_39_rep37",
+    name: "Curva Estándar 35 - 39 con Repetición en 37 (6 pares)",
+    description: "2 pares en Talla 37 (más comercial), 1 par en 35, 36, 38 y 39",
+    units: 6,
+    curve: [
+      { size: "35", ratio: 1 },
+      { size: "36", ratio: 1 },
+      { size: "37", ratio: 2 },
+      { size: "38", ratio: 1 },
+      { size: "39", ratio: 1 },
+    ],
+  },
+  {
     id: "preset_6_34_39",
     name: "Curva 34 - 39 (6 pares)",
     description: "1 par por cada talla del 34 al 39",
@@ -975,27 +988,6 @@ export function groupProductsBySeries(products: any[], activeBranchId?: string):
       }
     }
 
-    // 2. Build the exact curve with accurate ratios per size
-    if (bestMeta?.curve && bestMeta.curve.length > 0) {
-      group.curve = bestMeta.curve.map((c: any) => ({
-        size: String(c.size).trim(),
-        ratio: Number(c.ratio) > 0 ? Number(c.ratio) : 1,
-      }));
-    } else {
-      // Reconstruct curve from variant sizes
-      const sizeMap = new Map<string, number>();
-      group.variants.forEach((v) => {
-        const s = extractSizeFromProduct(v);
-        if (s) {
-          sizeMap.set(s, (sizeMap.get(s) || 0) + 1);
-        }
-      });
-      group.curve = Array.from(sizeMap.entries()).map(([sz, r]) => ({
-        size: sz,
-        ratio: r,
-      }));
-    }
-
     // Inspect presentations for explicit "Serie Completa (X pares)" or equivalence
     let presUnits = 0;
     for (const v of group.variants) {
@@ -1012,23 +1004,87 @@ export function groupProductsBySeries(products: any[], activeBranchId?: string):
       }
     }
 
-    // 3. True total units in 1 series curve
-    const curveTotal = calculateCurveTotalUnits(group.curve);
-    if (curveTotal > 0) {
-      group.unitsPerSeries = curveTotal;
-    } else if (bestMeta?.unitsPerSeries && bestMeta.unitsPerSeries > 0) {
-      group.unitsPerSeries = bestMeta.unitsPerSeries;
-    } else if (presUnits > 0) {
-      group.unitsPerSeries = presUnits;
+    // 2. Build the exact curve with accurate ratios per size
+    if (bestMeta?.curve && bestMeta.curve.length > 0) {
+      group.curve = bestMeta.curve.map((c: any) => ({
+        size: String(c.size).trim(),
+        ratio: Number(c.ratio) > 0 ? Number(c.ratio) : 1,
+      }));
     } else {
-      group.unitsPerSeries = Math.max(1, group.variants.length);
+      // Reconstruct curve from variant sizes and variant stocks
+      const sizeVariantsMap = new Map<string, any[]>();
+      group.variants.forEach((v) => {
+        const s = extractSizeFromProduct(v);
+        if (s) {
+          if (!sizeVariantsMap.has(s)) sizeVariantsMap.set(s, []);
+          sizeVariantsMap.get(s)!.push(v);
+        }
+      });
+
+      const distinctSizes = Array.from(sizeVariantsMap.keys()).sort((a, b) => {
+        const numA = parseFloat(a);
+        const numB = parseFloat(b);
+        if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+        return a.localeCompare(b);
+      });
+
+      // Target pairs in 1 complete series curve:
+      // If bestMeta or presentation defined units, use it; otherwise,
+      // in footwear, 5 sizes (typically 35-39) represents a 6-pair curve with size 37 repeating
+      const targetUnits = bestMeta?.unitsPerSeries || presUnits || (
+        distinctSizes.length === 5 && (distinctSizes.includes("37") || distinctSizes.includes("36"))
+          ? 6
+          : distinctSizes.length
+      );
+
+      // Inspect actual variant stock to see which size repeats in the series package
+      const stockPerSize = distinctSizes.map((sz) => {
+        const variantsForSize = sizeVariantsMap.get(sz) || [];
+        const totStock = variantsForSize.reduce((acc, v) => {
+          const bs = activeBranchId
+            ? (v.branchStocks?.find((b: any) => b.branchId === activeBranchId)?.stock ?? 0)
+            : v.stock;
+          return acc + (Number(bs) || 0);
+        }, 0);
+        return { size: sz, stock: totStock };
+      });
+
+      const curveRatios = new Map<string, number>();
+      distinctSizes.forEach((sz) => curveRatios.set(sz, 1));
+
+      let currentSum = distinctSizes.length;
+      if (targetUnits > currentSum) {
+        const extraPairsNeeded = targetUnits - currentSum;
+        // Prioritize size with highest stock, or central sizes (37, then 36)
+        const sortedByStockDesc = [...stockPerSize].sort((a, b) => b.stock - a.stock);
+        const candidateSize = (sortedByStockDesc[0] && sortedByStockDesc[0].stock > (sortedByStockDesc[1]?.stock || 0))
+          ? sortedByStockDesc[0].size
+          : (distinctSizes.includes("37") ? "37" : (distinctSizes.includes("36") ? "36" : distinctSizes[Math.floor(distinctSizes.length / 2)]));
+
+        if (candidateSize && curveRatios.has(candidateSize)) {
+          curveRatios.set(candidateSize, curveRatios.get(candidateSize)! + extraPairsNeeded);
+        }
+      }
+
+      group.curve = distinctSizes.map((sz) => ({
+        size: sz,
+        ratio: curveRatios.get(sz) || 1,
+      }));
     }
 
-    if (bestMeta?.unitsPerSeries && bestMeta.unitsPerSeries > group.unitsPerSeries) {
-      group.unitsPerSeries = bestMeta.unitsPerSeries;
-    }
-    if (presUnits > group.unitsPerSeries) {
-      group.unitsPerSeries = presUnits;
+    // 3. True total units in 1 series curve
+    const curveTotal = calculateCurveTotalUnits(group.curve);
+    group.unitsPerSeries = curveTotal > 0 ? curveTotal : Math.max(1, group.variants.length);
+
+    // If metadata or presentation specifies more units than curve ratios sum, ensure curve is synchronized
+    const expectedUnits = Math.max(bestMeta?.unitsPerSeries || 0, presUnits || 0);
+    if (expectedUnits > group.unitsPerSeries && group.curve.length > 0) {
+      const diff = expectedUnits - group.unitsPerSeries;
+      const targetCurveItem = group.curve.find((c) => c.size === "37") || group.curve.find((c) => c.size === "36") || group.curve[Math.floor(group.curve.length / 2)];
+      if (targetCurveItem) {
+        targetCurveItem.ratio += diff;
+        group.unitsPerSeries = calculateCurveTotalUnits(group.curve);
+      }
     }
 
     // 4. Exact pricing & cost calculation per series
