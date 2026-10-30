@@ -398,6 +398,98 @@ export function computeSeriesStockSummary(
 }
 
 /**
+ * Obtiene el resumen integral de stock de serie para cualquier producto y sus variantes
+ * garantizando la calibración matemática exacta de la curva (ej. 6 pares para curvas 35-39 con 37 repetido).
+ */
+export function getSeriesModelStockSummary(
+  p: any,
+  allProducts: any[],
+  activeBranchId?: string
+): SeriesStockSummary | null {
+  if (!p) return null;
+  const meta = decodeSeriesMetadata(p.description);
+  const isSeries = p.unit === "Serie" || !!meta;
+  if (!isSeries) return null;
+
+  const cleanTarget = cleanModelName(p.name).toLowerCase();
+  const siblings = allProducts.filter((s) => {
+    if (meta?.seriesId) {
+      const sMeta = decodeSeriesMetadata(s.description);
+      if (sMeta?.seriesId && sMeta.seriesId === meta.seriesId) return true;
+    }
+    return (
+      cleanModelName(s.name).toLowerCase() === cleanTarget &&
+      (s.brandId || "") === (p.brandId || "")
+    );
+  });
+
+  const variants = siblings.length > 0 ? siblings : [p];
+
+  // Determinar la curva exacta
+  let curve: SizeRatio[] = [];
+  if (meta?.curve && meta.curve.length > 0) {
+    curve = meta.curve.map((c: any) => ({
+      size: String(c.size).trim(),
+      ratio: Number(c.ratio) > 0 ? Number(c.ratio) : 1,
+    }));
+  } else {
+    const sizeMap = new Map<string, SizeRatio>();
+    variants.forEach((v) => {
+      const sz = extractSizeFromProduct(v);
+      if (sz) {
+        sizeMap.set(sz, {
+          size: sz,
+          ratio: 1,
+        });
+      }
+    });
+    const sorted = sortSizes(Array.from(sizeMap.keys()));
+    curve = sorted.map((sz) => sizeMap.get(sz)!);
+  }
+
+  // Calibración estándar de calzado: Si tiene 5 tallas (ej. 35-39) y la suma es 5,
+  // la talla comercial 37 (o la de mayor stock) tiene ratio 2 -> 6 pares en total
+  const currentUnits = calculateCurveTotalUnits(curve);
+  if (curve.length === 5 && currentUnits === 5) {
+    const target37 =
+      curve.find((c) => c.size === "37") ||
+      curve.find((c) => {
+        const v = variants.find((x) => extractSizeFromProduct(x) === c.size);
+        const st = activeBranchId
+          ? (v?.branchStocks?.find((bs: any) => bs.branchId === activeBranchId)?.stock ?? 0)
+          : (v?.stock ?? 0);
+        return Number(st) > 1;
+      }) ||
+      curve.find((c) => c.size === "36") ||
+      curve[2];
+    if (target37) target37.ratio = 2;
+  }
+
+  // Desglose de cada talla con su stock físico real
+  const sizesData = curve.map((c) => {
+    const matchingVariants = variants.filter((v) => extractSizeFromProduct(v) === c.size);
+    const totalStock = matchingVariants.reduce((acc, v) => {
+      const bs = activeBranchId
+        ? (v.branchStocks?.find((b: any) => b.branchId === activeBranchId)?.stock ?? 0)
+        : v.stock;
+      return acc + Math.max(0, Number(bs) || 0);
+    }, 0);
+
+    const primaryVariant = matchingVariants[0] || p;
+    return {
+      size: c.size,
+      stock: totalStock,
+      ratio: c.ratio || 1,
+      productId: primaryVariant?.id,
+      salePrice: Number(primaryVariant?.salePrice) || Number(p.salePrice) || 0,
+      costPrice: Number(primaryVariant?.costPrice) || Number(p.costPrice) || 0,
+    };
+  });
+
+  return computeSeriesStockSummary(sizesData, curve);
+}
+
+/**
  * Encodes series metadata into a structured tag stored safely in product description.
  * Uses unambiguous [SERIE_START] ... [SERIE_END] delimiters to completely avoid
  * premature termination from inner JSON array brackets like c:[{"s":"35","r":1}].
@@ -1033,15 +1125,6 @@ export function groupProductsBySeries(products: any[], activeBranchId?: string):
         return a.localeCompare(b);
       });
 
-      // Target pairs in 1 complete series curve:
-      // If bestMeta or presentation defined units, use it; otherwise,
-      // in footwear, 5 sizes (typically 35-39) represents a 6-pair curve with size 37 repeating
-      const targetUnits = bestMeta?.unitsPerSeries || presUnits || (
-        distinctSizes.length === 5 && (distinctSizes.includes("37") || distinctSizes.includes("36"))
-          ? 6
-          : distinctSizes.length
-      );
-
       // Inspect actual variant stock to see which size repeats in the series package
       const stockPerSize = distinctSizes.map((sz) => {
         const variantsForSize = sizeVariantsMap.get(sz) || [];
@@ -1053,6 +1136,29 @@ export function groupProductsBySeries(products: any[], activeBranchId?: string):
         }, 0);
         return { size: sz, stock: totStock };
       });
+
+      // Find minimum positive stock to identify curve ratios
+      const positiveStocks = stockPerSize.map((s) => s.stock).filter((st) => st > 0);
+      const minStock = positiveStocks.length > 0 ? Math.min(...positiveStocks) : 1;
+
+      // Target pairs in 1 complete series curve:
+      let targetUnits = bestMeta?.unitsPerSeries || presUnits;
+      if (!targetUnits) {
+        if (minStock > 0 && positiveStocks.length > 0) {
+          const estimatedUnits = stockPerSize.reduce(
+            (acc, s) => acc + Math.max(1, Math.round(s.stock / minStock)),
+            0
+          );
+          if (estimatedUnits > distinctSizes.length) {
+            targetUnits = estimatedUnits;
+          }
+        }
+        if (!targetUnits) {
+          targetUnits = (distinctSizes.length === 5 && (distinctSizes.includes("37") || distinctSizes.includes("36")))
+            ? 6
+            : distinctSizes.length;
+        }
+      }
 
       const curveRatios = new Map<string, number>();
       distinctSizes.forEach((sz) => curveRatios.set(sz, 1));
@@ -1149,6 +1255,11 @@ export function groupProductsBySeries(products: any[], activeBranchId?: string):
 
     group.costPricePerUnit = unitCost;
     group.costPricePerSeries = Number((unitCost * group.unitsPerSeries).toFixed(2));
+
+    // Si solo tiene 1 talla, 1 par o no tiene curva compuesta, NO es una serie (es par suelto / producto individual)
+    if (group.unitsPerSeries <= 1 && group.variants.length <= 1) {
+      group.isSeries = false;
+    }
 
     // 5. Complete series stock summary with real branch/global stock
     // Aggregate multiple variant records per size to preserve accurate cumulative stock

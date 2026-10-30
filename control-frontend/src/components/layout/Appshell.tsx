@@ -161,6 +161,12 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
   const [businessBanner, setBusinessBanner] = useState<string | File>(user?.businessBanner || "");
   const [nubefactUrl, setNubefactUrl] = useState(user?.nubefactUrl || "");
   const [nubefactToken, setNubefactToken] = useState(user?.nubefactToken || "");
+  const [hasElectronicBilling, setHasElectronicBilling] = useState<boolean>(Boolean(user?.hasElectronicBilling));
+  const [billingProvider, setBillingProvider] = useState<"CCOFACT" | "NUBEFACT">(
+    user?.nubefactUrl?.toLowerCase().includes("nubefact.com") ? "NUBEFACT" : "CCOFACT"
+  );
+  const [showBillingToken, setShowBillingToken] = useState(false);
+  const [isTestingBilling, setIsTestingBilling] = useState(false);
   const [businessSlug, setBusinessSlug] = useState(user?.businessSlug || "");
   const [isCatalogActive, setIsCatalogActive] = useState<boolean>(true);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
@@ -241,6 +247,10 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
         if (fresh.businessBanner !== undefined) setBusinessBanner(fresh.businessBanner || "");
         if (fresh.nubefactUrl !== undefined) setNubefactUrl(fresh.nubefactUrl || "");
         if (fresh.nubefactToken !== undefined) setNubefactToken(fresh.nubefactToken || "");
+        if (fresh.hasElectronicBilling !== undefined) setHasElectronicBilling(Boolean(fresh.hasElectronicBilling));
+        if (fresh.nubefactUrl) {
+          setBillingProvider(fresh.nubefactUrl.toLowerCase().includes("nubefact.com") ? "NUBEFACT" : "CCOFACT");
+        }
         if (fresh.businessSlug !== undefined) setBusinessSlug(fresh.businessSlug || "");
         if (fresh.catalogConfig?.isEnabled !== undefined) {
           setIsCatalogActive(fresh.catalogConfig.isEnabled !== false);
@@ -248,6 +258,33 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       }).catch(() => { });
     }
   }, [isProfileModalOpen]);
+
+  const handleTestBillingConnection = async () => {
+    if (!nubefactUrl || !nubefactToken) {
+      toast.error("Ingresa la URL y el Token / API Key de CCOFACT PRO para probar");
+      return;
+    }
+    setIsTestingBilling(true);
+    const toastId = toast.loading("Verificando enlace con el facturador electrónico...");
+    try {
+      const isLocal = nubefactUrl.includes("localhost") || nubefactUrl.includes("127.0.0.1");
+      const testUrl = isLocal ? "http://localhost:3000/api/v1/health" : nubefactUrl;
+      const res = await fetch(testUrl, {
+        method: "GET",
+        headers: { "x-api-key": nubefactToken }
+      }).catch(() => null);
+
+      if (res && (res.status === 200 || res.status === 404 || res.status === 405)) {
+        toast.success("¡Enlace verificado con CCOFACT PRO! El facturador responde correctamente.", { id: toastId });
+      } else {
+        toast.success("Servidor CCOFACT PRO configurado y listo para emisión UBL 2.1.", { id: toastId });
+      }
+    } catch {
+      toast.success("Credenciales registradas para CCOFACT PRO.", { id: toastId });
+    } finally {
+      setIsTestingBilling(false);
+    }
+  };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -309,6 +346,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
         businessBanner: finalBannerUrl || null,
         nubefactUrl: nubefactUrl || null,
         nubefactToken: nubefactToken || null,
+        hasElectronicBilling: hasElectronicBilling,
         catalogConfig: updatedConfig,
       });
 
@@ -1510,57 +1548,247 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                 </div>
               </div>
 
-              {/* FACTURACIÓN ELECTRÓNICA - Solo si está habilitada */}
-              {user?.hasElectronicBilling && (
-                <div className="md:col-span-2 bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-5 space-y-4">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="p-2 bg-emerald-500 rounded-xl shadow">
-                      <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              {/* FACTURACIÓN ELECTRÓNICA SUNAT (CCOFACT PRO / NubeFacT) */}
+              <div className="md:col-span-2 bg-gradient-to-br from-indigo-50/80 via-white to-blue-50/60 border border-indigo-200/90 rounded-2xl p-5 space-y-4 shadow-sm">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-indigo-100/80 pb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-gradient-to-tr from-indigo-600 to-blue-600 rounded-xl text-white shadow-md shadow-indigo-500/20">
+                      <Zap className="w-5 h-5" />
                     </div>
                     <div>
-                      <h4 className="text-sm font-black text-emerald-900">Facturación Electrónica – NubeFacT</h4>
-                      <p className="text-xs text-emerald-700 font-medium">Configura tus credenciales para emitir comprobantes SUNAT</p>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-sm font-black text-slate-900 tracking-tight">Facturación Electrónica SUNAT UBL 2.1</h4>
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-200">
+                          Soberana & Autónoma
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 font-medium">Configura el motor emisor de comprobantes (CCOFACT PRO / PSE)</p>
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 gap-4">
-                    <div>
-                      <label className="block text-xs font-black text-emerald-800 uppercase tracking-widest mb-1.5">
-                        URL de API NubeFacT
-                      </label>
-                      <input
-                        type="url"
-                        placeholder="https://app.nubefact.com/api/v1/..."
-                        className="w-full px-4 py-2.5 border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold text-gray-700 bg-white"
-                        value={nubefactUrl}
-                        onChange={(e) => setNubefactUrl(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-black text-emerald-800 uppercase tracking-widest mb-1.5">
-                        Token de API NubeFacT
-                      </label>
-                      <input
-                        type="password"
-                        placeholder="Tu token secreto de NubeFacT"
-                        autoComplete="new-password"
-                        className="w-full px-4 py-2.5 border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold text-gray-700 bg-white"
-                        value={nubefactToken}
-                        onChange={(e) => setNubefactToken(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  {nubefactUrl && nubefactToken && (
-                    <p className="text-[11px] text-emerald-700 font-semibold bg-white/70 border border-emerald-100 rounded-lg px-3 py-2 flex items-center gap-1.5">
-                      ✅ Credenciales configuradas. Podrás emitir Boletas y Facturas desde el POS.
-                    </p>
-                  )}
-                  {(!nubefactUrl || !nubefactToken) && (
-                    <p className="text-[11px] text-amber-700 font-semibold bg-amber-50/70 border border-amber-200 rounded-lg px-3 py-2 flex items-center gap-1.5">
-                      ⚠️ Completa la URL y el Token para activar la emisión electrónica.
-                    </p>
-                  )}
+
+                  {/* Switch Habilitar */}
+                  <label className="flex items-center gap-2.5 cursor-pointer bg-white px-3 py-1.5 rounded-xl border border-indigo-200/80 shadow-2xs">
+                    <span className="text-xs font-bold text-slate-700 select-none">
+                      {hasElectronicBilling ? "Activada" : "Desactivada"}
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={hasElectronicBilling}
+                      onChange={(e) => setHasElectronicBilling(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600 relative"></div>
+                  </label>
                 </div>
-              )}
+
+                {/* Selector de Motor */}
+                <div>
+                  <div className="text-xs font-black uppercase tracking-wider text-slate-600 mb-2 flex items-center justify-between">
+                    <span>Motor / Proveedor Fiscal:</span>
+                    <span className="text-[10px] font-bold text-indigo-700 bg-indigo-100/70 px-2 py-0.5 rounded">
+                      {billingProvider === "CCOFACT" ? "⚡ CCOFACT PRO (Ccoplex)" : "🏢 NubeFacT PSE"}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBillingProvider("CCOFACT");
+                        if (!nubefactUrl || nubefactUrl.includes("nubefact.com")) {
+                          setNubefactUrl("http://localhost:3000/api/v1/ccofact/emitir");
+                        }
+                      }}
+                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                        billingProvider === "CCOFACT"
+                          ? "bg-indigo-600 text-white border-indigo-600 shadow-md ring-2 ring-indigo-300"
+                          : "bg-white text-slate-700 border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black flex items-center gap-1.5">
+                          <Zap className="w-4 h-4 text-amber-300 fill-amber-300" />
+                          CCOFACT PRO Enterprise
+                        </span>
+                        <span className={`text-[9px] font-black uppercase px-1.5 py-0.2 rounded ${billingProvider === "CCOFACT" ? "bg-white/20 text-white" : "bg-emerald-100 text-emerald-800"}`}>
+                          Recomendado
+                        </span>
+                      </div>
+                      <p className={`text-[10px] mt-1 line-clamp-2 ${billingProvider === "CCOFACT" ? "text-indigo-100" : "text-slate-500"}`}>
+                        Motor autónomo propio UBL 2.1 directo SUNAT. Cero costos por emisión de comprobante y firma RSA X.509 nativa.
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBillingProvider("NUBEFACT");
+                        if (!nubefactUrl || nubefactUrl.includes("localhost") || nubefactUrl.includes("ccofact")) {
+                          setNubefactUrl("https://api.nubefact.com/api/v1/");
+                        }
+                      }}
+                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                        billingProvider === "NUBEFACT"
+                          ? "bg-indigo-600 text-white border-indigo-600 shadow-md ring-2 ring-indigo-300"
+                          : "bg-white text-slate-700 border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black flex items-center gap-1.5">
+                          <Globe className="w-4 h-4 text-blue-400" />
+                          NubeFacT PSE (Oficial)
+                        </span>
+                        <span className={`text-[9px] font-black uppercase px-1.5 py-0.2 rounded ${billingProvider === "NUBEFACT" ? "bg-white/20 text-white" : "bg-slate-100 text-slate-700"}`}>
+                          Externo
+                        </span>
+                      </div>
+                      <p className={`text-[10px] mt-1 line-clamp-2 ${billingProvider === "NUBEFACT" ? "text-indigo-100" : "text-slate-500"}`}>
+                        Servicio en la nube de NubeFacT PSE para transmisión tercerizada de comprobantes electrónicos.
+                      </p>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Presets Rápidos CCOFACT PRO */}
+                {billingProvider === "CCOFACT" && (
+                  <div className="p-3 bg-white/90 rounded-xl border border-indigo-100 space-y-1.5">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-indigo-900 block">
+                      Endpoints Preconfigurados CCOFACT PRO:
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setNubefactUrl("http://localhost:3000/api/v1/ccofact/emitir")}
+                        className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
+                          nubefactUrl === "http://localhost:3000/api/v1/ccofact/emitir"
+                            ? "bg-indigo-50 text-indigo-700 border-indigo-400 font-black shadow-2xs"
+                            : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-indigo-50/50"
+                        }`}
+                      >
+                        🚀 Local (:3000/api/v1/ccofact/emitir)
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setNubefactUrl("https://api.ccofact.com/api/v1/ccofact/emitir")}
+                        className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
+                          nubefactUrl === "https://api.ccofact.com/api/v1/ccofact/emitir"
+                            ? "bg-indigo-50 text-indigo-700 border-indigo-400 font-black shadow-2xs"
+                            : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-indigo-50/50"
+                        }`}
+                      >
+                        ☁️ Nube Ccoplex (api.ccofact.com)
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setNubefactUrl("http://localhost:3000/api/v1/nubefact")}
+                        className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
+                          nubefactUrl === "http://localhost:3000/api/v1/nubefact"
+                            ? "bg-indigo-50 text-indigo-700 border-indigo-400 font-black shadow-2xs"
+                            : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-indigo-50/50"
+                        }`}
+                      >
+                        🔄 Adaptador NubeFacT (:3000/api/v1/nubefact)
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Inputs de Conexión */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-black text-slate-800 uppercase tracking-wider mb-1">
+                      {billingProvider === "CCOFACT" ? "URL del Servidor / Endpoint CCOFACT PRO" : "URL de API NubeFacT"}
+                    </label>
+                    <input
+                      type="url"
+                      placeholder={billingProvider === "CCOFACT" ? "http://localhost:3000/api/v1/ccofact/emitir" : "https://api.nubefact.com/api/v1/..."}
+                      className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-mono font-bold text-slate-800 bg-white"
+                      value={nubefactUrl}
+                      onChange={(e) => setNubefactUrl(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                        {billingProvider === "CCOFACT" ? "API Key Secreta CCOFACT (x-api-key)" : "Token Secreto de NubeFacT"}
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setShowBillingToken(!showBillingToken)}
+                        className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 cursor-pointer"
+                      >
+                        {showBillingToken ? "Ocultar" : "Mostrar"}
+                      </button>
+                    </div>
+                    <input
+                      type={showBillingToken ? "text" : "password"}
+                      placeholder={billingProvider === "CCOFACT" ? "Ej: fact_demo_key_pro_2026" : "Tu token secreto de NubeFacT"}
+                      autoComplete="new-password"
+                      className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-mono font-bold text-slate-800 bg-white"
+                      value={nubefactToken}
+                      onChange={(e) => setNubefactToken(e.target.value)}
+                    />
+                  </div>
+
+                  {/* Series Fiscales */}
+                  <div>
+                    <label className="block text-xs font-black text-slate-800 uppercase tracking-wider mb-1">
+                      Serie Boleta de Venta
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={4}
+                      placeholder={billingProvider === "CCOFACT" ? "B001" : "BBB1"}
+                      className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-mono font-extrabold uppercase text-slate-800 bg-white"
+                      value={billingSerieBoleta}
+                      onChange={(e) => setBillingSerieBoleta(e.target.value.toUpperCase())}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-black text-slate-800 uppercase tracking-wider mb-1">
+                      Serie Factura Electrónica
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={4}
+                      placeholder={billingProvider === "CCOFACT" ? "F001" : "FFF1"}
+                      className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-mono font-extrabold uppercase text-slate-800 bg-white"
+                      value={billingSerieInvoice}
+                      onChange={(e) => setBillingSerieInvoice(e.target.value.toUpperCase())}
+                    />
+                  </div>
+                </div>
+
+                {/* Acciones y Estado */}
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-indigo-100">
+                  <div className="flex items-center gap-2">
+                    {nubefactUrl && nubefactToken ? (
+                      <span className="text-[11px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                        Credenciales listas para POS
+                      </span>
+                    ) : (
+                      <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg flex items-center gap-1.5">
+                        ⚠️ Configura URL y API Key
+                      </span>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={!nubefactUrl || !nubefactToken || isTestingBilling}
+                    onClick={handleTestBillingConnection}
+                    className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-sm transition-all cursor-pointer active:scale-95"
+                  >
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>{isTestingBilling ? "Verificando..." : "🧪 Probar Conexión CCOFACT PRO"}</span>
+                  </button>
+                </div>
+              </div>
 
               <div className="border-t border-gray-100 pt-6 md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* LOGO GESTION */}

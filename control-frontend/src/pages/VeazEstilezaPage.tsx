@@ -44,6 +44,7 @@ import {
 import { FaWhatsapp, FaFacebookF, FaInstagram, FaTiktok } from "react-icons/fa6";
 import { toast } from "react-hot-toast";
 import { useAuth } from "../auth/AuthContext";
+import CatalogManagerModal from "../components/catalog/CatalogManagerModal";
 import {
   getCatalogProductsRequest,
   getCatalogBrandsRequest,
@@ -581,6 +582,9 @@ export default function VeazEstilezaPage() {
 
   // Banner Carousel Active Slide
   const [currentBannerSlide, setCurrentBannerSlide] = useState(0);
+  const [isCatalogModalOpen, setIsCatalogModalOpen] = useState(false);
+  const [catalogModalTab, setCatalogModalTab] = useState<any>("banners");
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // Selected Sizes per Model (Key: modelKey -> size)
   const [selectedSizes, setSelectedSizes] = useState<Record<string, string>>({});
@@ -671,7 +675,7 @@ export default function VeazEstilezaPage() {
 
   // Resolved 3 High-Impact Banners (Tailored by Rubro or Custom Profile)
   const activeBanners: CatalogBannerItem[] = useMemo(() => {
-    if (storeInfo?.catalogConfig?.banners && storeInfo.catalogConfig.banners.length >= 3) {
+    if (storeInfo?.catalogConfig?.banners && storeInfo.catalogConfig.banners.length > 0) {
       return storeInfo.catalogConfig.banners.slice(0, 3);
     }
 
@@ -836,7 +840,13 @@ export default function VeazEstilezaPage() {
     return () => {
       isMounted = false;
     };
-  }, [targetIdentifier]);
+  }, [targetIdentifier, refreshKey]);
+
+  useEffect(() => {
+    const handleProfileUpdated = () => setRefreshKey((k) => k + 1);
+    window.addEventListener("user_profile_updated", handleProfileUpdated);
+    return () => window.removeEventListener("user_profile_updated", handleProfileUpdated);
+  }, []);
 
   // Group Footwear or Products
   const groupedModels = useMemo<GroupedShoeModel[]>(() => {
@@ -975,9 +985,33 @@ export default function VeazEstilezaPage() {
     sortBy,
   ]);
 
+  // Helper para scroll exacto a secciones con compensación de Navbar fijo y resaltado visual
+  const scrollToSection = (sectionId: string) => {
+    setIsOmniOpen(false);
+    setTimeout(() => {
+      const el = document.getElementById(sectionId);
+      if (el) {
+        const navOffset = 85;
+        const elementPosition = el.getBoundingClientRect().top;
+        const offsetPosition = elementPosition + window.pageYOffset - navOffset;
+        window.scrollTo({
+          top: Math.max(0, offsetPosition),
+          behavior: "smooth",
+        });
+        el.classList.add("ring-4", "ring-indigo-500", "ring-offset-4", "transition-all", "duration-500");
+        setTimeout(() => {
+          el.classList.remove("ring-4", "ring-indigo-500", "ring-offset-4");
+        }, 3000);
+      }
+    }, 60);
+  };
+
   // Global Omnisearch (Command Palette) Results Engine
   const omniResults = useMemo(() => {
-    const q = globalSearch.trim().toLowerCase();
+    const normalize = (txt: string) =>
+      (txt || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+
+    const q = normalize(globalSearch);
 
     // 1. Secciones del Sistema y Tienda Oficial
     const systemSections = [
@@ -987,11 +1021,8 @@ export default function VeazEstilezaPage() {
         subtitle: "Misión, visión, trayectoria y estándares de calidad",
         category: "Sección Web",
         icon: Sparkles,
-        action: () => {
-          document.getElementById("conocenos")?.scrollIntoView({ behavior: "smooth" });
-          setIsOmniOpen(false);
-        },
-        keywords: ["conocenos", "quienes somos", "historia", "mision", "vision", "empresa", "nosotros", "calidad"],
+        action: () => scrollToSection("conocenos"),
+        keywords: ["conocenos", "conocenos", "quienes somos", "quienes", "nosotros", "historia", "mision", "vision", "empresa", "calidad", "marca"],
       },
       {
         id: "ubicanos",
@@ -999,11 +1030,8 @@ export default function VeazEstilezaPage() {
         subtitle: storeInfo?.businessAddress || storeInfo?.catalogConfig?.locationAddress || "Dirección comercial, showroom presencial y mapa de llegada",
         category: "Ubicación",
         icon: MapPin,
-        action: () => {
-          document.getElementById("ubicanos")?.scrollIntoView({ behavior: "smooth" });
-          setIsOmniOpen(false);
-        },
-        keywords: ["ubicanos", "direccion", "tienda", "local", "showroom", "mapa", "llegar", "donde", "ciudad", "sede"],
+        action: () => scrollToSection("ubicanos"),
+        keywords: ["ubicanos", "ubicacion", "ubicacion", "donde", "donde estan", "direccion", "direccion", "local", "tienda", "showroom", "mapa", "maps", "llegar", "ciudad", "sede", "visitar", "direccion fisica"],
       },
       {
         id: "horarios",
@@ -1011,11 +1039,8 @@ export default function VeazEstilezaPage() {
         subtitle: storeInfo?.catalogConfig?.locationSchedule || "Días y horarios de apertura presencial y atención remota",
         category: "Atención",
         icon: Clock,
-        action: () => {
-          document.getElementById("horarios")?.scrollIntoView({ behavior: "smooth" });
-          setIsOmniOpen(false);
-        },
-        keywords: ["horarios", "horario", "atencion", "abierto", "domingo", "sabado", "apertura", "cierre"],
+        action: () => scrollToSection("horarios"),
+        keywords: ["horarios", "horario", "atencion", "atencion", "abierto", "domingo", "sabado", "sabado", "apertura", "cierre", "dias", "cuando abren"],
       },
       {
         id: "envios",
@@ -1023,11 +1048,8 @@ export default function VeazEstilezaPage() {
         subtitle: "Despacho a todo el país vía agencias certificadas y entrega express",
         category: "Logística",
         icon: Truck,
-        action: () => {
-          document.getElementById("conocenos")?.scrollIntoView({ behavior: "smooth" });
-          setIsOmniOpen(false);
-        },
-        keywords: ["envios", "envio", "delivery", "flete", "agencia", "despacho", "shalom", "marvisur", "olva", "lima", "provincias"],
+        action: () => scrollToSection("conocenos"),
+        keywords: ["envios", "envios", "delivery", "flete", "agencia", "despacho", "shalom", "marvisur", "olva", "lima", "provincias", "entrega"],
       },
       {
         id: "pagos",
@@ -1035,10 +1057,7 @@ export default function VeazEstilezaPage() {
         subtitle: "Yape, Plin, Transferencias BCP/BBVA, Factura y Boleta electrónica oficial",
         category: "Pagos & SUNAT",
         icon: CreditCard,
-        action: () => {
-          document.getElementById("contacto")?.scrollIntoView({ behavior: "smooth" });
-          setIsOmniOpen(false);
-        },
+        action: () => scrollToSection("contacto"),
         keywords: ["pagos", "pago", "yape", "plin", "bcp", "bbva", "transferencia", "factura", "boleta", "ruc", "sunat", "tarjeta"],
       },
       {
@@ -1099,9 +1118,9 @@ export default function VeazEstilezaPage() {
       ? systemSections.slice(0, 6)
       : systemSections.filter(
           (s) =>
-            s.title.toLowerCase().includes(q) ||
-            s.subtitle.toLowerCase().includes(q) ||
-            s.keywords.some((k) => k.includes(q))
+            normalize(s.title).includes(q) ||
+            normalize(s.subtitle).includes(q) ||
+            s.keywords.some((k) => normalize(k).includes(q))
         );
 
     // 2. Categorías coincidentes
@@ -2020,6 +2039,21 @@ export default function VeazEstilezaPage() {
       ────────────────────────────────────────────────────────── */}
       {activeBanners.length > 0 && (
         <section className="relative w-full overflow-hidden bg-slate-950 text-white h-[420px] sm:h-[460px] lg:h-[500px] flex items-center select-none">
+          {/* Owner Quick Shortcut: Direct Button to configure and replace the 3 carousel images */}
+          {isStoreOwner && (
+            <button
+              type="button"
+              onClick={() => {
+                setCatalogModalTab("banners");
+                setIsCatalogModalOpen(true);
+              }}
+              className="absolute top-4 right-4 sm:top-6 sm:right-6 z-30 px-4 py-2.5 rounded-2xl bg-slate-950/90 hover:bg-black text-amber-300 hover:text-amber-200 border border-amber-400/50 backdrop-blur-md shadow-2xl text-xs font-black flex items-center gap-2 cursor-pointer transition-all active:scale-95 group hover:scale-105"
+              title="Configurar y reemplazar las imágenes del carrusel"
+            >
+              <SlidersHorizontal className="w-4 h-4 text-amber-400 group-hover:rotate-45 transition-transform" />
+              <span>Configurar Banners del Carrusel ({activeBanners.length})</span>
+            </button>
+          )}
           <div className="absolute inset-0 z-0">
             <img
               src={currentBanner.image || (currentBanner as any).imageUrl}
@@ -4326,6 +4360,18 @@ export default function VeazEstilezaPage() {
           </div>
         </div>
       </footer>
+
+      {/* Catalog Manager Modal for editing banners, lookbook, and settings */}
+      {isCatalogModalOpen && (
+        <CatalogManagerModal
+          isOpen={isCatalogModalOpen}
+          onClose={() => {
+            setIsCatalogModalOpen(false);
+            setRefreshKey((k) => k + 1);
+          }}
+          initialTab={catalogModalTab}
+        />
+      )}
     </div>
   );
 }

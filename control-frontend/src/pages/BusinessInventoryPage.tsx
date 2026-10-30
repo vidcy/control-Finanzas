@@ -91,6 +91,7 @@ import {
   cleanDescriptionForDisplay,
   cleanModelName,
   computeSeriesStockSummary,
+  getSeriesModelStockSummary,
   extractSizeFromProduct,
   extractProductSpecBadge,
   extractTacoFromProduct,
@@ -3191,23 +3192,8 @@ export default function BusinessInventoryPage() {
                               )
                               : [];
 
-                            const curveItems = seriesMeta?.curve || (
-                              siblings.length > 0
-                                ? siblings.map((s) => ({ size: extractSizeFromProduct(s), ratio: 1 }))
-                                : [{ size: extractSizeFromProduct(p), ratio: 1 }]
-                            );
-
                             const seriesSummary = isSeries
-                              ? computeSeriesStockSummary(
-                                siblings.map((s) => ({
-                                  size: extractSizeFromProduct(s),
-                                  stock: activeBranchId
-                                    ? (s.branchStocks?.find((bs: any) => bs.branchId === activeBranchId)?.stock ?? 0)
-                                    : s.stock,
-                                  ratio: curveItems.find((c) => c.size === extractSizeFromProduct(s))?.ratio || 1,
-                                })),
-                                curveItems
-                              )
+                              ? getSeriesModelStockSummary(p, products, activeBranchId)
                               : null;
 
                             return (
@@ -3511,7 +3497,7 @@ export default function BusinessInventoryPage() {
                                             Serie Completa
                                           </div>
                                           <div className="text-sm font-black text-amber-700">
-                                            S/ {(seriesMeta?.pricePerSeries || (p.salePrice * seriesSummary.unitsPerSeries)).toFixed(2)}
+                                            S/ {(p.salePrice * seriesSummary.unitsPerSeries).toFixed(2)}
                                           </div>
                                           <div className="text-[9px] text-amber-600/80 font-medium">
                                             Costo: S/ {(p.costPrice * seriesSummary.unitsPerSeries).toFixed(2)}

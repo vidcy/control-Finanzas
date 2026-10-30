@@ -148,92 +148,17 @@ const PosSizeScrollRail: React.FC<{
   onSelectSize: (size: string) => void;
 }> = ({ sizes, completeSeries, onSelectSize }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const scrollAnimRef = useRef<number | null>(null);
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
-
-  const checkScroll = () => {
-    const el = containerRef.current;
-    if (!el) return;
-    setCanScrollLeft(el.scrollLeft > 4);
-    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
-  };
-
-  useEffect(() => {
-    checkScroll();
-  }, [sizes]);
-
-  const stopAutoScroll = () => {
-    if (scrollAnimRef.current !== null) {
-      cancelAnimationFrame(scrollAnimRef.current);
-      scrollAnimRef.current = null;
-    }
-  };
-
-  const startAutoScroll = (direction: -1 | 1, speed: number = 3.5) => {
-    stopAutoScroll();
-    const step = () => {
-      if (containerRef.current) {
-        containerRef.current.scrollLeft += direction * speed;
-        checkScroll();
-      }
-      scrollAnimRef.current = requestAnimationFrame(step);
-    };
-    scrollAnimRef.current = requestAnimationFrame(step);
-  };
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const el = containerRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const mouseX = e.clientX;
-    const edgeZone = 40;
-
-    if (mouseX <= rect.left + edgeZone) {
-      const dist = Math.max(1, mouseX - rect.left);
-      const speed = Math.max(2, 6 - dist / 10);
-      startAutoScroll(-1, speed);
-    } else if (mouseX >= rect.right - edgeZone) {
-      const dist = Math.max(1, rect.right - mouseX);
-      const speed = Math.max(2, 6 - dist / 10);
-      startAutoScroll(1, speed);
-    } else {
-      stopAutoScroll();
-    }
-  };
 
   return (
-    <div
-      className="relative group/rail py-1"
-      onMouseMove={handleMouseMove}
-      onMouseLeave={stopAutoScroll}
-    >
-      {canScrollLeft && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (containerRef.current) {
-              containerRef.current.scrollBy({ left: -80, behavior: "smooth" });
-            }
-          }}
-          className="absolute -left-1 top-1/2 -translate-y-1/2 z-10 w-5 h-6 bg-amber-600/90 hover:bg-amber-700 text-white rounded-r flex items-center justify-center text-[10px] shadow-sm transition-all cursor-pointer"
-          title="Tallas anteriores"
-        >
-          ‹
-        </button>
-      )}
-
+    <div className="w-full relative py-0.5">
       <div
         ref={containerRef}
-        onScroll={checkScroll}
         onWheel={(e) => {
           if (containerRef.current && e.deltaY !== 0) {
             containerRef.current.scrollLeft += e.deltaY;
-            checkScroll();
           }
         }}
-        className="flex gap-1.5 overflow-x-auto no-scrollbar py-0.5 scroll-smooth select-none"
+        className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1 scroll-smooth select-none"
       >
         {sizes.map((s) => {
           const hasStock = s.stock > 0;
@@ -247,7 +172,7 @@ const PosSizeScrollRail: React.FC<{
                 e.stopPropagation();
                 onSelectSize(s.size);
               }}
-              className={`min-w-[44px] h-[32px] px-2 py-0.5 rounded-lg border text-xs font-black transition-all flex items-center justify-center gap-1 shrink-0 shadow-2xs ${
+              className={`min-w-[42px] h-[30px] px-2 py-0.5 rounded-lg border text-xs font-black transition-all flex items-center justify-center gap-1 shrink-0 shadow-2xs ${
                 hasStock
                   ? s.isLimiting && completeSeries > 0
                     ? "bg-amber-100/90 hover:bg-amber-200 text-amber-950 border-amber-300 hover:scale-105 active:scale-95 cursor-pointer"
@@ -273,22 +198,6 @@ const PosSizeScrollRail: React.FC<{
           );
         })}
       </div>
-
-      {canScrollRight && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (containerRef.current) {
-              containerRef.current.scrollBy({ left: 80, behavior: "smooth" });
-            }
-          }}
-          className="absolute -right-1 top-1/2 -translate-y-1/2 z-10 w-5 h-6 bg-amber-600/90 hover:bg-amber-700 text-white rounded-l flex items-center justify-center text-[10px] shadow-sm transition-all cursor-pointer"
-          title="Ver más tallas"
-        >
-          ›
-        </button>
-      )}
     </div>
   );
 };
@@ -2755,7 +2664,7 @@ export default function BusinessPosPage() {
                     return (
                       <div
                         key={item.groupKey}
-                        className="bg-white rounded-2xl border-2 border-amber-200/90 hover:border-amber-400 hover:shadow-lg transition-all flex flex-col overflow-hidden shadow-xs relative group h-[390px]"
+                        className="bg-white rounded-2xl border-2 border-amber-200/90 hover:border-amber-400 hover:shadow-lg transition-all flex flex-col justify-between overflow-hidden shadow-xs relative group min-h-[400px] h-full"
                       >
                         {/* Contenedor de la Imagen con zoom interactivo y altura dinámica */}
                         <div
@@ -2763,7 +2672,7 @@ export default function BusinessPosPage() {
                             e.stopPropagation();
                             setPosLightboxProduct(item);
                           }}
-                          className="w-full flex-1 min-h-[140px] bg-gradient-to-br from-amber-50/60 via-slate-50 to-orange-50/40 overflow-hidden relative rounded-t-2xl border-b border-amber-100 flex items-center justify-center p-2 cursor-zoom-in"
+                          className="w-full h-36 sm:h-40 shrink-0 bg-gradient-to-br from-amber-50/60 via-slate-50 to-orange-50/40 overflow-hidden relative rounded-t-2xl border-b border-amber-100 flex items-center justify-center p-2 cursor-zoom-in"
                           title="Clic en la foto para ver en detalle"
                         >
                           {/* Top Bar: Badges Izquierda y Color Derecha (Sin colisiones ni superposiciones) */}
@@ -2775,7 +2684,7 @@ export default function BusinessPosPage() {
                                 </span>
                               ) : null}
                               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase bg-amber-600 text-white shadow-xs shrink-0">
-                                📦 Serie: {item.unitsPerSeries}p
+                                📦 {item.unitsPerSeries}P
                               </span>
                               {item.taco && (
                                 <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-pink-600 text-white shadow-xs shrink-0">
@@ -2808,7 +2717,7 @@ export default function BusinessPosPage() {
                         </div>
 
                         {/* Contenido inferior compacto: Flujo continuo sin espacios en blanco */}
-                        <div className="p-3 bg-white shrink-0 flex flex-col gap-2">
+                        <div className="p-2.5 sm:p-3 bg-white flex-1 flex flex-col justify-between gap-1.5">
                           <div>
                             <div className="flex items-center justify-between gap-1 mb-1">
                               <h3
@@ -2825,8 +2734,8 @@ export default function BusinessPosPage() {
                             </div>
 
                             {/* Stock Real-Time Summary con desglose exacto */}
-                            <div className="bg-amber-50/90 border border-amber-200/80 rounded-xl px-2 py-1 mb-1.5 space-y-0.5">
-                              <div className="flex items-center justify-between text-[10px] font-black text-amber-950">
+                            <div className="bg-amber-50/90 border border-amber-200/80 rounded-xl px-2.5 py-1.5 mb-1.5 space-y-1">
+                              <div className="flex items-center justify-between text-[10.5px] font-black text-amber-950">
                                 <span className="flex items-center gap-1">
                                   <span className="text-amber-700 font-extrabold">👟 Stock:</span> {item.summary.totalUnits} {item.summary.totalUnits === 1 ? "par" : "pares"}
                                 </span>
@@ -2836,15 +2745,15 @@ export default function BusinessPosPage() {
                                     : "⚠️ Incompleta"}
                                 </span>
                               </div>
-                              <div className="text-[9px] font-bold text-amber-800/80 flex items-center justify-between">
-                                <span className="truncate">
+                              <div className="text-[9.5px] font-bold text-amber-800/90 flex items-center justify-between">
+                                <span className="truncate font-semibold">
                                   {item.summary.completeSeries > 0
                                     ? item.summary.looseUnits > 0
-                                      ? `+${item.summary.looseUnits} sueltos extra`
+                                      ? `+ ${item.summary.looseUnits} suelto(s)`
                                       : "Curva completa exacta"
-                                    : `${item.summary.totalUnits} sueltos en tienda`}
+                                    : `${item.summary.totalUnits} pares sueltos`}
                                 </span>
-                                <span className="text-amber-600 font-mono shrink-0">({item.unitsPerSeries}p/serie)</span>
+                                <span className="text-amber-800 font-black shrink-0">({item.unitsPerSeries} pares / serie)</span>
                               </div>
                             </div>
 
@@ -2934,7 +2843,7 @@ export default function BusinessPosPage() {
                       onMouseLeave={() => {
                         setHoveredProduct(null);
                       }}
-                      className={`bg-white rounded-2xl border border-slate-200/90 hover:border-indigo-400 hover:shadow-lg transition-all cursor-pointer group flex flex-col overflow-hidden shadow-xs relative h-[390px] ${availableStock <= 0 ? "opacity-60 cursor-not-allowed" : ""}`}
+                      className={`bg-white rounded-2xl border border-slate-200/90 hover:border-indigo-400 hover:shadow-lg transition-all cursor-pointer group flex flex-col justify-between overflow-hidden shadow-xs relative min-h-[400px] h-full ${availableStock <= 0 ? "opacity-60 cursor-not-allowed" : ""}`}
                     >
                       {/* Contenedor de Imagen con altura dinámica uniforme */}
                       <div
@@ -2942,7 +2851,7 @@ export default function BusinessPosPage() {
                           e.stopPropagation();
                           setPosLightboxProduct(p);
                         }}
-                        className="w-full flex-1 min-h-[140px] bg-slate-50/90 overflow-hidden relative rounded-t-2xl border-b border-slate-100 flex items-center justify-center p-2 cursor-zoom-in"
+                        className="w-full h-36 sm:h-40 shrink-0 bg-slate-50/90 overflow-hidden relative rounded-t-2xl border-b border-slate-100 flex items-center justify-center p-2 cursor-zoom-in"
                         title="Clic en la foto para ver en detalle"
                       >
                         {/* Top Bar: SKU Izquierda y Color Derecha (Sin colisiones) */}

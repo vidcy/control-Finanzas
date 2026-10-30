@@ -38,14 +38,15 @@ import { generateCatalogSlug, getStoreCatalogSlug, getStoreCatalogUrl } from "..
 interface CatalogManagerModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialTab?: "rubro" | "banners" | "ticker" | "lookbook" | "rail" | "location" | "contact";
 }
 
-export default function CatalogManagerModal({ isOpen, onClose }: CatalogManagerModalProps) {
+export default function CatalogManagerModal({ isOpen, onClose, initialTab }: CatalogManagerModalProps) {
   const { user, setUser } = useAuth();
 
   const [activeTab, setActiveTab] = useState<
     "rubro" | "banners" | "ticker" | "lookbook" | "rail" | "location" | "contact"
-  >("rubro");
+  >(initialTab || "banners");
   const [isCopied, setIsCopied] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingBannerIdx, setIsUploadingBannerIdx] = useState<number | null>(null);
@@ -551,7 +552,7 @@ export default function CatalogManagerModal({ isOpen, onClose }: CatalogManagerM
         <div className="flex items-center gap-1.5 overflow-x-auto px-4 sm:px-6 pt-2.5 border-b border-slate-200 bg-slate-50 shrink-0 scrollbar-thin">
           {[
             { id: "rubro", label: "Rubro & Estilo", icon: Wand2 },
-            { id: "banners", label: "Banners Hero", icon: ImageIcon },
+            { id: "banners", label: "📸 Carrusel de Inicio (3 Banners)", icon: ImageIcon },
             { id: "ticker", label: "Marquesina & Anuncios", icon: Megaphone },
             { id: "lookbook", label: "Galería Destacada", icon: Sparkles },
             { id: "rail", label: "Vitrina Inferior", icon: LayoutGrid },

@@ -175,6 +175,47 @@ export const uploadReceiptFile = async (file: File): Promise<string> => {
   }
 };
 
+/**
+ * Helper to compress image to a lightweight WebP/JPEG base64 data URL
+ * so that large photos can be saved even if cloud/backend upload fails
+ */
+export const compressImageToDataUrl = (file: File, maxDim = 1920, quality = 0.82): Promise<string> => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(e.target?.result as string);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL("image/jpeg", quality);
+        resolve(dataUrl);
+      };
+      img.onerror = () => resolve(e.target?.result as string);
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = () => resolve("");
+    reader.readAsDataURL(file);
+  });
+};
+
 export const uploadProductImageFile = async (file: File): Promise<string> => {
   try {
     const formData = new FormData();
@@ -182,9 +223,21 @@ export const uploadProductImageFile = async (file: File): Promise<string> => {
     const res = await axios.post("/upload/product-image", formData, {
       headers: { "Content-Type": "multipart/form-data" },
     });
-    return res.data.url;
+    if (res.data?.url) {
+      return res.data.url;
+    }
+    throw new Error("No URL returned");
   } catch (error: any) {
-    throw new Error(error?.response?.data?.message || "Error al subir la imagen del producto");
+    console.warn("Backend image upload failed, activating instant compressed data URL fallback:", error);
+    try {
+      const localDataUrl = await compressImageToDataUrl(file);
+      if (localDataUrl) {
+        return localDataUrl;
+      }
+    } catch (compressErr) {
+      console.error("Compression error:", compressErr);
+    }
+    throw new Error(error?.response?.data?.message || error?.message || "Error al subir la imagen");
   }
 };
 

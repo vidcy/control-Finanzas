@@ -1,5 +1,7 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import * as fs from 'fs';
+import * as path from 'path';
 
 @Injectable()
 export class FilesService {
@@ -131,7 +133,7 @@ export class FilesService {
 
     const originalName = file.originalname || 'photo.jpg';
     const extension = originalName.split('.').pop()?.toLowerCase() || '';
-    const allowedExtensions = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'];
+    const allowedExtensions = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif', 'avif', 'gif', 'bmp', 'svg', 'jfif'];
 
     const isValidMime = allowedMimeTypes.includes(file.mimetype);
     const isValidExt = allowedExtensions.includes(extension);
@@ -170,10 +172,23 @@ export class FilesService {
       );
 
       return this.getAbsoluteUrl(key);
-    } catch (error: any) {
-      throw new BadRequestException(
-        `Error al subir la imagen del producto a DigitalOcean Spaces: ${error.message}`,
-      );
+    } catch (s3Error: any) {
+      console.warn('DO Spaces upload failed, falling back to local storage:', s3Error?.message);
+      try {
+        const cleanName = originalName.replace(/[^a-zA-Z0-9.-]/g, '_');
+        const uploadsDir = path.join(process.cwd(), 'uploads', 'products');
+        if (!fs.existsSync(uploadsDir)) {
+          fs.mkdirSync(uploadsDir, { recursive: true });
+        }
+        const fileName = `${Date.now()}-${Math.round(Math.random() * 1e9)}-${cleanName}`;
+        const filePath = path.join(uploadsDir, fileName);
+        fs.writeFileSync(filePath, file.buffer);
+        return `/uploads/products/${fileName}`;
+      } catch (localErr: any) {
+        throw new BadRequestException(
+          `Error al guardar imagen: ${s3Error.message} / Local: ${localErr.message}`,
+        );
+      }
     }
   }
 
