@@ -33,12 +33,44 @@ export class UsersService {
     }
 
     const hashedPassword = await bcrypt.hash(data.password, 10);
+
+    // Auto-generate clean unique businessSlug if not provided
+    const toSlug = (text: string) => {
+      if (!text) return '';
+      return String(text)
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '');
+    };
+
+    let baseSlug =
+      toSlug(data.businessSlug) ||
+      toSlug(data.businessName) ||
+      toSlug(`${firstName} ${lastName}`) ||
+      toSlug(data.email.split('@')[0]) ||
+      'tienda';
+
+    let uniqueSlug = baseSlug;
+    let counter = 1;
+    while (true) {
+      const existing = await this.prisma.user.findFirst({
+        where: { businessSlug: uniqueSlug },
+      });
+      if (!existing) break;
+      counter++;
+      uniqueSlug = `${baseSlug}-${counter}`;
+    }
+
     const user = await this.prisma.user.create({
       data: {
         name: firstName,
         lastName: lastName,
         email: data.email,
         password: hashedPassword,
+        businessSlug: uniqueSlug,
         role: (data.role || 'USER') as 'ADMIN' | 'USER',
         profiles:
           data.profiles && data.profiles.length > 0

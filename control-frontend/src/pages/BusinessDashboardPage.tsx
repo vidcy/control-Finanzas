@@ -22,6 +22,7 @@ import {
   Sparkles,
   CreditCard,
   Building2,
+  Store,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { getBillingStatsRequest, type BillingStats } from "../services/billing.api";
@@ -37,6 +38,7 @@ import { format, subDays, parseISO, isSameDay } from "date-fns";
 import { es } from "date-fns/locale";
 import BusinessAiAdvisor from "../components/dashboard/BusinessAiAdvisor";
 import Modal from "../components/ui/Modal";
+import { getStoreCatalogSlug } from "../utils/catalogUtils";
 
 export default function BusinessDashboardPage() {
   const { user } = useAuth();

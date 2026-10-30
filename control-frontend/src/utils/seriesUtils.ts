@@ -248,19 +248,24 @@ export function buildEditSeriesConfig(
   const sortedSizes = sortSizes(rawCurve.map((c) => c.size));
   const finalCurve = sortedSizes.map((sz) => rawCurve.find((c) => c.size === sz)!);
 
+  // Si la curva tiene 5 tallas (ej. 35-39) y la suma es 5, calibrar automáticamente a 6 pares
+  // ya que en calzado 5 tallas estándar siempre componen 6 pares (la talla 37 repite 2 pares)
+  if (finalCurve.length === 5 && calculateCurveTotalUnits(finalCurve) === 5) {
+    const target37 = finalCurve.find((c) => c.size === "37") || 
+      [...finalCurve].sort((a, b) => (b.stock || 0) - (a.stock || 0))[0] ||
+      finalCurve.find((c) => c.size === "36") || 
+      finalCurve[2];
+    if (target37) target37.ratio = 2;
+  }
+
   // Calcula pares por serie sumando los ratios de la curva
   const totalUnits = calculateCurveTotalUnits(finalCurve) || 6;
 
   const costUnit = meta?.costPricePerUnit || Number(mainProduct?.costPrice) || 0;
   const saleUnit = meta?.pricePerUnit || Number(mainProduct?.salePrice || mainProduct?.price) || 0;
 
-  const costSeries = meta?.costPricePerSeries
-    ? Number(meta.costPricePerSeries)
-    : Number((costUnit * totalUnits).toFixed(2));
-
-  const saleSeries = meta?.pricePerSeries
-    ? Number(meta.pricePerSeries)
-    : Number((saleUnit * totalUnits).toFixed(2));
+  const costSeries = Number((costUnit * totalUnits).toFixed(2));
+  const saleSeries = Number((saleUnit * totalUnits).toFixed(2));
 
   const summary = computeSeriesStockSummary(
     finalCurve.map((c) => ({
@@ -1073,11 +1078,50 @@ export function groupProductsBySeries(products: any[], activeBranchId?: string):
     }
 
     // 3. True total units in 1 series curve
+    // Calibración inteligente de curvas de calzado:
+    // En calzado comercial, una serie con 5 tallas (ej. 35 al 39) NUNCA contiene 5 pares, sino 6 pares
+    // porque la talla comercial central (típicamente 37, o la de mayor stock físico) viene repetida con 2 pares.
+    const currentCurveSum = calculateCurveTotalUnits(group.curve);
+    if (group.curve.length === 5 && currentCurveSum === 5) {
+      const stockBySize = new Map<string, number>();
+      group.variants.forEach((v) => {
+        const sz = extractSizeFromProduct(v);
+        if (sz) {
+          const bs = activeBranchId
+            ? (v.branchStocks?.find((b: any) => b.branchId === activeBranchId)?.stock ?? 0)
+            : v.stock;
+          stockBySize.set(sz, (stockBySize.get(sz) || 0) + (Number(bs) || 0));
+        }
+      });
+
+      let repeatSize = "37";
+      if (!group.curve.some((c) => c.size === "37")) {
+        let maxSt = -1;
+        stockBySize.forEach((st, sz) => {
+          if (st > maxSt) {
+            maxSt = st;
+            repeatSize = sz;
+          }
+        });
+        if (!repeatSize || !group.curve.some((c) => c.size === repeatSize)) {
+          repeatSize = group.curve.some((c) => c.size === "36") ? "36" : group.curve[2]?.size || "37";
+        }
+      }
+
+      const itemToRepeat = group.curve.find((c) => c.size === repeatSize);
+      if (itemToRepeat) {
+        itemToRepeat.ratio = 2;
+      }
+    }
+
     const curveTotal = calculateCurveTotalUnits(group.curve);
     group.unitsPerSeries = curveTotal > 0 ? curveTotal : Math.max(1, group.variants.length);
 
     // If metadata or presentation specifies more units than curve ratios sum, ensure curve is synchronized
-    const expectedUnits = Math.max(bestMeta?.unitsPerSeries || 0, presUnits || 0);
+    const expectedUnits = Math.max(
+      (bestMeta?.unitsPerSeries === 5 && group.curve.length === 5 ? 6 : (bestMeta?.unitsPerSeries || 0)),
+      (presUnits === 5 && group.curve.length === 5 ? 6 : (presUnits || 0))
+    );
     if (expectedUnits > group.unitsPerSeries && group.curve.length > 0) {
       const diff = expectedUnits - group.unitsPerSeries;
       const targetCurveItem = group.curve.find((c) => c.size === "37") || group.curve.find((c) => c.size === "36") || group.curve[Math.floor(group.curve.length / 2)];
@@ -1093,18 +1137,18 @@ export function groupProductsBySeries(products: any[], activeBranchId?: string):
       : (bestMeta?.pricePerUnit ? Number(bestMeta.pricePerUnit) : Number(group.primaryProduct.salePrice || 0));
 
     group.salePricePerUnit = unitSale;
-    group.salePricePerSeries = bestMeta?.pricePerSeries && Number(bestMeta.pricePerSeries) > 0
-      ? Number(bestMeta.pricePerSeries)
-      : Number((unitSale * group.unitsPerSeries).toFixed(2));
+    
+    // Regla matemática universal para calzado:
+    // El precio de la serie completa es SIEMPRE la suma exacta de sus pares: (Pares de la Serie * Precio Unitario)
+    // Esto previene desfases cuando la curva tiene 6, 7 u 8 pares y evita que se muestre un precio antiguo calculado sobre 5 tallas.
+    group.salePricePerSeries = Number((unitSale * group.unitsPerSeries).toFixed(2));
 
     const unitCost = bestMeta?.costPricePerUnit
       ? Number(bestMeta.costPricePerUnit)
       : Number(group.primaryProduct.costPrice || 0);
 
     group.costPricePerUnit = unitCost;
-    group.costPricePerSeries = bestMeta?.costPricePerSeries && Number(bestMeta.costPricePerSeries) > 0
-      ? Number(bestMeta.costPricePerSeries)
-      : Number((unitCost * group.unitsPerSeries).toFixed(2));
+    group.costPricePerSeries = Number((unitCost * group.unitsPerSeries).toFixed(2));
 
     // 5. Complete series stock summary with real branch/global stock
     // Aggregate multiple variant records per size to preserve accurate cumulative stock

@@ -236,10 +236,16 @@ export class AppController {
   @Get('catalog/store-info')
   async getStoreInfoQuery(
     @Query('identifier') identifier?: string,
+    @Query('slug') slug?: string,
+    @Query('businessSlug') businessSlug?: string,
+    @Query('userId') userId?: string,
+    @Query('store') store?: string,
+    @Query('negocio') negocio?: string,
     @Query('email') email?: string,
     @Req() req?: any,
   ) {
-    return this.resolveStoreInfo(identifier || email, req);
+    const rawId = identifier || slug || businessSlug || userId || store || negocio || email;
+    return this.resolveStoreInfo(rawId, req);
   }
 
   @Get('catalog/store-info/:identifier')
@@ -292,11 +298,16 @@ export class AppController {
   @Get('catalog/products')
   async getCatalogProducts(
     @Query('identifier') identifier?: string,
+    @Query('slug') slug?: string,
+    @Query('businessSlug') businessSlug?: string,
     @Query('userId') userId?: string,
+    @Query('store') store?: string,
+    @Query('negocio') negocio?: string,
     @Query('email') email?: string,
     @Req() req?: any,
   ) {
-    return this.resolveCatalogProducts(userId || identifier || email, req);
+    const rawId = userId || identifier || slug || businessSlug || store || negocio || email;
+    return this.resolveCatalogProducts(rawId, req);
   }
 
   @Get('catalog/products/:identifier')
@@ -352,11 +363,16 @@ export class AppController {
   @Get('catalog/brands')
   async getCatalogBrands(
     @Query('identifier') identifier?: string,
+    @Query('slug') slug?: string,
+    @Query('businessSlug') businessSlug?: string,
     @Query('userId') userId?: string,
+    @Query('store') store?: string,
+    @Query('negocio') negocio?: string,
     @Query('email') email?: string,
     @Req() req?: any,
   ) {
-    return this.resolveCatalogBrands(userId || identifier || email, req);
+    const rawId = userId || identifier || slug || businessSlug || store || negocio || email;
+    return this.resolveCatalogBrands(rawId, req);
   }
 
   @Get('catalog/brands/:identifier')
@@ -387,11 +403,16 @@ export class AppController {
   @Get('catalog/families')
   async getCatalogFamilies(
     @Query('identifier') identifier?: string,
+    @Query('slug') slug?: string,
+    @Query('businessSlug') businessSlug?: string,
     @Query('userId') userId?: string,
+    @Query('store') store?: string,
+    @Query('negocio') negocio?: string,
     @Query('email') email?: string,
     @Req() req?: any,
   ) {
-    return this.resolveCatalogFamilies(userId || identifier || email, req);
+    const rawId = userId || identifier || slug || businessSlug || store || negocio || email;
+    return this.resolveCatalogFamilies(rawId, req);
   }
 
   @Get('catalog/families/:identifier')

@@ -71,6 +71,7 @@ import {
   PlusCircle,
   Trash2,
   Edit,
+  Layers,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
@@ -2864,8 +2865,6 @@ export default function BusinessPosPage() {
                                       (v) => String(extractSizeFromProduct(v)).trim() === String(sz).trim()
                                     ) || item.primaryProduct;
                                   addToCart(variantProd);
-                                  toast.success(`🛒 Agregado: ${variantProd.name}`);
-                                  playBeep();
                                 }}
                               />
                             </div>
@@ -2919,7 +2918,6 @@ export default function BusinessPosPage() {
                       onClick={() => {
                         if (availableStock > 0) {
                           addToCart(p);
-                          playBeep();
                         }
                       }}
                       onMouseEnter={(e) => {
@@ -3053,8 +3051,6 @@ export default function BusinessPosPage() {
                             onClick={(e) => {
                               e.stopPropagation();
                               addToCart(p);
-                              toast.success(`🛒 Agregado: ${p.name}`);
-                              playBeep();
                             }}
                             className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all shrink-0 ${
                               availableStock > 0
@@ -4406,159 +4402,214 @@ export default function BusinessPosPage() {
 
 
 
-      {/* MODAL: Vista Detallada de Imagen y Producto en POS */}
+      {/* MODAL: Vista Detallada de Imagen y Producto en POS (PRO & EXPANDIDO) */}
       <Modal
         isOpen={Boolean(posLightboxProduct)}
         onClose={() => setPosLightboxProduct(null)}
         title="Detalle del Calzado / Producto"
+        maxWidth="max-w-3xl xl:max-w-4xl"
       >
         {posLightboxProduct && (
-          <div className="space-y-4">
-            {/* Foto Grande con Zoom Visual */}
-            <div className="w-full h-64 sm:h-80 bg-gradient-to-b from-gray-50 to-gray-100 rounded-3xl overflow-hidden border border-gray-200 flex items-center justify-center p-3 relative shadow-inner">
-              {posLightboxProduct.imageUrl ? (
-                <img
-                  src={getReceiptAbsoluteUrl(posLightboxProduct.imageUrl) || posLightboxProduct.imageUrl}
-                  alt={posLightboxProduct.modelName || posLightboxProduct.name}
-                  className="max-h-full max-w-full object-contain drop-shadow-md"
-                />
-              ) : (
-                <div className="text-center text-gray-300">
-                  <Package className="w-16 h-16 mx-auto mb-2 opacity-40" />
-                  <p className="text-xs font-bold">Sin Imagen Registrada</p>
-                </div>
-              )}
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
+            {/* FOTO GRANDE CON ZOOM VISUAL */}
+            <div className="md:col-span-5 w-full bg-gradient-to-b from-slate-50 via-gray-50 to-slate-100 rounded-3xl overflow-hidden border border-gray-200 flex flex-col items-center justify-between p-4 relative shadow-inner min-h-[300px] md:min-h-[380px]">
               {/* Badges Flotantes sobre la Imagen */}
-              <div className="absolute top-3 left-3 flex flex-wrap gap-1.5 z-10">
+              <div className="w-full flex flex-wrap gap-1.5 z-10 mb-2">
                 <span className="px-2.5 py-1 rounded-lg text-xs font-black uppercase tracking-wider bg-slate-900 text-amber-300 shadow-sm border border-amber-400/40">
                   SKU: {posLightboxProduct.sku || posLightboxProduct.primaryProduct?.sku || "Sin SKU"}
                 </span>
                 {posLightboxProduct.isSeries && (
-                  <span className="px-2.5 py-1 rounded-lg text-xs font-black uppercase tracking-wider bg-amber-600 text-white shadow-sm">
-                    📦 Serie ({posLightboxProduct.unitsPerSeries} pares)
+                  <span className="px-2.5 py-1 rounded-lg text-xs font-black uppercase tracking-wider bg-amber-600 text-white shadow-sm flex items-center gap-1">
+                    <Package className="w-3.5 h-3.5" />
+                    Serie ({posLightboxProduct.unitsPerSeries} pares)
                   </span>
                 )}
                 {posLightboxProduct.taco && (
-                  <span className="px-2 py-1 rounded-lg text-xs font-bold bg-pink-600 text-white shadow-sm">
+                  <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-pink-600 text-white shadow-sm flex items-center gap-1">
                     👠 {posLightboxProduct.taco}
                   </span>
                 )}
               </div>
-            </div>
 
-            {/* Ficha Técnica del Producto */}
-            <div className="bg-slate-50 p-4 rounded-2xl border border-gray-200/80 space-y-3">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-base font-black text-gray-900">
-                    {posLightboxProduct.modelName || posLightboxProduct.name}
-                  </h3>
-                  <div className="flex flex-wrap gap-2 items-center text-xs font-bold text-gray-500 mt-1">
-                    {(posLightboxProduct.brandName || posLightboxProduct.brand?.name) && (
-                      <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700">
-                        {posLightboxProduct.brandName || posLightboxProduct.brand?.name}
-                      </span>
-                    )}
-                    {(posLightboxProduct.familyName || posLightboxProduct.family?.name) && (
-                      <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700">
-                        {posLightboxProduct.familyName || posLightboxProduct.family?.name}
-                      </span>
-                    )}
-                    {posLightboxProduct.color && (
-                      <ProductColorBadge color={posLightboxProduct.color} size="sm" />
-                    )}
+              {/* Imagen Central Ampliada */}
+              <div className="w-full flex-1 flex items-center justify-center my-auto p-2">
+                {posLightboxProduct.imageUrl ? (
+                  <img
+                    src={getReceiptAbsoluteUrl(posLightboxProduct.imageUrl) || posLightboxProduct.imageUrl}
+                    alt={posLightboxProduct.modelName || posLightboxProduct.name}
+                    className="max-h-64 md:max-h-72 w-full object-contain drop-shadow-lg hover:scale-105 transition-transform duration-300"
+                  />
+                ) : (
+                  <div className="text-center text-gray-300 py-10">
+                    <Package className="w-16 h-16 mx-auto mb-2 opacity-40" />
+                    <p className="text-xs font-bold">Sin Imagen Registrada</p>
                   </div>
-                </div>
-
-                <div className="text-right shrink-0">
-                  <div className="text-[10px] uppercase font-bold text-gray-400">Precio</div>
-                  <div className="text-lg font-black text-indigo-600">
-                    S/ {Number(posLightboxProduct.salePricePerUnit || posLightboxProduct.salePrice || 0).toFixed(2)}
-                  </div>
-                </div>
+                )}
               </div>
 
-              {/* Si es serie, desglose interactivo de tallas para agregar al carrito */}
-              {posLightboxProduct.isSeries && posLightboxProduct.summary && (
-                <div className="border-t border-gray-200/60 pt-3">
-                  <div className="text-xs font-black text-gray-700 mb-2 flex items-center justify-between">
-                    <span>
-                      Tallas en Almacén ({posLightboxProduct.summary.sizes.length} tallas • {posLightboxProduct.unitsPerSeries} pares/serie):
-                    </span>
-                    <span className="text-amber-700 text-[10px] font-black">
-                      {posLightboxProduct.summary.completeSeries} {posLightboxProduct.summary.completeSeries === 1 ? "serie" : "series"} disponibles
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {posLightboxProduct.summary.sizes.map((s: any) => {
-                      const hasStock = s.stock > 0;
-                      return (
-                        <button
-                          key={s.size}
-                          type="button"
-                          disabled={!hasStock}
-                          onClick={() => {
-                            const variantProd =
-                              posLightboxProduct.variants?.find(
-                                (v: any) => extractSizeFromProduct(v) === s.size
-                              ) || posLightboxProduct.primaryProduct;
-                            addToCart(variantProd);
-                            toast.success(`🛒 Agregado: ${variantProd.name}`);
-                            playBeep();
-                          }}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-black border transition-all flex items-center gap-1.5 cursor-pointer ${hasStock
-                            ? "bg-white hover:bg-indigo-600 hover:text-white border-gray-300 text-gray-800 shadow-xs"
-                            : "bg-gray-100 text-gray-300 border-gray-200 cursor-not-allowed line-through"
-                            }`}
-                        >
-                          <span>T.{s.size}</span>
-                          <span className="text-[10px] opacity-75 font-mono">({s.stock})</span>
-                        </button>
-                      );
-                    })}
-                  </div>
+              {/* Color al pie de la foto */}
+              {posLightboxProduct.color && (
+                <div className="w-full pt-2 border-t border-gray-200/60 flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-gray-500 uppercase">Tono / Acabado:</span>
+                  <ProductColorBadge color={posLightboxProduct.color} size="sm" />
                 </div>
               )}
             </div>
 
-            {/* Botones de Acción */}
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setPosLightboxProduct(null)}
-                className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl text-xs transition-colors cursor-pointer"
-              >
-                Cerrar
-              </button>
+            {/* FICHA TÉCNICA Y ACCIONES DE VENTA */}
+            <div className="md:col-span-7 flex flex-col justify-between space-y-4">
+              <div>
+                {/* Título & Categoría */}
+                <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                  {(posLightboxProduct.brandName || posLightboxProduct.brand?.name) && (
+                    <span className="px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 text-xs font-black">
+                      {posLightboxProduct.brandName || posLightboxProduct.brand?.name}
+                    </span>
+                  )}
+                  {(posLightboxProduct.familyName || posLightboxProduct.family?.name) && (
+                    <span className="px-2.5 py-0.5 rounded-md bg-purple-50 text-purple-700 text-xs font-bold">
+                      {posLightboxProduct.familyName || posLightboxProduct.family?.name}
+                    </span>
+                  )}
+                  {posLightboxProduct.customCode && (
+                    <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-xs font-mono font-bold">
+                      #{String(posLightboxProduct.customCode).padStart(4, "0")}
+                    </span>
+                  )}
+                </div>
 
-              {posLightboxProduct.isSeries ? (
+                <h3 className="text-xl md:text-2xl font-black text-gray-900 tracking-tight">
+                  {posLightboxProduct.modelName || posLightboxProduct.name}
+                </h3>
+
+                {/* Tarjetas de Precios: Par Suelto vs Serie Completa */}
+                <div className="grid grid-cols-2 gap-3 mt-3">
+                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3">
+                    <span className="text-[10px] font-black uppercase text-gray-400 block tracking-wider">
+                      Precio Par Suelto
+                    </span>
+                    <div className="text-xl font-black text-slate-800">
+                      S/ {Number(posLightboxProduct.salePricePerUnit || posLightboxProduct.salePrice || 0).toFixed(2)}
+                    </div>
+                  </div>
+
+                  <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase text-amber-700 block tracking-wider">
+                        Serie Completa ({posLightboxProduct.unitsPerSeries} pares)
+                      </span>
+                    </div>
+                    <div className="text-xl font-black text-amber-900">
+                      S/ {Number(posLightboxProduct.salePricePerSeries || 0).toFixed(2)}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Si es serie, Curva de Serie y desglose exacto de pares */}
+                {posLightboxProduct.isSeries && (
+                  <div className="mt-4 space-y-3 bg-amber-50/50 border border-amber-200/80 rounded-2xl p-3.5">
+                    {/* Resumen Curva Oficial */}
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-black text-amber-950 flex items-center gap-1.5">
+                        <Layers className="w-3.5 h-3.5 text-amber-600" />
+                        Composición de 1 Serie ({posLightboxProduct.curve?.length || 5} tallas • {posLightboxProduct.unitsPerSeries} pares):
+                      </span>
+                      <span className="text-amber-800 text-[10px] font-black bg-amber-100 px-2 py-0.5 rounded-full">
+                        {posLightboxProduct.summary?.completeSeries || 0} {posLightboxProduct.summary?.completeSeries === 1 ? "serie disponible" : "series disponibles"}
+                      </span>
+                    </div>
+
+                    {/* Desglose Curva (Ratios) */}
+                    <div className="flex flex-wrap gap-1.5 text-xs">
+                      {posLightboxProduct.curve?.map((c: any) => (
+                        <div
+                          key={c.size}
+                          className="px-2.5 py-1 rounded-xl bg-white border border-amber-200 text-amber-950 font-bold flex items-center gap-1 shadow-2xs"
+                        >
+                          <span className="text-amber-700">T.{c.size}</span>
+                          <span className="text-[10px] font-black bg-amber-100 text-amber-800 px-1.5 py-0.2 rounded-md">
+                            {c.ratio} {c.ratio === 1 ? "par" : "pares"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Botones de Pares Físicos en Almacén */}
+                    <div className="pt-2 border-t border-amber-200/60">
+                      <div className="text-[11px] font-bold text-gray-600 mb-2">
+                        Pares en Almacén (Clic para agregar par suelto al carrito):
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {posLightboxProduct.summary?.sizes.map((s: any) => {
+                          const hasStock = s.stock > 0;
+                          return (
+                            <button
+                              key={s.size}
+                              type="button"
+                              disabled={!hasStock}
+                              onClick={() => {
+                                const variantProd =
+                                  posLightboxProduct.variants?.find(
+                                    (v: any) => extractSizeFromProduct(v) === s.size
+                                  ) || posLightboxProduct.primaryProduct;
+                                addToCart(variantProd);
+                              }}
+                              className={`px-3 py-2 rounded-xl text-xs font-black border transition-all flex items-center gap-1.5 cursor-pointer ${hasStock
+                                ? "bg-white hover:bg-indigo-600 hover:text-white border-gray-300 text-gray-800 shadow-sm active:scale-95"
+                                : "bg-gray-100 text-gray-300 border-gray-200 cursor-not-allowed line-through"
+                                }`}
+                              title={hasStock ? `Agregar 1 par Talla ${s.size}` : "Sin stock disponible"}
+                            >
+                              <span>T.{s.size}</span>
+                              <span className="text-[10px] opacity-75 font-mono">({s.stock} en stock)</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Botones de Acción al Pie del Modal */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-gray-100">
                 <button
                   type="button"
-                  disabled={posLightboxProduct.summary?.completeSeries <= 0}
-                  onClick={() => {
-                    addSeriesCurveToCart(posLightboxProduct);
-                    setPosLightboxProduct(null);
-                  }}
-                  className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 disabled:opacity-40 text-white font-black rounded-2xl text-xs flex items-center gap-2 shadow-sm cursor-pointer"
+                  onClick={() => setPosLightboxProduct(null)}
+                  className="px-5 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl text-xs transition-colors cursor-pointer active:scale-95"
                 >
-                  <Package className="w-4 h-4" />
-                  Vender Serie Completa ({posLightboxProduct.unitsPerSeries} pares) - S/ {Number(posLightboxProduct.salePricePerSeries || 0).toFixed(2)}
+                  Cerrar
                 </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    addToCart(posLightboxProduct);
-                    toast.success(`🛒 Agregado: ${posLightboxProduct.name}`);
-                    playBeep();
-                    setPosLightboxProduct(null);
-                  }}
-                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-2xl text-xs flex items-center gap-2 shadow-sm cursor-pointer"
-                >
-                  <ShoppingCart className="w-4 h-4" />
-                  Agregar al Carrito
-                </button>
-              )}
+
+                <div className="flex items-center gap-2">
+                  {posLightboxProduct.isSeries ? (
+                    <button
+                      type="button"
+                      disabled={posLightboxProduct.summary?.completeSeries <= 0}
+                      onClick={() => {
+                        addSeriesCurveToCart(posLightboxProduct);
+                        setPosLightboxProduct(null);
+                      }}
+                      className="px-6 py-3 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-600 disabled:opacity-40 text-white font-black rounded-2xl text-xs flex items-center gap-2 shadow-md hover:shadow-lg transition-all cursor-pointer active:scale-95"
+                    >
+                      <Package className="w-4 h-4" />
+                      <span>Vender Serie Completa ({posLightboxProduct.unitsPerSeries} pares) - S/ {Number(posLightboxProduct.salePricePerSeries || 0).toFixed(2)}</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        addToCart(posLightboxProduct);
+                        setPosLightboxProduct(null);
+                      }}
+                      className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-2xl text-xs flex items-center gap-2 shadow-md transition-all cursor-pointer active:scale-95"
+                    >
+                      <ShoppingCart className="w-4 h-4" />
+                      <span>Agregar al Carrito</span>
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         )}

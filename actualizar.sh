@@ -22,12 +22,14 @@ echo "⬇️  [1/4] Descargando últimos cambios de GitHub (main)..."
 git stash || true
 git pull origin main
 
-# 3. Compilar Backend (NestJS + Prisma)
+# 3. Compilar Backend (NestJS + Prisma + Slugs DB)
 echo ""
-echo "📦 [2/4] Compilando Backend (control-backend)..."
+echo "📦 [2/4] Compilando Backend y Base de Datos (control-backend)..."
 cd "$REPO_ROOT/control-backend"
 npm install --legacy-peer-deps
 npx prisma generate
+npx prisma db push --accept-data-loss
+node scripts/populate_vps_slugs.cjs || true
 npm run build
 
 # 4. Reiniciar proceso en PM2

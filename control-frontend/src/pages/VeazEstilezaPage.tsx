@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams, useNavigate, useLocation } from "react-router-dom";
 import {
   Search,
   Sparkles,
@@ -39,9 +39,11 @@ import {
   HeartHandshake,
   Share2,
   Palette,
+  Copy,
 } from "lucide-react";
 import { FaWhatsapp, FaFacebookF, FaInstagram, FaTiktok } from "react-icons/fa6";
 import { toast } from "react-hot-toast";
+import { useAuth } from "../auth/AuthContext";
 import {
   getCatalogProductsRequest,
   getCatalogBrandsRequest,
@@ -52,7 +54,7 @@ import {
   type Product,
 } from "../services/product.api";
 import { getReceiptAbsoluteUrl } from "../components/ui/ImageUploader";
-import { getStoreCatalogSlug } from "../utils/catalogUtils";
+import { getStoreCatalogSlug, getStoreCatalogUrl } from "../utils/catalogUtils";
 import {
   groupProductsBySku,
   type GroupedShoeModel,
@@ -510,9 +512,13 @@ interface CartItem {
 
 export default function VeazEstilezaPage() {
   const params = useParams<{ identifier?: string }>();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { user: currentUser } = useAuth();
   const catalogRef = useRef<HTMLDivElement>(null);
 
-  // Target Identifier Resolution (Default to official store 'veaz-estileza' -> beaz.estileza@gmail.com)
+  // Target Identifier Resolution (URL path > query param > logged-in store slug > official showcase)
   const targetIdentifier = useMemo(() => {
     let raw = "";
     try {
@@ -521,17 +527,52 @@ export default function VeazEstilezaPage() {
       raw = (params.identifier || "").trim();
     }
 
-    const lower = raw.toLowerCase();
+    const queryParam = (
+      searchParams.get("store") ||
+      searchParams.get("slug") ||
+      searchParams.get("negocio") ||
+      searchParams.get("id") ||
+      searchParams.get("userId") ||
+      searchParams.get("u") ||
+      ""
+    ).trim();
+
+    const effective = raw || queryParam;
+    const lower = effective.toLowerCase();
+
+    // If explicit store identifier was passed in path or query
     if (lower && lower !== "catalogo" && lower !== "mi-tienda" && lower !== "tienda-oficial") {
-      return raw;
+      return effective;
     }
 
-    // Default official showcase account requested by user
+    // If logged in, prioritize user's own store slug
+    if (currentUser) {
+      const mySlug = getStoreCatalogSlug(currentUser);
+      if (mySlug && mySlug !== "mi-tienda") {
+        return mySlug;
+      }
+    }
+
+    // Default official showcase account
     return "veaz-estileza";
-  }, [params.identifier]);
+  }, [params.identifier, searchParams, currentUser]);
+
+  // If logged in and browsing generic /catalogo or /veaz-estileza, update URL bar to user's real slug
+  useEffect(() => {
+    const rawParam = (params.identifier || "").trim().toLowerCase();
+    const queryParam = searchParams.get("store") || searchParams.get("slug") || searchParams.get("negocio") || searchParams.get("id");
+
+    if ((!rawParam || rawParam === "catalogo" || rawParam === "mi-tienda") && !queryParam && currentUser) {
+      const mySlug = getStoreCatalogSlug(currentUser);
+      if (mySlug && mySlug !== "mi-tienda") {
+        navigate(`/catalogo/${mySlug}`, { replace: true });
+      }
+    }
+  }, [params.identifier, searchParams, currentUser, navigate]);
 
   // Main States
   const [storeInfo, setStoreInfo] = useState<CatalogStoreInfo | null>(null);
+  const [storeNotFound, setStoreNotFound] = useState<boolean>(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [availableBrands, setAvailableBrands] = useState<string[]>([]);
   const [availableFamilies, setAvailableFamilies] = useState<string[]>([]);
@@ -551,6 +592,29 @@ export default function VeazEstilezaPage() {
   const [isOmniOpen, setIsOmniOpen] = useState<boolean>(false);
   const [isLiveChatOpen, setIsLiveChatOpen] = useState<boolean>(false);
   const omniRef = useRef<HTMLDivElement>(null);
+  const catalogSearchContainerRef = useRef<HTMLDivElement>(null);
+  const [isCatalogSearchScrolledOut, setIsCatalogSearchScrolledOut] = useState<boolean>(false);
+
+  // Detector de Scroll: Sincroniza dinámicamente el buscador del Navbar con el Catálogo
+  // cuando el buscador del catálogo se oculta por scroll y el usuario sigue dentro del catálogo
+  useEffect(() => {
+    const handleScroll = () => {
+      if (!catalogSearchContainerRef.current) return;
+      const searchRect = catalogSearchContainerRef.current.getBoundingClientRect();
+      const catalogRect = catalogRef.current?.getBoundingClientRect();
+
+      // ¿El buscador interno del catálogo ya pasó hacia arriba por debajo del navbar?
+      const isScrolledPast = searchRect.bottom < 85;
+      // ¿El usuario se encuentra navegando activamente dentro del área del catálogo?
+      const isInsideCatalog = catalogRect ? (catalogRect.top < 120 && catalogRect.bottom > 250) : false;
+
+      setIsCatalogSearchScrolledOut(isScrolledPast && isInsideCatalog);
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    handleScroll();
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
   const [brandSearch, setBrandSearch] = useState<string>("");
   const [familySearch, setFamilySearch] = useState<string>("");
   const [colorSearch, setColorSearch] = useState<string>("");
@@ -685,25 +749,34 @@ export default function VeazEstilezaPage() {
     return () => clearInterval(interval);
   }, [activeBanners.length]);
 
-  // Load Store & Products with prioritized beaz.estileza@gmail.com resolution
+  // Load Store & Products strictly from public API (zero reliance on localStorage)
   useEffect(() => {
     let isMounted = true;
     window.scrollTo(0, 0);
     setIsLoading(true);
+    setStoreNotFound(false);
 
     async function loadStore() {
       try {
         let storeData: CatalogStoreInfo | null = null;
 
-        // 1. Try target identifier
+        // 1. Fetch store info
         storeData = await getCatalogStoreInfoRequest(targetIdentifier).catch(() => null);
 
-        // 2. If not found or default, fallback directly to official account beaz.estileza@gmail.com
-        if (!storeData || storeData.notFound) {
+        // 2. If not found and target was veaz-estileza or demo, fallback to official email
+        if ((!storeData || storeData.notFound) && (targetIdentifier === "veaz-estileza" || targetIdentifier === "demo")) {
           storeData = await getCatalogStoreInfoRequest("beaz.estileza@gmail.com").catch(() => null);
         }
 
         if (!isMounted) return;
+
+        if (!storeData || storeData.notFound) {
+          if (targetIdentifier !== "veaz-estileza") {
+            setStoreNotFound(true);
+            setIsLoading(false);
+            return;
+          }
+        }
 
         let rawProducts: Product[] = [];
         let brandsData: any[] = [];
@@ -724,19 +797,8 @@ export default function VeazEstilezaPage() {
           familiesData = Array.isArray(fData) ? fData : [];
         }
 
-        if (rawProducts.length === 0) {
-          try {
-            const token = localStorage.getItem("token");
-            if (token) {
-              const myProds = await getProductsRequest().catch(() => []);
-              if (Array.isArray(myProds) && myProds.length > 0) {
-                rawProducts = myProds;
-              }
-            }
-          } catch {}
-        }
-
-        if (rawProducts.length === 0) {
+        // Only show SHOWCASE_DEMO_PRODUCTS if official showcase store with zero products
+        if (rawProducts.length === 0 && (storeData?.isOfficialStore || targetIdentifier === "veaz-estileza")) {
           setIsDemoMode(true);
           rawProducts = SHOWCASE_DEMO_PRODUCTS;
         } else {
@@ -759,8 +821,12 @@ export default function VeazEstilezaPage() {
         setAvailableFamilies(Array.from(famNames).sort());
       } catch (err) {
         console.error("Error loading store catalog:", err);
-        setProducts(SHOWCASE_DEMO_PRODUCTS);
-        setIsDemoMode(true);
+        if (targetIdentifier === "veaz-estileza") {
+          setProducts(SHOWCASE_DEMO_PRODUCTS);
+          setIsDemoMode(true);
+        } else {
+          setStoreNotFound(true);
+        }
       } finally {
         if (isMounted) setIsLoading(false);
       }
@@ -1348,6 +1414,15 @@ export default function VeazEstilezaPage() {
     return storeInfo?.catalogConfig?.tiktokUrl || (isFootwearRubro ? "https://tiktok.com/@veazestileza" : "");
   }, [storeInfo, isFootwearRubro]);
 
+  const isStoreOwner = useMemo(() => {
+    if (!currentUser || !storeInfo) return false;
+    return Boolean(
+      (storeInfo.id && currentUser.id === storeInfo.id) ||
+      (storeInfo.email && currentUser.email && currentUser.email.toLowerCase() === storeInfo.email.toLowerCase()) ||
+      (storeInfo.businessSlug && currentUser.businessSlug && currentUser.businessSlug === storeInfo.businessSlug)
+    );
+  }, [currentUser, storeInfo]);
+
   // Loading Screen
   if (isLoading) {
     return (
@@ -1357,6 +1432,40 @@ export default function VeazEstilezaPage() {
           Cargando Catálogo Oficial...
         </h3>
         <p className="text-xs text-slate-500 mt-1">Conectando inventario, marcas y series en tiempo real</p>
+      </div>
+    );
+  }
+
+  // Tienda No Encontrada Screen
+  if (storeNotFound) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center font-sans">
+        <div className="w-20 h-20 bg-rose-50 border border-rose-200 text-rose-500 rounded-3xl flex items-center justify-center mb-5 shadow-lg shadow-rose-100">
+          <Store className="w-10 h-10" />
+        </div>
+        <span className="px-3 py-1 rounded-full bg-rose-100 text-rose-800 text-xs font-black uppercase tracking-wider mb-2">
+          Catálogo No Encontrado
+        </span>
+        <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight max-w-md">
+          No encontramos ninguna tienda con el enlace "{targetIdentifier}"
+        </h2>
+        <p className="text-sm text-slate-500 max-w-md mt-2">
+          Verifica que el nombre o slug esté bien escrito, o consulta directamente con el propietario del negocio.
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-3 mt-6">
+          <Link
+            to="/catalogo/veaz-estileza"
+            className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black rounded-xl shadow-md transition-all active:scale-95"
+          >
+            Ver Catálogo Oficial de Muestra
+          </Link>
+          <Link
+            to="/"
+            className="px-5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold rounded-xl transition-all"
+          >
+            Ir a Inicio THINK ERP
+          </Link>
+        </div>
       </div>
     );
   }
@@ -1647,48 +1756,82 @@ export default function VeazEstilezaPage() {
             </div>
           </div>
 
-          {/* Search Bar (Global Omnisearch & Command Center) */}
+          {/* Search Bar (Global Omnisearch & Command Center / Sincronizado con Catálogo en Scroll) */}
           <div className="flex-1 max-w-xl hidden md:block relative">
             <div className="relative w-full">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <Search className={`absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors ${
+                isCatalogSearchScrolledOut ? "text-indigo-600" : "text-slate-400"
+              }`} />
               <input
                 type="text"
-                value={globalSearch}
+                value={isCatalogSearchScrolledOut ? (catalogSearch || globalSearch) : globalSearch}
                 onChange={(e) => {
-                  setGlobalSearch(e.target.value);
-                  setIsOmniOpen(true);
+                  const val = e.target.value;
+                  setGlobalSearch(val);
+                  if (isCatalogSearchScrolledOut) {
+                    // En scroll dentro del catálogo: filtra la cuadrícula de artículos directamente
+                    setCatalogSearch(val);
+                    setIsOmniOpen(false);
+                  } else {
+                    // En posición normal: búsqueda global con palette predictivo
+                    setIsOmniOpen(true);
+                  }
                 }}
-                onFocus={() => setIsOmniOpen(true)}
+                onFocus={() => {
+                  if (!isCatalogSearchScrolledOut) {
+                    setIsOmniOpen(true);
+                  }
+                }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     setCatalogSearch(globalSearch);
-                    catalogRef.current?.scrollIntoView({ behavior: "smooth" });
-                    setIsOmniOpen(false);
+                    if (!isCatalogSearchScrolledOut) {
+                      catalogRef.current?.scrollIntoView({ behavior: "smooth" });
+                      setIsOmniOpen(false);
+                    }
                   }
                   if (e.key === "Escape") {
                     setIsOmniOpen(false);
                   }
                 }}
-                placeholder="Búsqueda global: productos, marcas, categorías, tiendas, horarios..."
-                className="w-full pl-11 pr-20 py-2.5 rounded-full bg-slate-100 hover:bg-slate-50 border border-slate-200 text-xs sm:text-sm text-slate-800 placeholder:text-slate-400 font-medium focus:outline-none focus:border-indigo-500 focus:bg-white transition-all shadow-inner"
+                placeholder={
+                  isCatalogSearchScrolledOut
+                    ? (isFootwearRubro ? "Filtrando catálogo por modelo, talla o color..." : "Filtrando catálogo en tiempo real...")
+                    : "Búsqueda global: productos, marcas, categorías, tiendas, horarios..."
+                }
+                className={`w-full pl-11 pr-24 py-2.5 rounded-full text-xs sm:text-sm font-medium transition-all shadow-inner focus:outline-none ${
+                  isCatalogSearchScrolledOut
+                    ? "bg-indigo-50/70 border-2 border-indigo-400 text-indigo-950 placeholder:text-indigo-400/90 focus:bg-white focus:border-indigo-600"
+                    : "bg-slate-100 hover:bg-slate-50 border border-slate-200 text-slate-800 placeholder:text-slate-400 focus:border-indigo-500 focus:bg-white"
+                }`}
               />
               <div className="absolute right-3.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
-                {globalSearch && (
+                {isCatalogSearchScrolledOut && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-600 text-white text-[9px] font-black uppercase tracking-wider shadow-2xs">
+                    Catálogo
+                  </span>
+                )}
+                {(globalSearch || (isCatalogSearchScrolledOut && catalogSearch)) && (
                   <button
                     type="button"
-                    onClick={() => setGlobalSearch("")}
+                    onClick={() => {
+                      setGlobalSearch("");
+                      setCatalogSearch("");
+                    }}
                     className="text-slate-400 hover:text-slate-700 cursor-pointer p-1"
-                    title="Limpiar búsqueda global"
+                    title="Limpiar búsqueda"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
                 )}
-                <span className="hidden xl:inline-flex items-center px-1.5 py-0.5 rounded bg-slate-200/80 text-[10px] font-mono font-bold text-slate-600">
-                  Ctrl K
-                </span>
+                {!isCatalogSearchScrolledOut && (
+                  <span className="hidden xl:inline-flex items-center px-1.5 py-0.5 rounded bg-slate-200/80 text-[10px] font-mono font-bold text-slate-600">
+                    Ctrl K
+                  </span>
+                )}
               </div>
             </div>
-            {renderOmniDropdown()}
+            {!isCatalogSearchScrolledOut && renderOmniDropdown()}
           </div>
 
           {/* Quick Nav Anchors for Desktop & Tablet */}
@@ -1769,32 +1912,57 @@ export default function VeazEstilezaPage() {
           </div>
         </div>
 
-        {/* Mobile Search Bar & Fast Nav Bar (Omnisearch Global) */}
+        {/* Mobile Search Bar & Fast Nav Bar (Omnisearch Global / Sincronizado en Scroll) */}
         <div className="p-3 bg-slate-50 border-t border-slate-100 md:hidden space-y-2 relative">
           <div className="relative w-full">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <Search className={`absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors ${
+              isCatalogSearchScrolledOut ? "text-indigo-600" : "text-slate-400"
+            }`} />
             <input
               type="text"
-              value={globalSearch}
+              value={isCatalogSearchScrolledOut ? (catalogSearch || globalSearch) : globalSearch}
               onChange={(e) => {
-                setGlobalSearch(e.target.value);
-                setIsOmniOpen(true);
+                const val = e.target.value;
+                setGlobalSearch(val);
+                if (isCatalogSearchScrolledOut) {
+                  setCatalogSearch(val);
+                  setIsOmniOpen(false);
+                } else {
+                  setIsOmniOpen(true);
+                }
               }}
-              onFocus={() => setIsOmniOpen(true)}
+              onFocus={() => {
+                if (!isCatalogSearchScrolledOut) {
+                  setIsOmniOpen(true);
+                }
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   setCatalogSearch(globalSearch);
-                  catalogRef.current?.scrollIntoView({ behavior: "smooth" });
-                  setIsOmniOpen(false);
+                  if (!isCatalogSearchScrolledOut) {
+                    catalogRef.current?.scrollIntoView({ behavior: "smooth" });
+                    setIsOmniOpen(false);
+                  }
                 }
               }}
-              placeholder="Buscar productos, tiendas, horarios..."
-              className="w-full pl-10 pr-9 py-2 rounded-full bg-white border border-slate-200 text-xs text-slate-800 placeholder:text-slate-400 font-medium focus:outline-none focus:border-indigo-500 shadow-2xs"
+              placeholder={
+                isCatalogSearchScrolledOut
+                  ? "Filtrando catálogo en tiempo real..."
+                  : "Buscar productos, tiendas, horarios..."
+              }
+              className={`w-full pl-10 pr-9 py-2 rounded-full text-xs font-medium transition-all shadow-2xs focus:outline-none ${
+                isCatalogSearchScrolledOut
+                  ? "bg-indigo-50 border-2 border-indigo-400 text-indigo-950 placeholder:text-indigo-400 focus:bg-white"
+                  : "bg-white border border-slate-200 text-slate-800 placeholder:text-slate-400 focus:border-indigo-500"
+              }`}
             />
-            {globalSearch && (
+            {(globalSearch || (isCatalogSearchScrolledOut && catalogSearch)) && (
               <button
                 type="button"
-                onClick={() => setGlobalSearch("")}
+                onClick={() => {
+                  setGlobalSearch("");
+                  setCatalogSearch("");
+                }}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-1"
                 title="Limpiar búsqueda"
               >
@@ -1802,7 +1970,7 @@ export default function VeazEstilezaPage() {
               </button>
             )}
           </div>
-          {renderOmniDropdown()}
+          {!isCatalogSearchScrolledOut && renderOmniDropdown()}
 
           <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar pb-1 text-[11px] font-bold text-slate-700">
             <button
@@ -2407,7 +2575,7 @@ export default function VeazEstilezaPage() {
               </div>
 
               {/* BUSCADOR EXCLUSIVO DE CATÁLOGO (Direct In-Grid Search) */}
-              <div className="flex-1 max-w-md w-full">
+              <div ref={catalogSearchContainerRef} className="flex-1 max-w-md w-full">
                 <div className="relative w-full">
                   <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                   <input
@@ -2731,6 +2899,31 @@ export default function VeazEstilezaPage() {
                     </div>
                   );
                 })}
+              </div>
+            ) : products.length === 0 ? (
+              <div className="bg-white rounded-3xl p-12 border border-slate-200 text-center space-y-4 shadow-sm">
+                <div className="w-16 h-16 rounded-3xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center mx-auto shadow-inner">
+                  <Store className="w-8 h-8" />
+                </div>
+                <h4 className="text-xl font-black text-slate-800">
+                  Catálogo en Actualización
+                </h4>
+                <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                  {storeDisplayName} está actualizando su vitrina digital oficial con nuevos productos, precios y novedades.
+                </p>
+                <div className="pt-2">
+                  <a
+                    href={`https://wa.me/${storeWhatsAppPhone.replace(/\D/g, "")}?text=${encodeURIComponent(
+                      `¡Hola ${storeDisplayName}! Estuve viendo su catálogo digital oficial y deseo consultar sobre la disponibilidad y catálogo de productos.`
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-wider shadow-md transition-all active:scale-95 cursor-pointer"
+                  >
+                    <FaWhatsapp className="w-4 h-4" />
+                    <span>Consultar por WhatsApp</span>
+                  </a>
+                </div>
               </div>
             ) : (
               <div className="bg-white rounded-3xl p-12 border border-slate-200 text-center space-y-4 shadow-sm">

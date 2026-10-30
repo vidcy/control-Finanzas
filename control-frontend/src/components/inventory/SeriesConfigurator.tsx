@@ -75,9 +75,22 @@ const normalizeCurve = (rawCurve: any[]): SizeRatio[] => {
 
   const consolidated = Array.from(map.values());
   const sortedSizes = sortSizes(consolidated.map((c) => c.size));
-  return sortedSizes.map(
+  const res = sortedSizes.map(
     (sz) => consolidated.find((c) => c.size === sz) || { size: sz, ratio: 1 }
   );
+
+  // Si la curva tiene 5 tallas (estándar calzado ej. 35-39) y todas quedaron en 1 par (suma = 5),
+  // asegurar que la serie tenga 6 pares calibrando la talla comercial central 37 a 2 pares.
+  const unitsSum = res.reduce((acc, c) => acc + (Number(c.ratio) || 1), 0);
+  if (res.length === 5 && unitsSum === 5) {
+    const target = res.find((c) => c.size === "37") || 
+      [...res].sort((a, b) => (Number(b.stock) || 0) - (Number(a.stock) || 0))[0] ||
+      res.find((c) => c.size === "36") || 
+      res[2];
+    if (target) target.ratio = 2;
+  }
+
+  return res;
 };
 
 export default function SeriesConfigurator({

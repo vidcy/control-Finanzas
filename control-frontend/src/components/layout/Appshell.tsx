@@ -1292,144 +1292,6 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
         {/* TAB 2: BUSINESS */}
         {activeTab === "business" && activeProfiles.includes("BUSINESS") && (
           <form onSubmit={handleSaveProfile} className="space-y-6">
-            {/* VIP MODULE: VITRINA DIGITAL & TIENDA ONLINE */}
-            <div className={`p-5 rounded-3xl border transition-all duration-300 shadow-md ${
-              isCatalogActive
-                ? "bg-gradient-to-br from-[#FFFBF2] via-[#FFFDF9] to-[#FFF6E9] border-amber-300 shadow-amber-500/10"
-                : "bg-slate-50 border-slate-200"
-            }`}>
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex items-start sm:items-center gap-3.5">
-                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 transition-all ${
-                    isCatalogActive
-                      ? "bg-gradient-to-tr from-amber-500 via-amber-600 to-amber-700 text-white shadow-lg shadow-amber-500/30 scale-100"
-                      : "bg-slate-200 text-slate-400 scale-95"
-                  }`}>
-                    <Store className="w-6 h-6 stroke-[2.2]" />
-                  </div>
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h4 className="text-sm font-black text-slate-900 uppercase tracking-tight">
-                        Mi Tienda Online & Catálogo Digital
-                      </h4>
-                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-colors ${
-                        isCatalogActive
-                          ? "bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs"
-                          : "bg-slate-200 text-slate-500 border border-slate-300"
-                      }`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${isCatalogActive ? "bg-emerald-600 animate-pulse" : "bg-slate-400"}`} />
-                        {isCatalogActive ? "Tienda Activa & Pública" : "Tienda Pausada"}
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-600 mt-0.5 leading-relaxed font-medium">
-                      {isCatalogActive
-                        ? "Tus clientes pueden ver tu catálogo en tiempo real y hacerte pedidos directos por WhatsApp."
-                        : "El catálogo está actualmente pausado. Tus clientes verán que la tienda está fuera de línea."}
-                    </p>
-                  </div>
-                </div>
-
-                {/* INTERACTIVE TOGGLE SWITCH */}
-                <div className="flex items-center gap-2.5 self-end sm:self-auto shrink-0 bg-white p-1.5 px-3 rounded-2xl border border-slate-200 shadow-2xs">
-                  <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
-                    {isCatalogActive ? "Activo" : "Desactivado"}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setIsCatalogActive(!isCatalogActive)}
-                    className={`relative inline-flex h-7 w-13 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
-                      isCatalogActive ? "bg-amber-600" : "bg-slate-300"
-                    }`}
-                    role="switch"
-                    aria-checked={isCatalogActive}
-                    title={isCatalogActive ? "Desactivar Catálogo" : "Activar Catálogo"}
-                  >
-                    <span
-                      className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
-                        isCatalogActive ? "translate-x-6" : "translate-x-0"
-                      }`}
-                    />
-                  </button>
-                </div>
-              </div>
-
-              {/* SLUG & ACTIONS ROW */}
-              {isCatalogActive ? (
-                <div className="mt-4 pt-4 border-t border-amber-200 flex flex-col gap-3 animate-fadeIn">
-                  <div>
-                    <label className="block text-[11px] font-black text-amber-900 uppercase tracking-wider mb-1">
-                      Enlace Web Oficial de tu Negocio:
-                    </label>
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                      <div className="flex-1 flex items-center bg-white rounded-xl border border-amber-300 shadow-2xs overflow-hidden focus-within:ring-2 focus-within:ring-amber-500">
-                        <span className="px-3 py-2 bg-amber-50 text-[11px] font-mono font-bold text-amber-900 border-r border-amber-200 shrink-0 select-none">
-                          {window.location.origin}/catalogo/
-                        </span>
-                        <input
-                          type="text"
-                          value={businessSlug}
-                          onChange={(e) => {
-                            const val = e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, "");
-                            setBusinessSlug(val);
-                          }}
-                          placeholder={generateCatalogSlug(businessName) || "mi-tienda"}
-                          className="flex-1 px-3 py-2 text-xs font-mono font-bold text-slate-800 outline-none bg-transparent"
-                        />
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const fullUrl = `${window.location.origin}/catalogo/${businessSlug || generateCatalogSlug(businessName) || "mi-tienda"}`;
-                            navigator.clipboard.writeText(fullUrl);
-                            toast.success("¡Enlace público copiado al portapapeles!");
-                          }}
-                          className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs hover:shadow-xs active:scale-95"
-                          title="Copiar URL"
-                        >
-                          <Copy className="w-3.5 h-3.5 text-slate-500" />
-                          <span>Copiar</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const fullUrl = `${window.location.origin}/catalogo/${businessSlug || generateCatalogSlug(businessName) || "mi-tienda"}`;
-                            window.open(fullUrl, "_blank");
-                          }}
-                          className="px-3.5 py-2 rounded-xl bg-slate-950 hover:bg-black text-amber-300 hover:text-amber-200 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                          <span>Ver mi Tienda</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsProfileModalOpen(false);
-                            setIsCatalogModalOpen(true);
-                          }}
-                          className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-600 via-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-amber-600/25 active:scale-95"
-                        >
-                          <Sparkles className="w-3.5 h-3.5 text-amber-200" />
-                          <span>Configurar Vitrina</span>
-                        </button>
-                      </div>
-                    </div>
-                    <p className="text-[10px] text-amber-800 font-medium mt-1">
-                      💡 Este enlace es público. Puedes compartirlo con tus clientes o en redes para que hagan pedidos a tu WhatsApp oficial.
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-3 p-3.5 rounded-2xl bg-white border border-slate-200 text-xs text-slate-500 flex items-center gap-2.5 animate-fadeIn">
-                  <span className="text-base">⏸️</span>
-                  <span className="font-medium">
-                    Tu tienda virtual está temporalmente pausada. Activa el interruptor arriba para abrir tu vitrina digital y empezar a recibir pedidos por WhatsApp.
-                  </span>
-                </div>
-              )}
-            </div>
-
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1">
@@ -1788,48 +1650,145 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                 </div>
               </div>
 
-              {/* CONFIGURACIÓN Y PERSONALIZACIÓN DEL CATÁLOGO DIGITAL */}
-              <div className="md:col-span-2 p-4 sm:p-5 bg-gradient-to-r from-indigo-50/90 via-purple-50/80 to-pink-50/90 border border-indigo-200/80 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xs">
-                <div className="flex items-center gap-3.5 min-w-0">
-                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 to-purple-600 text-white flex items-center justify-center shadow-md shadow-indigo-500/20 shrink-0">
-                    <Store className="w-6 h-6" />
+                            {/* VIP MODULE: VITRINA DIGITAL & CATÁLOGO ONLINE UNIFICADO AL FINAL */}
+              <div className="md:col-span-2">
+{/* VIP MODULE: VITRINA DIGITAL & TIENDA ONLINE */}
+            <div className={`p-5 rounded-3xl border transition-all duration-300 shadow-md ${
+              isCatalogActive
+                ? "bg-gradient-to-br from-[#FFFBF2] via-[#FFFDF9] to-[#FFF6E9] border-amber-300 shadow-amber-500/10"
+                : "bg-slate-50 border-slate-200"
+            }`}>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-start sm:items-center gap-3.5">
+                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 transition-all ${
+                    isCatalogActive
+                      ? "bg-gradient-to-tr from-amber-500 via-amber-600 to-amber-700 text-white shadow-lg shadow-amber-500/30 scale-100"
+                      : "bg-slate-200 text-slate-400 scale-95"
+                  }`}>
+                    <Store className="w-6 h-6 stroke-[2.2]" />
                   </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h4 className="text-sm font-black text-slate-900">
-                        Catálogo Web Digital
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h4 className="text-sm font-black text-slate-900 uppercase tracking-tight">
+                        Mi Tienda Online & Catálogo Digital
                       </h4>
-                      <span className="text-[10px] bg-emerald-100 text-emerald-800 font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider">
-                        En Línea
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-colors ${
+                        isCatalogActive
+                          ? "bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs"
+                          : "bg-slate-200 text-slate-500 border border-slate-300"
+                      }`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${isCatalogActive ? "bg-emerald-600 animate-pulse" : "bg-slate-400"}`} />
+                        {isCatalogActive ? "Tienda Activa & Pública" : "Tienda Pausada"}
                       </span>
                     </div>
-                    <p className="text-xs text-slate-600 font-medium mt-0.5 leading-relaxed">
-                      Personaliza el logo, banners hero, anuncios, vitrina y enlace de tu catálogo online sincronizado con tu inventario.
+                    <p className="text-xs text-slate-600 mt-0.5 leading-relaxed font-medium">
+                      {isCatalogActive
+                        ? "Tus clientes pueden ver tu catálogo en tiempo real y hacerte pedidos directos por WhatsApp."
+                        : "El catálogo está actualmente pausado. Tus clientes verán que la tienda está fuera de línea."}
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
+
+                {/* INTERACTIVE TOGGLE SWITCH */}
+                <div className="flex items-center gap-2.5 self-end sm:self-auto shrink-0 bg-white p-1.5 px-3 rounded-2xl border border-slate-200 shadow-2xs">
+                  <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                    {isCatalogActive ? "Activo" : "Desactivado"}
+                  </span>
                   <button
                     type="button"
-                    onClick={() => {
-                      setIsProfileModalOpen(false);
-                      setIsCatalogModalOpen(true);
-                    }}
-                    className="flex-1 sm:flex-none px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white text-xs font-black rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                    onClick={() => setIsCatalogActive(!isCatalogActive)}
+                    className={`relative inline-flex h-7 w-13 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                      isCatalogActive ? "bg-amber-600" : "bg-slate-300"
+                    }`}
+                    role="switch"
+                    aria-checked={isCatalogActive}
+                    title={isCatalogActive ? "Desactivar Catálogo" : "Activar Catálogo"}
                   >
-                    <Sparkles className="w-4 h-4" />
-                    <span>Editar Catálogo</span>
+                    <span
+                      className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                        isCatalogActive ? "translate-x-6" : "translate-x-0"
+                      }`}
+                    />
                   </button>
-                  <a
-                    href={getStoreCatalogUrl(user)}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="p-2.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl transition-all shadow-xs"
-                    title="Abrir Catálogo en nueva pestaña"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                  </a>
                 </div>
+              </div>
+
+              {/* SLUG & ACTIONS ROW */}
+              {isCatalogActive ? (
+                <div className="mt-4 pt-4 border-t border-amber-200 flex flex-col gap-3 animate-fadeIn">
+                  <div>
+                    <label className="block text-[11px] font-black text-amber-900 uppercase tracking-wider mb-1">
+                      Enlace Web Oficial de tu Negocio:
+                    </label>
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                      <div className="flex-1 flex items-center bg-white rounded-xl border border-amber-300 shadow-2xs overflow-hidden focus-within:ring-2 focus-within:ring-amber-500">
+                        <span className="px-3 py-2 bg-amber-50 text-[11px] font-mono font-bold text-amber-900 border-r border-amber-200 shrink-0 select-none">
+                          {window.location.origin}/catalogo/
+                        </span>
+                        <input
+                          type="text"
+                          value={businessSlug}
+                          onChange={(e) => {
+                            const val = e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, "");
+                            setBusinessSlug(val);
+                          }}
+                          placeholder={generateCatalogSlug(businessName) || "mi-tienda"}
+                          className="flex-1 px-3 py-2 text-xs font-mono font-bold text-slate-800 outline-none bg-transparent"
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const fullUrl = `${window.location.origin}/catalogo/${businessSlug || generateCatalogSlug(businessName) || "mi-tienda"}`;
+                            navigator.clipboard.writeText(fullUrl);
+                            toast.success("¡Enlace público copiado al portapapeles!");
+                          }}
+                          className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs hover:shadow-xs active:scale-95"
+                          title="Copiar URL"
+                        >
+                          <Copy className="w-3.5 h-3.5 text-slate-500" />
+                          <span>Copiar</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const fullUrl = `${window.location.origin}/catalogo/${businessSlug || generateCatalogSlug(businessName) || "mi-tienda"}`;
+                            window.open(fullUrl, "_blank");
+                          }}
+                          className="px-3.5 py-2 rounded-xl bg-slate-950 hover:bg-black text-amber-300 hover:text-amber-200 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span>Ver mi Tienda</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsProfileModalOpen(false);
+                            setIsCatalogModalOpen(true);
+                          }}
+                          className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-600 via-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-amber-600/25 active:scale-95"
+                        >
+                          <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+                          <span>Configurar Vitrina</span>
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-amber-800 font-medium mt-1">
+                      💡 Este enlace es público. Puedes compartirlo con tus clientes o en redes para que hagan pedidos a tu WhatsApp oficial.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-3 p-3.5 rounded-2xl bg-white border border-slate-200 text-xs text-slate-500 flex items-center gap-2.5 animate-fadeIn">
+                  <span className="text-base">⏸️</span>
+                  <span className="font-medium">
+                    Tu tienda virtual está temporalmente pausada. Activa el interruptor arriba para abrir tu vitrina digital y empezar a recibir pedidos por WhatsApp.
+                  </span>
+                </div>
+              )}
+            </div>
               </div>
             </div>
 
