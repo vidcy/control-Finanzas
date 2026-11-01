@@ -2843,7 +2843,7 @@ export default function BusinessPosPage() {
                       onMouseLeave={() => {
                         setHoveredProduct(null);
                       }}
-                      className={`bg-white rounded-2xl border border-slate-200/90 hover:border-indigo-400 hover:shadow-lg transition-all cursor-pointer group flex flex-col justify-between overflow-hidden shadow-xs relative min-h-[400px] h-full ${availableStock <= 0 ? "opacity-60 cursor-not-allowed" : ""}`}
+                      className={`bg-white rounded-2xl border border-slate-200/90 hover:border-indigo-400 hover:shadow-lg transition-all cursor-pointer group flex flex-col overflow-hidden shadow-xs relative min-h-[400px] h-full ${availableStock <= 0 ? "opacity-60 cursor-not-allowed" : ""}`}
                     >
                       {/* Contenedor de Imagen con altura dinámica uniforme */}
                       <div
@@ -2851,7 +2851,7 @@ export default function BusinessPosPage() {
                           e.stopPropagation();
                           setPosLightboxProduct(p);
                         }}
-                        className="w-full h-36 sm:h-40 shrink-0 bg-slate-50/90 overflow-hidden relative rounded-t-2xl border-b border-slate-100 flex items-center justify-center p-2 cursor-zoom-in"
+                        className="w-full h-44 sm:h-48 shrink-0 bg-gradient-to-b from-slate-50 via-white to-slate-50/70 overflow-hidden relative rounded-t-2xl border-b border-slate-100 flex items-center justify-center p-2.5 cursor-zoom-in"
                         title="Clic en la foto para ver en detalle"
                       >
                         {/* Top Bar: SKU Izquierda y Color Derecha (Sin colisiones) */}
@@ -2892,7 +2892,7 @@ export default function BusinessPosPage() {
                         )}
                       </div>
 
-                      <div className="p-3 bg-white shrink-0 flex flex-col gap-2">
+                      <div className="p-2.5 sm:p-3 bg-white flex-1 flex flex-col justify-between gap-1.5">
                         <div>
                           <div className="flex items-start justify-between gap-1 mb-1">
                             <h3 className="font-bold text-gray-900 group-hover:text-indigo-600 transition-colors line-clamp-2 text-xs leading-snug h-8" title={p.name}>
@@ -2917,17 +2917,34 @@ export default function BusinessPosPage() {
                             </span>
                           </div>
 
-                          {/* Barra de Stock Real-Time Exacto */}
-                          <div className="flex items-center justify-between text-[10px] font-bold px-2 py-1 bg-slate-50 text-slate-700 rounded-lg border border-slate-100 mb-1.5">
+                          {/* Caja Resumen de Venta por Unidad / Par Suelto */}
+                          <div className="bg-slate-50/95 border border-slate-200/90 rounded-xl px-2.5 py-1.5 space-y-1 mb-1">
+                            <div className="flex items-center justify-between text-[10.5px] font-black text-slate-800">
+                              <span className="flex items-center gap-1">
+                                <span className="text-indigo-600 font-extrabold">📦 Venta:</span> Por Unidad / Suelto
+                              </span>
+                              {extractSizeFromProduct(p) ? (
+                                <span className="text-indigo-700 bg-indigo-50 border border-indigo-200/80 px-1.5 py-0.5 rounded font-black text-[9.5px]">
+                                  T.{extractSizeFromProduct(p)}
+                                </span>
+                              ) : (
+                                <span className="text-slate-600 font-bold text-[9.5px]">
+                                  {p.unit || "und"}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center justify-between text-[10px] font-bold pt-1 border-t border-slate-200/70">
                             <span className="flex items-center gap-1 font-black">
                               <span className={`w-1.5 h-1.5 rounded-full ${availableStock > 0 ? "bg-emerald-500" : "bg-rose-500"}`} />
                               {availableStock > 0 ? "Disponible" : "Sin Stock"}
                             </span>
-                            <span className="font-mono font-black text-indigo-600">
+                            <span className="font-mono font-black text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200/90 shadow-2xs">
                               {availableStock} {p.unit || "und"}
                             </span>
                           </div>
                         </div>
+
+                      </div>
 
                         {/* Estructura de Precio Profesional y Botón Quick-Add: De seguido inmediato */}
                         <div className="border-t border-slate-100 pt-2 flex items-center justify-between gap-2">

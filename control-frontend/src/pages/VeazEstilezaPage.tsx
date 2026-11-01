@@ -44,7 +44,6 @@ import {
 import { FaWhatsapp, FaFacebookF, FaInstagram, FaTiktok } from "react-icons/fa6";
 import { toast } from "react-hot-toast";
 import { useAuth } from "../auth/AuthContext";
-import CatalogManagerModal from "../components/catalog/CatalogManagerModal";
 import {
   getCatalogProductsRequest,
   getCatalogBrandsRequest,
@@ -582,8 +581,6 @@ export default function VeazEstilezaPage() {
 
   // Banner Carousel Active Slide
   const [currentBannerSlide, setCurrentBannerSlide] = useState(0);
-  const [isCatalogModalOpen, setIsCatalogModalOpen] = useState(false);
-  const [catalogModalTab, setCatalogModalTab] = useState<any>("banners");
   const [refreshKey, setRefreshKey] = useState(0);
 
   // Selected Sizes per Model (Key: modelKey -> size)
@@ -2079,21 +2076,6 @@ export default function VeazEstilezaPage() {
       ────────────────────────────────────────────────────────── */}
       {activeBanners.length > 0 && (
         <section className="relative w-full overflow-hidden bg-slate-950 text-white h-[420px] sm:h-[460px] lg:h-[500px] flex items-center select-none">
-          {/* Owner Quick Shortcut: Direct Button to configure and replace the 3 carousel images */}
-          {isStoreOwner && (
-            <button
-              type="button"
-              onClick={() => {
-                setCatalogModalTab("banners");
-                setIsCatalogModalOpen(true);
-              }}
-              className="absolute top-4 right-4 sm:top-6 sm:right-6 z-30 px-4 py-2.5 rounded-2xl bg-slate-950/90 hover:bg-black text-amber-300 hover:text-amber-200 border border-amber-400/50 backdrop-blur-md shadow-2xl text-xs font-black flex items-center gap-2 cursor-pointer transition-all active:scale-95 group hover:scale-105"
-              title="Configurar y reemplazar las imágenes del carrusel"
-            >
-              <SlidersHorizontal className="w-4 h-4 text-amber-400 group-hover:rotate-45 transition-transform" />
-              <span>Configurar Banners del Carrusel ({activeBanners.length})</span>
-            </button>
-          )}
           <div className="absolute inset-0 z-0">
             <img
               src={currentBanner.image || (currentBanner as any).imageUrl}
@@ -4400,18 +4382,6 @@ export default function VeazEstilezaPage() {
           </div>
         </div>
       </footer>
-
-      {/* Catalog Manager Modal for editing banners, lookbook, and settings */}
-      {isCatalogModalOpen && (
-        <CatalogManagerModal
-          isOpen={isCatalogModalOpen}
-          onClose={() => {
-            setIsCatalogModalOpen(false);
-            setRefreshKey((k) => k + 1);
-          }}
-          initialTab={catalogModalTab}
-        />
-      )}
     </div>
   );
 }
