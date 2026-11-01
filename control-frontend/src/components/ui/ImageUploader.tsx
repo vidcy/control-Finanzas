@@ -29,9 +29,17 @@ export function getReceiptAbsoluteUrl(
     return url;
   }
 
-  const base =
+  let base =
     (import.meta.env.VITE_API_URL as string)?.replace("/api", "") ||
     "http://localhost:3000";
+  if (typeof window !== "undefined") {
+    const { hostname } = window.location;
+    if (hostname !== "localhost" && hostname !== "127.0.0.1" && !hostname.startsWith("192.168.")) {
+      if (!base || base.includes("localhost") || base.includes("127.0.0.1")) {
+        base = "https://api.ccoplex.com";
+      }
+    }
+  }
   return `${base}${url}`;
 }
 

@@ -774,35 +774,62 @@ export default function VeazEstilezaPage() {
 
         if (!isMounted) return;
 
+        // 3. Always attempt to fetch products using storeData.id if found, or targetIdentifier directly!
+        const productLookupId = (storeData && !storeData.notFound && storeData.id) ? storeData.id : targetIdentifier;
+
+        const [pData, bData, fData] = await Promise.all([
+          getCatalogProductsRequest(productLookupId).catch(() => []),
+          getCatalogBrandsRequest(productLookupId).catch(() => []),
+          getCatalogFamiliesRequest(productLookupId).catch(() => []),
+        ]);
+
+        let rawProducts: Product[] = Array.isArray(pData) ? pData : [];
+        let brandsData: any[] = Array.isArray(bData) ? bData : [];
+        let familiesData: any[] = Array.isArray(fData) ? fData : [];
+
+        // If products were empty and target was veaz-estileza, also try fallback to official email
+        if (rawProducts.length === 0 && (targetIdentifier === "veaz-estileza" || targetIdentifier === "demo")) {
+          const [pFallback, bFallback, fFallback] = await Promise.all([
+            getCatalogProductsRequest("beaz.estileza@gmail.com").catch(() => []),
+            getCatalogBrandsRequest("beaz.estileza@gmail.com").catch(() => []),
+            getCatalogFamiliesRequest("beaz.estileza@gmail.com").catch(() => []),
+          ]);
+          if (Array.isArray(pFallback) && pFallback.length > 0) {
+            rawProducts = pFallback;
+            brandsData = Array.isArray(bFallback) && bFallback.length > 0 ? bFallback : brandsData;
+            familiesData = Array.isArray(fFallback) && fFallback.length > 0 ? fFallback : familiesData;
+          }
+        }
+
+        // If storeData wasn't found via store-info but we have real products, construct fallback storeData
         if (!storeData || storeData.notFound) {
-          if (targetIdentifier !== "veaz-estileza") {
+          if (rawProducts.length > 0) {
+            const isVeaz = targetIdentifier.toLowerCase().includes("veaz") || targetIdentifier.toLowerCase().includes("estileza");
+            const firstBrand = rawProducts[0]?.brand?.name;
+            storeData = {
+              id: productLookupId,
+              name: isVeaz ? "Veaz" : targetIdentifier,
+              lastName: isVeaz ? "Estileza" : "",
+              email: isVeaz ? "beaz.estileza@gmail.com" : "",
+              businessName: isVeaz ? "Veaz Estileza" : (firstBrand || targetIdentifier),
+              businessRubro: isVeaz ? "Calzado, Zapatos y Accesorios" : "Comercio General",
+              businessSlug: targetIdentifier,
+              isOfficialStore: isVeaz,
+            };
+          } else if (targetIdentifier !== "veaz-estileza" && targetIdentifier !== "demo") {
             setStoreNotFound(true);
             setIsLoading(false);
             return;
           }
         }
 
-        let rawProducts: Product[] = [];
-        let brandsData: any[] = [];
-        let familiesData: any[] = [];
-
-        if (storeData && !storeData.notFound && storeData.id) {
+        if (storeData) {
           setStoreInfo(storeData);
           document.title = `${storeData.businessName} | Catálogo Web Oficial 2026`;
-
-          const [pData, bData, fData] = await Promise.all([
-            getCatalogProductsRequest(storeData.id).catch(() => []),
-            getCatalogBrandsRequest(storeData.id).catch(() => []),
-            getCatalogFamiliesRequest(storeData.id).catch(() => []),
-          ]);
-
-          rawProducts = Array.isArray(pData) ? pData : [];
-          brandsData = Array.isArray(bData) ? bData : [];
-          familiesData = Array.isArray(fData) ? fData : [];
         }
 
-        // Only show SHOWCASE_DEMO_PRODUCTS if official showcase store with zero products
-        if (rawProducts.length === 0 && (storeData?.isOfficialStore || targetIdentifier === "veaz-estileza")) {
+        // Only show SHOWCASE_DEMO_PRODUCTS if explicitly demo mode AND zero products were found anywhere
+        if (rawProducts.length === 0 && targetIdentifier === "demo") {
           setIsDemoMode(true);
           rawProducts = SHOWCASE_DEMO_PRODUCTS;
         } else {
@@ -825,7 +852,20 @@ export default function VeazEstilezaPage() {
         setAvailableFamilies(Array.from(famNames).sort());
       } catch (err) {
         console.error("Error loading store catalog:", err);
-        if (targetIdentifier === "veaz-estileza") {
+        try {
+          const directProds = await getCatalogProductsRequest(targetIdentifier);
+          if (Array.isArray(directProds) && directProds.length > 0) {
+            if (!isMounted) return;
+            setProducts(directProds);
+            setIsDemoMode(false);
+            setIsLoading(false);
+            return;
+          }
+        } catch (innerErr) {
+          console.error("Direct catalog fetch error:", innerErr);
+        }
+
+        if (targetIdentifier === "demo") {
           setProducts(SHOWCASE_DEMO_PRODUCTS);
           setIsDemoMode(true);
         } else {

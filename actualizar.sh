@@ -42,6 +42,7 @@ pm2 status
 echo ""
 echo "🎨 [4/4] Compilando Frontend (control-frontend)..."
 cd "$REPO_ROOT/control-frontend"
+echo "VITE_API_URL=https://api.ccoplex.com" > .env.production
 npm install --legacy-peer-deps
 npm run build
 
