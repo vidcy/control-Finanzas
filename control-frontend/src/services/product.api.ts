@@ -81,29 +81,54 @@ export interface CatalogStoreInfo {
   notFound?: boolean;
 }
 
-export const getCatalogStoreInfoRequest = async (identifier?: string): Promise<CatalogStoreInfo> => {
-  const cleanId = (() => {
-    try {
-      const raw = identifier !== undefined ? identifier : "";
-      return decodeURIComponent(raw || "").trim();
-    } catch {
-      return (identifier || "").trim();
+export interface CatalogQueryOptions {
+  identifier?: string;
+  email?: string;
+  userId?: string;
+  slug?: string;
+}
+
+export const buildCatalogQueryParams = (query?: string | CatalogQueryOptions): Record<string, string> => {
+  if (!query) return {};
+  if (typeof query === "object") {
+    const params: Record<string, string> = {};
+    if (query.identifier) params.identifier = query.identifier.trim();
+    if (query.slug) params.slug = query.slug.trim();
+    if (query.email && query.email.includes("@")) params.email = query.email.trim();
+    if (query.userId) params.userId = query.userId.trim();
+    if (!params.identifier) {
+      params.identifier = params.slug || params.email || params.userId || "";
     }
-  })();
-  const res = await API.get("/catalog/store-info", { params: { identifier: cleanId, email: cleanId, userId: cleanId } });
+    return params;
+  }
+  let clean = "";
+  try {
+    clean = decodeURIComponent(query || "").trim();
+  } catch {
+    clean = String(query || "").trim();
+  }
+  if (!clean) return {};
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clean);
+  const isEmail = clean.includes("@");
+
+  if (isEmail) {
+    return { email: clean, identifier: clean };
+  }
+  if (isUuid) {
+    return { userId: clean, identifier: clean };
+  }
+  return { identifier: clean, slug: clean };
+};
+
+export const getCatalogStoreInfoRequest = async (query?: string | CatalogQueryOptions): Promise<CatalogStoreInfo> => {
+  const params = buildCatalogQueryParams(query);
+  const res = await API.get("/catalog/store-info", { params });
   return res.data;
 };
 
-export const getCatalogProductsRequest = async (identifier?: string): Promise<Product[]> => {
-  const cleanId = (() => {
-    try {
-      const raw = identifier !== undefined ? identifier : "";
-      return decodeURIComponent(raw || "").trim();
-    } catch {
-      return (identifier || "").trim();
-    }
-  })();
-  const res = await API.get("/catalog/products", { params: { identifier: cleanId, email: cleanId, userId: cleanId } });
+export const getCatalogProductsRequest = async (query?: string | CatalogQueryOptions): Promise<Product[]> => {
+  const params = buildCatalogQueryParams(query);
+  const res = await API.get("/catalog/products", { params });
   return res.data;
 };
 
@@ -305,29 +330,15 @@ export const updatePurchaseOrderRequest = async (
   return res.data;
 };
 
-export const getCatalogBrandsRequest = async (identifier?: string): Promise<any[]> => {
-  const cleanId = (() => {
-    try {
-      const raw = identifier !== undefined ? identifier : "";
-      return decodeURIComponent(raw || "").trim();
-    } catch {
-      return (identifier || "").trim();
-    }
-  })();
-  const res = await API.get("/catalog/brands", { params: { identifier: cleanId, email: cleanId, userId: cleanId } });
+export const getCatalogBrandsRequest = async (query?: string | CatalogQueryOptions): Promise<any[]> => {
+  const params = buildCatalogQueryParams(query);
+  const res = await API.get("/catalog/brands", { params });
   return res.data;
 };
 
-export const getCatalogFamiliesRequest = async (identifier?: string): Promise<any[]> => {
-  const cleanId = (() => {
-    try {
-      const raw = identifier !== undefined ? identifier : "";
-      return decodeURIComponent(raw || "").trim();
-    } catch {
-      return (identifier || "").trim();
-    }
-  })();
-  const res = await API.get("/catalog/families", { params: { identifier: cleanId, email: cleanId, userId: cleanId } });
+export const getCatalogFamiliesRequest = async (query?: string | CatalogQueryOptions): Promise<any[]> => {
+  const params = buildCatalogQueryParams(query);
+  const res = await API.get("/catalog/families", { params });
   return res.data;
 };
 

@@ -10,8 +10,10 @@ export class AppController {
     return { message: 'Finance API running 🚀' };
   }
 
-  private async getCatalogUser(rawIdentifier?: string, req?: any) {
+  private async getCatalogUser(rawIdentifier?: string, req?: any, queryEmail?: string, queryUserId?: string) {
     const raw = (rawIdentifier || '').trim();
+    const cleanEmail = (queryEmail || '').trim();
+    const cleanUserId = (queryUserId || '').trim();
 
     // 0. Extract logged-in userId from JWT Authorization header if available
     let tokenUserId: string | null = null;
@@ -30,9 +32,42 @@ export class AppController {
       }
     }
 
+    // 1. Direct match by queryUserId (UUID) if provided
+    const isUuid = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    if (cleanUserId && isUuid(cleanUserId)) {
+      try {
+        let user: any = await this.prisma.user.findUnique({ where: { id: cleanUserId } });
+        if (user) {
+          if (user.parentId) {
+            const parent = await this.prisma.user.findUnique({ where: { id: user.parentId } });
+            user = parent || user;
+          }
+          await this.enrichUserCatalogData(user);
+          return user;
+        }
+      } catch (e) {}
+    }
+
+    // 2. Direct match by queryEmail if provided
+    if (cleanEmail && cleanEmail.includes('@')) {
+      try {
+        let user: any = await this.prisma.user.findFirst({
+          where: { email: { equals: cleanEmail, mode: 'insensitive' } },
+        });
+        if (user) {
+          if (user.parentId) {
+            const parent = await this.prisma.user.findUnique({ where: { id: user.parentId } });
+            user = parent || user;
+          }
+          await this.enrichUserCatalogData(user);
+          return user;
+        }
+      } catch (e) {}
+    }
+
     const lowerRaw = raw.toLowerCase();
 
-    // 1. If query is 'mi-tienda' or 'catalogo' or empty, and user is logged in, resolve directly to their store
+    // 3. If query is 'mi-tienda' or 'catalogo' or empty, and user is logged in, resolve directly to their store
     if ((!raw || lowerRaw === 'mi-tienda' || lowerRaw === 'catalogo') && tokenUserId) {
       try {
         let loggedUser: any = await this.prisma.user.findUnique({ where: { id: tokenUserId } });
@@ -47,8 +82,11 @@ export class AppController {
       } catch (e) {}
     }
 
-    // Default to official showcase account (beaz.estileza@gmail.com) if empty, catalogo, or demo
-    if (!raw || lowerRaw === 'catalogo' || lowerRaw === 'demo' || lowerRaw === 'veaz' || lowerRaw === 'veaz-estileza') {
+    // 4. Default to official showcase account (beaz.estileza@gmail.com) ONLY if explicitly requested or generic showcase
+    const isExplicitShowcase = lowerRaw === 'veaz' || lowerRaw === 'veaz-estileza' || lowerRaw === 'beaz.estileza@gmail.com';
+    const isGenericEmpty = (!raw && !cleanEmail && !cleanUserId) || lowerRaw === 'catalogo' || lowerRaw === 'demo';
+
+    if (isExplicitShowcase || isGenericEmpty) {
       try {
         let showcaseUser = await this.prisma.user.findFirst({
           where: {
@@ -65,7 +103,8 @@ export class AppController {
       } catch (e) {}
     }
 
-    if (!raw) return null;
+    // If an identifier was requested but didn't match showcase, DO NOT fall back to Veaz Estileza
+    if (!raw && !cleanEmail && !cleanUserId) return null;
 
     try {
       const toSlug = (text?: string | null) => {
@@ -83,9 +122,8 @@ export class AppController {
 
       let user: any = null;
 
-      // 2. Match by exact UUID
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw);
-      if (isUuid) {
+      // 5. Match by exact UUID from raw
+      if (raw && isUuid(raw)) {
         try {
           user = await this.prisma.user.findUnique({ where: { id: raw } });
           if (user) {
@@ -99,7 +137,7 @@ export class AppController {
         } catch (e) {}
       }
 
-      // 3. Match by exact businessSlug
+      // 6. Match by exact businessSlug
       try {
         user = await this.prisma.user.findFirst({
           where: {
@@ -111,7 +149,7 @@ export class AppController {
         });
       } catch (e) {}
 
-      // 4. Match by exact email or email prefix (e.g. reydavidylosfelinosdelarpa@gmail.com or 'reydavid')
+      // 7. Match by exact email or email prefix (e.g. reydavidylosfelinosdelarpa@gmail.com or 'reydavid')
       if (!user) {
         try {
           user = await this.prisma.user.findFirst({
@@ -126,7 +164,7 @@ export class AppController {
         } catch (e) {}
       }
 
-      // 5. Match by exact businessName or businessReason
+      // 8. Match by exact businessName or businessReason
       if (!user) {
         try {
           const withSpaces = slugifiedRaw.replace(/-/g, ' ');
@@ -145,7 +183,7 @@ export class AppController {
         } catch (e) {}
       }
 
-      // 6. Comprehensive normalized slug and fuzzy match across all users
+      // 9. Comprehensive normalized slug and fuzzy match across all users
       if (!user) {
         try {
           const allUsers = await this.prisma.user.findMany({
@@ -244,8 +282,8 @@ export class AppController {
     @Query('email') email?: string,
     @Req() req?: any,
   ) {
-    const rawId = identifier || slug || businessSlug || userId || store || negocio || email;
-    return this.resolveStoreInfo(rawId, req);
+    const rawId = identifier || slug || businessSlug || store || negocio || userId || email;
+    return this.resolveStoreInfo(rawId, req, email, userId);
   }
 
   @Get('catalog/store-info/:identifier')
@@ -253,8 +291,8 @@ export class AppController {
     return this.resolveStoreInfo(identifier, req);
   }
 
-  private async resolveStoreInfo(identifier?: string, req?: any) {
-    const user: any = await this.getCatalogUser(identifier, req);
+  private async resolveStoreInfo(identifier?: string, req?: any, queryEmail?: string, queryUserId?: string) {
+    const user: any = await this.getCatalogUser(identifier, req, queryEmail, queryUserId);
     if (!user) {
       return {
         notFound: true,
@@ -306,8 +344,8 @@ export class AppController {
     @Query('email') email?: string,
     @Req() req?: any,
   ) {
-    const rawId = userId || identifier || slug || businessSlug || store || negocio || email;
-    return this.resolveCatalogProducts(rawId, req);
+    const rawId = identifier || slug || businessSlug || store || negocio || userId || email;
+    return this.resolveCatalogProducts(rawId, req, email, userId);
   }
 
   @Get('catalog/products/:identifier')
@@ -315,8 +353,8 @@ export class AppController {
     return this.resolveCatalogProducts(identifier, req);
   }
 
-  private async resolveCatalogProducts(identifier?: string, req?: any) {
-    const user: any = await this.getCatalogUser(identifier, req);
+  private async resolveCatalogProducts(identifier?: string, req?: any, queryEmail?: string, queryUserId?: string) {
+    const user: any = await this.getCatalogUser(identifier, req, queryEmail, queryUserId);
     if (!user) {
       return [];
     }
@@ -371,8 +409,8 @@ export class AppController {
     @Query('email') email?: string,
     @Req() req?: any,
   ) {
-    const rawId = userId || identifier || slug || businessSlug || store || negocio || email;
-    return this.resolveCatalogBrands(rawId, req);
+    const rawId = identifier || slug || businessSlug || store || negocio || userId || email;
+    return this.resolveCatalogBrands(rawId, req, email, userId);
   }
 
   @Get('catalog/brands/:identifier')
@@ -380,8 +418,8 @@ export class AppController {
     return this.resolveCatalogBrands(identifier, req);
   }
 
-  private async resolveCatalogBrands(identifier?: string, req?: any) {
-    const user: any = await this.getCatalogUser(identifier, req);
+  private async resolveCatalogBrands(identifier?: string, req?: any, queryEmail?: string, queryUserId?: string) {
+    const user: any = await this.getCatalogUser(identifier, req, queryEmail, queryUserId);
     if (!user) {
       return [];
     }
@@ -411,8 +449,8 @@ export class AppController {
     @Query('email') email?: string,
     @Req() req?: any,
   ) {
-    const rawId = userId || identifier || slug || businessSlug || store || negocio || email;
-    return this.resolveCatalogFamilies(rawId, req);
+    const rawId = identifier || slug || businessSlug || store || negocio || userId || email;
+    return this.resolveCatalogFamilies(rawId, req, email, userId);
   }
 
   @Get('catalog/families/:identifier')
@@ -420,8 +458,8 @@ export class AppController {
     return this.resolveCatalogFamilies(identifier, req);
   }
 
-  private async resolveCatalogFamilies(identifier?: string, req?: any) {
-    const user: any = await this.getCatalogUser(identifier, req);
+  private async resolveCatalogFamilies(identifier?: string, req?: any, queryEmail?: string, queryUserId?: string) {
+    const user: any = await this.getCatalogUser(identifier, req, queryEmail, queryUserId);
     if (!user) {
       return [];
     }

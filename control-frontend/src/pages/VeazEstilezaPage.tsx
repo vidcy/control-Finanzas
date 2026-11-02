@@ -761,59 +761,125 @@ export default function VeazEstilezaPage() {
       try {
         let storeData: CatalogStoreInfo | null = null;
 
-        // 1. Fetch store info
-        storeData = await getCatalogStoreInfoRequest(targetIdentifier).catch(() => null);
+        const isVeazStore =
+          targetIdentifier.toLowerCase().includes("veaz") ||
+          targetIdentifier.toLowerCase().includes("estileza");
 
-        // 2. If not found and target was veaz-estileza or demo, fallback to official email
+        const isCurrentUserStore = !!(
+          currentUser &&
+          ((currentUser.businessSlug &&
+            currentUser.businessSlug.toLowerCase() === targetIdentifier.toLowerCase()) ||
+            getStoreCatalogSlug(currentUser) === targetIdentifier ||
+            (currentUser.email &&
+              currentUser.email.toLowerCase() === targetIdentifier.toLowerCase()) ||
+            currentUser.id === targetIdentifier ||
+            targetIdentifier === "mi-tienda" ||
+            targetIdentifier === "catalogo")
+        );
+
+        // Resolve precise parameters based on tenant identity
+        let primaryQuery: any = { identifier: targetIdentifier };
+        if (isCurrentUserStore && currentUser) {
+          primaryQuery = {
+            identifier: targetIdentifier,
+            email: currentUser.email,
+            userId: currentUser.id,
+            slug: currentUser.businessSlug || getStoreCatalogSlug(currentUser),
+          };
+        } else if (targetIdentifier.toLowerCase() === "electrodomesticos-ayca") {
+          primaryQuery = {
+            identifier: "electrodomesticos-ayca",
+            slug: "electrodomesticos-ayca",
+            email: "reydavidylosfelinosdelarpa@gmail.com",
+            userId: "295e793f-646a-481d-859b-31cc83c7f2b0",
+          };
+        } else if (isVeazStore) {
+          primaryQuery = {
+            identifier: "veaz-estileza",
+            slug: "veaz-estileza",
+            email: "beaz.estileza@gmail.com",
+            userId: "f665e79b-9e96-4d66-877a-c8195ffd258b",
+          };
+        }
+
+        // 1. Fetch store info
+        storeData = await getCatalogStoreInfoRequest(primaryQuery).catch(() => null);
+
+        // 2. Fallback for official Veaz store if needed
         if ((!storeData || storeData.notFound) && (targetIdentifier === "veaz-estileza" || targetIdentifier === "demo")) {
-          storeData = await getCatalogStoreInfoRequest("beaz.estileza@gmail.com").catch(() => null);
+          storeData = await getCatalogStoreInfoRequest({ email: "beaz.estileza@gmail.com", identifier: "veaz-estileza" }).catch(() => null);
         }
 
         if (!isMounted) return;
 
-        // 3. Always attempt to fetch products using storeData.id if found, or targetIdentifier directly!
-        const productLookupId = (storeData && !storeData.notFound && storeData.id) ? storeData.id : targetIdentifier;
+        // 3. Fetch products, brands and families with tenant-isolated query
+        const productLookupQuery: any = {
+          ...primaryQuery,
+          userId: (storeData && !storeData.notFound && storeData.id) ? storeData.id : primaryQuery.userId,
+          email: (storeData && !storeData.notFound && storeData.email) ? storeData.email : primaryQuery.email,
+        };
 
         const [pData, bData, fData] = await Promise.all([
-          getCatalogProductsRequest(productLookupId).catch(() => []),
-          getCatalogBrandsRequest(productLookupId).catch(() => []),
-          getCatalogFamiliesRequest(productLookupId).catch(() => []),
+          getCatalogProductsRequest(productLookupQuery).catch(() => []),
+          getCatalogBrandsRequest(productLookupQuery).catch(() => []),
+          getCatalogFamiliesRequest(productLookupQuery).catch(() => []),
         ]);
 
         let rawProducts: Product[] = Array.isArray(pData) ? pData : [];
         let brandsData: any[] = Array.isArray(bData) ? bData : [];
         let familiesData: any[] = Array.isArray(fData) ? fData : [];
 
-        // If products were empty and target was veaz-estileza, also try fallback to official email
-        if (rawProducts.length === 0 && (targetIdentifier === "veaz-estileza" || targetIdentifier === "demo")) {
-          const [pFallback, bFallback, fFallback] = await Promise.all([
-            getCatalogProductsRequest("beaz.estileza@gmail.com").catch(() => []),
-            getCatalogBrandsRequest("beaz.estileza@gmail.com").catch(() => []),
-            getCatalogFamiliesRequest("beaz.estileza@gmail.com").catch(() => []),
-          ]);
-          if (Array.isArray(pFallback) && pFallback.length > 0) {
-            rawProducts = pFallback;
-            brandsData = Array.isArray(bFallback) && bFallback.length > 0 ? bFallback : brandsData;
-            familiesData = Array.isArray(fFallback) && fFallback.length > 0 ? fFallback : familiesData;
-          }
+        // Strict tenant isolation: If browsing a store that is NOT Veaz Estileza, never display Veaz Estileza products!
+        if (!isVeazStore) {
+          rawProducts = rawProducts.filter(
+            (p: any) => p.userId !== "f665e79b-9e96-4d66-877a-c8195ffd258b"
+          );
         }
 
-        // If storeData wasn't found via store-info but we have real products, construct fallback storeData
+        // If storeData wasn't found via store-info but we have real products or known merchant, construct storeData
         if (!storeData || storeData.notFound) {
-          if (rawProducts.length > 0) {
-            const isVeaz = targetIdentifier.toLowerCase().includes("veaz") || targetIdentifier.toLowerCase().includes("estileza");
+          if (isCurrentUserStore && currentUser) {
+            storeData = {
+              id: currentUser.id || targetIdentifier,
+              name: currentUser.name || targetIdentifier,
+              lastName: currentUser.lastName || "",
+              email: currentUser.email || "",
+              businessName: currentUser.businessName || `${currentUser.name || ""} ${currentUser.lastName || ""}`.trim() || targetIdentifier,
+              businessReason: currentUser.businessReason || "",
+              businessRubro: currentUser.businessRubro || "Comercio General",
+              businessSlug: currentUser.businessSlug || targetIdentifier,
+              businessPhone: currentUser.businessPhone || null,
+              businessAddress: currentUser.businessAddress || null,
+              catalogConfig: (currentUser as any).catalogConfig || null,
+              isOfficialStore: false,
+              notFound: false,
+            };
+          } else if (targetIdentifier.toLowerCase() === "electrodomesticos-ayca") {
+            storeData = {
+              id: "295e793f-646a-481d-859b-31cc83c7f2b0",
+              name: "Electrodomésticos",
+              lastName: "Ayca",
+              email: "reydavidylosfelinosdelarpa@gmail.com",
+              businessName: "Electrodomésticos Ayca",
+              businessRubro: "Electrodomésticos, Audio y Línea Blanca",
+              businessSlug: "electrodomesticos-ayca",
+              isOfficialStore: false,
+              notFound: false,
+            };
+          } else if (rawProducts.length > 0) {
             const firstBrand = rawProducts[0]?.brand?.name;
             storeData = {
-              id: productLookupId,
-              name: isVeaz ? "Veaz" : targetIdentifier,
-              lastName: isVeaz ? "Estileza" : "",
-              email: isVeaz ? "beaz.estileza@gmail.com" : "",
-              businessName: isVeaz ? "Veaz Estileza" : (firstBrand || targetIdentifier),
-              businessRubro: isVeaz ? "Calzado, Zapatos y Accesorios" : "Comercio General",
+              id: (rawProducts[0] as any)?.userId || targetIdentifier,
+              name: isVeazStore ? "Veaz" : targetIdentifier,
+              lastName: isVeazStore ? "Estileza" : "",
+              email: isVeazStore ? "beaz.estileza@gmail.com" : "",
+              businessName: isVeazStore ? "Veaz Estileza" : (firstBrand || targetIdentifier),
+              businessRubro: isVeazStore ? "Calzado, Zapatos y Accesorios" : "Comercio General",
               businessSlug: targetIdentifier,
-              isOfficialStore: isVeaz,
+              isOfficialStore: isVeazStore,
+              notFound: false,
             };
-          } else if (targetIdentifier !== "veaz-estileza" && targetIdentifier !== "demo") {
+          } else if (!isVeazStore && targetIdentifier !== "demo") {
             setStoreNotFound(true);
             setIsLoading(false);
             return;
@@ -1277,9 +1343,21 @@ export default function VeazEstilezaPage() {
     const activeVariant = model.variants.find((v) => v.size === size) || model.variants[0];
     const finalPrice = activeVariant?.adjustedPrice || activeVariant?.salePrice || model.adjustedPrice || model.minPrice;
 
+    const availableStock = activeVariant ? Number(activeVariant.stock || 0) : 0;
+    if (availableStock <= 0) {
+      toast.error(`Sin stock disponible para ${model.name}${size && size !== "Única" ? ` (Talla ${size})` : ""}`, { id: "cart-toast" });
+      return;
+    }
+
+    const existing = cart.find((it) => it.modelKey === model.key && it.size === size);
+    if (existing && existing.qty >= availableStock) {
+      toast.error(`Stock máximo alcanzado (${availableStock} disponibles)`, { id: "cart-toast" });
+      return;
+    }
+
     setCart((prev) => {
-      const existing = prev.find((it) => it.modelKey === model.key && it.size === size);
-      if (existing) {
+      const ex = prev.find((it) => it.modelKey === model.key && it.size === size);
+      if (ex) {
         return prev.map((it) =>
           it.modelKey === model.key && it.size === size ? { ...it, qty: it.qty + 1 } : it
         );
@@ -1299,7 +1377,7 @@ export default function VeazEstilezaPage() {
       ];
     });
 
-    toast.success(`Agregado: ${model.name} (${size !== "Única" ? `Talla ${size}` : "1 unidad"})`, { icon: "🛍️" });
+    toast.success(`Agregado: ${model.name} (${size !== "Única" ? `Talla ${size}` : "1 unidad"})`, { id: "cart-toast", icon: "🛍️" });
   };
 
   const handleUpdateCartQty = (modelKey: string, size: string, delta: number) => {
