@@ -265,7 +265,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newPassword !== confirmNewPassword) {
-      alert("Las nuevas contraseñas no coinciden");
+      toast.error("Las nuevas contraseñas no coinciden");
       return;
     }
     try {
@@ -280,7 +280,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
     } catch (error: unknown) {
       const message =
         error instanceof Error ? error.message : "Error desconocido";
-      alert(message);
+      toast.error(message);
     }
   };
 

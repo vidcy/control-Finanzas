@@ -78,8 +78,20 @@ export class UsersService {
             : ['PERSONAL'],
         blockedProfiles: data.blockedProfiles || [],
         hasElectronicBilling: !!data.hasElectronicBilling,
-        taxRegime: data.taxRegime || 'GENERAL_18',
-        igvRate: data.taxRegime === 'AMAZONIA_0' || data.taxRegime === 'EXONERADO_0' || data.taxRegime === 'INAFECTO_0' ? 0.00 : (data.taxRegime === 'RESTAURANTE_10' ? 10.00 : 18.00),
+        taxRegime: data.taxRegime || 'RER_18',
+        igvRate:
+          data.igvRate !== undefined
+            ? Number(data.igvRate)
+            : data.taxRegime === 'AMAZONIA_0' ||
+              data.taxRegime === 'AMAZONIA_EXONERADO' ||
+              data.taxRegime === 'EXONERADO_0' ||
+              data.taxRegime === 'INAFECTO_0' ||
+              data.taxRegime === 'NRUS' ||
+              data.taxRegime === 'RUS'
+            ? 0.0
+            : data.taxRegime === 'RESTAURANTE_10' || data.taxRegime === 'RESTAURANTES_10'
+            ? 10.0
+            : 18.0,
         businessDepartment: data.businessDepartment || null,
         isActive: data.isActive !== undefined ? data.isActive : true,
         parentId: data.parentId || null,

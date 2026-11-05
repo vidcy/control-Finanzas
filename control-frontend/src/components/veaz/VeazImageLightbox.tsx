@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { toast } from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X,
@@ -442,7 +443,7 @@ export default function VeazImageLightbox({
                 type="button"
                 onClick={() => {
                   if (!formattedPhone) {
-                    alert("Este negocio aún no ha configurado su número de WhatsApp para pedidos en su panel de administración.");
+                    toast.error("Este negocio aún no ha configurado su número de WhatsApp para pedidos en su panel de administración.");
                     return;
                   }
                   window.open(whatsappUrl, "_blank");

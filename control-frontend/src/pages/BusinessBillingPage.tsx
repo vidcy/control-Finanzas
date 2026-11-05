@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import Appshell from "../components/layout/Appshell";
 import { useAuth } from "../auth/AuthContext";
+import { TAX_REGIMES } from "../utils/fiscalUtils";
 import {
   FileText,
   ShieldCheck,
@@ -471,11 +472,28 @@ export default function BusinessBillingPage() {
                     : "SISTEMA TRIBUTARIO SUNAT ACTIVO & SINCRONIZADO"}
                 </span>
               </div>
-              <h2 className="text-xl font-black tracking-tight text-slate-900">
-                RUC Emisor: <span className="font-mono text-indigo-700">{stats?.issuerRuc || user?.businessRuc || "20000000001"}</span> — {stats?.issuerName || user?.businessName || "Empresa Principal"}
-              </h2>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-xl font-black tracking-tight text-slate-900">
+                  RUC Emisor: <span className="font-mono text-indigo-700">{stats?.issuerRuc || user?.businessRuc || "20000000001"}</span> — {stats?.issuerName || user?.businessName || "Empresa Principal"}
+                </h2>
+                {(() => {
+                  const reg = TAX_REGIMES[user?.taxRegime || "RER_18"] || TAX_REGIMES.RER_18;
+                  return (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-600 text-white shadow-2xs">
+                      🏛️ {reg.shortName}
+                    </span>
+                  );
+                })()}
+              </div>
               <p className="text-xs text-slate-600 max-w-2xl font-medium">
-                Comprobantes electrónicos firmados digitalmente bajo estándar OASIS UBL 2.1 con Código Hash SHA-256 y CDR oficial de SUNAT.
+                {(() => {
+                  const reg = TAX_REGIMES[user?.taxRegime || "RER_18"] || TAX_REGIMES.RER_18;
+                  return (
+                    <>
+                      <strong>Régimen Tributario:</strong> {reg.name}. Comprobantes autorizados: {reg.allowedDocs.join(", ")}. Emisión en formato UBL 2.1 con Código Hash SHA-256.
+                    </>
+                  );
+                })()}
               </p>
             </div>
 

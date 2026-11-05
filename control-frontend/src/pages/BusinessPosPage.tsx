@@ -3,7 +3,7 @@ import { getBranchesRequest, type Branch } from "../services/branch.api";
 import { useState, useEffect, useRef, useMemo } from "react";
 import { motion } from "framer-motion";
 import Appshell from "../components/layout/Appshell";
-import { calculateFiscalBreakdown } from "../utils/fiscalUtils";
+import { TAX_REGIMES, calculateFiscalBreakdown } from "../utils/fiscalUtils";
 import { useAuth } from "../auth/AuthContext";
 import {
   getProductsRequest,
@@ -38,6 +38,7 @@ import ReceiptUploader, {
   uploadReceiptFile,
 } from "../components/ui/ImageUploader";
 import Pagination from "../components/ui/Pagination";
+import ConfirmModal from "../components/ui/ConfirmModal";
 
 import { formatStock } from "./BusinessInventoryPage";
 import { useHardwareScanner } from "../hooks/useHardwareScanner";
@@ -362,6 +363,22 @@ export default function BusinessPosPage() {
   const [noteReasonText, setNoteReasonText] = useState<string>("");
   const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
   const [isSubmittingNote, setIsSubmittingNote] = useState(false);
+
+  // Modal de confirmación estilizado interno (sin alert ni confirm del navegador)
+  const [posConfirmModal, setPosConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    variant?: "danger" | "warning" | "info";
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    onConfirm: () => {},
+  });
 
   // Link unassigned barcode state
   const [isLinkBarcodeModalOpen, setIsLinkBarcodeModalOpen] = useState(false);
@@ -774,86 +791,106 @@ export default function BusinessPosPage() {
     setShowTicket(true);
   };
 
-  const handleDeleteSale = async (sale: any) => {
-    const confirm = window.confirm(
-      "¿Estás seguro de que deseas eliminar esta venta? Esto restablecerá el stock de los productos y cancelará las comisiones asociadas de forma permanente."
-    );
-    if (!confirm) return;
-
-    try {
-      await deleteSaleRequest(sale.id);
-      toast.success("Venta eliminada con éxito y stock restablecido");
-      loadSales();
-      loadData();
-    } catch (error: any) {
-      toast.error(error.message || "Error al eliminar la venta");
-    }
+  const handleDeleteSale = (sale: any) => {
+    const isBilled = sale.billingStatus === "SUCCESS" && sale.billingSerie && sale.billingNumber;
+    setPosConfirmModal({
+      isOpen: true,
+      title: isBilled ? "Anular Venta y Comprobante SUNAT" : "Eliminar Venta del POS",
+      message: isBilled
+        ? `Esta venta cuenta con comprobante electrónico SUNAT (${sale.billingSerie}-${String(sale.billingNumber).padStart(8, "0")}). Al anularla:\n\n1. Se emitirá automáticamente la Nota de Crédito oficial ante SUNAT (Motivo 01: Anulación de la operación).\n2. Se restablecerá el stock de todos los productos en el inventario.\n3. Se cancelarán las comisiones y se excluirá de la caja.`
+        : "¿Estás seguro de que deseas eliminar esta venta? Esto restablecerá el stock de los productos al inventario y cancelará las comisiones de forma inmediata.",
+      confirmText: isBilled ? "Anular con Nota de Crédito" : "Eliminar Venta",
+      cancelText: "Cancelar",
+      variant: "danger",
+      onConfirm: async () => {
+        try {
+          await deleteSaleRequest(sale.id);
+          toast.success(
+            isBilled
+              ? "Venta y comprobante SUNAT anulados con éxito (Nota de Crédito emitida y stock restablecido)"
+              : "Venta eliminada con éxito y stock restablecido"
+          );
+          loadSales();
+          loadData();
+        } catch (error: any) {
+          toast.error(error.message || "Error al eliminar la venta");
+        }
+      },
+    });
   };
 
-  const handleEditSale = async (sale: any) => {
-    const confirm = window.confirm(
-      "¿Deseas editar esta venta? Los productos se cargarán en el carrito actual para que puedas modificarlos, y se eliminará la venta anterior restableciendo su stock."
-    );
-    if (!confirm) return;
+  const handleEditSale = (sale: any) => {
+    const isBilled = sale.billingStatus === "SUCCESS" && sale.billingSerie && sale.billingNumber;
+    setPosConfirmModal({
+      isOpen: true,
+      title: isBilled ? "Modificar Venta Facturada" : "Modificar Venta",
+      message: isBilled
+        ? `Esta venta cuenta con comprobante electrónico SUNAT (${sale.billingSerie}-${String(sale.billingNumber).padStart(8, "0")}). Al modificarla:\n\n1. Se anulará el comprobante anterior emitiendo la Nota de Crédito legal ante SUNAT.\n2. Los productos se cargarán nuevamente en el carrito POS para que hagas las correcciones necesarias.\n3. Al volver a cobrar, se emitirá un nuevo comprobante corregido.\n\n¿Deseas modificar esta venta?`
+        : "¿Deseas editar esta venta? Los productos se cargarán en el carrito actual para que puedas modificarlos, y se devolverá el stock de la venta anterior.",
+      confirmText: "Cargar al Carrito y Modificar",
+      cancelText: "Cancelar",
+      variant: "warning",
+      onConfirm: async () => {
+        try {
+          await deleteSaleRequest(sale.id);
+          setCart([]);
+          setClientDenomination("CLIENTES VARIOS");
 
-    try {
-      await deleteSaleRequest(sale.id);
-      setCart([]);
-      setClientDenomination("CLIENTES VARIOS");
-
-      const newCartItems: CartItem[] = [];
-      for (const item of sale.items || []) {
-        if (item.productId) {
-          const prod = products.find((p) => p.id === item.productId);
-          if (prod) {
-            const matchingPres = prod.presentations?.find((p) => p.price === item.price);
+          const newCartItems: CartItem[] = [];
+          for (const item of sale.items || []) {
+            if (item.productId) {
+              const prod = products.find((p) => p.id === item.productId);
+              if (prod) {
+                const matchingPres = prod.presentations?.find((p) => p.price === item.price);
+                newCartItems.push({
+                  ...prod,
+                  quantity: item.quantity,
+                  salePrice: item.price,
+                  originalSalePrice: prod.salePrice,
+                  presentationId: matchingPres?.id || undefined,
+                  isCustom: false,
+                });
+                continue;
+              }
+            }
             newCartItems.push({
-              ...prod,
-              quantity: item.quantity,
+              id: item.productId || `custom-${Date.now()}-${Math.random()}`,
+              name: item.name,
               salePrice: item.price,
-              originalSalePrice: prod.salePrice,
-              presentationId: matchingPres?.id || undefined,
-              isCustom: false,
-            });
-            continue;
+              originalSalePrice: item.price,
+              quantity: item.quantity,
+              isCustom: true,
+              code: "",
+              stock: 99999,
+              unit: "UNIDAD",
+              presentations: [],
+            } as any);
           }
+
+          setCart(newCartItems);
+          setPaymentMethod(sale.paymentMethod || "CASH");
+          setSelectedAdvisorId(sale.advisorId || "");
+
+          if (sale.billingType === "BOLETA" || sale.billingType === "FACTURA") {
+            setBillingType(sale.billingType);
+            setClientDocumentType(sale.clientDocumentType || "DNI");
+            setClientDocumentNumber(sale.clientDocumentNumber || "");
+            setClientDenomination(sale.clientDenomination || "");
+            setClientAddress(sale.clientAddress || "");
+            setClientEmail(sale.clientEmail || "");
+          } else {
+            setBillingType("TICKET_VENTA");
+          }
+
+          setIsSalesListOpen(false);
+          toast.success("Venta cargada en el carrito. Modifica lo que necesites y procesa el pago.");
+          loadData();
+          loadSales();
+        } catch (error: any) {
+          toast.error(error.message || "Error al editar la venta");
         }
-        newCartItems.push({
-          id: item.productId || `custom-${Date.now()}-${Math.random()}`,
-          name: item.name,
-          salePrice: item.price,
-          originalSalePrice: item.price,
-          quantity: item.quantity,
-          isCustom: true,
-          code: "",
-          stock: 99999,
-          unit: "UNIDAD",
-          presentations: [],
-        } as any);
-      }
-
-      setCart(newCartItems);
-      setPaymentMethod(sale.paymentMethod || "CASH");
-      setSelectedAdvisorId(sale.advisorId || "");
-
-      if (sale.billingType === "BOLETA" || sale.billingType === "FACTURA") {
-        setBillingType(sale.billingType);
-        setClientDocumentType(sale.clientDocumentType || "DNI");
-        setClientDocumentNumber(sale.clientDocumentNumber || "");
-        setClientDenomination(sale.clientDenomination || "");
-        setClientAddress(sale.clientAddress || "");
-        setClientEmail(sale.clientEmail || "");
-      } else {
-        setBillingType("TICKET_VENTA");
-      }
-
-      setIsSalesListOpen(false);
-      toast.success("Venta cargada en el carrito. Modifica lo que necesites y procesa el pago.");
-      loadData();
-      loadSales();
-    } catch (error: any) {
-      toast.error(error.message || "Error al editar la venta");
-    }
+      },
+    });
   };
 
   const loadData = async () => {
@@ -3885,28 +3922,51 @@ export default function BusinessPosPage() {
           {/* FACTURACIÓN ELECTRÓNICA - solo si el negocio lo tiene habilitado */}
           {user?.hasElectronicBilling && (
             <div className="space-y-4 pt-4 border-t border-gray-100">
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">Tipo de Comprobante</label>
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">Tipo de Comprobante</label>
+                {(() => {
+                  const currentReg = TAX_REGIMES[user?.taxRegime || "RER_18"] || TAX_REGIMES.RER_18;
+                  return (
+                    <span className="text-[10px] font-black text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-lg" title={currentReg.name}>
+                      🏛️ {currentReg.shortName}
+                    </span>
+                  );
+                })()}
+              </div>
               <div className="grid grid-cols-3 gap-2">
                 {([
                   { id: "TICKET_VENTA", label: "PROFORMA DE VENTA" },
                   { id: "BOLETA", label: "Boleta" },
                   { id: "FACTURA", label: "Factura" },
-                ] as const).map((opt) => (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => {
-                      setBillingType(opt.id);
-                      setClientDocumentType(opt.id === "FACTURA" ? "6" : "1");
-                    }}
-                    className={`py-2.5 px-3 rounded-xl border text-xs font-black uppercase transition-all ${billingType === opt.id
-                      ? "bg-emerald-600 text-white border-emerald-600 shadow-md"
-                      : "bg-white text-gray-500 border-gray-200 hover:border-emerald-300"
+                ] as const).map((opt) => {
+                  const isNrusBlocked = opt.id === "FACTURA" && (user?.taxRegime === "NRUS" || user?.taxRegime === "RUS");
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      disabled={isNrusBlocked}
+                      onClick={() => {
+                        if (isNrusBlocked) {
+                          toast.error("El Nuevo RUS (NRUS) no permite emitir Facturas con crédito fiscal.");
+                          return;
+                        }
+                        setBillingType(opt.id);
+                        setClientDocumentType(opt.id === "FACTURA" ? "6" : "1");
+                      }}
+                      className={`py-2.5 px-3 rounded-xl border text-xs font-black uppercase transition-all ${
+                        billingType === opt.id
+                          ? "bg-emerald-600 text-white border-emerald-600 shadow-md"
+                          : isNrusBlocked
+                          ? "bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed"
+                          : "bg-white text-gray-500 border-gray-200 hover:border-emerald-300 cursor-pointer"
                       }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
+                      title={isNrusBlocked ? "En el Nuevo RUS no se emiten facturas" : opt.label}
+                    >
+                      <span>{opt.label}</span>
+                      {isNrusBlocked && <span className="block text-[8px] font-bold text-rose-500 leading-none mt-0.5">No en RUS</span>}
+                    </button>
+                  );
+                })}
               </div>
 
               {/* CAMPO DE CLIENTE SIEMPRE VISIBLE */}
@@ -4279,24 +4339,21 @@ export default function BusinessPosPage() {
                                   </button>
                                 </>
                               )}
-                              {(sale.billingType === "TICKET_VENTA" || !sale.billingStatus || sale.billingStatus === "ERROR") && (
-                                <>
-                                  <button
-                                    onClick={() => handleEditSale(sale)}
-                                    className="p-1.5 bg-amber-50 text-amber-705 hover:bg-amber-100 rounded-lg transition-colors"
-                                    title="Editar Venta (Cargar al Carrito)"
-                                  >
-                                    <Edit className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button
-                                    onClick={() => handleDeleteSale(sale)}
-                                    className="p-1.5 bg-red-50 text-red-650 hover:bg-red-100 rounded-lg transition-colors"
-                                    title="Eliminar / Anular Venta"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </>
-                              )}
+                              {/* Botones de Edición y Anulación Universal (Restablece Stock y Emite Nota de Crédito si aplica) */}
+                              <button
+                                onClick={() => handleEditSale(sale)}
+                                className="p-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-lg transition-colors cursor-pointer"
+                                title="Editar Venta (Devuelve stock, anula comprobante anterior y recarga carrito)"
+                              >
+                                <Edit className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteSale(sale)}
+                                className="p-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors cursor-pointer"
+                                title="Anular / Revertir Venta (Restablece stock en inventario y anula en SUNAT)"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -5075,6 +5132,18 @@ export default function BusinessPosPage() {
           </div>
         </div>
       </Modal>
+
+      {/* Modal de Confirmación Estilizado Interno (Sin alert ni confirm del navegador) */}
+      <ConfirmModal
+        isOpen={posConfirmModal.isOpen}
+        onClose={() => setPosConfirmModal((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={posConfirmModal.onConfirm}
+        title={posConfirmModal.title}
+        message={posConfirmModal.message}
+        confirmText={posConfirmModal.confirmText}
+        cancelText={posConfirmModal.cancelText}
+        variant={posConfirmModal.variant || "danger"}
+      />
     </Appshell>
   );
 }

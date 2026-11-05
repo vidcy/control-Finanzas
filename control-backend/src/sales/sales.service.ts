@@ -304,7 +304,48 @@ export class SalesService {
         });
       }
 
-      // 2. Delete the Sale (cascade will delete items and commissions)
+      // 2. Sincronización con Facturación Electrónica CCOFACT PRO:
+      // Anulación oficial con Nota de Crédito conforme a Ley SUNAT (Catálogo 09 Motivo 01)
+      if (sale.billingSerie && sale.billingNumber) {
+        try {
+          const owner = await tx.user.findUnique({
+            where: { id: ownerId },
+          });
+
+          if (owner?.nubefactUrl && owner?.nubefactToken) {
+            const urlObj = new URL(owner.nubefactUrl);
+            const anularFiscalUrl = `${urlObj.origin}/api/v1/documents/by-series-number/${sale.billingSerie}/${sale.billingNumber}/anular-fiscal`;
+
+            const anularRes = await fetch(anularFiscalUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': owner.nubefactToken,
+                'Authorization': `Bearer ${owner.nubefactToken}`,
+              },
+              body: JSON.stringify({
+                motivo: 'ANULACION DE VENTA EN SISTEMA COMERCIAL',
+              }),
+            });
+
+            // Si por alguna razón no se pudo anular con NC (ej. comprobante de prueba local), intentar eliminar
+            if (!anularRes.ok) {
+              const deleteUrl = `${urlObj.origin}/api/v1/documents/by-series-number/${sale.billingSerie}/${sale.billingNumber}`;
+              await fetch(deleteUrl, {
+                method: 'DELETE',
+                headers: {
+                  'x-api-key': owner.nubefactToken,
+                  'Authorization': `Bearer ${owner.nubefactToken}`,
+                },
+              });
+            }
+          }
+        } catch (billingErr: any) {
+          console.warn(`[Sincronización CCOFACT] Error al anular comprobante ${sale.billingSerie}-${sale.billingNumber}:`, billingErr?.message);
+        }
+      }
+
+      // 3. Delete the Sale (cascade will delete items and commissions)
       await tx.sale.delete({
         where: { id: sale.id },
       });

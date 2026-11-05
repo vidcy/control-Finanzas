@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import Appshell from "../components/layout/Appshell";
+import ConfirmModal from "../components/ui/ConfirmModal";
 import { useAuth } from "../auth/AuthContext";
 import {
   Users,
@@ -130,8 +131,16 @@ export default function BusinessLeadsPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("¿Deseas eliminar este prospecto?")) return;
+  const [leadIdToDelete, setLeadIdToDelete] = useState<string | null>(null);
+
+  const handleDelete = (id: string) => {
+    setLeadIdToDelete(id);
+  };
+
+  const executeDeleteLead = async () => {
+    if (!leadIdToDelete) return;
+    const id = leadIdToDelete;
+    setLeadIdToDelete(null);
     try {
       await deleteLeadRequest(id);
       toast.success("Prospecto eliminado");
@@ -849,6 +858,18 @@ export default function BusinessLeadsPage() {
           </div>
         </div>
       </Modal>
+
+      {/* Modal interno de confirmación para eliminar prospecto */}
+      <ConfirmModal
+        isOpen={!!leadIdToDelete}
+        onClose={() => setLeadIdToDelete(null)}
+        onConfirm={executeDeleteLead}
+        title="Eliminar Prospecto"
+        message="¿Estás seguro de que deseas eliminar este prospecto comercial? Esta acción no se puede deshacer."
+        confirmText="Eliminar Prospecto"
+        cancelText="Cancelar"
+        variant="danger"
+      />
     </Appshell>
   );
 }

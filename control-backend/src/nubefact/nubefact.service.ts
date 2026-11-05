@@ -34,6 +34,20 @@ export class NubefactService {
         return { success: false, error: 'Venta no encontrada' };
       }
 
+      // PREVENCIÓN ESTRICTA DE DOBLE FACTURACIÓN (Cero duplicados):
+      // Si la venta ya fue emitida exitosamente ante SUNAT, no emitir un nuevo correlativo
+      if (sale.billingStatus === 'SUCCESS') {
+        this.logger.warn(`Venta ${sale.id} ya emitida previamente como ${sale.billingSerie}-${sale.billingNumber}. Retornando comprobante existente.`);
+        return {
+          success: true,
+          number: sale.billingNumber || undefined,
+          serie: sale.billingSerie || undefined,
+          pdfUrl: sale.billingPdfUrl || undefined,
+          xmlUrl: sale.billingXmlUrl || undefined,
+          cdrUrl: sale.billingCdrUrl || undefined,
+        };
+      }
+
       // Si el tipo de comprobante no es boleta o factura, no procesar
       if (sale.billingType !== 'BOLETA' && sale.billingType !== 'FACTURA') {
         return { success: false, error: 'Tipo de comprobante no requiere facturación electrónica' };

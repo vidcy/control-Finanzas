@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from "react";
 import Appshell from "../components/layout/Appshell";
 import Modal from "../components/ui/Modal";
 import Pagination from "../components/ui/Pagination";
+import ConfirmModal from "../components/ui/ConfirmModal";
 import {
   Users,
   Plus,
@@ -237,15 +238,20 @@ export default function UserPage() {
     }
   };
 
-  const handleDeleteUser = async (user: User) => {
+  const [deleteConfirmUser, setDeleteConfirmUser] = useState<User | null>(null);
+
+  const handleDeleteUser = (user: User) => {
     if (user.role === "ADMIN" || user.role === "SUPERADMIN") {
       toast.error("No se puede eliminar a un administrador");
       return;
     }
-    const confirmed = window.confirm(
-      `¿Estás absolutamente seguro de eliminar al usuario "${user.name} ${user.lastName}" (${user.email})?\n\nEsta acción es irreversible y eliminará todos sus datos vinculados.`
-    );
-    if (!confirmed) return;
+    setDeleteConfirmUser(user);
+  };
+
+  const executeDeleteUser = async () => {
+    if (!deleteConfirmUser) return;
+    const user = deleteConfirmUser;
+    setDeleteConfirmUser(null);
 
     const loadingToast = toast.loading("Eliminando usuario...");
     try {
@@ -1301,6 +1307,36 @@ export default function UserPage() {
                       </div>
                     </div>
 
+                    {/* Ficha Tributaria Detallada del Régimen */}
+                    {(() => {
+                      const opt = TAX_REGIMES[taxRegime] || TAX_REGIMES.RER_18;
+                      return (
+                        <div className="p-3 bg-white rounded-xl border border-purple-200/80 space-y-2 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="font-black text-purple-900 text-xs">
+                              {opt.name}
+                            </span>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-black bg-purple-100 text-purple-800">
+                              IGV: {opt.rate}% | Renta: {opt.incomeTaxRate}%
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-gray-600 leading-relaxed">
+                            {opt.description}
+                          </p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10.5px]">
+                            <div className="p-2 bg-purple-50/50 rounded-lg border border-purple-100">
+                              <span className="font-bold text-purple-950 block">📄 Comprobantes:</span>
+                              <span className="text-gray-700">{opt.allowedDocs.includes("FACTURA") ? "Facturas (F001 con crédito fiscal), Boletas y Notas" : "⚠️ Solo Boletas (B001) y Tickets"}</span>
+                            </div>
+                            <div className="p-2 bg-purple-50/50 rounded-lg border border-purple-100">
+                              <span className="font-bold text-purple-950 block">💰 Renta Mensual:</span>
+                              <span className="text-gray-700">{opt.category === "RER" ? "1.5% definitivo cancelatorio (Sin DJ Anual)" : opt.category === "RMT" ? "1.0% mensual a cuenta" : opt.category === "NRUS" ? "Cuota fija mensual" : "1.5% o Coeficiente"}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
                     {(taxRegime === "AMAZONIA_0" || isAmazoniaDepartment(businessDepartment)) && (
                       <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-start gap-3 text-xs text-emerald-800 font-medium">
                         <span className="text-base flex-shrink-0">🌿</span>
@@ -1509,6 +1545,36 @@ export default function UserPage() {
                       </div>
                     </div>
 
+                    {/* Ficha Tributaria Detallada del Régimen */}
+                    {(() => {
+                      const opt = TAX_REGIMES[taxRegime] || TAX_REGIMES.RER_18;
+                      return (
+                        <div className="p-3 bg-white rounded-xl border border-purple-200/80 space-y-2 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="font-black text-purple-900 text-xs">
+                              {opt.name}
+                            </span>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-black bg-purple-100 text-purple-800">
+                              IGV: {opt.rate}% | Renta: {opt.incomeTaxRate}%
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-gray-600 leading-relaxed">
+                            {opt.description}
+                          </p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10.5px]">
+                            <div className="p-2 bg-purple-50/50 rounded-lg border border-purple-100">
+                              <span className="font-bold text-purple-950 block">📄 Comprobantes:</span>
+                              <span className="text-gray-700">{opt.allowedDocs.includes("FACTURA") ? "Facturas (F001 con crédito fiscal), Boletas y Notas" : "⚠️ Solo Boletas (B001) y Tickets"}</span>
+                            </div>
+                            <div className="p-2 bg-purple-50/50 rounded-lg border border-purple-100">
+                              <span className="font-bold text-purple-950 block">💰 Renta Mensual:</span>
+                              <span className="text-gray-700">{opt.category === "RER" ? "1.5% definitivo cancelatorio (Sin DJ Anual)" : opt.category === "RMT" ? "1.0% mensual a cuenta" : opt.category === "NRUS" ? "Cuota fija mensual" : "1.5% o Coeficiente"}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
                     {(taxRegime === "AMAZONIA_0" || isAmazoniaDepartment(businessDepartment)) && (
                       <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-start gap-3 text-xs text-emerald-800 font-medium">
                         <span className="text-base flex-shrink-0">🌿</span>
@@ -1694,6 +1760,18 @@ export default function UserPage() {
             </div>
           </form>
         </Modal>
+
+        {/* Modal estilizado de confirmación para eliminar usuario */}
+        <ConfirmModal
+          isOpen={!!deleteConfirmUser}
+          onClose={() => setDeleteConfirmUser(null)}
+          onConfirm={executeDeleteUser}
+          title="Eliminar Usuario del Sistema"
+          message={`¿Estás absolutamente seguro de eliminar al usuario "${deleteConfirmUser?.name} ${deleteConfirmUser?.lastName}" (${deleteConfirmUser?.email})? Esta acción es irreversible y eliminará todos sus accesos vinculados.`}
+          confirmText="Eliminar Usuario"
+          cancelText="Cancelar"
+          variant="danger"
+        />
       </div>
     </Appshell>
   );

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { toast } from "react-hot-toast";
 import { motion } from "framer-motion";
 import {
   Maximize2,
@@ -114,7 +115,7 @@ export default function VeazShoeCard({
     // Use merchant phone configured in admin panel
     const rawPhone = storePhone;
     if (!rawPhone) {
-      alert("Este negocio aún no ha configurado su número de WhatsApp para pedidos en su panel de administración.");
+      toast.error("Este negocio aún no ha configurado su número de WhatsApp para pedidos en su panel de administración.");
       return;
     }
     const cleanPhone = rawPhone.replace(/\D/g, "");
