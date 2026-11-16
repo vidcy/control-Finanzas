@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { FiscalDocType, FiscalStatus, Currency } from '@prisma/client';
 
 @Injectable()
 export class NubefactService {
@@ -238,30 +239,88 @@ export class NubefactService {
       }
 
       this.logger.log(`Comprobante ${serie}-${nextNumber} procesado exitosamente.`);
+
+      const docTypeEnum = isFactura ? FiscalDocType.INVOICE : FiscalDocType.BOLETA;
+      const finalNumber = responseData.comprobante?.numero || responseData.numero || nextNumber;
+      const finalSerie = responseData.comprobante?.serie || responseData.serie || serie;
+      const fullNumber = `${finalSerie}-${String(finalNumber).padStart(8, '0')}`;
+      const finalPdf =
+        responseData.recursos?.pdf_a4 ||
+        responseData.recursos?.ticket_pos_80mm ||
+        responseData.enlace_del_pdf ||
+        responseData.enlace ||
+        '';
+      const finalXml =
+        responseData.recursos?.xml_firmado ||
+        responseData.enlace_del_xml ||
+        '';
+      const finalCdr =
+        responseData.recursos?.cdr_sunat ||
+        responseData.enlace_del_cdr ||
+        '';
+      const finalHash =
+        responseData.sunat?.codigo_hash ||
+        responseData.codigo_hash ||
+        null;
+      const sunatDesc =
+        responseData.sunat?.descripcion ||
+        'Comprobante emitido y aceptado por SUNAT satisfactoriamente';
+
+      // Sincronizar en el modelo centralizado FiscalDocument
+      try {
+        await this.prisma.fiscalDocument.upsert({
+          where: { saleId: sale.id },
+          update: {
+            serie: finalSerie,
+            correlative: finalNumber,
+            fullNumber,
+            status: FiscalStatus.ACCEPTED,
+            pdfUrl: finalPdf,
+            xmlUrl: finalXml,
+            cdrUrl: finalCdr,
+            hash: finalHash,
+            sunatResponseCode: '0',
+            sunatDescription: sunatDesc,
+          },
+          create: {
+            docType: docTypeEnum,
+            serie: finalSerie,
+            correlative: finalNumber,
+            fullNumber,
+            status: FiscalStatus.ACCEPTED,
+            issuerRuc: owner.businessRuc || '20000000001',
+            customerDocType: docType === '-' ? '0' : docType,
+            customerDocNum: docNum,
+            customerName: docDenom,
+            customerAddress: sale.clientAddress || null,
+            totalOpGravada: totalGravada,
+            totalOpInafecta: 0,
+            totalOpExonerada: 0,
+            totalIgv: totalIgv,
+            totalAmount: totalAmount,
+            currency: (sale.currency as Currency) || Currency.PEN,
+            hash: finalHash,
+            xmlUrl: finalXml,
+            pdfUrl: finalPdf,
+            cdrUrl: finalCdr,
+            sunatResponseCode: '0',
+            sunatDescription: sunatDesc,
+            saleId: sale.id,
+            userId: ownerId,
+            branchId: sale.branchId || null,
+          },
+        });
+      } catch (fErr: any) {
+        this.logger.warn(`No se pudo sincronizar FiscalDocument para venta ${sale.id}: ${fErr.message}`);
+      }
+
       return {
         success: true,
-        pdfUrl:
-          responseData.recursos?.pdf_a4 ||
-          responseData.recursos?.ticket_pos_80mm ||
-          responseData.enlace_del_pdf ||
-          responseData.enlace ||
-          '',
-        xmlUrl:
-          responseData.recursos?.xml_firmado ||
-          responseData.enlace_del_xml ||
-          '',
-        cdrUrl:
-          responseData.recursos?.cdr_sunat ||
-          responseData.enlace_del_cdr ||
-          '',
-        number:
-          responseData.comprobante?.numero ||
-          responseData.numero ||
-          nextNumber,
-        serie:
-          responseData.comprobante?.serie ||
-          responseData.serie ||
-          serie,
+        pdfUrl: finalPdf,
+        xmlUrl: finalXml,
+        cdrUrl: finalCdr,
+        number: finalNumber,
+        serie: finalSerie,
       };
     } catch (e: any) {
       this.logger.error(`Excepción enviando a facturación electrónica: ${e.message}`);
@@ -459,30 +518,88 @@ export class NubefactService {
         return { success: false, error: typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg) };
       }
 
+      const noteDocType = isCredit ? FiscalDocType.CREDIT_NOTE : FiscalDocType.DEBIT_NOTE;
+      const finalNoteNumber = responseData.comprobante?.numero || responseData.numero || nextNumber;
+      const finalNoteSerie = responseData.comprobante?.serie || responseData.serie || serie;
+      const fullNoteNumber = `${finalNoteSerie}-${String(finalNoteNumber).padStart(8, '0')}`;
+      const notePdf =
+        responseData.recursos?.pdf_a4 ||
+        responseData.recursos?.ticket_pos_80mm ||
+        responseData.enlace_del_pdf ||
+        responseData.enlace ||
+        '';
+      const noteXml =
+        responseData.recursos?.xml_firmado ||
+        responseData.enlace_del_xml ||
+        '';
+      const noteCdr =
+        responseData.recursos?.cdr_sunat ||
+        responseData.enlace_del_cdr ||
+        '';
+      const noteHash =
+        responseData.sunat?.codigo_hash ||
+        responseData.codigo_hash ||
+        null;
+      const noteDesc =
+        responseData.sunat?.descripcion ||
+        `Nota de ${isCredit ? 'Crédito' : 'Débito'} aceptada por SUNAT`;
+
+      try {
+        await this.prisma.fiscalDocument.create({
+          data: {
+            docType: noteDocType,
+            serie: finalNoteSerie,
+            correlative: finalNoteNumber,
+            fullNumber: fullNoteNumber,
+            status: FiscalStatus.ACCEPTED,
+            issuerRuc: owner.businessRuc || '20000000001',
+            customerDocType: isOriginalFactura ? '6' : (originalSale.clientDocumentType || '0'),
+            customerDocNum: originalSale.clientDocumentNumber || '00000000',
+            customerName: originalSale.clientDenomination || 'CLIENTE VARIOS',
+            customerAddress: originalSale.clientAddress || null,
+            totalOpGravada: totalGravada,
+            totalOpInafecta: 0,
+            totalOpExonerada: 0,
+            totalIgv: totalIgv,
+            totalAmount: totalAmount,
+            currency: (sale.currency as Currency) || Currency.PEN,
+            hash: noteHash,
+            xmlUrl: noteXml,
+            pdfUrl: notePdf,
+            cdrUrl: noteCdr,
+            sunatResponseCode: '0',
+            sunatDescription: noteDesc,
+            saleId: sale.id,
+            userId: ownerId,
+            branchId: sale.branchId || null,
+          },
+        });
+
+        // Si fue anulación total (motivo 1), actualizar el documento original
+        if (reasonCode === 1 && originalSale.billingSerie && originalSale.billingNumber) {
+          await this.prisma.fiscalDocument.updateMany({
+            where: {
+              userId: ownerId,
+              serie: originalSale.billingSerie,
+              correlative: originalSale.billingNumber,
+            },
+            data: {
+              status: FiscalStatus.CANCELLED,
+              sunatDescription: `Anulado formalmente ante SUNAT mediante Nota de Crédito ${fullNoteNumber}`,
+            },
+          });
+        }
+      } catch (fErr: any) {
+        this.logger.warn(`No se pudo sincronizar FiscalDocument para nota de venta ${sale.id}: ${fErr.message}`);
+      }
+
       return {
         success: true,
-        pdfUrl:
-          responseData.recursos?.pdf_a4 ||
-          responseData.recursos?.ticket_pos_80mm ||
-          responseData.enlace_del_pdf ||
-          responseData.enlace ||
-          '',
-        xmlUrl:
-          responseData.recursos?.xml_firmado ||
-          responseData.enlace_del_xml ||
-          '',
-        cdrUrl:
-          responseData.recursos?.cdr_sunat ||
-          responseData.enlace_del_cdr ||
-          '',
-        number:
-          responseData.comprobante?.numero ||
-          responseData.numero ||
-          nextNumber,
-        serie:
-          responseData.comprobante?.serie ||
-          responseData.serie ||
-          serie,
+        pdfUrl: notePdf,
+        xmlUrl: noteXml,
+        cdrUrl: noteCdr,
+        number: finalNoteNumber,
+        serie: finalNoteSerie,
       };
     } catch (e: any) {
       return { success: false, error: e.message || 'Error de conexión con el proveedor de facturación' };

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Param, Body, Query, Req, UseGuards, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Put, Param, Body, Query, Req, UseGuards, Delete } from '@nestjs/common';
 import { SalesService } from './sales.service';
 import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard } from '../auth/role.guard';
@@ -76,6 +76,13 @@ export class SalesController {
       dto.reasonText || 'Débito',
       dto.amount,
     );
+  }
+
+  @UseGuards(AuthGuard('jwt'))
+  @Put(':id')
+  updateSale(@Req() req, @Param('id') id: string, @Body() dto: any) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.salesService.updateSale(ownerId, id, dto);
   }
 
   @UseGuards(AuthGuard('jwt'))

@@ -21,6 +21,8 @@ import {
   Zap,
   Download,
   Trash2,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import {
@@ -81,6 +83,8 @@ export default function UserPage() {
   const [hasElectronicBilling, setHasElectronicBilling] = useState(false);
   const [taxRegime, setTaxRegime] = useState("GENERAL_18");
   const [businessDepartment, setBusinessDepartment] = useState("");
+  const [showCreateRegimeDetails, setShowCreateRegimeDetails] = useState(false);
+  const [showEditRegimeDetails, setShowEditRegimeDetails] = useState(false);
 
   const SUB_MODULES = [
     { key: "BUSINESS_DASHBOARD", name: "Dashboard de Negocio" },
@@ -1290,9 +1294,19 @@ export default function UserPage() {
                       </div>
 
                       <div>
-                        <label className="block text-[11px] font-bold text-gray-600 mb-1">
-                          Régimen de IGV Aplicable
-                        </label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-[11px] font-black text-purple-950 uppercase">
+                            Régimen Tributario SUNAT
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setShowEditRegimeDetails(!showEditRegimeDetails)}
+                            className="text-[10px] font-bold text-purple-700 hover:text-purple-900 inline-flex items-center gap-0.5 cursor-pointer"
+                          >
+                            <span>{showEditRegimeDetails ? "Ocultar ficha" : "Ver ficha SUNAT"}</span>
+                            {showEditRegimeDetails ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                          </button>
+                        </div>
                         <select
                           value={taxRegime}
                           onChange={(e) => setTaxRegime(e.target.value)}
@@ -1307,32 +1321,48 @@ export default function UserPage() {
                       </div>
                     </div>
 
-                    {/* Ficha Tributaria Detallada del Régimen */}
+                    {/* Resumen Compacto y Ficha Tributaria Detallada del Régimen */}
                     {(() => {
                       const opt = TAX_REGIMES[taxRegime] || TAX_REGIMES.RER_18;
                       return (
-                        <div className="p-3 bg-white rounded-xl border border-purple-200/80 space-y-2 text-xs">
-                          <div className="flex items-center justify-between">
-                            <span className="font-black text-purple-900 text-xs">
-                              {opt.name}
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                            <span className="px-2 py-0.5 rounded-md bg-purple-100 text-purple-900 font-bold">
+                              IGV: {opt.rate}%
                             </span>
-                            <span className="px-2 py-0.5 rounded text-[10px] font-black bg-purple-100 text-purple-800">
-                              IGV: {opt.rate}% | Renta: {opt.incomeTaxRate}%
+                            <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 font-bold">
+                              Renta: {opt.incomeTaxRate}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-900 font-bold">
+                              {opt.allowedDocs.includes("FACTURA") ? "Facturas y Boletas" : "Solo Boletas"}
                             </span>
                           </div>
-                          <p className="text-[11px] text-gray-600 leading-relaxed">
-                            {opt.description}
-                          </p>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10.5px]">
-                            <div className="p-2 bg-purple-50/50 rounded-lg border border-purple-100">
-                              <span className="font-bold text-purple-950 block">📄 Comprobantes:</span>
-                              <span className="text-gray-700">{opt.allowedDocs.includes("FACTURA") ? "Facturas (F001 con crédito fiscal), Boletas y Notas" : "⚠️ Solo Boletas (B001) y Tickets"}</span>
+
+                          {showEditRegimeDetails && (
+                            <div className="p-3 bg-white rounded-xl border border-purple-200/80 space-y-2 text-xs animate-fadeIn shadow-2xs">
+                              <div className="flex items-center justify-between">
+                                <span className="font-black text-purple-900 text-xs">
+                                  {opt.name}
+                                </span>
+                                <span className="px-2 py-0.5 rounded text-[10px] font-black bg-purple-100 text-purple-800">
+                                  {opt.badge}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-gray-600 leading-relaxed">
+                                {opt.description}
+                              </p>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10.5px]">
+                                <div className="p-2 bg-purple-50/50 rounded-lg border border-purple-100">
+                                  <span className="font-bold text-purple-950 block">📄 Comprobantes:</span>
+                                  <span className="text-gray-700">{opt.allowedDocs.includes("FACTURA") ? "Facturas (F001 con crédito fiscal), Boletas y Notas" : "⚠️ Solo Boletas (B001) y Tickets"}</span>
+                                </div>
+                                <div className="p-2 bg-purple-50/50 rounded-lg border border-purple-100">
+                                  <span className="font-bold text-purple-950 block">💰 Renta Mensual:</span>
+                                  <span className="text-gray-700">{opt.category === "RER" ? "1.5% definitivo cancelatorio (Sin DJ Anual)" : opt.category === "RMT" ? "1.0% mensual a cuenta" : opt.category === "NRUS" ? "Cuota fija mensual" : "1.5% o Coeficiente"}</span>
+                                </div>
+                              </div>
                             </div>
-                            <div className="p-2 bg-purple-50/50 rounded-lg border border-purple-100">
-                              <span className="font-bold text-purple-950 block">💰 Renta Mensual:</span>
-                              <span className="text-gray-700">{opt.category === "RER" ? "1.5% definitivo cancelatorio (Sin DJ Anual)" : opt.category === "RMT" ? "1.0% mensual a cuenta" : opt.category === "NRUS" ? "Cuota fija mensual" : "1.5% o Coeficiente"}</span>
-                            </div>
-                          </div>
+                          )}
                         </div>
                       );
                     })()}
@@ -1528,9 +1558,19 @@ export default function UserPage() {
                       </div>
 
                       <div>
-                        <label className="block text-[11px] font-bold text-gray-600 mb-1">
-                          Régimen de IGV Aplicable
-                        </label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-[11px] font-black text-purple-950 uppercase">
+                            Régimen Tributario SUNAT
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setShowEditRegimeDetails(!showEditRegimeDetails)}
+                            className="text-[10px] font-bold text-purple-700 hover:text-purple-900 inline-flex items-center gap-0.5 cursor-pointer"
+                          >
+                            <span>{showEditRegimeDetails ? "Ocultar ficha" : "Ver ficha SUNAT"}</span>
+                            {showEditRegimeDetails ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                          </button>
+                        </div>
                         <select
                           value={taxRegime}
                           onChange={(e) => setTaxRegime(e.target.value)}
@@ -1545,32 +1585,48 @@ export default function UserPage() {
                       </div>
                     </div>
 
-                    {/* Ficha Tributaria Detallada del Régimen */}
+                    {/* Resumen Compacto y Ficha Tributaria Detallada del Régimen */}
                     {(() => {
                       const opt = TAX_REGIMES[taxRegime] || TAX_REGIMES.RER_18;
                       return (
-                        <div className="p-3 bg-white rounded-xl border border-purple-200/80 space-y-2 text-xs">
-                          <div className="flex items-center justify-between">
-                            <span className="font-black text-purple-900 text-xs">
-                              {opt.name}
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                            <span className="px-2 py-0.5 rounded-md bg-purple-100 text-purple-900 font-bold">
+                              IGV: {opt.rate}%
                             </span>
-                            <span className="px-2 py-0.5 rounded text-[10px] font-black bg-purple-100 text-purple-800">
-                              IGV: {opt.rate}% | Renta: {opt.incomeTaxRate}%
+                            <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 font-bold">
+                              Renta: {opt.incomeTaxRate}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-900 font-bold">
+                              {opt.allowedDocs.includes("FACTURA") ? "Facturas y Boletas" : "Solo Boletas"}
                             </span>
                           </div>
-                          <p className="text-[11px] text-gray-600 leading-relaxed">
-                            {opt.description}
-                          </p>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10.5px]">
-                            <div className="p-2 bg-purple-50/50 rounded-lg border border-purple-100">
-                              <span className="font-bold text-purple-950 block">📄 Comprobantes:</span>
-                              <span className="text-gray-700">{opt.allowedDocs.includes("FACTURA") ? "Facturas (F001 con crédito fiscal), Boletas y Notas" : "⚠️ Solo Boletas (B001) y Tickets"}</span>
+
+                          {showEditRegimeDetails && (
+                            <div className="p-3 bg-white rounded-xl border border-purple-200/80 space-y-2 text-xs animate-fadeIn shadow-2xs">
+                              <div className="flex items-center justify-between">
+                                <span className="font-black text-purple-900 text-xs">
+                                  {opt.name}
+                                </span>
+                                <span className="px-2 py-0.5 rounded text-[10px] font-black bg-purple-100 text-purple-800">
+                                  {opt.badge}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-gray-600 leading-relaxed">
+                                {opt.description}
+                              </p>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10.5px]">
+                                <div className="p-2 bg-purple-50/50 rounded-lg border border-purple-100">
+                                  <span className="font-bold text-purple-950 block">📄 Comprobantes:</span>
+                                  <span className="text-gray-700">{opt.allowedDocs.includes("FACTURA") ? "Facturas (F001 con crédito fiscal), Boletas y Notas" : "⚠️ Solo Boletas (B001) y Tickets"}</span>
+                                </div>
+                                <div className="p-2 bg-purple-50/50 rounded-lg border border-purple-100">
+                                  <span className="font-bold text-purple-950 block">💰 Renta Mensual:</span>
+                                  <span className="text-gray-700">{opt.category === "RER" ? "1.5% definitivo cancelatorio (Sin DJ Anual)" : opt.category === "RMT" ? "1.0% mensual a cuenta" : opt.category === "NRUS" ? "Cuota fija mensual" : "1.5% o Coeficiente"}</span>
+                                </div>
+                              </div>
                             </div>
-                            <div className="p-2 bg-purple-50/50 rounded-lg border border-purple-100">
-                              <span className="font-bold text-purple-950 block">💰 Renta Mensual:</span>
-                              <span className="text-gray-700">{opt.category === "RER" ? "1.5% definitivo cancelatorio (Sin DJ Anual)" : opt.category === "RMT" ? "1.0% mensual a cuenta" : opt.category === "NRUS" ? "Cuota fija mensual" : "1.5% o Coeficiente"}</span>
-                            </div>
-                          </div>
+                          )}
                         </div>
                       );
                     })()}

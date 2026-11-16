@@ -1,7 +1,7 @@
-﻿import { Controller, Get, Post, Put, Param, Body, Query, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Param, Body, Query, Req, UseGuards } from '@nestjs/common';
 import { BillingService } from './billing.service';
 import { AuthGuard } from '@nestjs/passport';
-import { EmitBillingDto, IssueNoteDto } from './emit-billing.dto';
+import { EmitBillingDto, IssueNoteDto, UpdateBillingDto, DeleteBillingDto } from './emit-billing.dto';
 
 @Controller('billing')
 export class BillingController {
@@ -69,6 +69,27 @@ export class BillingController {
   simulateSandbox(@Req() req) {
     const ownerId = req.user.parentId || req.user.id;
     return this.billingService.simulateSandbox(ownerId);
+  }
+
+  @UseGuards(AuthGuard('jwt'))
+  @Put('documents/:id')
+  updateDocument(@Req() req, @Param('id') id: string, @Body() dto: UpdateBillingDto) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.billingService.updateDocument(ownerId, id, dto);
+  }
+
+  @UseGuards(AuthGuard('jwt'))
+  @Delete('documents/:id')
+  deleteDocument(@Req() req, @Param('id') id: string, @Body() dto?: DeleteBillingDto) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.billingService.deleteDocument(ownerId, id, dto);
+  }
+
+  @UseGuards(AuthGuard('jwt'))
+  @Post('test-connection')
+  testCcofactConnection(@Req() req) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.billingService.testCcofactConnection(ownerId);
   }
 
   @UseGuards(AuthGuard('jwt'))

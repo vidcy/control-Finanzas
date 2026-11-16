@@ -1,4 +1,4 @@
-﻿import { IsString, IsNotEmpty, IsEnum, IsNumber, IsOptional, IsArray, ValidateNested, Min } from 'class-validator';
+import { IsString, IsNotEmpty, IsEnum, IsNumber, IsOptional, IsArray, ValidateNested, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export enum BillingDocTypeEnum {
@@ -107,4 +107,59 @@ export class IssueNoteDto {
   @IsNumber()
   @Min(0.01)
   amount?: number;
+}
+
+export class UpdateBillingDto {
+  @IsOptional()
+  @IsString()
+  customerName?: string;
+
+  @IsOptional()
+  @IsString()
+  customerDocType?: string;
+
+  @IsOptional()
+  @IsString()
+  customerDocNum?: string;
+
+  @IsOptional()
+  @IsString()
+  customerAddress?: string;
+
+  @IsOptional()
+  @IsString()
+  customerEmail?: string;
+
+  @IsOptional()
+  @IsString()
+  currency?: 'PEN' | 'USD';
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => BillingItemDto)
+  items?: BillingItemDto[];
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  @IsOptional()
+  rectifyAccepted?: boolean;
+
+  @IsOptional()
+  @IsString()
+  rectifyReason?: string;
+}
+
+export class DeleteBillingDto {
+  @IsOptional()
+  @IsString()
+  motivo?: string;
+
+  @IsOptional()
+  forceDelete?: boolean;
+
+  @IsOptional()
+  restoreStock?: boolean;
 }

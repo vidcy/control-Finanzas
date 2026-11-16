@@ -33,6 +33,8 @@ import {
   Zap,
   Check,
   HelpCircle,
+  Edit3,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { isAmazoniaDepartment } from "../utils/fiscalUtils";
@@ -46,6 +48,9 @@ import {
   testBillingSandboxRequest,
   getBillingConfigRequest,
   updateBillingConfigRequest,
+  updateBillingDocumentRequest,
+  deleteBillingDocumentRequest,
+  testCcofactConnectionRequest,
   type FiscalDocument,
   type BillingStats,
   type BillingItem,
@@ -102,6 +107,29 @@ export default function BusinessBillingPage() {
   const [configUrl, setConfigUrl] = useState("");
   const [configToken, setConfigToken] = useState("");
   const [isSavingConfig, setIsSavingConfig] = useState(false);
+
+  // Edit / Rectify State
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [selectedDocForEdit, setSelectedDocForEdit] = useState<FiscalDocument | null>(null);
+  const [editCustomerDoc, setEditCustomerDoc] = useState("");
+  const [editCustomerName, setEditCustomerName] = useState("");
+  const [editCustomerAddress, setEditCustomerAddress] = useState("");
+  const [editCustomerEmail, setEditCustomerEmail] = useState("");
+  const [editRectifyAccepted, setEditRectifyAccepted] = useState(false);
+  const [editRectifyReason, setEditRectifyReason] = useState("ANULACION POR MODIFICACION Y RECTIFICACION DE COMPROBANTE");
+  const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
+
+  // Delete / Annul State
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [selectedDocForDelete, setSelectedDocForDelete] = useState<FiscalDocument | null>(null);
+  const [deleteMotivo, setDeleteMotivo] = useState("ANULACION DE LA OPERACION POR EL EMISOR");
+  const [deleteRestoreStock, setDeleteRestoreStock] = useState(true);
+  const [deleteForce, setDeleteForce] = useState(false);
+  const [isSubmittingDelete, setIsSubmittingDelete] = useState(false);
+
+  // CCOFACT Connection test State
+  const [isTestingConn, setIsTestingConn] = useState(false);
+  const [connResult, setConnResult] = useState<any>(null);
 
   useEffect(() => {
     loadData();
@@ -219,6 +247,91 @@ export default function BusinessBillingPage() {
     setNoteReasonCode(1);
     setNoteReasonText("Anulación de la operación");
     setIsNoteModalOpen(true);
+  };
+
+  // Open Edit Modal
+  const handleOpenEditModal = (doc: FiscalDocument) => {
+    setSelectedDocForEdit(doc);
+    setEditCustomerDoc(doc.customerDocNum);
+    setEditCustomerName(doc.customerName);
+    setEditCustomerAddress(doc.customerAddress || "");
+    setEditCustomerEmail("");
+    setEditRectifyAccepted(doc.status === "ACCEPTED");
+    setEditRectifyReason("ANULACION POR MODIFICACION Y RECTIFICACION DE COMPROBANTE");
+    setIsEditModalOpen(true);
+  };
+
+  // Save Edit / Rectify
+  const handleSaveEdit = async () => {
+    if (!selectedDocForEdit) return;
+    try {
+      setIsSubmittingEdit(true);
+      const res = await updateBillingDocumentRequest(selectedDocForEdit.id, {
+        customerDocNum: editCustomerDoc,
+        customerName: editCustomerName,
+        customerAddress: editCustomerAddress,
+        customerEmail: editCustomerEmail,
+        rectifyAccepted: editRectifyAccepted,
+        rectifyReason: editRectifyReason,
+      });
+      toast.success(res.message || "Comprobante actualizado exitosamente");
+      setIsEditModalOpen(false);
+      loadData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || err.message || "Error al actualizar");
+    } finally {
+      setIsSubmittingEdit(false);
+    }
+  };
+
+  // Open Delete Modal
+  const handleOpenDeleteModal = (doc: FiscalDocument) => {
+    setSelectedDocForDelete(doc);
+    setDeleteMotivo("ANULACION DE LA OPERACION POR EL EMISOR");
+    setDeleteRestoreStock(Boolean(doc.saleId));
+    setDeleteForce(false);
+    setIsDeleteModalOpen(true);
+  };
+
+  // Confirm Delete / Annul
+  const handleConfirmDelete = async () => {
+    if (!selectedDocForDelete) return;
+    try {
+      setIsSubmittingDelete(true);
+      const res = await deleteBillingDocumentRequest(selectedDocForDelete.id, {
+        motivo: deleteMotivo,
+        restoreStock: deleteRestoreStock,
+        forceDelete: deleteForce,
+      });
+      toast.success(res.message || "Operación completada exitosamente");
+      setIsDeleteModalOpen(false);
+      loadData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || err.message || "Error al procesar anulación");
+    } finally {
+      setIsSubmittingDelete(false);
+    }
+  };
+
+  // Test CCOFACT connection in real time
+  const handleTestConnection = async () => {
+    try {
+      setIsTestingConn(true);
+      setConnResult(null);
+      const res = await testCcofactConnectionRequest();
+      setConnResult(res);
+      if (res.connected) {
+        toast.success("¡Conexión verificada con CCOFACT PRO Engine!");
+      } else {
+        toast.error(res.message || "No se pudo conectar");
+      }
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.message;
+      setConnResult({ connected: false, message: msg });
+      toast.error("Error de conexión: " + msg);
+    } finally {
+      setIsTestingConn(false);
+    }
   };
 
   // Submit Note
@@ -813,6 +926,36 @@ export default function BusinessBillingPage() {
                                 title="Emitir Nota de Crédito para este comprobante"
                               >
                                 <RotateCcw className="h-4 w-4" />
+                              </button>
+                            )}
+
+                            {/* Modificar / Rectificar Comprobante */}
+                            {doc.status !== "CANCELLED" && (
+                              <button
+                                onClick={() => handleOpenEditModal(doc)}
+                                className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                title={
+                                  doc.status === "ACCEPTED"
+                                    ? "Modificar / Rectificar ante SUNAT con Nota de Crédito"
+                                    : "Editar datos del comprobante"
+                                }
+                              >
+                                <Edit3 className="h-4 w-4" />
+                              </button>
+                            )}
+
+                            {/* Anular ante SUNAT o Eliminar */}
+                            {doc.status !== "CANCELLED" && (
+                              <button
+                                onClick={() => handleOpenDeleteModal(doc)}
+                                className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                title={
+                                  doc.status === "ACCEPTED"
+                                    ? "Anular legalmente ante SUNAT con Nota de Crédito (Catálogo 09 Motivo 01)"
+                                    : "Eliminar comprobante"
+                                }
+                              >
+                                <Trash2 className="h-4 w-4" />
                               </button>
                             )}
 
@@ -1500,6 +1643,49 @@ export default function BusinessBillingPage() {
               </ul>
             </div>
 
+            {/* Prueba de Conexión en Vivo con CCOFACT PRO */}
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={handleTestConnection}
+                disabled={isTestingConn}
+                className="w-full py-2.5 px-4 rounded-xl border border-indigo-200 bg-indigo-50/60 hover:bg-indigo-100/70 text-indigo-700 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
+              >
+                <Zap className={`w-4 h-4 ${isTestingConn ? "animate-spin" : "text-indigo-600"}`} />
+                {isTestingConn ? "Probando comunicación con CCOFACT..." : "Verificar Conexión en Vivo con CCOFACT PRO Engine"}
+              </button>
+
+              {connResult && (
+                <div
+                  className={`mt-2 p-3 rounded-xl border text-xs ${
+                    connResult.connected
+                      ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                      : "bg-rose-50 border-rose-200 text-rose-800"
+                  }`}
+                >
+                  <div className="font-bold flex items-center gap-1.5">
+                    {connResult.connected ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-rose-600" />
+                    )}
+                    {connResult.message}
+                  </div>
+                  {connResult.company && (
+                    <div className="mt-1.5 text-[11px] space-y-0.5 text-emerald-700">
+                      <div>
+                        <strong>Empresa:</strong> {connResult.company.razon_social} (RUC: {connResult.company.ruc})
+                      </div>
+                      <div>
+                        <strong>Entorno:</strong> {connResult.company.env_mode} | <strong>Certificado X.509:</strong>{" "}
+                        {connResult.company.certificado_valido ? "Configurado" : "Pendiente"}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             {/* Footer Actions */}
             <div className="flex justify-end gap-3 pt-3 border-t border-slate-200">
               <button
@@ -1516,6 +1702,228 @@ export default function BusinessBillingPage() {
                 className="px-5 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md disabled:opacity-50 cursor-pointer flex items-center gap-2"
               >
                 {isSavingConfig ? "Guardando..." : "Guardar Configuración Fiscal"}
+              </button>
+            </div>
+          </div>
+        </Modal>
+
+        {/* MODAL 4: MODIFICAR / RECTIFICAR COMPROBANTE */}
+        <Modal
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          title={`Modificar Comprobante ${selectedDocForEdit?.fullNumber || ""}`}
+          maxWidth="max-w-2xl"
+        >
+          <div className="p-6 space-y-5">
+            {selectedDocForEdit?.status === "ACCEPTED" ? (
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
+                <div className="flex items-center gap-2 text-amber-900 font-bold text-sm">
+                  <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0" />
+                  Procedimiento de Rectificación Oficial SUNAT (R.S. N.° 097-2012)
+                </div>
+                <p className="text-xs text-amber-800 leading-relaxed">
+                  Este comprobante ya cuenta con <strong>Aceptación Oficial de SUNAT (CDR)</strong>. Conforme a la legislación tributaria peruana, los datos fiscales no pueden ser editados de forma directa en frío.
+                </p>
+                <p className="text-xs text-amber-800 leading-relaxed">
+                  Al confirmar la rectificación, el sistema <strong>emitirá automáticamente una Nota de Crédito Electrónica</strong> (Catálogo 09 Motivo 01: Anulación de la operación) ante SUNAT para anular el comprobante anterior y <strong>emitirá de inmediato un nuevo comprobante corregido</strong> con la nueva correlación oficial.
+                </p>
+                <div className="pt-2">
+                  <label className="flex items-center gap-2 text-xs font-bold text-amber-950 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editRectifyAccepted}
+                      onChange={(e) => setEditRectifyAccepted(e.target.checked)}
+                      className="rounded border-amber-400 text-amber-600 focus:ring-amber-500"
+                    />
+                    Acepto emitir Nota de Crédito de Anulación ante SUNAT y generar comprobante de reemplazo
+                  </label>
+                </div>
+              </div>
+            ) : (
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-800">
+                El comprobante aún no cuenta con aceptación definitiva de SUNAT. Puedes corregir los datos del cliente y reintentar su emisión.
+              </div>
+            )}
+
+            {/* Datos del Cliente a Modificar */}
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-black uppercase text-slate-600 mb-1">
+                    Número de Documento (RUC / DNI)
+                  </label>
+                  <input
+                    type="text"
+                    value={editCustomerDoc}
+                    onChange={(e) => setEditCustomerDoc(e.target.value)}
+                    className="w-full px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-mono focus:bg-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-black uppercase text-slate-600 mb-1">
+                    Razón Social / Nombre Completo
+                  </label>
+                  <input
+                    type="text"
+                    value={editCustomerName}
+                    onChange={(e) => setEditCustomerName(e.target.value)}
+                    className="w-full px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-black uppercase text-slate-600 mb-1">
+                  Dirección Fiscal
+                </label>
+                <input
+                  type="text"
+                  value={editCustomerAddress}
+                  onChange={(e) => setEditCustomerAddress(e.target.value)}
+                  className="w-full px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-black uppercase text-slate-600 mb-1">
+                  Correo Electrónico para Entrega
+                </label>
+                <input
+                  type="email"
+                  value={editCustomerEmail}
+                  onChange={(e) => setEditCustomerEmail(e.target.value)}
+                  placeholder="ejemplo@cliente.pe"
+                  className="w-full px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              {selectedDocForEdit?.status === "ACCEPTED" && (
+                <div>
+                  <label className="block text-xs font-black uppercase text-slate-600 mb-1">
+                    Motivo de la Rectificación para Nota de Crédito
+                  </label>
+                  <input
+                    type="text"
+                    value={editRectifyReason}
+                    onChange={(e) => setEditRectifyReason(e.target.value)}
+                    className="w-full px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex justify-end gap-3 pt-3 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setIsEditModalOpen(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isSubmittingEdit || (selectedDocForEdit?.status === "ACCEPTED" && !editRectifyAccepted)}
+                onClick={handleSaveEdit}
+                className="px-5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md disabled:opacity-50 flex items-center gap-2 cursor-pointer"
+              >
+                {isSubmittingEdit
+                  ? "Procesando..."
+                  : selectedDocForEdit?.status === "ACCEPTED"
+                  ? "Ejecutar Rectificación SUNAT"
+                  : "Guardar Cambios"}
+              </button>
+            </div>
+          </div>
+        </Modal>
+
+        {/* MODAL 5: ANULAR O ELIMINAR COMPROBANTE */}
+        <Modal
+          isOpen={isDeleteModalOpen}
+          onClose={() => setIsDeleteModalOpen(false)}
+          title={`Anular / Eliminar Comprobante ${selectedDocForDelete?.fullNumber || ""}`}
+          maxWidth="max-w-lg"
+        >
+          <div className="p-6 space-y-4">
+            {selectedDocForDelete?.status === "ACCEPTED" ? (
+              <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl space-y-2">
+                <div className="flex items-center gap-2 text-rose-900 font-bold text-sm">
+                  <AlertCircle className="w-5 h-5 text-rose-600 flex-shrink-0" />
+                  Anulación Legal ante SUNAT con Nota de Crédito
+                </div>
+                <p className="text-xs text-rose-800 leading-relaxed">
+                  Este comprobante está <strong>ACEPTADO</strong> por SUNAT. Al anularlo, el motor CCOFACT PRO generará y transmitirá de inmediato la <strong>Nota de Crédito Oficial (Catálogo 09 Motivo 01: Anulación de la operación)</strong>.
+                </p>
+                <p className="text-xs text-rose-800 leading-relaxed">
+                  El comprobante quedará marcado como <strong>ANULADO (CANCELLED)</strong> en los registros tributarios.
+                </p>
+              </div>
+            ) : (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
+                Este comprobante no cuenta con aceptación definitiva de SUNAT. Se eliminará del sistema y de las colas de transmisión.
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-black uppercase text-slate-600 mb-1">
+                Motivo de Anulación
+              </label>
+              <input
+                type="text"
+                value={deleteMotivo}
+                onChange={(e) => setDeleteMotivo(e.target.value)}
+                className="w-full px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-rose-500"
+              />
+            </div>
+
+            {selectedDocForDelete?.saleId && (
+              <div className="pt-1">
+                <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={deleteRestoreStock}
+                    onChange={(e) => setDeleteRestoreStock(e.target.checked)}
+                    className="rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                  />
+                  Revertir unidades al inventario (Devolución de stock)
+                </label>
+              </div>
+            )}
+
+            {selectedDocForDelete?.status === "ACCEPTED" && (
+              <div className="pt-1">
+                <label className="flex items-center gap-2 text-xs text-slate-500 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={deleteForce}
+                    onChange={(e) => setDeleteForce(e.target.checked)}
+                    className="rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                  />
+                  Remover completamente de la vista tras la anulación legal en SUNAT
+                </label>
+              </div>
+            )}
+
+            {/* Footer */}
+            <div className="flex justify-end gap-3 pt-3 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setIsDeleteModalOpen(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isSubmittingDelete}
+                onClick={handleConfirmDelete}
+                className="px-5 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-md disabled:opacity-50 flex items-center gap-2 cursor-pointer"
+              >
+                {isSubmittingDelete
+                  ? "Procesando..."
+                  : selectedDocForDelete?.status === "ACCEPTED"
+                  ? "Confirmar Anulación en SUNAT"
+                  : "Eliminar Comprobante"}
               </button>
             </div>
           </div>

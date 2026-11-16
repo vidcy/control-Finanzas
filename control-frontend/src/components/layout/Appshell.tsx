@@ -37,6 +37,10 @@ import {
   ExternalLink,
   Globe,
   Copy,
+  ChevronDown,
+  ChevronUp,
+  Landmark,
+  ShieldCheck,
 } from "lucide-react";
 
 import { toast } from "react-hot-toast";
@@ -170,6 +174,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
   const [businessSlug, setBusinessSlug] = useState(user?.businessSlug || "");
   const [isCatalogActive, setIsCatalogActive] = useState<boolean>(true);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [showRegimeDetails, setShowRegimeDetails] = useState(false);
 
   // Temporary states for sub-modal staging
   const [tempAvatar, setTempAvatar] = useState<string | File>("");
@@ -1507,137 +1512,161 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                       </div>
                     </div>
                   </div>
+                </div>
+              </div>
 
-                  {/* RÉGIMEN TRIBUTARIO OFICIAL SUNAT */}
-                  <div className="pt-2 border-t border-gray-100 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="block text-xs font-black text-gray-800 uppercase tracking-wider">
-                        Régimen Tributario Oficial SUNAT
-                      </label>
-                      <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700">
-                        {TAX_REGIMES[taxRegime]?.badge || "SUNAT"}
-                      </span>
+              {/* RÉGIMEN TRIBUTARIO OFICIAL SUNAT (COMPACTO, ELEGANTE Y COLAPSABLE) */}
+              <div className="md:col-span-2 bg-gradient-to-br from-indigo-50/70 via-white to-purple-50/50 border border-indigo-200/90 rounded-2xl p-4 sm:p-5 space-y-3 shadow-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-indigo-100/70 pb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-gradient-to-tr from-indigo-600 to-purple-600 rounded-xl text-white shadow-xs">
+                      <Landmark className="w-4 h-4" />
                     </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">
+                          Régimen Tributario Oficial SUNAT
+                        </h4>
+                        <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-indigo-100 text-indigo-800 border border-indigo-200">
+                          {TAX_REGIMES[taxRegime]?.badge || "SUNAT"}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 font-medium">
+                        Define la tasa de IGV, pago a cuenta de Renta y comprobantes autorizados.
+                      </p>
+                    </div>
+                  </div>
 
-                    <select
-                      value={taxRegime}
-                      onChange={(e) => {
-                        const newRegime = e.target.value;
-                        setTaxRegime(newRegime);
-                        const opt = TAX_REGIMES[newRegime];
-                        if (opt) setIgvRate(opt.rate);
-                      }}
-                      className="w-full px-3 py-2.5 border-2 border-indigo-200 hover:border-indigo-400 focus:border-indigo-600 rounded-xl focus:ring-2 focus:ring-indigo-500/20 outline-none text-xs font-bold text-gray-900 bg-white transition-all shadow-xs"
-                    >
-                      {TAX_REGIMES_LIST.map((r) => (
-                        <option key={r.code} value={r.code}>
-                          {r.name}
-                        </option>
-                      ))}
-                    </select>
+                  {/* Botón interactivo para ver/ocultar ficha técnica */}
+                  <button
+                    type="button"
+                    onClick={() => setShowRegimeDetails(!showRegimeDetails)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-indigo-700 bg-white hover:bg-indigo-50 border border-indigo-200 rounded-xl transition-all shadow-2xs self-start sm:self-auto cursor-pointer"
+                  >
+                    <span>{showRegimeDetails ? "Ocultar ficha" : "Ver ficha SUNAT"}</span>
+                    {showRegimeDetails ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
 
-                    {/* Ficha Tributaria Detallada del Régimen Seleccionado */}
+                {/* Selector Principal y Resumen Clave */}
+                <div className="space-y-2.5">
+                  <select
+                    value={taxRegime}
+                    onChange={(e) => {
+                      const newRegime = e.target.value;
+                      setTaxRegime(newRegime);
+                      const opt = TAX_REGIMES[newRegime];
+                      if (opt) setIgvRate(opt.rate);
+                    }}
+                    className="w-full px-3.5 py-2.5 border-2 border-indigo-200 hover:border-indigo-400 focus:border-indigo-600 rounded-xl focus:ring-2 focus:ring-indigo-500/20 outline-none text-xs font-black text-gray-900 bg-white transition-all shadow-xs cursor-pointer"
+                  >
+                    {TAX_REGIMES_LIST.map((r) => (
+                      <option key={r.code} value={r.code}>
+                        {r.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* Barra compacta con indicadores clave */}
+                  {(() => {
+                    const opt = TAX_REGIMES[taxRegime] || TAX_REGIMES.RER_18;
+                    return (
+                      <div className="flex flex-wrap items-center gap-2 text-[10.5px]">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 border border-indigo-200 font-bold text-indigo-900">
+                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-600" />
+                          IGV: <strong className="text-indigo-700 font-black">{opt.rate.toFixed(1)}%</strong>
+                        </span>
+
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 font-bold text-amber-900">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-600" />
+                          Renta: <strong className="text-amber-800 font-black">{opt.incomeTaxRate}</strong>
+                        </span>
+
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 font-bold text-emerald-900">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+                          Emite: <strong className="text-emerald-800 font-black">{opt.allowedDocs.includes("FACTURA") ? "Facturas (F001) y Boletas (B001)" : "Solo Boletas (B001)"}</strong>
+                        </span>
+
+                        {opt.maxAnnualIncome && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 border border-slate-200 font-bold text-slate-700">
+                            Tope: <strong>S/ {opt.maxAnnualIncome.toLocaleString()}</strong>
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Ficha Desplegable con Animación */}
+                {showRegimeDetails && (
+                  <div className="p-4 bg-white border border-indigo-100 rounded-xl space-y-3 animate-fadeIn text-xs shadow-2xs">
                     {(() => {
                       const opt = TAX_REGIMES[taxRegime] || TAX_REGIMES.RER_18;
                       return (
-                        <div className="p-3.5 bg-gradient-to-br from-indigo-50/70 via-slate-50 to-purple-50/60 border border-indigo-100 rounded-2xl space-y-3 animate-fadeIn text-xs shadow-2xs">
-                          {/* Header de la Ficha */}
-                          <div className="flex items-start justify-between gap-2 border-b border-indigo-100 pb-2.5">
-                            <div className="space-y-0.5">
-                              <span className="text-[10px] font-black uppercase tracking-wider text-indigo-600 block">
-                                Normativa SUNAT Aplicable
-                              </span>
-                              <h5 className="font-black text-slate-900 text-xs">
-                                {opt.name}
-                              </h5>
-                            </div>
-                            <div className="shrink-0 flex items-center gap-1.5 flex-wrap justify-end">
-                              <span className="px-2 py-0.5 rounded-lg text-[10px] font-black bg-indigo-600 text-white shadow-2xs">
-                                IGV: {opt.rate.toFixed(1)}%
-                              </span>
-                              {opt.category === "RER" && (
-                                <span className="px-2 py-0.5 rounded-lg text-[10px] font-black bg-amber-500 text-white shadow-2xs">
-                                  Renta: 1.5%
-                                </span>
-                              )}
-                              {opt.category === "RMT" && (
-                                <span className="px-2 py-0.5 rounded-lg text-[10px] font-black bg-emerald-600 text-white shadow-2xs">
-                                  Renta: 1.0%
-                                </span>
-                              )}
-                              {opt.category === "NRUS" && (
-                                <span className="px-2 py-0.5 rounded-lg text-[10px] font-black bg-rose-600 text-white shadow-2xs">
-                                  Cuota S/ 20 o S/ 50
-                                </span>
-                              )}
-                            </div>
+                        <>
+                          <div className="flex items-center justify-between border-b border-indigo-50 pb-2">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-indigo-600">
+                              Detalle Normativo SUNAT — {opt.name}
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              Código SUNAT: {opt.sunatCode}
+                            </span>
                           </div>
 
-                          {/* Descripción clara */}
-                          <p className="text-[11px] text-slate-600 leading-relaxed">
+                          <p className="text-[11px] text-slate-600 leading-relaxed font-normal">
                             {opt.description}
                           </p>
 
-                          {/* Grilla con Datos Clave: Comprobantes, Renta, Libros y Topes */}
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10.5px]">
-                            <div className="p-2.5 bg-white rounded-xl border border-indigo-100/80 space-y-0.5 shadow-2xs">
-                              <span className="font-black text-indigo-900 block flex items-center gap-1">
-                                📄 Comprobantes Permitidos:
-                              </span>
-                              <span className="font-bold text-slate-700 block">
+                            <div className="p-2.5 bg-slate-50/80 rounded-lg border border-slate-100 space-y-0.5">
+                              <span className="font-black text-indigo-950 block">📄 Comprobantes Autorizados:</span>
+                              <span className="text-slate-700 font-medium block">
                                 {opt.allowedDocs.includes("FACTURA")
-                                  ? "Facturas (F001 con crédito fiscal), Boletas (B001), Notas de Crédito y Guías de Remisión"
+                                  ? "Facturas (F001), Boletas (B001), Notas de Crédito, Débito y Guías de Remisión."
                                   : "⚠️ Solo Boletas de Venta (B001) y Tickets. SUNAT prohíbe emitir Facturas en el NRUS."}
                               </span>
                             </div>
 
-                            <div className="p-2.5 bg-white rounded-xl border border-indigo-100/80 space-y-0.5 shadow-2xs">
-                              <span className="font-black text-indigo-900 block flex items-center gap-1">
-                                💰 Impuesto a la Renta:
-                              </span>
-                              <span className="font-bold text-slate-700 block">
+                            <div className="p-2.5 bg-slate-50/80 rounded-lg border border-slate-100 space-y-0.5">
+                              <span className="font-black text-indigo-950 block">💰 Impuesto a la Renta:</span>
+                              <span className="text-slate-700 font-medium block">
                                 {opt.category === "RER"
-                                  ? "Cuota fija 1.5% mensual definitiva y cancelatoria (¡NO requiere Declaración Jurada Anual de Renta!)"
+                                  ? "Cuota fija 1.5% mensual cancelatoria definitiva (Sin Declaración Jurada Anual)."
                                   : opt.category === "RMT"
-                                  ? "1.0% mensual a cuenta (hasta 300 UIT). Escala progresiva anual de 10% y 29.5%"
+                                  ? "1.0% mensual a cuenta. Escala progresiva anual de 10% y 29.5%."
                                   : opt.category === "RG"
-                                  ? "1.5% mensual o Coeficiente a cuenta. Regularización anual del 29.5% sobre la utilidad"
+                                  ? "1.5% o Coeficiente mensual. Regularización anual del 29.5%."
                                   : opt.category === "NRUS"
-                                  ? "Cuota fija mensual de S/ 20 (hasta S/ 5,000) o S/ 50 (hasta S/ 8,000) al mes"
-                                  : "Según régimen tributario base de la empresa"}
+                                  ? "Cuota fija de S/ 20 o S/ 50 mensuales según categoría de ingresos."
+                                  : "Según régimen base."}
                               </span>
                             </div>
 
-                            <div className="p-2.5 bg-white rounded-xl border border-indigo-100/80 space-y-0.5 shadow-2xs">
-                              <span className="font-black text-indigo-900 block flex items-center gap-1">
-                                📚 Libros Contables SUNAT:
-                              </span>
-                              <span className="font-bold text-slate-700 block">
+                            <div className="p-2.5 bg-slate-50/80 rounded-lg border border-slate-100 space-y-0.5">
+                              <span className="font-black text-indigo-950 block">📚 Libros Contables Requeridos:</span>
+                              <span className="text-slate-700 font-medium block">
                                 {opt.accountingBooks}
                               </span>
                             </div>
 
-                            <div className="p-2.5 bg-white rounded-xl border border-indigo-100/80 space-y-0.5 shadow-2xs">
-                              <span className="font-black text-indigo-900 block flex items-center gap-1">
-                                ⚖️ Límites del Régimen:
-                              </span>
-                              <span className="font-bold text-slate-700 block">
+                            <div className="p-2.5 bg-slate-50/80 rounded-lg border border-slate-100 space-y-0.5">
+                              <span className="font-black text-indigo-950 block">⚖️ Límites Anuales:</span>
+                              <span className="text-slate-700 font-medium block">
                                 {opt.maxAnnualIncome
-                                  ? `Hasta S/ ${opt.maxAnnualIncome.toLocaleString()} anuales${opt.maxWorkers ? ` | Máx ${opt.maxWorkers} trabajadores/turno` : ""}`
-                                  : "Sin límite de ingresos anuales ni compras"}
+                                  ? `Hasta S/ ${opt.maxAnnualIncome.toLocaleString()} anuales${opt.maxWorkers ? ` | Máx ${opt.maxWorkers} trabajadores` : ""}`
+                                  : "Sin límite anual de ingresos ni compras."}
                               </span>
                             </div>
                           </div>
 
-                          {/* Beneficios */}
                           {opt.benefits && opt.benefits.length > 0 && (
-                            <div className="pt-2 border-t border-indigo-100/80">
+                            <div className="pt-2 border-t border-indigo-50">
                               <span className="text-[10px] font-black text-indigo-950 uppercase tracking-wider block mb-1">
-                                Ventajas y Beneficios de Ley:
+                                Ventajas Tributarias:
                               </span>
-                              <ul className="space-y-1">
+                              <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1">
                                 {opt.benefits.map((b, idx) => (
-                                  <li key={idx} className="flex items-start gap-1.5 text-[10.5px] text-slate-700 font-medium">
+                                  <li key={idx} className="flex items-start gap-1.5 text-[10.5px] text-slate-600">
                                     <span className="text-emerald-600 font-bold">✓</span>
                                     <span>{b}</span>
                                   </li>
@@ -1645,26 +1674,26 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                               </ul>
                             </div>
                           )}
-                        </div>
+                        </>
                       );
                     })()}
-
-                    {/* Alerta inteligente para Madre de Dios / Amazonía */}
-                    {(isAmazoniaDepartment(businessDepartment) || taxRegime === "AMAZONIA_EXONERADO") && (
-                      <div className="mt-2.5 p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-start gap-2.5 animate-fadeIn">
-                        <Sparkles className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
-                        <div>
-                          <p className="text-[11px] font-black text-emerald-900 uppercase tracking-wider">
-                            Régimen Amazonía Activo — Ley N° 27037
-                          </p>
-                          <p className="text-[10px] text-emerald-700 leading-relaxed mt-0.5 font-medium">
-                            En <strong>Madre de Dios</strong> y regiones amazónicas, las ventas de bienes están <strong>100% exoneradas de IGV (0.00%)</strong>. En tickets, boletas y facturas no se cobrará IGV y se consignará la leyenda oficial de ley automáticamente.
-                          </p>
-                        </div>
-                      </div>
-                    )}
                   </div>
-                </div>
+                )}
+
+                {/* Alerta inteligente para Madre de Dios / Amazonía */}
+                {(isAmazoniaDepartment(businessDepartment) || taxRegime === "AMAZONIA_EXONERADO") && (
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-start gap-2.5 animate-fadeIn">
+                    <Sparkles className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-[11px] font-black text-emerald-900 uppercase tracking-wider">
+                        Régimen Amazonía Activo — Ley N° 27037
+                      </p>
+                      <p className="text-[10px] text-emerald-700 leading-relaxed mt-0.5 font-medium">
+                        En <strong>Madre de Dios</strong> y regiones amazónicas, las ventas están <strong>100% exoneradas de IGV (0.00%)</strong>. En tickets, boletas y facturas no se cobrará IGV y se consignará la leyenda oficial de ley automáticamente.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* FACTURACIÓN ELECTRÓNICA SUNAT (CCOFACT PRO / NubeFacT) */}

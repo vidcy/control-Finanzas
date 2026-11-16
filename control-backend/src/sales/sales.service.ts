@@ -343,6 +343,17 @@ export class SalesService {
         } catch (billingErr: any) {
           console.warn(`[Sincronización CCOFACT] Error al anular comprobante ${sale.billingSerie}-${sale.billingNumber}:`, billingErr?.message);
         }
+
+        // Sincronizar comprobante fiscal centralizado
+        await tx.fiscalDocument.updateMany({
+          where: {
+            saleId: sale.id,
+          },
+          data: {
+            status: 'CANCELLED',
+            sunatDescription: 'Comprobante anulado formalmente por eliminación de venta.',
+          },
+        }).catch(() => {});
       }
 
       // 3. Delete the Sale (cascade will delete items and commissions)
@@ -352,5 +363,214 @@ export class SalesService {
 
       return { success: true };
     });
+  }
+
+  /**
+   * MODIFICAR VENTA Y SINCRONIZAR CON FACTURACIÓN ELECTRÓNICA CCOFACT PRO
+   */
+  async updateSale(ownerId: string, id: string, dto: any) {
+    const sale = await this.prisma.sale.findFirst({
+      where: {
+        id,
+        user: { OR: [{ id: ownerId }, { parentId: ownerId }] },
+      },
+      include: { items: true },
+    });
+
+    if (!sale) {
+      throw new NotFoundException('Venta no encontrada');
+    }
+
+    if (sale.cashShiftId) {
+      const shift = await this.prisma.cashShift.findUnique({
+        where: { id: sale.cashShiftId },
+      });
+      if (shift && shift.status === 'CLOSED') {
+        throw new BadRequestException(
+          'No se puede modificar una venta perteneciente a un cierre de caja ya cerrado.',
+        );
+      }
+    }
+
+    const isBilled = sale.billingStatus === 'SUCCESS' && sale.billingSerie && sale.billingNumber;
+
+    // Si ya está facturada con éxito en SUNAT
+    if (isBilled) {
+      const sensitiveChanged =
+        (dto.clientDocumentNumber && dto.clientDocumentNumber !== sale.clientDocumentNumber) ||
+        (dto.amount && Number(dto.amount) !== sale.amount) ||
+        (dto.items && dto.items.length > 0);
+
+      if (sensitiveChanged) {
+        if (!dto.rectifyAccepted) {
+          throw new BadRequestException(
+            `Esta venta ya cuenta con el comprobante fiscal ${sale.billingSerie}-${sale.billingNumber} ACEPTADO por SUNAT. Para modificar ítems, cliente o montos, debe activar la rectificación oficial (rectifyAccepted: true), la cual anulará el comprobante actual con Nota de Crédito conforme a Ley y emitirá el comprobante de reemplazo.`,
+          );
+        }
+
+        // Rectificación:
+        // 1. Anular comprobante original con Nota de Crédito en CCOFACT
+        const owner = await this.prisma.user.findUnique({ where: { id: ownerId } });
+        if (owner?.nubefactUrl && owner?.nubefactToken) {
+          try {
+            const urlObj = new URL(owner.nubefactUrl);
+            const anularUrl = `${urlObj.origin}/api/v1/documents/by-series-number/${sale.billingSerie}/${sale.billingNumber}/anular-fiscal`;
+            await fetch(anularUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': owner.nubefactToken,
+                'Authorization': `Bearer ${owner.nubefactToken}`,
+              },
+              body: JSON.stringify({
+                motivo: dto.rectifyReason || 'ANULACION POR MODIFICACION Y RECTIFICACION DE VENTA',
+              }),
+            });
+          } catch (e: any) {
+            console.warn(`Error anulando en CCOFACT: ${e.message}`);
+          }
+        }
+
+        // 2. Marcar comprobante anterior en FiscalDocument como CANCELLED
+        await this.prisma.fiscalDocument.updateMany({
+          where: {
+            userId: ownerId,
+            serie: sale.billingSerie,
+            correlative: sale.billingNumber,
+          },
+          data: {
+            status: 'CANCELLED',
+            sunatDescription: `Comprobante anulado formalmente por modificación de venta (rectificación).`,
+          },
+        }).catch(() => {});
+      }
+    }
+
+    // Actualizar campos de cliente y venta
+    const updateData: any = {};
+    if (dto.clientDocumentType !== undefined) updateData.clientDocumentType = dto.clientDocumentType;
+    if (dto.clientDocumentNumber !== undefined) updateData.clientDocumentNumber = dto.clientDocumentNumber;
+    if (dto.clientDenomination !== undefined) updateData.clientDenomination = dto.clientDenomination;
+    if (dto.clientAddress !== undefined) updateData.clientAddress = dto.clientAddress;
+    if (dto.clientEmail !== undefined) updateData.clientEmail = dto.clientEmail;
+    if (dto.paymentMethod !== undefined) updateData.paymentMethod = dto.paymentMethod;
+    if (dto.advisorId !== undefined) updateData.advisorId = dto.advisorId;
+
+    // Si se enviaron nuevos items y montos
+    if (dto.items && Array.isArray(dto.items)) {
+      // Revertir movimientos de inventario anteriores
+      const oldMovements = await this.prisma.inventoryMovement.findMany({
+        where: { documentId: sale.id, type: 'OUT', reason: 'SALE' },
+      });
+      for (const mov of oldMovements) {
+        if (mov.branchId) {
+          const bStock = await this.prisma.branchStock.findUnique({
+            where: { productId_branchId: { productId: mov.productId, branchId: mov.branchId } },
+          });
+          if (bStock) {
+            await this.prisma.branchStock.update({
+              where: { id: bStock.id },
+              data: { stock: { increment: mov.quantity } },
+            });
+          }
+        }
+        await this.prisma.product.update({
+          where: { id: mov.productId },
+          data: { stock: { increment: mov.quantity } },
+        });
+      }
+
+      await this.prisma.inventoryMovement.deleteMany({
+        where: { documentId: sale.id, type: 'OUT', reason: 'SALE' },
+      });
+      await this.prisma.saleItem.deleteMany({
+        where: { saleId: sale.id },
+      });
+
+      let newTotal = 0;
+      for (const it of dto.items) {
+        const itemTotal = Number((it.quantity * it.price).toFixed(2));
+        newTotal += itemTotal;
+        await this.prisma.saleItem.create({
+          data: {
+            saleId: sale.id,
+            productId: it.productId,
+            name: it.name,
+            quantity: Number(it.quantity),
+            price: Number(it.price),
+          },
+        });
+
+        // Registrar nuevo movimiento OUT
+        await this.prisma.inventoryMovement.create({
+          data: {
+            productId: it.productId,
+            quantity: Number(it.quantity),
+            type: 'OUT',
+            reason: 'SALE',
+            userId: sale.userId,
+            unitCost: Number(it.price),
+            totalCost: itemTotal,
+            stockResult: 0,
+            documentId: sale.id,
+            branchId: sale.branchId,
+          },
+        });
+
+        // Descontar stock
+        await this.prisma.product.update({
+          where: { id: it.productId },
+          data: { stock: { decrement: Number(it.quantity) } },
+        });
+        if (sale.branchId) {
+          const bStock = await this.prisma.branchStock.findUnique({
+            where: { productId_branchId: { productId: it.productId, branchId: sale.branchId } },
+          });
+          if (bStock) {
+            await this.prisma.branchStock.update({
+              where: { id: bStock.id },
+              data: { stock: { decrement: Number(it.quantity) } },
+            });
+          }
+        }
+      }
+      updateData.amount = Number(newTotal.toFixed(2));
+    }
+
+    // Si se rectificó o se solicitó re-emisión
+    if (isBilled && dto.rectifyAccepted) {
+      updateData.billingStatus = 'PENDING';
+      updateData.billingError = null;
+    }
+
+    const updatedSale = await this.prisma.sale.update({
+      where: { id },
+      data: updateData,
+      include: { items: true },
+    });
+
+    // Si se requiere reemitir el comprobante a CCOFACT tras la modificación
+    if ((isBilled && dto.rectifyAccepted) || dto.reemitBilling) {
+      const billingRes = await this.nubefactService.sendInvoice(updatedSale.id);
+      if (billingRes.success) {
+        await this.prisma.sale.update({
+          where: { id: updatedSale.id },
+          data: {
+            billingStatus: 'SUCCESS',
+            billingNumber: billingRes.number,
+            billingSerie: billingRes.serie,
+            billingPdfUrl: billingRes.pdfUrl,
+            billingXmlUrl: billingRes.xmlUrl,
+            billingCdrUrl: billingRes.cdrUrl,
+          },
+        });
+      }
+    }
+
+    return {
+      success: true,
+      message: 'Venta actualizada exitosamente.',
+      sale: await this.prisma.sale.findUnique({ where: { id }, include: { items: true } }),
+    };
   }
 }

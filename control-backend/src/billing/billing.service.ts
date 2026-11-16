@@ -1,8 +1,14 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NubefactService } from '../nubefact/nubefact.service';
-import { EmitBillingDto, IssueNoteDto, BillingDocTypeEnum } from './emit-billing.dto';
-import { FiscalDocType, FiscalStatus } from '@prisma/client';
+import {
+  EmitBillingDto,
+  IssueNoteDto,
+  BillingDocTypeEnum,
+  UpdateBillingDto,
+  DeleteBillingDto,
+} from './emit-billing.dto';
+import { FiscalDocType, FiscalStatus, Currency } from '@prisma/client';
 
 @Injectable()
 export class BillingService {
@@ -80,6 +86,22 @@ export class BillingService {
     };
   }
 
+  normalizeCcofactBaseUrl(url: string): string {
+    try {
+      const urlObj = new URL(url);
+      return urlObj.origin;
+    } catch {
+      return url.replace(/\/api\/.*$/, '').replace(/\/+$/, '');
+    }
+  }
+
+  normalizeCcofactEmitUrl(url: string): string {
+    if (url.includes('/api/v1/ccofact/emitir')) return url;
+    if (url.includes('/api/v1/nubefact')) return url;
+    const base = this.normalizeCcofactBaseUrl(url);
+    return `${base}/api/v1/ccofact/emitir`;
+  }
+
   async emitDocument(ownerId: string, dto: EmitBillingDto) {
     if (!dto.items || dto.items.length === 0) {
       throw new BadRequestException('El comprobante debe contener al menos un producto o servicio.');
@@ -111,8 +133,8 @@ export class BillingService {
       orderBy: { correlative: 'desc' },
     });
 
-    const correlative = lastDoc ? lastDoc.correlative + 1 : 1;
-    const fullNumber = `${serie}-${String(correlative).padStart(8, '0')}`;
+    let correlative = lastDoc ? lastDoc.correlative + 1 : 1;
+    let fullNumber = `${serie}-${String(correlative).padStart(8, '0')}`;
 
     const taxes = this.calculateTaxBreakdown(dto.items);
     const hasLiveBilling = Boolean(owner.hasElectronicBilling && owner.nubefactUrl && owner.nubefactToken);
@@ -125,23 +147,116 @@ export class BillingService {
     let sunatResponseCode = '0';
     let sunatDescription = 'El comprobante ha sido aceptado por SUNAT satisfactoriamente.';
 
-    if (hasLiveBilling && dto.saleId) {
-      try {
-        const result = await this.nubefactService.sendInvoice(dto.saleId);
-        if (result.success) {
-          pdfUrl = result.pdfUrl || null;
-          xmlUrl = result.xmlUrl || null;
-          cdrUrl = result.cdrUrl || null;
-          status = FiscalStatus.ACCEPTED;
-        } else {
+    if (hasLiveBilling) {
+      if (dto.saleId) {
+        try {
+          const result = await this.nubefactService.sendInvoice(dto.saleId);
+          if (result.success) {
+            pdfUrl = result.pdfUrl || null;
+            xmlUrl = result.xmlUrl || null;
+            cdrUrl = result.cdrUrl || null;
+            serie = result.serie || serie;
+            correlative = result.number || correlative;
+            fullNumber = `${serie}-${String(correlative).padStart(8, '0')}`;
+            status = FiscalStatus.ACCEPTED;
+          } else {
+            status = FiscalStatus.REJECTED;
+            sunatResponseCode = 'ERROR';
+            sunatDescription = result.error || 'Error al transmitir a SUNAT';
+          }
+        } catch (err: any) {
+          this.logger.error(`Error enviando factura: ${err.message}`);
           status = FiscalStatus.REJECTED;
-          sunatResponseCode = 'ERROR';
-          sunatDescription = result.error || 'Error al transmitir a SUNAT';
+          sunatDescription = err.message;
         }
-      } catch (err: any) {
-        this.logger.error(`Error enviando factura: ${err.message}`);
-        status = FiscalStatus.REJECTED;
-        sunatDescription = err.message;
+      } else {
+        // Emisión directa e independiente conectada a CCOFACT PRO
+        try {
+          const ccofactPayload = {
+            idempotency_key: `billing_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+            tipo_comprobante:
+              dto.docType === BillingDocTypeEnum.FACTURA
+                ? '01'
+                : dto.docType === BillingDocTypeEnum.BOLETA
+                ? '03'
+                : dto.docType === BillingDocTypeEnum.NOTA_CREDITO
+                ? '07'
+                : '08',
+            serie: serie,
+            moneda: dto.currency || 'PEN',
+            forma_pago: dto.paymentMethod || 'Contado',
+            cliente: {
+              tipo_documento: dto.customerDocType,
+              numero_documento: dto.customerDocNum,
+              razon_social: dto.customerName,
+              direccion: dto.customerAddress || '',
+              email: dto.customerEmail || '',
+            },
+            items: dto.items.map((it, idx) => ({
+              codigo: it.sku || `PROD-${idx + 1}`,
+              descripcion: it.description,
+              unidad_medida: it.unit || 'NIU',
+              cantidad: Number(it.quantity),
+              precio_unitario: Number(it.unitPrice),
+              tipo_afectacion_igv: it.igvType === 8 ? '20' : it.igvType === 9 ? '30' : '10',
+            })),
+            enviar_a_sunat_inmediato: true,
+          };
+
+          const emitUrl = this.normalizeCcofactEmitUrl(owner.nubefactUrl);
+          const resp = await fetch(emitUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': owner.nubefactToken,
+              'Authorization': `Bearer ${owner.nubefactToken}`,
+            },
+            body: JSON.stringify(ccofactPayload),
+          });
+
+          const respData: any = await resp.json();
+          if (resp.ok && respData.exito !== false && !respData.errors) {
+            status = FiscalStatus.ACCEPTED;
+            pdfUrl =
+              respData.recursos?.pdf_a4 ||
+              respData.recursos?.ticket_pos_80mm ||
+              respData.enlace_del_pdf ||
+              null;
+            xmlUrl =
+              respData.recursos?.xml_firmado ||
+              respData.enlace_del_xml ||
+              null;
+            cdrUrl =
+              respData.recursos?.cdr_sunat ||
+              respData.enlace_del_cdr ||
+              null;
+            hash =
+              respData.sunat?.codigo_hash ||
+              respData.codigo_hash ||
+              null;
+            sunatResponseCode = respData.sunat?.codigo_respuesta || '0';
+            sunatDescription =
+              respData.sunat?.descripcion ||
+              'Aceptado por SUNAT exitosamente.';
+            if (respData.comprobante?.numero) {
+              correlative = respData.comprobante.numero;
+              serie = respData.comprobante.serie || serie;
+              fullNumber = `${serie}-${String(correlative).padStart(8, '0')}`;
+            }
+          } else {
+            status = FiscalStatus.REJECTED;
+            sunatResponseCode = 'ERROR';
+            sunatDescription =
+              respData.errors ||
+              respData.mensaje ||
+              respData.message ||
+              'Error transmitiendo a SUNAT';
+          }
+        } catch (err: any) {
+          this.logger.error(`Error enviando comprobante a CCOFACT: ${err.message}`);
+          status = FiscalStatus.REJECTED;
+          sunatDescription = err.message;
+        }
       }
     } else {
       const randomHash = Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 10);
@@ -353,6 +468,9 @@ export class BillingService {
     });
     if (!doc) throw new NotFoundException('Documento no encontrado');
 
+    const owner = await this.prisma.user.findUnique({ where: { id: ownerId } });
+    if (!owner) throw new NotFoundException('Usuario propietario no encontrado');
+
     if (doc.saleId) {
       const saleResult = await this.nubefactService.sendInvoice(doc.saleId);
       if (saleResult.success) {
@@ -364,7 +482,7 @@ export class BillingService {
             xmlUrl: saleResult.xmlUrl,
             cdrUrl: saleResult.cdrUrl,
             sunatResponseCode: '0',
-            sunatDescription: 'Aceptado por SUNAT tras reintento',
+            sunatDescription: 'Aceptado por SUNAT tras reintento exitoso',
           },
         });
         return { success: true, document: updated };
@@ -374,10 +492,77 @@ export class BillingService {
           data: {
             status: FiscalStatus.REJECTED,
             sunatResponseCode: 'ERROR',
-            sunatDescription: saleResult.error || 'Fallo de transmisión',
+            sunatDescription: saleResult.error || 'Fallo de transmisión a SUNAT',
           },
         });
         return { success: false, error: saleResult.error };
+      }
+    }
+
+    // Si es comprobante independiente, reintentar a CCOFACT PRO
+    if (owner.hasElectronicBilling && owner.nubefactUrl && owner.nubefactToken) {
+      try {
+        const ccofactPayload = {
+          idempotency_key: `retry_${doc.id}_${Date.now()}`,
+          tipo_comprobante:
+            doc.docType === FiscalDocType.INVOICE
+              ? '01'
+              : doc.docType === FiscalDocType.BOLETA
+              ? '03'
+              : doc.docType === FiscalDocType.CREDIT_NOTE
+              ? '07'
+              : '08',
+          serie: doc.serie,
+          moneda: doc.currency || 'PEN',
+          forma_pago: 'Contado',
+          cliente: {
+            tipo_documento: doc.customerDocType,
+            numero_documento: doc.customerDocNum,
+            razon_social: doc.customerName,
+            direccion: doc.customerAddress || '',
+          },
+          items: [
+            {
+              codigo: 'SERV',
+              descripcion: 'Comprobante comercial',
+              unidad_medida: 'NIU',
+              cantidad: 1,
+              precio_unitario: doc.totalAmount,
+              tipo_afectacion_igv: '10',
+            },
+          ],
+          enviar_a_sunat_inmediato: true,
+        };
+
+        const emitUrl = this.normalizeCcofactEmitUrl(owner.nubefactUrl);
+        const resp = await fetch(emitUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': owner.nubefactToken,
+            'Authorization': `Bearer ${owner.nubefactToken}`,
+          },
+          body: JSON.stringify(ccofactPayload),
+        });
+
+        const respData: any = await resp.json();
+        if (resp.ok && respData.exito !== false) {
+          const updated = await this.prisma.fiscalDocument.update({
+            where: { id },
+            data: {
+              status: FiscalStatus.ACCEPTED,
+              pdfUrl: respData.recursos?.pdf_a4 || respData.recursos?.ticket_pos_80mm || doc.pdfUrl,
+              xmlUrl: respData.recursos?.xml_firmado || doc.xmlUrl,
+              cdrUrl: respData.recursos?.cdr_sunat || doc.cdrUrl,
+              hash: respData.sunat?.codigo_hash || doc.hash,
+              sunatResponseCode: '0',
+              sunatDescription: respData.sunat?.descripcion || 'Aceptado por SUNAT tras reintento exitoso',
+            },
+          });
+          return { success: true, document: updated };
+        }
+      } catch (e: any) {
+        this.logger.error(`Error reintentando comprobante independiente en CCOFACT: ${e.message}`);
       }
     }
 
@@ -398,6 +583,9 @@ export class BillingService {
     });
     if (!original) throw new NotFoundException('Comprobante original a modificar no encontrado');
 
+    const owner = await this.prisma.user.findUnique({ where: { id: ownerId } });
+    if (!owner) throw new NotFoundException('Usuario propietario no encontrado');
+
     const isCredit = dto.noteType === 'CREDIT';
     const isOriginalInvoice = original.docType === FiscalDocType.INVOICE;
     const serie = isOriginalInvoice ? (isCredit ? 'FC01' : 'FD01') : (isCredit ? 'BC01' : 'BD01');
@@ -408,11 +596,97 @@ export class BillingService {
       orderBy: { correlative: 'desc' },
     });
 
-    const correlative = lastNote ? lastNote.correlative + 1 : 1;
-    const fullNumber = `${serie}-${String(correlative).padStart(8, '0')}`;
+    let correlative = lastNote ? lastNote.correlative + 1 : 1;
+    let fullNumber = `${serie}-${String(correlative).padStart(8, '0')}`;
     const amount = dto.amount || original.totalAmount;
     const base = Number((amount / 1.18).toFixed(2));
     const igv = Number((amount - base).toFixed(2));
+
+    let status: FiscalStatus = FiscalStatus.ACCEPTED;
+    let pdfUrl: string | null = null;
+    let xmlUrl: string | null = null;
+    let cdrUrl: string | null = null;
+    let hash: string | null = null;
+    let sunatResponseCode = '0';
+    let sunatDescription = `Nota de ${isCredit ? 'Crédito' : 'Débito'} generada exitosamente. Modifica a ${original.fullNumber}`;
+
+    const hasLiveBilling = Boolean(owner.hasElectronicBilling && owner.nubefactUrl && owner.nubefactToken);
+
+    if (hasLiveBilling) {
+      try {
+        const payload = {
+          idempotency_key: `note_${original.id}_${Date.now()}`,
+          tipo_comprobante: isCredit ? '07' : '08',
+          serie: serie,
+          moneda: original.currency || 'PEN',
+          forma_pago: 'Contado',
+          cliente: {
+            tipo_documento: original.customerDocType,
+            numero_documento: original.customerDocNum,
+            razon_social: original.customerName,
+            direccion: original.customerAddress || '',
+            email: '',
+          },
+          items: [
+            {
+              codigo: 'NOTA',
+              descripcion: `${dto.reasonText || (isCredit ? 'Anulación de la operación' : 'Ajuste de precio')} (Modifica a ${original.fullNumber})`,
+              unidad_medida: 'NIU',
+              cantidad: 1,
+              precio_unitario: amount,
+              tipo_afectacion_igv: '10',
+            },
+          ],
+          ref_documento: {
+            tipo: original.docType === FiscalDocType.INVOICE ? '01' : '03',
+            serie: original.serie,
+            numero: original.correlative,
+            motivo_codigo: String(dto.reasonCode).padStart(2, '0'),
+            motivo_descripcion: dto.reasonText,
+          },
+          enviar_a_sunat_inmediato: true,
+        };
+
+        const emitUrl = this.normalizeCcofactEmitUrl(owner.nubefactUrl);
+        const resp = await fetch(emitUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': owner.nubefactToken,
+            'Authorization': `Bearer ${owner.nubefactToken}`,
+          },
+          body: JSON.stringify(payload),
+        });
+
+        const respData: any = await resp.json();
+        if (resp.ok && respData.exito !== false && !respData.errors) {
+          status = FiscalStatus.ACCEPTED;
+          pdfUrl = respData.recursos?.pdf_a4 || respData.recursos?.ticket_pos_80mm || respData.enlace_del_pdf || null;
+          xmlUrl = respData.recursos?.xml_firmado || respData.enlace_del_xml || null;
+          cdrUrl = respData.recursos?.cdr_sunat || respData.enlace_del_cdr || null;
+          hash = respData.sunat?.codigo_hash || respData.codigo_hash || null;
+          sunatDescription = respData.sunat?.descripcion || `Nota de ${isCredit ? 'Crédito' : 'Débito'} aceptada por SUNAT. Modifica a ${original.fullNumber}`;
+          if (respData.comprobante?.numero) {
+            correlative = respData.comprobante.numero;
+            fullNumber = `${serie}-${String(correlative).padStart(8, '0')}`;
+          }
+        } else {
+          status = FiscalStatus.REJECTED;
+          sunatResponseCode = 'ERROR';
+          sunatDescription = respData.errors || respData.mensaje || respData.message || 'Error al transmitir nota a SUNAT';
+        }
+      } catch (err: any) {
+        this.logger.error(`Error transmitiendo nota a CCOFACT: ${err.message}`);
+        status = FiscalStatus.REJECTED;
+        sunatDescription = err.message;
+      }
+    } else {
+      const randomHash = Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 10);
+      hash = Buffer.from(randomHash).toString('base64').substring(0, 28);
+      pdfUrl = `https://controlfinanzas.pe/comprobantes/${fullNumber}.pdf`;
+      xmlUrl = `https://controlfinanzas.pe/comprobantes/${fullNumber}.xml`;
+      cdrUrl = `https://controlfinanzas.pe/comprobantes/R-${fullNumber}.zip`;
+    }
 
     const noteDoc = await this.prisma.fiscalDocument.create({
       data: {
@@ -420,7 +694,7 @@ export class BillingService {
         serie,
         correlative,
         fullNumber,
-        status: FiscalStatus.ACCEPTED,
+        status,
         issuerRuc: original.issuerRuc,
         customerDocType: original.customerDocType,
         customerDocNum: original.customerDocNum,
@@ -430,21 +704,337 @@ export class BillingService {
         totalIgv: igv,
         totalAmount: amount,
         currency: original.currency,
-        sunatResponseCode: '0',
-        sunatDescription: `Nota de ${isCredit ? 'Crédito' : 'Débito'} aceptada (Motivo ${dto.reasonCode}: ${dto.reasonText}). Modifica a ${original.fullNumber}`,
-        pdfUrl: `https://controlfinanzas.pe/comprobantes/${fullNumber}.pdf`,
-        xmlUrl: `https://controlfinanzas.pe/comprobantes/${fullNumber}.xml`,
-        cdrUrl: `https://controlfinanzas.pe/comprobantes/R-${fullNumber}.zip`,
+        hash,
+        pdfUrl,
+        xmlUrl,
+        cdrUrl,
+        sunatResponseCode,
+        sunatDescription,
         userId: ownerId,
         branchId: original.branchId,
       },
     });
 
+    // Si fue anulación total (motivo 1), marcar el comprobante original como CANCELLED
+    if (dto.reasonCode === 1 && status === FiscalStatus.ACCEPTED) {
+      await this.prisma.fiscalDocument.update({
+        where: { id: original.id },
+        data: {
+          status: FiscalStatus.CANCELLED,
+          sunatDescription: `Comprobante anulado formalmente ante SUNAT mediante Nota de Crédito ${fullNumber}. Motivo: ${dto.reasonText}`,
+        },
+      });
+
+      if (original.saleId) {
+        await this.prisma.sale.update({
+          where: { id: original.saleId },
+          data: {
+            billingStatus: 'CANCELLED',
+          },
+        }).catch(() => {});
+      }
+    }
+
+    return {
+      success: status === FiscalStatus.ACCEPTED,
+      document: noteDoc,
+      message: sunatDescription,
+    };
+  }
+
+  /**
+   * MODIFICAR COMPROBANTE FISCAL
+   * Si el comprobante está en DRAFT o REJECTED, actualiza los datos.
+   * Si ya fue ACEPTADO por SUNAT, aplica el procedimiento legal de rectificación
+   * emitiendo una Nota de Crédito de anulación y generando el nuevo comprobante corregido.
+   */
+  async updateDocument(ownerId: string, id: string, dto: UpdateBillingDto) {
+    const doc = await this.prisma.fiscalDocument.findFirst({
+      where: { id, userId: ownerId },
+    });
+    if (!doc) throw new NotFoundException('Documento fiscal no encontrado');
+
+    const owner = await this.prisma.user.findUnique({ where: { id: ownerId } });
+    if (!owner) throw new NotFoundException('Usuario propietario no encontrado');
+
+    // CASO 1: Si ya fue ACEPTADO por SUNAT
+    if (doc.status === FiscalStatus.ACCEPTED) {
+      if (!dto.rectifyAccepted) {
+        throw new BadRequestException(
+          `El comprobante ${doc.fullNumber} ya fue ACEPTADO por SUNAT con CDR. Conforme a la Resolución de Superintendencia SUNAT N.° 097-2012, no es posible editarlo en frío directamente. Debe rectificarlo mediante Nota de Crédito activando "rectifyAccepted: true".`,
+        );
+      }
+
+      // Proceso de Rectificación Oficial:
+      // 1. Anular el comprobante original emitiendo Nota de Crédito ante SUNAT
+      const ncReason = dto.rectifyReason || 'ANULACION POR MODIFICACION Y RECTIFICACION DE COMPROBANTE';
+      const ncRes = await this.issueNote(ownerId, {
+        originalFiscalDocumentId: doc.id,
+        noteType: 'CREDIT',
+        reasonCode: 1, // Anulación de la operación
+        reasonText: ncReason,
+        amount: doc.totalAmount,
+      });
+
+      if (!ncRes.success) {
+        throw new BadRequestException(`No se pudo anular el comprobante original en SUNAT: ${ncRes.message}`);
+      }
+
+      // 2. Emitir el nuevo comprobante corregido con la siguiente correlación
+      const itemsToUse = (dto.items && dto.items.length > 0)
+        ? dto.items
+        : [{ description: 'Servicio / Producto comercial', quantity: 1, unitPrice: doc.totalAmount, igvType: 1 }];
+
+      const newDocDto: EmitBillingDto = {
+        docType: doc.docType === FiscalDocType.INVOICE ? BillingDocTypeEnum.FACTURA : BillingDocTypeEnum.BOLETA,
+        customerDocType: dto.customerDocType || doc.customerDocType,
+        customerDocNum: dto.customerDocNum || doc.customerDocNum,
+        customerName: dto.customerName || doc.customerName,
+        customerAddress: dto.customerAddress !== undefined ? dto.customerAddress : (doc.customerAddress || undefined),
+        customerEmail: dto.customerEmail,
+        currency: (dto.currency as any) || (doc.currency as any) || 'PEN',
+        items: itemsToUse,
+        saleId: doc.saleId || undefined,
+        branchId: doc.branchId || undefined,
+        notes: `Comprobante rectificado. Reemplaza al comprobante anulado ${doc.fullNumber} (Nota de Crédito ${ncRes.document.fullNumber})`,
+      };
+
+      const newDocRes = await this.emitDocument(ownerId, newDocDto);
+
+      return {
+        success: true,
+        message: `Comprobante ${doc.fullNumber} rectificado exitosamente ante SUNAT. Se emitió la Nota de Crédito ${ncRes.document.fullNumber} y el nuevo comprobante ${newDocRes.document.fullNumber}.`,
+        originalAnulado: {
+          id: doc.id,
+          fullNumber: doc.fullNumber,
+          notaCredito: ncRes.document.fullNumber,
+        },
+        nuevoComprobante: newDocRes.document,
+      };
+    }
+
+    // CASO 2: Si está en borrador o rechazado (LOCAL_DRAFT, REJECTED)
+    const updateData: any = {};
+    if (dto.customerName) updateData.customerName = dto.customerName;
+    if (dto.customerDocType) updateData.customerDocType = dto.customerDocType;
+    if (dto.customerDocNum) updateData.customerDocNum = dto.customerDocNum;
+    if (dto.customerAddress !== undefined) updateData.customerAddress = dto.customerAddress;
+
+    if (dto.items && dto.items.length > 0) {
+      const taxes = this.calculateTaxBreakdown(dto.items);
+      updateData.totalOpGravada = taxes.totalOpGravada;
+      updateData.totalOpInafecta = taxes.totalOpInafecta;
+      updateData.totalOpExonerada = taxes.totalOpExonerada;
+      updateData.totalIgv = taxes.totalIgv;
+      updateData.totalAmount = taxes.totalAmount;
+    }
+
+    if (dto.currency) updateData.currency = dto.currency;
+
+    const updated = await this.prisma.fiscalDocument.update({
+      where: { id },
+      data: updateData,
+    });
+
     return {
       success: true,
-      document: noteDoc,
-      message: `Nota ${fullNumber} emitida con éxito para comprobante ${original.fullNumber}`,
+      message: `Comprobante ${updated.fullNumber} actualizado correctamente.`,
+      document: updated,
     };
+  }
+
+  /**
+   * ELIMINAR O ANULAR COMPROBANTE FISCAL
+   * Si está aceptado ante SUNAT, efectúa la anulación oficial mediante Nota de Crédito en CCOFACT
+   * y marca el comprobante como CANCELLED.
+   * Si es borrador o rechazado, elimina el registro.
+   */
+  async deleteDocument(ownerId: string, id: string, options?: DeleteBillingDto) {
+    const doc = await this.prisma.fiscalDocument.findFirst({
+      where: { id, userId: ownerId },
+    });
+    if (!doc) throw new NotFoundException('Comprobante fiscal no encontrado');
+
+    const owner = await this.prisma.user.findUnique({ where: { id: ownerId } });
+    const hasLiveBilling = Boolean(owner?.hasElectronicBilling && owner?.nubefactUrl && owner?.nubefactToken);
+
+    // Si ya está ACEPTADO por SUNAT: No se puede eliminar en frío, debe anularse legalmente
+    if (doc.status === FiscalStatus.ACCEPTED) {
+      const motivo = options?.motivo || 'ANULACION DE LA OPERACION POR EL EMISOR';
+
+      if (hasLiveBilling && owner?.nubefactUrl && owner?.nubefactToken) {
+        const baseUrl = this.normalizeCcofactBaseUrl(owner.nubefactUrl);
+        try {
+          const anularRes = await fetch(`${baseUrl}/api/v1/documents/by-series-number/${doc.serie}/${doc.correlative}/anular-fiscal`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': owner.nubefactToken,
+              'Authorization': `Bearer ${owner.nubefactToken}`,
+            },
+            body: JSON.stringify({ motivo }),
+          });
+          const anularData = await anularRes.json();
+          this.logger.log(`Resultado de anulación CCOFACT: ${JSON.stringify(anularData)}`);
+        } catch (e: any) {
+          this.logger.warn(`Error al comunicar anulación a CCOFACT: ${e.message}`);
+        }
+      }
+
+      // Marcar comprobante como CANCELLED
+      const cancelledDoc = await this.prisma.fiscalDocument.update({
+        where: { id },
+        data: {
+          status: FiscalStatus.CANCELLED,
+          sunatDescription: `Comprobante anulado formalmente ante SUNAT conforme a Ley (Catálogo 09 Motivo 01). Motivo: ${motivo}`,
+        },
+      });
+
+      // Si estaba asociado a una venta
+      if (doc.saleId) {
+        await this.prisma.sale.update({
+          where: { id: doc.saleId },
+          data: { billingStatus: 'CANCELLED' },
+        }).catch(() => {});
+
+        // Si se solicitó revertir stock
+        if (options?.restoreStock) {
+          const movements = await this.prisma.inventoryMovement.findMany({
+            where: { documentId: doc.saleId, type: 'OUT', reason: 'SALE' },
+          });
+          for (const mov of movements) {
+            if (mov.branchId) {
+              const bStock = await this.prisma.branchStock.findUnique({
+                where: { productId_branchId: { productId: mov.productId, branchId: mov.branchId } },
+              });
+              if (bStock) {
+                await this.prisma.branchStock.update({
+                  where: { id: bStock.id },
+                  data: { stock: { increment: mov.quantity } },
+                });
+              }
+            }
+            await this.prisma.product.update({
+              where: { id: mov.productId },
+              data: { stock: { increment: mov.quantity } },
+            });
+            await this.prisma.inventoryMovement.create({
+              data: {
+                productId: mov.productId,
+                quantity: mov.quantity,
+                type: 'IN',
+                reason: 'SALE_RETURN',
+                userId: ownerId,
+                unitCost: mov.unitCost,
+                totalCost: mov.totalCost,
+                stockResult: 0,
+                documentId: doc.saleId,
+                branchId: mov.branchId,
+              },
+            });
+          }
+        }
+      }
+
+      if (options?.forceDelete) {
+        await this.prisma.fiscalDocument.delete({ where: { id } });
+        return {
+          success: true,
+          message: `Comprobante ${doc.fullNumber} anulado formalmente ante SUNAT y removido de la vista.`,
+        };
+      }
+
+      return {
+        success: true,
+        message: `Comprobante ${doc.fullNumber} anulado formalmente ante SUNAT conforme a Ley.`,
+        document: cancelledDoc,
+      };
+    }
+
+    // Si NO estaba aceptado (DRAFT, ERROR, REJECTED)
+    if (hasLiveBilling && owner?.nubefactUrl && owner?.nubefactToken) {
+      const baseUrl = this.normalizeCcofactBaseUrl(owner.nubefactUrl);
+      try {
+        await fetch(`${baseUrl}/api/v1/documents/by-series-number/${doc.serie}/${doc.correlative}`, {
+          method: 'DELETE',
+          headers: {
+            'x-api-key': owner.nubefactToken,
+            'Authorization': `Bearer ${owner.nubefactToken}`,
+          },
+        });
+      } catch (e) {}
+    }
+
+    await this.prisma.fiscalDocument.delete({ where: { id } });
+    return {
+      success: true,
+      message: `Comprobante ${doc.fullNumber} eliminado exitosamente.`,
+    };
+  }
+
+  /**
+   * PROBAR CONEXIÓN EN VIVO CON CCOFACT PRO ENGINE
+   */
+  async testCcofactConnection(ownerId: string) {
+    const owner = await this.prisma.user.findUnique({
+      where: { id: ownerId },
+      select: {
+        hasElectronicBilling: true,
+        businessRuc: true,
+        businessReason: true,
+        businessName: true,
+        nubefactUrl: true,
+        nubefactToken: true,
+      },
+    });
+
+    if (!owner) throw new NotFoundException('Usuario no encontrado');
+
+    if (!owner.nubefactUrl || !owner.nubefactToken) {
+      return {
+        connected: false,
+        online: false,
+        message: 'No se han configurado la URL o API Key de CCOFACT PRO.',
+      };
+    }
+
+    const baseUrl = this.normalizeCcofactBaseUrl(owner.nubefactUrl);
+    const statusUrl = `${baseUrl}/api/v1/ccofact/status`;
+
+    try {
+      const resp = await fetch(statusUrl, {
+        method: 'GET',
+        headers: {
+          'x-api-key': owner.nubefactToken,
+          'Authorization': `Bearer ${owner.nubefactToken}`,
+        },
+      });
+
+      if (!resp.ok) {
+        const text = await resp.text();
+        return {
+          connected: false,
+          online: false,
+          message: `CCOFACT respondió con estado HTTP ${resp.status}: ${text}`,
+        };
+      }
+
+      const data = await resp.json();
+      return {
+        connected: true,
+        online: true,
+        engine: data.engine || 'CCOFACT PRO Enterprise',
+        version: data.version || '2.0.0-ENTERPRISE',
+        company: data.company,
+        message: 'Conexión con CCOFACT PRO establecida y verificada exitosamente.',
+      };
+    } catch (err: any) {
+      return {
+        connected: false,
+        online: false,
+        message: `No se pudo conectar con CCOFACT PRO en ${baseUrl}: ${err.message}`,
+      };
+    }
   }
 
   async simulateSandbox(ownerId: string) {

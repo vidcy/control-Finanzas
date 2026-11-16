@@ -139,6 +139,24 @@ export const issueBillingNoteRequest = async (payload: IssueNotePayload) => {
   return data;
 };
 
+export const updateBillingDocumentRequest = async (id: string, payload: any) => {
+  const { data } = await axios.put(`/billing/documents/${id}`, payload);
+  return data;
+};
+
+export const deleteBillingDocumentRequest = async (
+  id: string,
+  options?: { motivo?: string; forceDelete?: boolean; restoreStock?: boolean },
+) => {
+  const { data } = await axios.delete(`/billing/documents/${id}`, { data: options });
+  return data;
+};
+
+export const testCcofactConnectionRequest = async () => {
+  const { data } = await axios.post('/billing/test-connection');
+  return data;
+};
+
 export const testBillingSandboxRequest = async () => {
   const { data } = await axios.post('/billing/simulate-sandbox');
   return data;
