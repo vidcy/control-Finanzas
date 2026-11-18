@@ -31,7 +31,15 @@ export class BillingItemDto {
 
   @IsOptional()
   @IsNumber()
-  igvType?: number; // 1 = Gravado - Operación Onerosa, 8 = Exonerado, 9 = Inafecto
+  igvType?: number; // 1 = Gravado (18%), 8 = Exonerado (0%), 9 = Inafecto (0%), 10 = Gravado MYPE (10%)
+
+  @IsOptional()
+  @IsString()
+  igvAffectation?: string; // "10", "10_MYPE", "20", "30", "40"
+
+  @IsOptional()
+  @IsNumber()
+  igvRate?: number; // 18, 10, 0
 }
 
 export class EmitBillingDto {
@@ -73,6 +81,21 @@ export class EmitBillingDto {
 
   @IsOptional()
   @IsString()
+  paymentType?: string; // 'Contado' | 'Credito'
+
+  @IsOptional()
+  @IsString()
+  issueDate?: string; // YYYY-MM-DD (Retroceder hasta máx. 3 días calendario según R.S. 193-2020)
+
+  @IsOptional()
+  @IsString()
+  dueDate?: string; // YYYY-MM-DD
+
+  @IsOptional()
+  cuotas?: any[];
+
+  @IsOptional()
+  @IsString()
   serie?: string;
 
   @IsOptional()
@@ -86,6 +109,10 @@ export class EmitBillingDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsString()
+  observaciones?: string;
 }
 
 export class IssueNoteDto {

@@ -121,12 +121,44 @@ export class NubefactService {
         if (!sale.clientDenomination) {
           return { success: false, error: 'La Razón Social del cliente es obligatoria para emitir Factura' };
         }
+      } else if (sale.amount >= 700) {
+        // Validación obligatoria R.S. N° 193-2020/SUNAT para Boletas >= S/ 700
+        const cleanDoc = (docNum || '').trim().replace(/\D/g, '');
+        const cleanName = (docDenom || '').trim().toUpperCase();
+        if (
+          !cleanDoc ||
+          cleanDoc === '00000000' ||
+          cleanDoc === '0' ||
+          cleanDoc.length < 8 ||
+          !cleanName ||
+          cleanName === 'CLIENTES VARIOS' ||
+          cleanName === 'CLIENTE VARIOS' ||
+          docType === '-' ||
+          docType === '0'
+        ) {
+          return {
+            success: false,
+            error: `Por normativa legal de SUNAT (R.S. N° 193-2020), toda Boleta de Venta igual o mayor a S/ 700.00 requiere la identificación obligatoria del cliente con DNI (8 dígitos) o RUC (11 dígitos) y nombres completos. Total actual: S/ ${sale.amount.toFixed(2)}.`,
+          };
+        }
       }
+
+      // 3.1 Detección automática de Régimen Amazonía (Ley N° 27037 - Madre de Dios / Selva)
+      const dept = (owner.businessDepartment || '').toLowerCase();
+      const isAmazonia =
+        owner.taxRegime === 'AMAZONIA_EXONERADO' ||
+        owner.taxRegime === 'AMAZONIA' ||
+        ['madre de dios', 'loreto', 'ucayali', 'san martín', 'san martin', 'amazonas'].some((d) =>
+          dept.includes(d),
+        );
+
+      const amazoniaLegend = 'BIENES TRANSFERIDOS EN LA AMAZONÍA PARA SER CONSUMIDOS EN LA MISMA - LEY N° 27037';
 
       // Totales generales
       const totalAmount = sale.amount;
-      const totalGravada = parseFloat((totalAmount / 1.18).toFixed(2));
-      const totalIgv = parseFloat((totalAmount - totalGravada).toFixed(2));
+      const totalGravada = isAmazonia ? 0 : parseFloat((totalAmount / 1.18).toFixed(2));
+      const totalExonerada = isAmazonia ? totalAmount : 0;
+      const totalIgv = isAmazonia ? 0 : parseFloat((totalAmount - totalGravada).toFixed(2));
 
       let payload: any;
 
@@ -138,6 +170,7 @@ export class NubefactService {
           serie: serie,
           moneda: sale.currency === 'USD' ? 'USD' : 'PEN',
           forma_pago: 'Contado',
+          observaciones: isAmazonia ? amazoniaLegend : undefined,
           cliente: {
             tipo_documento: docType === '-' ? '0' : docType,
             numero_documento: docNum,
@@ -151,7 +184,7 @@ export class NubefactService {
             unidad_medida: 'NIU',
             cantidad: Number(item.quantity),
             precio_unitario: Number(item.price),
-            tipo_afectacion_igv: '10',
+            tipo_afectacion_igv: isAmazonia ? '20' : '10',
           })),
           enviar_a_sunat_inmediato: true,
         };
@@ -160,9 +193,11 @@ export class NubefactService {
         const itemsPayload = sale.items.map((item, idx) => {
           const qty = item.quantity;
           const precioUnitario = item.price;
-          const valorUnitario = parseFloat((precioUnitario / 1.18).toFixed(10));
+          const valorUnitario = isAmazonia
+            ? parseFloat(precioUnitario.toFixed(10))
+            : parseFloat((precioUnitario / 1.18).toFixed(10));
           const subtotal = parseFloat((valorUnitario * qty).toFixed(10));
-          const igv = parseFloat((subtotal * 0.18).toFixed(10));
+          const igv = isAmazonia ? 0 : parseFloat((subtotal * 0.18).toFixed(10));
           const total = parseFloat((precioUnitario * qty).toFixed(10));
           const code = item.product?.sku || item.product?.customCode?.toString() || `PROD-${idx + 1}`;
 
@@ -174,7 +209,7 @@ export class NubefactService {
             valor_unitario: valorUnitario,
             precio_unitario: precioUnitario,
             subtotal: subtotal,
-            tipo_de_igv: 1, // Gravado - Operación Onerosa
+            tipo_de_igv: isAmazonia ? 8 : 1, // 8 = Exonerado, 1 = Gravado
             igv: igv,
             total: total,
             anticipo_regularizacion: false,
@@ -197,10 +232,12 @@ export class NubefactService {
           fecha_de_emision: formattedDate,
           fecha_de_vencimiento: '',
           moneda: currencyCode,
-          porcentaje_de_igv: 18.0,
+          porcentaje_de_igv: isAmazonia ? 0.0 : 18.0,
           total_gravada: totalGravada,
+          total_exonerada: totalExonerada,
           total_igv: totalIgv,
           total: totalAmount,
+          observaciones: isAmazonia ? amazoniaLegend : '',
           enviar_automaticamente_a_la_sunat: true,
           enviar_automaticamente_al_cliente: false,
           items: itemsPayload,

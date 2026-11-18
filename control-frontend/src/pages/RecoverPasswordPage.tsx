@@ -8,6 +8,8 @@ import {
   TrendingUp,
   CheckCircle2,
   ShieldCheck,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import {
@@ -24,6 +26,8 @@ export default function RecoverPasswordPage() {
   const [email, setEmail] = useState("");
   const [newPassword, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showNewPass, setShowNewPass] = useState(false);
+  const [showConfirmPass, setShowConfirmPass] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   useEffect(() => {
     if (token && step === "EMAIL") {
@@ -195,13 +199,21 @@ export default function RecoverPasswordPage() {
                       <Lock className="h-5 w-5 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
                     </div>
                     <input
-                      type="password"
+                      type={showNewPass ? "text" : "password"}
                       required
-                      className="w-full pl-11 pr-4 py-3.5 bg-white/50 border border-gray-200 rounded-2xl text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all placeholder-gray-400"
+                      className="w-full pl-11 pr-11 py-3.5 bg-white/50 border border-gray-200 rounded-2xl text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all placeholder-gray-400 font-medium"
                       placeholder="••••••••"
                       value={newPassword}
                       onChange={(e) => setPassword(e.target.value)}
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPass(!showNewPass)}
+                      className="absolute inset-y-0 right-0 pr-4 flex items-center text-gray-400 hover:text-gray-600 cursor-pointer transition-colors"
+                      title={showNewPass ? "Ocultar contraseña" : "Ver contraseña"}
+                    >
+                      {showNewPass ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                    </button>
                   </div>
                 </div>
                 <div>
@@ -213,13 +225,21 @@ export default function RecoverPasswordPage() {
                       <ShieldCheck className="h-5 w-5 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
                     </div>
                     <input
-                      type="password"
+                      type={showConfirmPass ? "text" : "password"}
                       required
-                      className="w-full pl-11 pr-4 py-3.5 bg-white/50 border border-gray-200 rounded-2xl text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all placeholder-gray-400"
+                      className="w-full pl-11 pr-11 py-3.5 bg-white/50 border border-gray-200 rounded-2xl text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all placeholder-gray-400 font-medium"
                       placeholder="••••••••"
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPass(!showConfirmPass)}
+                      className="absolute inset-y-0 right-0 pr-4 flex items-center text-gray-400 hover:text-gray-600 cursor-pointer transition-colors"
+                      title={showConfirmPass ? "Ocultar contraseña" : "Ver contraseña"}
+                    >
+                      {showConfirmPass ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                    </button>
                   </div>
                 </div>
                 <button

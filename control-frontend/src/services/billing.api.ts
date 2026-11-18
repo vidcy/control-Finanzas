@@ -7,6 +7,8 @@ export interface BillingItem {
   unitPrice: number;
   unit?: string;
   igvType?: number; // 1 = Gravado, 8 = Exonerado, 9 = Inafecto
+  igvAffectation?: string; // "10", "10_MYPE", "20", "30", "40"
+  igvRate?: number; // 18.0, 10.0, 0.0
 }
 
 export interface EmitBillingPayload {
@@ -19,10 +21,15 @@ export interface EmitBillingPayload {
   currency?: 'PEN' | 'USD';
   items: BillingItem[];
   paymentMethod?: string;
+  paymentType?: 'CONTADO' | 'CREDITO';
+  issueDate?: string;
+  dueDate?: string;
+  cuotas?: Array<{ cuota: number; fecha: string; monto: number }>;
   serie?: string;
   saleId?: string;
   branchId?: string;
   notes?: string;
+  observaciones?: string;
 }
 
 export interface IssueNotePayload {

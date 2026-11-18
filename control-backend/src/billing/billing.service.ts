@@ -34,7 +34,13 @@ export class BillingService {
     }
   }
 
-  validateCustomerIdentity(docType: BillingDocTypeEnum, customerDocType: string, customerDocNum: string) {
+  validateCustomerIdentity(
+    docType: BillingDocTypeEnum,
+    customerDocType: string,
+    customerDocNum: string,
+    customerName?: string,
+    totalAmount?: number,
+  ) {
     if (docType === BillingDocTypeEnum.FACTURA) {
       if (customerDocType !== '6') {
         throw new BadRequestException('Para emitir Factura Electrónica el tipo de documento debe ser RUC (código 6).');
@@ -46,14 +52,68 @@ export class BillingService {
       if (!validPrefixes.some(p => customerDocNum.startsWith(p))) {
         throw new BadRequestException('El RUC ingresado no tiene un prefijo válido de SUNAT (debe iniciar con 10, 15, 17 o 20).');
       }
+      if (!customerName || customerName.trim() === '' || customerName.trim() === 'CLIENTES VARIOS') {
+        throw new BadRequestException('La Razón Social del cliente es obligatoria para emitir Factura Electrónica.');
+      }
     } else if (docType === BillingDocTypeEnum.BOLETA) {
-      if (customerDocType === '1' && !/^\d{8}$/.test(customerDocNum)) {
-        throw new BadRequestException('El DNI del cliente debe constar exactamente de 8 dígitos numéricos.');
+      const total = totalAmount || 0;
+      // Regla estricta SUNAT R.S. N° 193-2020: Boletas >= S/ 700.00
+      if (total >= 700) {
+        if (
+          !customerDocNum ||
+          customerDocNum.trim() === '' ||
+          customerDocNum === '00000000' ||
+          customerDocType === '-' ||
+          customerDocType === '0'
+        ) {
+          throw new BadRequestException(
+            `Según la R.S. N° 193-2020/SUNAT, toda Boleta de Venta igual o mayor a S/ 700.00 exige identificar obligatoriamente al cliente con DNI o RUC. Total: S/ ${total.toFixed(2)}`,
+          );
+        }
+        if (!customerName || customerName.trim() === '' || customerName.trim().toUpperCase() === 'CLIENTES VARIOS') {
+          throw new BadRequestException(
+            'Para boletas iguales o mayores a S/ 700.00 debe consignar los apellidos y nombres completos del cliente.',
+          );
+        }
+      }
+
+      if (customerDocType === '1' && customerDocNum && customerDocNum !== '00000000') {
+        if (!/^\d{8}$/.test(customerDocNum)) {
+          throw new BadRequestException('El DNI del cliente debe constar exactamente de 8 dígitos numéricos.');
+        }
       }
     }
   }
 
-  calculateTaxBreakdown(items: { quantity: number; unitPrice: number; igvType?: number }[]) {
+  validateIssueDate(issueDateStr?: string) {
+    if (!issueDateStr) return;
+    const today = new Date();
+    const maxDate = today.toISOString().split('T')[0];
+
+    const minDateObj = new Date(today);
+    minDateObj.setDate(minDateObj.getDate() - 3);
+    const minDate = minDateObj.toISOString().split('T')[0];
+
+    const selected = issueDateStr.split('T')[0];
+    if (selected > maxDate) {
+      throw new BadRequestException(`SUNAT no permite emitir comprobantes con fecha futura posterior a hoy (${maxDate}).`);
+    }
+    if (selected < minDate) {
+      throw new BadRequestException(
+        `Según la R.S. N° 193-2020/SUNAT, la fecha de emisión electrónica solo puede retroceder como máximo hasta 3 días calendario (${minDate}). La fecha seleccionada (${selected}) no es válida.`,
+      );
+    }
+  }
+
+  calculateTaxBreakdown(
+    items: {
+      quantity: number;
+      unitPrice: number;
+      igvType?: number;
+      igvAffectation?: string;
+      igvRate?: number;
+    }[],
+  ) {
     let totalOpGravada = 0;
     let totalOpInafecta = 0;
     let totalOpExonerada = 0;
@@ -64,16 +124,28 @@ export class BillingService {
       const lineTotal = Number((item.quantity * item.unitPrice).toFixed(2));
       totalAmount += lineTotal;
 
-      const igvType = item.igvType || 1;
-      if (igvType === 1) {
+      const igvType = item.igvType;
+      const affectation = item.igvAffectation;
+      const rate = item.igvRate;
+
+      if (igvType === 8 || affectation === '20') {
+        // Exonerado (Amazonía / Apéndice I)
+        totalOpExonerada += lineTotal;
+      } else if (igvType === 9 || affectation === '30') {
+        // Inafecto
+        totalOpInafecta += lineTotal;
+      } else if (igvType === 10 || affectation === '10_MYPE' || rate === 10) {
+        // Gravado 10% Especial MYPE Restaurantes y Hoteles (Ley 31556)
+        const base = Number((lineTotal / 1.10).toFixed(2));
+        const igv = Number((lineTotal - base).toFixed(2));
+        totalOpGravada += base;
+        totalIgv += igv;
+      } else {
+        // Gravado Estándar 18% (RER, RMT, RG)
         const base = Number((lineTotal / 1.18).toFixed(2));
         const igv = Number((lineTotal - base).toFixed(2));
         totalOpGravada += base;
         totalIgv += igv;
-      } else if (igvType === 8) {
-        totalOpExonerada += lineTotal;
-      } else {
-        totalOpInafecta += lineTotal;
       }
     }
 
@@ -107,7 +179,9 @@ export class BillingService {
       throw new BadRequestException('El comprobante debe contener al menos un producto o servicio.');
     }
 
-    this.validateCustomerIdentity(dto.docType, dto.customerDocType, dto.customerDocNum);
+    const taxes = this.calculateTaxBreakdown(dto.items);
+    this.validateCustomerIdentity(dto.docType, dto.customerDocType, dto.customerDocNum, dto.customerName, taxes.totalAmount);
+    this.validateIssueDate(dto.issueDate);
 
     const owner = await this.prisma.user.findUnique({
       where: { id: ownerId },
@@ -136,7 +210,6 @@ export class BillingService {
     let correlative = lastDoc ? lastDoc.correlative + 1 : 1;
     let fullNumber = `${serie}-${String(correlative).padStart(8, '0')}`;
 
-    const taxes = this.calculateTaxBreakdown(dto.items);
     const hasLiveBilling = Boolean(owner.hasElectronicBilling && owner.nubefactUrl && owner.nubefactToken);
 
     let status: FiscalStatus = FiscalStatus.ACCEPTED;
@@ -183,8 +256,12 @@ export class BillingService {
                 ? '07'
                 : '08',
             serie: serie,
+            fecha_de_emision: dto.issueDate || undefined,
             moneda: dto.currency || 'PEN',
-            forma_pago: dto.paymentMethod || 'Contado',
+            forma_pago: dto.paymentType || dto.paymentMethod || 'Contado',
+            fecha_de_vencimiento: dto.dueDate || undefined,
+            cuotas: dto.cuotas || undefined,
+            observaciones: dto.notes || dto.observaciones || undefined,
             cliente: {
               tipo_documento: dto.customerDocType,
               numero_documento: dto.customerDocNum,
@@ -198,7 +275,9 @@ export class BillingService {
               unidad_medida: it.unit || 'NIU',
               cantidad: Number(it.quantity),
               precio_unitario: Number(it.unitPrice),
-              tipo_afectacion_igv: it.igvType === 8 ? '20' : it.igvType === 9 ? '30' : '10',
+              tipo_afectacion_igv:
+                it.igvAffectation ||
+                (it.igvType === 8 ? '20' : it.igvType === 9 ? '30' : it.igvType === 10 ? '10_MYPE' : '10'),
             })),
             enviar_a_sunat_inmediato: true,
           };

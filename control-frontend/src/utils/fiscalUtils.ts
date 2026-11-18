@@ -429,3 +429,233 @@ export function calculateFiscalBreakdown(
     allowedDocs: regime.allowedDocs,
   };
 }
+
+// ============================================================================
+// TIPOS DE AFECTACIÓN AL IGV (CATÁLOGO N° 07 SUNAT)
+// ============================================================================
+export interface IgvAffectationOption {
+  code: string; // "10", "10_MYPE", "20", "30", "40"
+  name: string;
+  shortName: string;
+  rate: number; // 18, 10, 0
+  sunatCode: number; // 1 = Gravado, 8 = Exonerado, 9 = Inafecto
+  taxSchemeCode: string; // "1000" = IGV, "9997" = EXONERADO, "9998" = INAFECTO
+  taxSchemeName: string;
+  description: string;
+  defaultLegend?: string;
+}
+
+export const AMAZONIA_DEFAULT_LEGEND =
+  "BIENES TRANSFERIDOS EN LA AMAZONÍA PARA SER CONSUMIDOS EN LA MISMA - LEY N° 27037";
+
+export const IGV_AFFECTATION_OPTIONS: Record<string, IgvAffectationOption> = {
+  EXONERADO_20: {
+    code: "20",
+    name: "Exonerado 0% — Amazonía / Apéndice I Ley IGV",
+    shortName: "Exonerado (0%)",
+    rate: 0.0,
+    sunatCode: 8,
+    taxSchemeCode: "9997",
+    taxSchemeName: "EXONERADO",
+    description: "Venta de bienes en Amazonía (Ley 27037) o productos de primera necesidad Apéndice I",
+    defaultLegend: AMAZONIA_DEFAULT_LEGEND,
+  },
+  GRAVADO_18: {
+    code: "10",
+    name: "Gravado 18% — Operación Onerosa Estándar",
+    shortName: "Gravado (18%)",
+    rate: 18.0,
+    sunatCode: 1,
+    taxSchemeCode: "1000",
+    taxSchemeName: "IGV",
+    description: "Tasa general nacional del 18% (16% IGV + 2% Impuesto de Promoción Municipal)",
+  },
+  GRAVADO_10: {
+    code: "10_MYPE",
+    name: "Gravado 10% — Tasa Especial MYPE Restaurantes y Hoteles (Ley N° 31556)",
+    shortName: "MYPE Gastro/Hotel (10%)",
+    rate: 10.0,
+    sunatCode: 1,
+    taxSchemeCode: "1000",
+    taxSchemeName: "IGV",
+    description: "Tasa preferencial del 10% (8% IGV + 2% IPM) para restaurantes y hospedajes MYPE",
+  },
+  INAFECTO_30: {
+    code: "30",
+    name: "Inafecto 0% — Fuera del Ámbito del Impuesto",
+    shortName: "Inafecto (0%)",
+    rate: 0.0,
+    sunatCode: 9,
+    taxSchemeCode: "9998",
+    taxSchemeName: "INAFECTO",
+    description: "Operaciones no gravadas por no constituir hecho imponible según el art. 2 de la Ley del IGV",
+  },
+  EXPORTACION_40: {
+    code: "40",
+    name: "Exportación 0%",
+    shortName: "Exportación (0%)",
+    rate: 0.0,
+    sunatCode: 9,
+    taxSchemeCode: "9995",
+    taxSchemeName: "EXP",
+    description: "Exportación de bienes y servicios al exterior",
+  },
+};
+
+export const IGV_AFFECTATION_LIST: IgvAffectationOption[] = [
+  IGV_AFFECTATION_OPTIONS.EXONERADO_20,
+  IGV_AFFECTATION_OPTIONS.GRAVADO_18,
+  IGV_AFFECTATION_OPTIONS.GRAVADO_10,
+  IGV_AFFECTATION_OPTIONS.INAFECTO_30,
+  IGV_AFFECTATION_OPTIONS.EXPORTACION_40,
+];
+
+// ============================================================================
+// VALIDACIÓN BOLETA DE VENTA > S/ 700.00 (R.S. 193-2020/SUNAT)
+// ============================================================================
+export const BOLETA_MAX_ANONYMOUS_AMOUNT = 700.0;
+
+export function validateBoletaCustomerRequirement(
+  total: number,
+  clientDocType?: string,
+  clientDocNum?: string,
+  clientDenom?: string,
+): { isValid: boolean; error?: string } {
+  if (total < BOLETA_MAX_ANONYMOUS_AMOUNT) {
+    return { isValid: true };
+  }
+
+  const cleanDoc = (clientDocNum || "").trim().replace(/\D/g, "");
+  const cleanName = (clientDenom || "").trim().toUpperCase();
+
+  if (
+    !cleanDoc ||
+    cleanDoc === "00000000" ||
+    cleanDoc === "0" ||
+    cleanDoc.length < 8 ||
+    !cleanName ||
+    cleanName === "CLIENTES VARIOS" ||
+    cleanName === "CLIENTE VARIOS" ||
+    clientDocType === "-" ||
+    clientDocType === "0"
+  ) {
+    return {
+      isValid: false,
+      error: `Por normativa legal de SUNAT (R.S. N° 193-2020), toda Boleta de Venta igual o mayor a S/ 700.00 requiere la identificación obligatoria del cliente con DNI (8 dígitos) o RUC (11 dígitos) y nombres completos. Total actual: S/ ${total.toFixed(
+        2,
+      )}.`,
+    };
+  }
+
+  return { isValid: true };
+}
+
+// ============================================================================
+// ALERTA DE BANCARIZACIÓN OBLIGATORIA (> S/ 2,000 o USD 500 — D.L. 1529 / LEY 28194)
+// ============================================================================
+export const BANCARIZACION_MIN_PEN = 2000.0;
+export const BANCARIZACION_MIN_USD = 500.0;
+
+export function checkBancarizacionRequirement(
+  amount: number,
+  currency: "PEN" | "USD" = "PEN",
+): {
+  isRequired: boolean;
+  threshold: number;
+  message?: string;
+} {
+  const threshold = currency === "USD" ? BANCARIZACION_MIN_USD : BANCARIZACION_MIN_PEN;
+  const isRequired = amount >= threshold;
+
+  if (!isRequired) {
+    return { isRequired: false, threshold };
+  }
+
+  const symbol = currency === "USD" ? "$" : "S/";
+  return {
+    isRequired: true,
+    threshold,
+    message: `⚠️ Operación sujeta a Bancarización Obligatoria (D.L. N° 1529 / Ley N° 28194): Por montos iguales o mayores a ${symbol} ${threshold.toLocaleString(
+      "es-PE",
+    )}, el pago debe efectuarse mediante medios bancarizados (depósito en cuenta, transferencia, tarjeta de débito/crédito, o cheque con cláusula 'no negociable') para sustentar costo, gasto o crédito fiscal ante SUNAT.`,
+  };
+}
+
+// ============================================================================
+// VALIDACIÓN LEGAL DE FECHA DE EMISIÓN (R.S. N° 193-2020 / MÁXIMO 3 DÍAS CALENDARIO)
+// ============================================================================
+export function getValidEmissionDateRange(): {
+  minDate: string; // YYYY-MM-DD (hace 3 días calendario)
+  maxDate: string; // YYYY-MM-DD (hoy)
+} {
+  const today = new Date();
+  const maxDate = today.toISOString().split("T")[0];
+
+  const minDateObj = new Date(today);
+  minDateObj.setDate(minDateObj.getDate() - 3);
+  const minDate = minDateObj.toISOString().split("T")[0];
+
+  return { minDate, maxDate };
+}
+
+export function validateIssueDateRange(dateString?: string): {
+  isValid: boolean;
+  minDate: string;
+  maxDate: string;
+  error?: string;
+} {
+  const { minDate, maxDate } = getValidEmissionDateRange();
+  if (!dateString) return { isValid: true, minDate, maxDate };
+
+  const selected = dateString.split("T")[0];
+  if (selected > maxDate) {
+    return {
+      isValid: false,
+      minDate,
+      maxDate,
+      error: `SUNAT no permite emitir comprobantes con fecha futura posterior a hoy (${maxDate}).`,
+    };
+  }
+
+  if (selected < minDate) {
+    return {
+      isValid: false,
+      minDate,
+      maxDate,
+      error: `Según la R.S. N° 193-2020/SUNAT, la fecha de emisión electrónica solo puede retroceder hasta 3 días calendario anteriores (${minDate}). La fecha seleccionada (${selected}) excede el plazo legal permitido.`,
+    };
+  }
+
+  return { isValid: true, minDate, maxDate };
+}
+
+// ============================================================================
+// VALIDADOR MÓDULO 11 DE RUC Y DNI SUNAT
+// ============================================================================
+export function validateRuc(ruc: string): boolean {
+  if (!ruc || typeof ruc !== "string") return false;
+  const clean = ruc.trim().replace(/\D/g, "");
+  if (clean.length !== 11) return false;
+
+  const validPrefixes = ["10", "15", "17", "20"];
+  if (!validPrefixes.some((p) => clean.startsWith(p))) return false;
+
+  const weights = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
+  let sum = 0;
+  for (let i = 0; i < 10; i++) {
+    sum += parseInt(clean.charAt(i), 10) * weights[i];
+  }
+
+  const remainder = sum % 11;
+  let checkDigit = 11 - remainder;
+  if (checkDigit === 10) checkDigit = 0;
+  else if (checkDigit === 11) checkDigit = 1;
+
+  return parseInt(clean.charAt(10), 10) === checkDigit;
+}
+
+export function validateDni(dni: string): boolean {
+  if (!dni || typeof dni !== "string") return false;
+  const clean = dni.trim().replace(/\D/g, "");
+  return clean.length === 8;
+}

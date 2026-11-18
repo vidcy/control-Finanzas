@@ -3,7 +3,14 @@ import { getBranchesRequest, type Branch } from "../services/branch.api";
 import { useState, useEffect, useRef, useMemo } from "react";
 import { motion } from "framer-motion";
 import Appshell from "../components/layout/Appshell";
-import { TAX_REGIMES, calculateFiscalBreakdown } from "../utils/fiscalUtils";
+import {
+  TAX_REGIMES,
+  calculateFiscalBreakdown,
+  validateBoletaCustomerRequirement,
+  checkBancarizacionRequirement,
+  validateRuc,
+  validateDni,
+} from "../utils/fiscalUtils";
 import { useAuth } from "../auth/AuthContext";
 import {
   getProductsRequest,
@@ -66,6 +73,7 @@ import {
   Loader2,
   Camera,
   FileCode,
+  AlertTriangle,
   FileCheck,
   RefreshCw,
   MinusCircle,
@@ -1302,6 +1310,37 @@ export default function BusinessPosPage() {
     if (paymentMethod === "CASH" && parsedPaid < total) {
       toast.error("El monto recibido no es suficiente para cubrir el total.");
       return;
+    }
+
+    // Validaciones tributarias SUNAT enterprise
+    if (billingType === "BOLETA") {
+      const boletaVal = validateBoletaCustomerRequirement(
+        total,
+        clientDocumentType,
+        clientDocumentNumber,
+        clientDenomination
+      );
+      if (!boletaVal.isValid) {
+        toast.error(boletaVal.error || "Por normativa SUNAT (R.S. 193-2020), toda Boleta ≥ S/ 700 requiere DNI y nombres completos.");
+        return;
+      }
+      if (clientDocumentNumber && clientDocumentNumber.trim().length === 8 && !validateDni(clientDocumentNumber)) {
+        toast.error("El DNI ingresado no es válido (debe tener exactamente 8 dígitos numéricos).");
+        return;
+      }
+    } else if (billingType === "FACTURA") {
+      if (!clientDocumentNumber || clientDocumentNumber.trim().length !== 11) {
+        toast.error("Para emitir Factura electrónica, el RUC del cliente debe tener 11 dígitos.");
+        return;
+      }
+      if (!validateRuc(clientDocumentNumber)) {
+        toast.error("El RUC ingresado no es válido según el algoritmo oficial de SUNAT (Módulo 11).");
+        return;
+      }
+      if (!clientDenomination || clientDenomination.trim().toUpperCase() === "CLIENTES VARIOS") {
+        toast.error("Para emitir Factura electrónica, la Razón Social del cliente es obligatoria.");
+        return;
+      }
     }
 
     setIsProcessing(true);
@@ -4047,11 +4086,30 @@ export default function BusinessPosPage() {
                       />
                     </div>
                   </div>
-                  {billingType === "BOLETA" && total >= 700 && !clientDocumentNumber && (
-                    <p className="text-[11px] text-amber-700 font-semibold bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                      ⚠️ Por montos ≥ S/. 700 SUNAT exige identificar al cliente con DNI.
-                    </p>
+                  {billingType === "BOLETA" && total >= 700 && (!clientDocumentNumber || clientDocumentNumber.trim().length < 8) && (
+                    <div className="text-[11px] text-amber-800 font-bold bg-amber-50 border border-amber-300 rounded-xl p-3 flex items-start gap-2">
+                      <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                      <div>
+                        <span>Exigencia Legal SUNAT (R.S. N° 193-2020):</span>
+                        <p className="font-normal text-[10px] text-amber-700 mt-0.5">
+                          Para Boletas iguales o mayores a S/ 700.00 es obligatorio ingresar DNI válido (8 dígitos) y nombres completos del cliente.
+                        </p>
+                      </div>
+                    </div>
                   )}
+                </div>
+              )}
+
+              {/* Alerta de Bancarización Obligatoria (> S/ 2,000 o USD 500 - D.L. 1529 / Ley 28194) */}
+              {total >= 2000 && (
+                <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-amber-900 text-xs flex items-start gap-2.5">
+                  <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold">Alerta de Bancarización Obligatoria (D.L. N° 1529 / Ley N° 28194)</p>
+                    <p className="text-[11px] text-amber-800 mt-0.5">
+                      Para operaciones iguales o mayores a S/ 2,000.00, el pago debe realizarse mediante medios bancarizados (transferencia, tarjeta o depósito en cuenta) para sustentar costo o gasto deducible ante SUNAT.
+                    </p>
+                  </div>
                 </div>
               )}
             </div>

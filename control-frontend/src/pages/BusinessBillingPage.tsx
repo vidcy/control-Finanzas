@@ -1,7 +1,18 @@
 import { useState, useEffect, useMemo } from "react";
 import Appshell from "../components/layout/Appshell";
 import { useAuth } from "../auth/AuthContext";
-import { TAX_REGIMES } from "../utils/fiscalUtils";
+import {
+  TAX_REGIMES,
+  isAmazoniaDepartment,
+  validateBoletaCustomerRequirement,
+  checkBancarizacionRequirement,
+  getValidEmissionDateRange,
+  validateIssueDateRange,
+  validateRuc,
+  validateDni,
+  IGV_AFFECTATION_LIST,
+  AMAZONIA_DEFAULT_LEGEND,
+} from "../utils/fiscalUtils";
 import {
   FileText,
   ShieldCheck,
@@ -35,9 +46,10 @@ import {
   HelpCircle,
   Edit3,
   AlertTriangle,
+  Calendar,
+  CreditCard,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
-import { isAmazoniaDepartment } from "../utils/fiscalUtils";
 import Modal from "../components/ui/Modal";
 import {
   getBillingStatsRequest,
@@ -78,6 +90,18 @@ export default function BusinessBillingPage() {
   const [selectedDocForNote, setSelectedDocForNote] = useState<FiscalDocument | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
 
+  // Amazonia detection
+  const isAmazoniaUser = useMemo(() => {
+    return (
+      isAmazoniaDepartment(user?.department) ||
+      user?.taxRegime === "AMAZONIA_EXONERADO" ||
+      user?.taxRegime === "AMAZONIA"
+    );
+  }, [user?.department, user?.taxRegime]);
+
+  // Date constraints (SUNAT R.S. N° 193-2020: Máximo 3 días calendario de retroactividad)
+  const { minDate: minEmissionDate, maxDate: maxEmissionDate } = useMemo(() => getValidEmissionDateRange(), []);
+
   // Emit Form State
   const [emitDocType, setEmitDocType] = useState<"FACTURA" | "BOLETA">("FACTURA");
   const [emitDocTypeNum, setEmitDocTypeNum] = useState<"6" | "1" | "-">("6");
@@ -87,9 +111,20 @@ export default function BusinessBillingPage() {
   const [emitCustomerEmail, setEmitCustomerEmail] = useState("");
   const [emitCurrency, setEmitCurrency] = useState<"PEN" | "USD">("PEN");
   const [emitPaymentMethod, setEmitPaymentMethod] = useState("CASH");
-  const [emitNotes, setEmitNotes] = useState("");
-  const [emitItems, setEmitItems] = useState<BillingItem[]>([
-    { description: "", quantity: 1, unitPrice: 0, unit: "NIU", igvType: 1 },
+  const [emitPaymentType, setEmitPaymentType] = useState<"CONTADO" | "CREDITO">("CONTADO");
+  const [emitIssueDate, setEmitIssueDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [emitDueDate, setEmitDueDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [emitNotes, setEmitNotes] = useState(() => (isAmazoniaDepartment(user?.department) ? AMAZONIA_DEFAULT_LEGEND : ""));
+  const [emitItems, setEmitItems] = useState<BillingItem[]>(() => [
+    {
+      description: "",
+      quantity: 1,
+      unitPrice: 0,
+      unit: "NIU",
+      igvType: isAmazoniaDepartment(user?.department) ? 8 : 1,
+      igvAffectation: isAmazoniaDepartment(user?.department) ? "20" : "10",
+      igvRate: isAmazoniaDepartment(user?.department) ? 0.0 : 18.0,
+    },
   ]);
   const [isSubmittingEmit, setIsSubmittingEmit] = useState(false);
 
@@ -364,7 +399,15 @@ export default function BusinessBillingPage() {
   const handleAddItem = () => {
     setEmitItems([
       ...emitItems,
-      { description: "", quantity: 1, unitPrice: 0, unit: "NIU", igvType: 1 },
+      {
+        description: "",
+        quantity: 1,
+        unitPrice: 0,
+        unit: "NIU",
+        igvType: isAmazoniaUser ? 8 : 1,
+        igvAffectation: isAmazoniaUser ? "20" : "10",
+        igvRate: isAmazoniaUser ? 0.0 : 18.0,
+      },
     ]);
   };
 
@@ -375,41 +418,124 @@ export default function BusinessBillingPage() {
 
   const handleUpdateItem = (index: number, field: keyof BillingItem, value: any) => {
     const updated = [...emitItems];
-    updated[index] = { ...updated[index], [field]: value };
+    let patch: Partial<BillingItem> = { [field]: value };
+
+    // Sincronización automática de afectación e IGV
+    if (field === "igvAffectation") {
+      if (value === "20") {
+        patch = { igvAffectation: "20", igvType: 8, igvRate: 0.0 };
+      } else if (value === "30") {
+        patch = { igvAffectation: "30", igvType: 9, igvRate: 0.0 };
+      } else if (value === "10_MYPE") {
+        patch = { igvAffectation: "10_MYPE", igvType: 1, igvRate: 10.0 };
+      } else if (value === "40") {
+        patch = { igvAffectation: "40", igvType: 9, igvRate: 0.0 };
+      } else {
+        patch = { igvAffectation: "10", igvType: 1, igvRate: 18.0 };
+      }
+    }
+
+    updated[index] = { ...updated[index], ...patch };
     setEmitItems(updated);
   };
 
-  // Calculate Subtotals for Emit
+  // Calculate Subtotals for Emit according to SUNAT Catálogo 07
   const emitCalculations = useMemo(() => {
-    let subtotal = 0;
+    let gravada = 0;
+    let exonerada = 0;
+    let inafecta = 0;
+    let igv = 0;
     let total = 0;
+
     for (const item of emitItems) {
       const line = Number((item.quantity * item.unitPrice).toFixed(2));
       total += line;
-      if ((item.igvType || 1) === 1) {
-        subtotal += Number((line / 1.18).toFixed(2));
+
+      const aff = item.igvAffectation || (item.igvType === 8 ? "20" : item.igvType === 9 ? "30" : "10");
+
+      if (aff === "20") {
+        exonerada += line;
+      } else if (aff === "30" || aff === "40") {
+        inafecta += line;
+      } else if (aff === "10_MYPE" || item.igvRate === 10) {
+        const base = Number((line / 1.10).toFixed(2));
+        gravada += base;
+        igv += Number((line - base).toFixed(2));
       } else {
-        subtotal += line;
+        // Gravado 18%
+        const base = Number((line / 1.18).toFixed(2));
+        gravada += base;
+        igv += Number((line - base).toFixed(2));
       }
     }
-    const igv = Number((total - subtotal).toFixed(2));
+
     return {
-      subtotal: Number(subtotal.toFixed(2)),
-      igv,
+      gravada: Number(gravada.toFixed(2)),
+      exonerada: Number(exonerada.toFixed(2)),
+      inafecta: Number(inafecta.toFixed(2)),
+      igv: Number(igv.toFixed(2)),
       total: Number(total.toFixed(2)),
     };
   }, [emitItems]);
 
-  // Submit Emit
+  // Alerta de Bancarización legal en tiempo real (D.L. 1529 / Ley 28194)
+  const bancarizacionAlert = useMemo(() => {
+    return checkBancarizacionRequirement(emitCalculations.total, emitCurrency);
+  }, [emitCalculations.total, emitCurrency]);
+
+  // Validación Boleta >= S/ 700 en tiempo real
+  const boletaValidation = useMemo(() => {
+    if (emitDocType !== "BOLETA") return { isValid: true };
+    return validateBoletaCustomerRequirement(
+      emitCalculations.total,
+      emitDocTypeNum,
+      emitCustomerDoc,
+      emitCustomerName
+    );
+  }, [emitDocType, emitCalculations.total, emitDocTypeNum, emitCustomerDoc, emitCustomerName]);
+
+  // Submit Emit con validaciones SUNAT enterprise
   const handleSubmitEmit = async () => {
+    // 1. Validar rango de fecha de emisión (Máximo 3 días calendario según R.S. N° 193-2020)
+    const dateValidation = validateIssueDateRange(emitIssueDate);
+    if (!dateValidation.isValid) {
+      toast.error(dateValidation.error || "Fecha de emisión inválida.");
+      return;
+    }
+
+    // 2. Validar Cliente / RUC / DNI
     if (!emitCustomerDoc || !emitCustomerName) {
       toast.error("Por favor ingresa documento y nombre/razón social del cliente.");
       return;
     }
-    if (emitDocType === "FACTURA" && emitCustomerDoc.length !== 11) {
-      toast.error("El RUC para Factura debe tener exactamente 11 dígitos.");
-      return;
+
+    if (emitDocType === "FACTURA") {
+      if (emitCustomerDoc.length !== 11) {
+        toast.error("El RUC para Factura debe tener exactamente 11 dígitos.");
+        return;
+      }
+      if (!validateRuc(emitCustomerDoc)) {
+        toast.error("El RUC ingresado no es válido según el algoritmo oficial de SUNAT (Módulo 11).");
+        return;
+      }
+      if (emitCustomerName.trim().toUpperCase() === "CLIENTES VARIOS") {
+        toast.error("Para Factura electrónica debes ingresar la Razón Social real de la empresa.");
+        return;
+      }
     }
+
+    if (emitDocType === "BOLETA") {
+      if (!boletaValidation.isValid) {
+        toast.error(boletaValidation.error || "Datos del cliente incompletos para Boleta >= S/ 700.");
+        return;
+      }
+      if (emitCustomerDoc.length === 8 && !validateDni(emitCustomerDoc)) {
+        toast.error("El DNI debe tener exactamente 8 dígitos numéricos.");
+        return;
+      }
+    }
+
+    // 3. Validar líneas de detalle
     if (emitItems.some((it) => !it.description || it.quantity <= 0 || it.unitPrice <= 0)) {
       toast.error("Verifica que todos los ítems tengan descripción, cantidad y precio válido.");
       return;
@@ -427,8 +553,12 @@ export default function BusinessBillingPage() {
         customerEmail: emitCustomerEmail,
         currency: emitCurrency,
         paymentMethod: emitPaymentMethod,
+        paymentType: emitPaymentType,
+        issueDate: emitIssueDate,
+        dueDate: emitPaymentType === "CREDITO" ? emitDueDate : undefined,
         items: emitItems,
         notes: emitNotes,
+        observaciones: emitNotes,
       });
 
       if (res.success) {
@@ -439,8 +569,18 @@ export default function BusinessBillingPage() {
         setEmitCustomerName("");
         setEmitCustomerAddress("");
         setEmitCustomerEmail("");
-        setEmitNotes("");
-        setEmitItems([{ description: "", quantity: 1, unitPrice: 0, unit: "NIU", igvType: 1 }]);
+        setEmitNotes(isAmazoniaUser ? AMAZONIA_DEFAULT_LEGEND : "");
+        setEmitItems([
+          {
+            description: "",
+            quantity: 1,
+            unitPrice: 0,
+            unit: "NIU",
+            igvType: isAmazoniaUser ? 8 : 1,
+            igvAffectation: isAmazoniaUser ? "20" : "10",
+            igvRate: isAmazoniaUser ? 0.0 : 18.0,
+          },
+        ]);
         loadData();
       } else {
         toast.error(`Rechazado: ${res.message}`, { id: "emit" });
@@ -985,9 +1125,9 @@ export default function BusinessBillingPage() {
           isOpen={isEmitModalOpen}
           onClose={() => setIsEmitModalOpen(false)}
           title="Emisión de Comprobante Electrónico (SUNAT UBL 2.1)"
-          maxWidth="max-w-3xl"
+          maxWidth="max-w-4xl"
         >
-          <div className="p-6 space-y-6">
+          <div className="p-6 space-y-5">
             {/* Tipo de Documento */}
             <div className="grid grid-cols-2 gap-4">
               <button
@@ -998,7 +1138,7 @@ export default function BusinessBillingPage() {
                 }}
                 className={`p-4 rounded-xl border-2 text-left transition-all ${
                   emitDocType === "FACTURA"
-                    ? "border-blue-600 bg-blue-50/50 text-blue-900"
+                    ? "border-blue-600 bg-blue-50/50 text-blue-900 shadow-sm"
                     : "border-slate-200 hover:border-slate-300 text-slate-700"
                 }`}
               >
@@ -1007,7 +1147,7 @@ export default function BusinessBillingPage() {
                   <Building2 className="h-4 w-4 text-blue-600" />
                 </div>
                 <p className="text-xs text-slate-500">
-                  Para personas jurídicas o naturales con RUC 11 dígitos. Da derecho a crédito fiscal.
+                  Para personas jurídicas o naturales con RUC 11 dígitos. Otorga derecho a crédito fiscal.
                 </p>
               </button>
 
@@ -1019,7 +1159,7 @@ export default function BusinessBillingPage() {
                 }}
                 className={`p-4 rounded-xl border-2 text-left transition-all ${
                   emitDocType === "BOLETA"
-                    ? "border-blue-600 bg-blue-50/50 text-blue-900"
+                    ? "border-emerald-600 bg-emerald-50/50 text-emerald-900 shadow-sm"
                     : "border-slate-200 hover:border-slate-300 text-slate-700"
                 }`}
               >
@@ -1028,16 +1168,83 @@ export default function BusinessBillingPage() {
                   <User className="h-4 w-4 text-emerald-600" />
                 </div>
                 <p className="text-xs text-slate-500">
-                  Para consumidores finales con DNI (8 dígitos) o sin documento (&lt; S/ 700).
+                  Para consumidores finales. Si es ≥ S/ 700 requiere identificación obligatoria con DNI.
                 </p>
               </button>
             </div>
 
+            {/* Parámetros Legales: Fecha de Emisión, Forma de Pago, Moneda */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1">
+                    <Calendar className="h-3.5 w-3.5 text-blue-600" />
+                    Fecha Emisión *
+                  </span>
+                  <span className="text-[9px] text-blue-600 font-semibold bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
+                    Máx 3 días
+                  </span>
+                </label>
+                <input
+                  type="date"
+                  min={minEmissionDate}
+                  max={maxEmissionDate}
+                  value={emitIssueDate}
+                  onChange={(e) => setEmitIssueDate(e.target.value)}
+                  className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg font-bold text-slate-800"
+                />
+                <p className="text-[10px] text-slate-400 mt-0.5">R.S. N° 193-2020/SUNAT</p>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1 flex items-center gap-1">
+                  <CreditCard className="h-3.5 w-3.5 text-indigo-600" />
+                  Forma de Pago *
+                </label>
+                <select
+                  value={emitPaymentType}
+                  onChange={(e) => setEmitPaymentType(e.target.value as "CONTADO" | "CREDITO")}
+                  className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg font-bold text-slate-800"
+                >
+                  <option value="CONTADO">Contado (Inmediato)</option>
+                  <option value="CREDITO">Crédito (A Plazos)</option>
+                </select>
+                {emitPaymentType === "CREDITO" && (
+                  <div className="mt-1.5">
+                    <label className="block text-[10px] font-bold text-indigo-700 uppercase">Vencimiento</label>
+                    <input
+                      type="date"
+                      min={emitIssueDate}
+                      value={emitDueDate}
+                      onChange={(e) => setEmitDueDate(e.target.value)}
+                      className="w-full px-2 py-1 text-xs bg-white border border-indigo-200 rounded text-slate-800"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1 flex items-center gap-1">
+                  <DollarSign className="h-3.5 w-3.5 text-emerald-600" />
+                  Moneda
+                </label>
+                <select
+                  value={emitCurrency}
+                  onChange={(e) => setEmitCurrency(e.target.value as "PEN" | "USD")}
+                  className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg font-bold text-slate-800"
+                >
+                  <option value="PEN">Soles (PEN - S/)</option>
+                  <option value="USD">Dólares Americanos (USD - $)</option>
+                </select>
+                <p className="text-[10px] text-slate-400 mt-0.5">T.C. Oficial SUNAT</p>
+              </div>
+            </div>
+
             {/* Datos del Cliente */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-600 mb-1">
-                  {emitDocType === "FACTURA" ? "RUC del Cliente (11 dígitos)" : "DNI del Cliente (8 dígitos)"}
+                  {emitDocType === "FACTURA" ? "RUC del Cliente (11 dígitos) *" : "DNI del Cliente (8 dígitos)"}
                 </label>
                 <input
                   type="text"
@@ -1051,11 +1258,11 @@ export default function BusinessBillingPage() {
 
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-600 mb-1">
-                  Razón Social / Nombre Completo
+                  Razón Social / Nombre Completo *
                 </label>
                 <input
                   type="text"
-                  placeholder="ACME LOGISTICS S.A.C."
+                  placeholder={emitDocType === "FACTURA" ? "EMPRESA SAC" : "Juan Pérez"}
                   value={emitCustomerName}
                   onChange={(e) => setEmitCustomerName(e.target.value)}
                   className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20"
@@ -1068,7 +1275,7 @@ export default function BusinessBillingPage() {
                 </label>
                 <input
                   type="text"
-                  placeholder="Av. Las Camelias 450, San Isidro, Lima"
+                  placeholder="Av. Principal 123"
                   value={emitCustomerAddress}
                   onChange={(e) => setEmitCustomerAddress(e.target.value)}
                   className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20"
@@ -1077,11 +1284,11 @@ export default function BusinessBillingPage() {
 
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-600 mb-1">
-                  Correo Electrónico (Para envío automático)
+                  Correo Electrónico (Envío Automático)
                 </label>
                 <input
                   type="email"
-                  placeholder="facturacion@cliente.com"
+                  placeholder="cliente@email.com"
                   value={emitCustomerEmail}
                   onChange={(e) => setEmitCustomerEmail(e.target.value)}
                   className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20"
@@ -1089,19 +1296,39 @@ export default function BusinessBillingPage() {
               </div>
             </div>
 
-            {/* Items / Detalle de Comprobante */}
+            {/* Alerta Legal Boleta >= 700 */}
+            {emitDocType === "BOLETA" && emitCalculations.total >= 700 && !boletaValidation.isValid && (
+              <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-amber-900 text-xs flex items-start gap-2.5">
+                <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold">Identificación Obligatoria para Boletas ≥ S/ 700 (R.S. N° 193-2020/SUNAT)</p>
+                  <p className="text-[11px] text-amber-800 mt-0.5">
+                    Para montos a partir de S/ 700.00, SUNAT no acepta ventas anónimas o &quot;CLIENTES VARIOS&quot;. Debes registrar obligatoriamente el DNI (8 dígitos) y nombres completos del cliente.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Items / Detalle de Comprobante con selector de Afectación IGV */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="text-xs font-bold uppercase text-slate-600">
-                  Líneas de Detalle / Productos o Servicios
-                </label>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-bold uppercase text-slate-700 tracking-wider">
+                    Líneas de Detalle / Productos o Servicios
+                  </label>
+                  {isAmazoniaUser && (
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full border border-emerald-300">
+                      🌿 Región Amazonía: Exonerado 0% por defecto
+                    </span>
+                  )}
+                </div>
                 <button
                   type="button"
                   onClick={handleAddItem}
                   className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-700"
                 >
                   <Plus className="h-3.5 w-3.5" />
-                  Agregar Ítem
+                  Agregar Línea
                 </button>
               </div>
 
@@ -1121,7 +1348,7 @@ export default function BusinessBillingPage() {
                       placeholder="Cant."
                       value={item.quantity || ""}
                       onChange={(e) => handleUpdateItem(idx, "quantity", parseFloat(e.target.value) || 0)}
-                      className="w-16 px-2 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-center"
+                      className="w-16 px-2 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-center font-bold"
                     />
                     <input
                       type="number"
@@ -1130,8 +1357,18 @@ export default function BusinessBillingPage() {
                       placeholder="Precio Unit."
                       value={item.unitPrice || ""}
                       onChange={(e) => handleUpdateItem(idx, "unitPrice", parseFloat(e.target.value) || 0)}
-                      className="w-24 px-2 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-right"
+                      className="w-24 px-2 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-right font-bold"
                     />
+                    <select
+                      value={item.igvAffectation || (item.igvType === 8 ? "20" : item.igvType === 9 ? "30" : "10")}
+                      onChange={(e) => handleUpdateItem(idx, "igvAffectation", e.target.value)}
+                      className="w-36 px-2 py-1.5 text-[11px] bg-white border border-slate-200 rounded-lg font-bold text-slate-700"
+                    >
+                      <option value="20">Exonerado (0% Selva)</option>
+                      <option value="10">Gravado (18% General)</option>
+                      <option value="10_MYPE">Gravado (10% Ley 31556)</option>
+                      <option value="30">Inafecto (0%)</option>
+                    </select>
                     <button
                       type="button"
                       onClick={() => handleRemoveItem(idx)}
@@ -1145,19 +1382,65 @@ export default function BusinessBillingPage() {
               </div>
             </div>
 
-            {/* Desglose Tributario */}
-            <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-1.5 text-right font-mono text-sm">
-              <div className="flex justify-between text-slate-500 text-xs">
-                <span>OPERACIÓN GRAVADA (BASE):</span>
-                <span>S/ {emitCalculations.subtotal.toFixed(2)}</span>
+            {/* Observaciones / Leyendas SUNAT Obligatorias */}
+            <div>
+              <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1 flex items-center justify-between">
+                <span>Observaciones / Leyenda Legal SUNAT</span>
+                {isAmazoniaUser && (
+                  <span className="text-[10px] text-emerald-600 font-semibold">
+                    Ley N° 27037 predeterminada
+                  </span>
+                )}
+              </label>
+              <textarea
+                rows={2}
+                placeholder="Observaciones legales o leyenda tributaria..."
+                value={emitNotes}
+                onChange={(e) => setEmitNotes(e.target.value)}
+                className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20"
+              />
+            </div>
+
+            {/* Alerta de Bancarización Obligatoria (> S/ 2,000 o USD 500) */}
+            {bancarizacionAlert.isRequired && (
+              <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-amber-900 text-xs flex items-start gap-2.5">
+                <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold">Alerta de Bancarización Obligatoria (D.L. N° 1529 / Ley N° 28194)</p>
+                  <p className="text-[11px] text-amber-800 mt-0.5">
+                    {bancarizacionAlert.message}
+                  </p>
+                </div>
               </div>
-              <div className="flex justify-between text-slate-500 text-xs">
-                <span>I.G.V. (18.00%):</span>
-                <span>S/ {emitCalculations.igv.toFixed(2)}</span>
+            )}
+
+            {/* Desglose Tributario Oficial SUNAT */}
+            <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-1.5 text-right font-mono text-sm">
+              {emitCalculations.gravada > 0 && (
+                <div className="flex justify-between text-slate-500 text-xs">
+                  <span>OP. GRAVADA (BASE):</span>
+                  <span>{emitCurrency === "USD" ? "$" : "S/"} {emitCalculations.gravada.toFixed(2)}</span>
+                </div>
+              )}
+              {emitCalculations.exonerada > 0 && (
+                <div className="flex justify-between text-emerald-700 text-xs font-semibold">
+                  <span>OP. EXONERADA (LEY AMAZONÍA 0%):</span>
+                  <span>{emitCurrency === "USD" ? "$" : "S/"} {emitCalculations.exonerada.toFixed(2)}</span>
+                </div>
+              )}
+              {emitCalculations.inafecta > 0 && (
+                <div className="flex justify-between text-slate-500 text-xs">
+                  <span>OP. INAFECTA:</span>
+                  <span>{emitCurrency === "USD" ? "$" : "S/"} {emitCalculations.inafecta.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-slate-600 text-xs">
+                <span>I.G.V. TOTAL:</span>
+                <span>{emitCurrency === "USD" ? "$" : "S/"} {emitCalculations.igv.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-base font-black text-slate-900 border-t border-slate-200 pt-1.5">
                 <span>IMPORTE TOTAL:</span>
-                <span>S/ {emitCalculations.total.toFixed(2)}</span>
+                <span>{emitCurrency === "USD" ? "$" : "S/"} {emitCalculations.total.toFixed(2)}</span>
               </div>
             </div>
 
@@ -1172,7 +1455,7 @@ export default function BusinessBillingPage() {
               </button>
               <button
                 type="button"
-                disabled={isSubmittingEmit}
+                disabled={isSubmittingEmit || (emitDocType === "BOLETA" && emitCalculations.total >= 700 && !boletaValidation.isValid)}
                 onClick={handleSubmitEmit}
                 className="inline-flex items-center gap-2 px-5 py-2 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md disabled:opacity-50"
               >
