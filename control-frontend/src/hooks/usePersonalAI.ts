@@ -1,13 +1,13 @@
 import { useMemo } from 'react';
 
 // Interfaces para los inputs
-interface PendingStats {
+export interface PendingStats {
   payable: number;
   receivable: number;
   urgent: any[];
 }
 
-interface PersonalAIProps {
+export interface PersonalAIProps {
   activeTx: any[];
   mIncome: number[];
   mExpense: number[];
@@ -16,6 +16,9 @@ interface PersonalAIProps {
   totalExpense: number;
   totalBalance: number;
   pendingStats: PendingStats;
+  accountBalances?: Record<string, number>;
+  selectedMonth?: number | null;
+  selectedYear?: number;
 }
 
 const MONTHS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Set", "Oct", "Nov", "Dic"];
@@ -26,6 +29,41 @@ const fmt = (n: number, decimals = 2) =>
     maximumFractionDigits: decimals,
   });
 
+// Clasificación inteligente para la Regla 50/30/20
+const isNeedsCategory = (catName: string, desc: string = ""): boolean => {
+  const text = `${catName} ${desc}`.toLowerCase();
+  const needsKeywords = [
+    "vivienda", "alquiler", "hipoteca", "luz", "agua", "internet", "gas",
+    "servicio", "servicios", "supermercado", "mercado", "comida del mes",
+    "salud", "farmacia", "medicina", "médico", "medico", "seguro", "eps",
+    "transporte", "combustible", "gasolina", "pasaje", "mantenimiento",
+    "educación", "educacion", "colegio", "universidad", "pensión", "pension",
+    "impuesto", "tributo", "sunat", "alimentos", "compras del hogar"
+  ];
+  return needsKeywords.some((k) => text.includes(k));
+};
+
+const isSavingsCategory = (catName: string, desc: string = ""): boolean => {
+  const text = `${catName} ${desc}`.toLowerCase();
+  const savingsKeywords = [
+    "ahorro", "ahorros", "saving", "inversión", "inversion", "chanchito",
+    "piggy", "fondo de emergencia", "depósito a plazo", "plazo fijo",
+    "acciones", "fondos mutuos", "amortización", "capital deuda"
+  ];
+  return savingsKeywords.some((k) => text.includes(k));
+};
+
+const isAntExpense = (amount: number, catName: string, desc: string = ""): boolean => {
+  if (amount > 45 || amount <= 0) return false;
+  const text = `${catName} ${desc}`.toLowerCase();
+  const antKeywords = [
+    "café", "cafe", "snack", "golosina", "gaseosa", "taxi", "uber", "didi",
+    "cabify", "delivery", "rappi", "pedidosya", "antojo", "tienda", "bodega",
+    "cigarro", "recarga", "estacionamiento", "propina", "dulce", "helado"
+  ];
+  return antKeywords.some((k) => text.includes(k)) || (amount <= 25 && !text.includes("servicio"));
+};
+
 export function usePersonalAI({
   activeTx,
   mIncome,
@@ -35,248 +73,449 @@ export function usePersonalAI({
   totalExpense,
   totalBalance,
   pendingStats,
+  accountBalances = {},
+  selectedMonth = null,
+  selectedYear = new Date().getFullYear(),
 }: PersonalAIProps) {
-  
   return useMemo(() => {
     const now = new Date();
-    const currentMonth = now.getMonth();
+    const currentCalMonth = now.getMonth();
+    const currentCalDay = now.getDate();
+    const daysInCurrMonth = new Date(now.getFullYear(), currentCalMonth + 1, 0).getDate();
+    const daysRemaining = Math.max(0, daysInCurrMonth - currentCalDay);
 
-    const debtRatio = pendingStats.payable > 0 && totalIncome > 0 ? (pendingStats.payable / totalIncome) * 100 : 0;
-    const liquidityRatio = totalBalance > 0 ? totalBalance / pendingStats.payable : Infinity;
+    // 1. Filtrar transacciones para el período de análisis
+    const filteredTx = selectedMonth !== null
+      ? activeTx.filter((t) => {
+          const raw = t.paidAt || t.date || t.dueDate;
+          if (!raw) return false;
+          const d = new Date(raw);
+          return !isNaN(d.getTime()) && d.getMonth() === selectedMonth;
+        })
+      : activeTx;
 
-    const calculateTrend = (data: number[]) => {
-      const past = data.slice(0, Math.max(0, currentMonth + 1 - 3));
-      const recent = data.slice(Math.max(0, currentMonth + 1 - 3), currentMonth + 1);
-      if (past.length === 0 || past.reduce((a, b) => a + b, 0) === 0) return 0;
-      return ((recent.reduce((a, b) => a + b, 0) / past.reduce((a, b) => a + b, 0)) - 1) * 100;
-    };
+    // 2. Liquid Wealth Real (Suma de cuentas positivas disponibles)
+    const liquidAccountsTotal = Object.values(accountBalances).reduce((sum, b) => sum + Math.max(0, b), 0);
+    const effectiveLiquidity = liquidAccountsTotal > 0 ? liquidAccountsTotal : Math.max(0, totalBalance);
 
-    const incomeTrend = calculateTrend(mIncome);
-    const expenseTrend = calculateTrend(mExpense);
+    // 3. Meses activos con actividad real (para promedios fidedignos, no dividir siempre entre 12 si van 3 meses)
+    const activeMonthsCount = Math.max(1, mExpense.filter((exp, idx) => exp > 0 || mIncome[idx] > 0 || idx <= currentCalMonth).length);
+    const avgMonthlyIncome = totalIncome > 0 ? totalIncome / activeMonthsCount : 0;
+    const avgMonthlyExpense = totalExpense > 0 ? totalExpense / activeMonthsCount : 0;
 
-    // ========== 💰 INGRESOS ==========
-    const incomeAnalysis = {
-      total: totalIncome,
-      averageMonthly: totalIncome / 12,
-      growthRate: incomeTrend,
-      diversification: 0,
-      categories: {} as Record<string, { amount: number; percentage: number }>,
-      seasonality: [] as { month: string; amount: number; vsAveragePct: number }[],
-    };
+    // 4. ANÁLISIS DE LA REGLA DE ORO 50/30/20
+    let needsTotal = 0;
+    let wantsTotal = 0;
+    let savingsTotal = 0;
+    const expenseByCategory: Record<string, { amount: number; count: number; isRecurrent: boolean }> = {};
+    const antExpensesList: any[] = [];
 
-    const incomeByCategory: Record<string, number> = {};
-    activeTx.forEach((t) => {
-      if (t.type === "INCOME") {
-        const cat = t.category?.name || t.category || "Otros";
-        const amount = Number(t.amount || 0) * (t.currency === "USD" ? Number(t.exchangeRate || 1) : 1);
-        incomeByCategory[cat] = (incomeByCategory[cat] || 0) + amount;
-      }
-    });
+    filteredTx.forEach((t) => {
+      const amt = Number(t.amount || 0) * (t.currency === "USD" ? Number(t.exchangeRate || 1) : 1);
+      const cat = t.category?.name || t.category || "Otros Gastos";
+      const desc = t.description || "";
 
-    const incomeCategories = Object.entries(incomeByCategory);
-    if (incomeCategories.length > 0) {
-      const mainSourcePct = (incomeCategories[0][1] / totalIncome) * 100;
-      incomeAnalysis.diversification = Math.max(0, 100 - mainSourcePct);
-    }
-
-    incomeCategories.forEach(([name, amount]) => {
-      incomeAnalysis.categories[name] = { amount, percentage: (amount / totalIncome) * 100 };
-    });
-
-    mIncome.forEach((amount, i) => {
-      const avgMonthly = totalIncome / 12;
-      const vsAveragePct = avgMonthly > 0 ? ((amount - avgMonthly) / avgMonthly) * 100 : 0;
-      incomeAnalysis.seasonality.push({ month: MONTHS[i], amount, vsAveragePct });
-    });
-
-    // ========== 💸 GASTOS ==========
-    const expenseAnalysis = {
-      total: totalExpense,
-      averageMonthly: totalExpense / 12,
-      growthRate: expenseTrend,
-      fixedVsVariable: { fixed: 0, variable: 0, fixedPct: 0 },
-      topCategories: [] as { name: string; amount: number; percentage: number; isRecurrent: boolean }[],
-      savingsOpportunities: [] as { category: string; amount: number; percentage: number; potentialSavings: number }[],
-    };
-
-    const expenseByCategory: Record<string, { amount: number; isRecurrent: boolean }> = {};
-    activeTx.forEach((t) => {
       if (t.type === "EXPENSE") {
-        const cat = t.category?.name || t.category || "Otros";
-        const amount = Number(t.amount || 0) * (t.currency === "USD" ? Number(t.exchangeRate || 1) : 1);
-        const isRecurrent = t.description?.toLowerCase().includes("pago") ||
-          t.description?.toLowerCase().includes("suscripción") ||
-          t.description?.toLowerCase().includes("mensual") ||
+        // Categorizar según 50/30/20
+        if (isSavingsCategory(cat, desc)) {
+          savingsTotal += amt;
+        } else if (isNeedsCategory(cat, desc)) {
+          needsTotal += amt;
+        } else {
+          wantsTotal += amt;
+        }
+
+        // Fugas / Gastos Hormiga
+        if (isAntExpense(amt, cat, desc)) {
+          antExpensesList.push({
+            id: t.id,
+            description: desc || cat,
+            category: cat,
+            amount: amt,
+            date: t.paidAt || t.date,
+          });
+        }
+
+        // Agrupación por categoría
+        if (!expenseByCategory[cat]) {
+          expenseByCategory[cat] = { amount: 0, count: 0, isRecurrent: false };
+        }
+        expenseByCategory[cat].amount += amt;
+        expenseByCategory[cat].count += 1;
+        const isRecurrent = desc.toLowerCase().includes("mensual") ||
+          desc.toLowerCase().includes("suscrip") ||
+          desc.toLowerCase().includes("fijo") ||
           cat.toLowerCase().includes("servicio") ||
           cat.toLowerCase().includes("alquiler");
-
-        if (!expenseByCategory[cat]) expenseByCategory[cat] = { amount: 0, isRecurrent: false };
-        expenseByCategory[cat].amount += amount;
         if (isRecurrent) expenseByCategory[cat].isRecurrent = true;
+      } else if (t.type === "TRANSFER" && isSavingsCategory(cat, desc)) {
+        savingsTotal += amt;
       }
     });
 
-    Object.entries(expenseByCategory).forEach(([name, data]) => {
-      const percentage = (data.amount / totalExpense) * 100;
-      expenseAnalysis.topCategories.push({ name, amount: data.amount, percentage, isRecurrent: data.isRecurrent });
+    // Añadir ahorro del chanchito si no se contó en transacciones directas
+    const piggyBalance = Math.max(0, accountBalances["Chanchito"] || 0);
+    const calculatedTotalSavings = savingsTotal > 0 ? savingsTotal : Math.max(0, totalBalance > 0 ? totalBalance * 0.2 : 0) + piggyBalance;
 
-      if (percentage > 20 && !["Alquiler", "Hipoteca", "Servicios Públicos"].includes(name) && !name.toLowerCase().includes("ahorro")) {
-        expenseAnalysis.savingsOpportunities.push({
-          category: name, amount: data.amount, percentage, potentialSavings: data.amount * 0.15,
+    const analyzedExpenseBase = totalExpense > 0 ? totalExpense : 1;
+    const rule50_30_20 = {
+      needs: {
+        amount: needsTotal,
+        percentage: (needsTotal / analyzedExpenseBase) * 100,
+        idealPercentage: 50,
+        status: (needsTotal / analyzedExpenseBase) * 100 <= 55 ? "HEALTHY" : "OVER_BUDGET",
+        diffAmount: needsTotal - (analyzedExpenseBase * 0.5),
+      },
+      wants: {
+        amount: wantsTotal,
+        percentage: (wantsTotal / analyzedExpenseBase) * 100,
+        idealPercentage: 30,
+        status: (wantsTotal / analyzedExpenseBase) * 100 <= 35 ? "HEALTHY" : "OVER_BUDGET",
+        diffAmount: wantsTotal - (analyzedExpenseBase * 0.3),
+      },
+      savings: {
+        amount: calculatedTotalSavings,
+        percentage: totalIncome > 0 ? (calculatedTotalSavings / totalIncome) * 100 : 0,
+        idealPercentage: 20,
+        status: (totalIncome > 0 && (calculatedTotalSavings / totalIncome) * 100 >= 18) ? "HEALTHY" : "UNDER_BUDGET",
+        targetAmount: totalIncome * 0.20,
+      },
+    };
+
+    // 5. DETECCIÓN DE GASTOS HORMIGA & FUGAS
+    const antTotal = antExpensesList.reduce((acc, curr) => acc + curr.amount, 0);
+    const antPercentage = totalExpense > 0 ? (antTotal / totalExpense) * 100 : 0;
+    const antAnnualLeakage = (antTotal / Math.max(1, activeMonthsCount)) * 12;
+
+    const antAnalysis = {
+      count: antExpensesList.length,
+      total: antTotal,
+      percentage: antPercentage,
+      annualImpact: antAnnualLeakage,
+      items: antExpensesList.slice(0, 6),
+    };
+
+    // 6. RUNWAY & FONDO DE EMERGENCIA
+    const emergencyMonths = avgMonthlyExpense > 0 ? effectiveLiquidity / avgMonthlyExpense : 0;
+    const emergencyTarget3M = avgMonthlyExpense * 3;
+    const emergencyTarget6M = avgMonthlyExpense * 6;
+    const emergencyFundProgress = emergencyTarget3M > 0 ? Math.min(100, (effectiveLiquidity / emergencyTarget3M) * 100) : 0;
+
+    let emergencyLevel: "CRITICAL" | "BASIC" | "OPTIMAL" | "FORTRESS" = "CRITICAL";
+    let emergencyLabel = "Fondo Inexistente (< 1 mes)";
+    if (emergencyMonths >= 6) {
+      emergencyLevel = "FORTRESS";
+      emergencyLabel = "Fortaleza Financiera (> 6 meses)";
+    } else if (emergencyMonths >= 3) {
+      emergencyLevel = "OPTIMAL";
+      emergencyLabel = "Óptimo (3 a 6 meses)";
+    } else if (emergencyMonths >= 1) {
+      emergencyLevel = "BASIC";
+      emergencyLabel = "Básico (1 a 3 meses)";
+    }
+
+    const runwayAnalysis = {
+      months: emergencyMonths,
+      days: Math.round(emergencyMonths * 30),
+      currentAmount: effectiveLiquidity,
+      target3M: emergencyTarget3M,
+      target6M: emergencyTarget6M,
+      progress3M: emergencyFundProgress,
+      level: emergencyLevel,
+      label: emergencyLabel,
+      monthlyBurnRate: avgMonthlyExpense,
+    };
+
+    // 7. PREDICTIVE FORECAST (CIERRE DE MES)
+    const currentMonthExpenses = mExpense[currentCalMonth] || 0;
+    const currentMonthIncome = mIncome[currentCalMonth] || 0;
+    const dailyBurnRateCurrentMonth = currentMonthExpenses / Math.max(1, currentCalDay);
+    const projectedMonthEndExpense = currentMonthExpenses + (dailyBurnRateCurrentMonth * daysRemaining);
+    const projectedMonthEndNet = currentMonthIncome - projectedMonthEndExpense;
+
+    const monthForecast = {
+      currentIncome: currentMonthIncome,
+      currentExpense: currentMonthExpenses,
+      dailyBurnRate: dailyBurnRateCurrentMonth,
+      daysRemaining,
+      projectedExpense: projectedMonthEndExpense,
+      projectedNet: projectedMonthEndNet,
+      status: projectedMonthEndNet >= 0 ? "SURPLUS" : "DEFICIT",
+    };
+
+    // 8. ESTRATEGIA DE DEUDAS (DTI & URGENCIA)
+    const debtRatio = totalIncome > 0 ? (pendingStats.payable / totalIncome) * 100 : 0;
+    const expiredDebts = pendingStats.urgent.filter((u) => u.dueInfo?.status === "EXPIRED");
+    const todayDebts = pendingStats.urgent.filter((u) => u.dueInfo?.status === "TODAY");
+    const liquidityRatio = pendingStats.payable > 0 ? effectiveLiquidity / pendingStats.payable : 99;
+
+    let debtHealth: "SAFE" | "MODERATE" | "HIGH_RISK" | "CRITICAL" = "SAFE";
+    if (expiredDebts.length > 0 || debtRatio > 50 || liquidityRatio < 0.8) {
+      debtHealth = "CRITICAL";
+    } else if (debtRatio > 35) {
+      debtHealth = "HIGH_RISK";
+    } else if (debtRatio > 20) {
+      debtHealth = "MODERATE";
+    }
+
+    const debtStrategy = {
+      totalPayable: pendingStats.payable,
+      totalReceivable: pendingStats.receivable,
+      netDebt: pendingStats.payable - pendingStats.receivable,
+      debtRatio,
+      debtHealth,
+      expiredCount: expiredDebts.length,
+      todayCount: todayDebts.length,
+      liquidityRatio,
+      urgentList: pendingStats.urgent,
+    };
+
+    // 9. TOP CATEGORÍAS & CONCENTRACIÓN DE RIESGO
+    const topCategories = Object.entries(expenseByCategory)
+      .map(([name, data]) => ({
+        name,
+        amount: data.amount,
+        percentage: (data.amount / analyzedExpenseBase) * 100,
+        count: data.count,
+        isRecurrent: data.isRecurrent,
+      }))
+      .sort((a, b) => b.amount - a.amount);
+
+    const concentrationAlerts: any[] = [];
+    topCategories.forEach((cat) => {
+      if (cat.percentage > 35 && !cat.name.toLowerCase().includes("alquiler") && !cat.name.toLowerCase().includes("vivienda")) {
+        concentrationAlerts.push({
+          category: cat.name,
+          amount: cat.amount,
+          percentage: cat.percentage,
+          recommendedReduction: cat.amount * 0.15,
         });
       }
     });
 
-    expenseAnalysis.topCategories.sort((a, b) => b.amount - a.amount);
+    // 10. SCORING MULTIDIMENSIONAL (0 a 100)
+    let scoreSavings = 0;
+    const savingsRate = rule50_30_20.savings.percentage;
+    if (savingsRate >= 20) scoreSavings = 25;
+    else if (savingsRate >= 10) scoreSavings = 18;
+    else if (savingsRate > 0) scoreSavings = 10;
+    else scoreSavings = 2;
 
-    let fixedExpenses = 0, variableExpenses = 0;
-    Object.values(expenseByCategory).forEach((cat) => {
-      if (cat.isRecurrent) fixedExpenses += cat.amount;
-      else variableExpenses += cat.amount;
-    });
-    expenseAnalysis.fixedVsVariable = { fixed: fixedExpenses, variable: variableExpenses, fixedPct: (fixedExpenses / totalExpense) * 100 };
+    let scoreDebt = 0;
+    if (pendingStats.payable === 0) scoreDebt = 25;
+    else if (debtRatio <= 20 && expiredDebts.length === 0) scoreDebt = 20;
+    else if (debtRatio <= 35 && expiredDebts.length === 0) scoreDebt = 14;
+    else if (debtRatio <= 50) scoreDebt = 7;
+    else scoreDebt = 0;
+    if (expiredDebts.length > 0) scoreDebt = Math.max(0, scoreDebt - 8);
 
-    // ========== 💳 DEUDAS ==========
-    const debtAnalysis = {
-      total: pendingStats.payable,
-      totalReceivable: pendingStats.receivable,
-      netDebt: pendingStats.payable - pendingStats.receivable,
-      debtToIncomeRatio: debtRatio,
-      debtToBalanceRatio: pendingStats.payable > 0 && totalBalance > 0 ? (pendingStats.payable / totalBalance) * 100 : 0,
-      expired: pendingStats.urgent.filter((u) => u.dueInfo.status === "EXPIRED").length,
-      dueToday: pendingStats.urgent.filter((u) => u.dueInfo.status === "TODAY").length,
-    };
+    let scoreBudget = 0;
+    if (rule50_30_20.wants.percentage <= 30 && antPercentage <= 10) scoreBudget = 20;
+    else if (rule50_30_20.wants.percentage <= 40) scoreBudget = 14;
+    else if (rule50_30_20.wants.percentage <= 50) scoreBudget = 8;
+    else scoreBudget = 3;
 
-    // ========== 🏦 AHORROS ==========
-    let explicitSavings = 0;
-    activeTx.forEach((t) => {
-      if (t.type === "INCOME" && (t.category?.name?.toLowerCase().includes("ahorro") || t.category?.name?.toLowerCase().includes("saving"))) {
-        explicitSavings += Number(t.amount || 0) * (t.currency === "USD" ? Number(t.exchangeRate || 1) : 1);
-      }
-    });
+    let scoreRunway = 0;
+    if (emergencyMonths >= 6) scoreRunway = 15;
+    else if (emergencyMonths >= 3) scoreRunway = 12;
+    else if (emergencyMonths >= 1) scoreRunway = 7;
+    else scoreRunway = 2;
 
-    const totalSavings = totalBalance + explicitSavings;
-    const savingsAnalysis = {
-      total: totalSavings,
-      savingsRate: totalIncome > 0 ? (totalSavings / totalIncome) * 100 : 0,
-      emergencyFund: {
-        months: totalExpense > 0 ? Math.floor(totalSavings / (totalExpense / 12)) : 0,
-        amount: totalSavings,
-      },
-    };
+    let scoreCashFlow = 0;
+    const positiveMonths = mBalance.filter((b, idx) => b > 0 && (mIncome[idx] > 0 || mExpense[idx] > 0)).length;
+    const recordedMonths = Math.max(1, mBalance.filter((_, idx) => mIncome[idx] > 0 || mExpense[idx] > 0).length);
+    const flowRatio = positiveMonths / recordedMonths;
+    if (totalBalance > 0 && flowRatio >= 0.75) scoreCashFlow = 15;
+    else if (totalBalance >= 0 && flowRatio >= 0.5) scoreCashFlow = 10;
+    else if (flowRatio >= 0.3) scoreCashFlow = 5;
+    else scoreCashFlow = 1;
 
-    // ========== ⚠️ RIESGOS Y OPORTUNIDADES (CLEAN) ==========
-    const riskAnalysis = {
-      critical: [] as any[],
-      warnings: [] as any[],
-      opportunities: [] as any[],
-    };
+    const rawScore = scoreSavings + scoreDebt + scoreBudget + scoreRunway + scoreCashFlow;
+    const score = Math.max(5, Math.min(100, Math.round(rawScore)));
 
-    // Agregar lógicas limpias sin redundancias
-    if (debtAnalysis.expired > 0) {
-      riskAnalysis.critical.push({ type: "Deudas Vencidas", severity: "high", message: "Tienes deudas vencidas.", action: "Paga inmediatamente.", category: "Deudas" });
-    }
-    if (liquidityRatio < 1) {
-      riskAnalysis.critical.push({ type: "Falta de Liquidez", severity: "high", message: `Tu ratio de liquidez es bajo (${liquidityRatio.toFixed(2)}).`, action: "Genera ingresos adicionales.", category: "Liquidez" });
-    }
-    if (debtAnalysis.debtToIncomeRatio > 50) {
-      riskAnalysis.critical.push({ type: "Sobreendeudamiento", severity: "high", message: `Tus deudas son el ${debtAnalysis.debtToIncomeRatio.toFixed(1)}% de tus ingresos.`, action: "Prioriza pagar deudas.", category: "Deudas" });
-    }
-    if (savingsAnalysis.emergencyFund.months < 1) {
-      riskAnalysis.critical.push({ type: "Sin Fondo", severity: "high", message: "Tienes menos de 1 mes de fondo de emergencia.", action: "Ahorra el 10% de ingresos.", category: "Ahorro" });
-    }
-
-    if (debtAnalysis.dueToday > 0) {
-      riskAnalysis.warnings.push({ type: "Pagos Hoy", message: `Tienes ${debtAnalysis.dueToday} pagos para hoy.`, action: "Realiza estos pagos hoy.", category: "Deudas" });
-    }
-
-    expenseAnalysis.savingsOpportunities.forEach((opp) => {
-      riskAnalysis.opportunities.push({ type: `Ahorro en ${opp.category}`, message: `Podrías ahorrar S/ ${fmt(opp.potentialSavings)} en ${opp.category}.`, potential: opp.potentialSavings, action: `Reduce gastos en ${opp.category}.`, category: "Gastos" });
-    });
-
-    if (pendingStats.receivable > 0) {
-      riskAnalysis.opportunities.push({ type: "Cobranza", message: `Tienes S/ ${fmt(pendingStats.receivable)} por cobrar.`, potential: pendingStats.receivable, action: "Gestiona tu cobranza.", category: "Ingresos" });
-    }
-
-    // SCORE
-    let score = 50;
-    if (savingsAnalysis.savingsRate >= 20) score += 20;
-    else if (savingsAnalysis.savingsRate > 0) score += 10;
-    else score -= 10;
-
-    if (debtAnalysis.total === 0) score += 20;
-    else if (debtAnalysis.debtToIncomeRatio <= 30) score += 10;
-    else score -= 20;
-
-    if (liquidityRatio >= 1.5) score += 10;
-
-    score = Math.max(0, Math.min(100, score));
-
-    // Calculate Grade and Label
     let grade = "C";
-    let healthLabel = "Estable";
-    let healthColor = "text-amber-500 bg-amber-50 border-amber-200";
+    let healthLabel = "Estable con Puntos de Mejora";
+    let healthColor = "text-amber-600 bg-amber-50 border-amber-200";
+    let healthDescription = "Tus finanzas se mantienen a flote, pero existen vulnerabilidades en el control de gastos o fondo de reserva.";
+
     if (score >= 90) {
       grade = "A+";
-      healthLabel = "Excelente";
-      healthColor = "text-emerald-500 bg-emerald-50 border-emerald-200";
+      healthLabel = "Fortaleza Financiera Total";
+      healthColor = "text-emerald-750 bg-emerald-50 border-emerald-300";
+      healthDescription = "Excelente gestión patrimonial. Cumples la regla 50/30/20, tienes fondo de reserva blindado y nula morosidad.";
     } else if (score >= 80) {
       grade = "A";
-      healthLabel = "Muy Buena";
-      healthColor = "text-emerald-500 bg-emerald-50 border-emerald-200";
+      healthLabel = "Salud Financiera Sobresaliente";
+      healthColor = "text-emerald-650 bg-emerald-50 border-emerald-200";
+      healthDescription = "Perfil muy sólido con buen ahorro y liquidez. Mantén el ritmo para pasar a fase de inversión patrimonial.";
     } else if (score >= 70) {
       grade = "B";
-      healthLabel = "Buena/Saludable";
-      healthColor = "text-indigo-500 bg-indigo-50 border-indigo-200";
+      healthLabel = "Saludable y en Crecimiento";
+      healthColor = "text-indigo-650 bg-indigo-50 border-indigo-200";
+      healthDescription = "Buen control general. Reduciendo pequeños gastos hormiga podrás acelerar tu fondo de emergencia.";
     } else if (score >= 50) {
       grade = "C";
-      healthLabel = "Estable con Riesgos";
-      healthColor = "text-amber-500 bg-amber-50 border-amber-200";
-    } else if (score >= 30) {
+      healthLabel = "Estable con Puntos de Mejora";
+      healthColor = "text-amber-600 bg-amber-50 border-amber-200";
+      healthDescription = "Estás en equilibrio justo. Si ocurre un imprevisto podrías requerir endeudamiento; urge reforzar ahorros.";
+    } else if (score >= 35) {
       grade = "D";
-      healthLabel = "Vulnerable";
-      healthColor = "text-rose-500 bg-rose-50 border-rose-200";
+      healthLabel = "Vulnerable / Alto Riesgo";
+      healthColor = "text-rose-600 bg-rose-50 border-rose-200";
+      healthDescription = "Gastos por encima de lo recomendado o deudas apremiantes. Es necesario aplicar un plan de choque.";
     } else {
       grade = "F";
-      healthLabel = "Crítica";
-      healthColor = "text-red-500 bg-red-50 border-red-200";
+      healthLabel = "Alerta Crítica";
+      healthColor = "text-red-700 bg-red-50 border-red-300";
+      healthDescription = "Situación financiera de emergencia. Los egresos superan los ingresos o existen deudas en mora.";
     }
 
-    // 3-Month Projections
-    const avgInc = totalIncome / 12 || 0;
-    const avgExp = totalExpense / 12 || 0;
-    const monthlyNetSavings = avgInc - avgExp;
+    // 11. PLAN DE ACCIÓN Y RECOMENDACIONES TÉCNICAS PROFESIONALES
+    const actionPlan: any[] = [];
+
+    // Prioridad 1: Deudas vencidas
+    if (expiredDebts.length > 0) {
+      actionPlan.push({
+        id: "act-expired-debts",
+        priority: 1,
+        type: "danger",
+        title: "Pagar Deudas Vencidas en Mora",
+        impact: `Regularizar ${expiredDebts.length} pendiente(s)`,
+        message: `Tienes S/ ${fmt(expiredDebts.reduce((sum, d) => sum + d.amountSoles, 0))} en deudas vencidas que pueden generar intereses moratorios o afectar tu historial crediticio.`,
+        actionText: "Ver pendientes vencidos",
+        actionCategory: "Deudas",
+        actionType: "Deudas Vencidas",
+        targetRoute: "/pending?tab=PAYABLES",
+      });
+    }
+
+    // Prioridad 2: Deudas para hoy
+    if (todayDebts.length > 0) {
+      actionPlan.push({
+        id: "act-today-debts",
+        priority: 2,
+        type: "warning",
+        title: "Compromisos con Vencimiento Hoy",
+        impact: `S/ ${fmt(todayDebts.reduce((sum, d) => sum + d.amountSoles, 0))}`,
+        message: `Tienes ${todayDebts.length} pago(s) programados para hoy. Abónalos antes del cierre bancario.`,
+        actionText: "Pagar ahora",
+        actionCategory: "Deudas",
+        actionType: "Pagos Hoy",
+        targetRoute: "/pending?tab=PAYABLES",
+      });
+    }
+
+    // Prioridad 3: Desvío en Deseos (Regla 50/30/20)
+    if (rule50_30_20.wants.status === "OVER_BUDGET" && rule50_30_20.wants.diffAmount > 0) {
+      actionPlan.push({
+        id: "act-wants-overbudget",
+        priority: 3,
+        type: "warning",
+        title: "Ajustar Gastos en Deseos y Estilo de Vida",
+        impact: `Ahorro potencial: S/ ${fmt(rule50_30_20.wants.diffAmount)}`,
+        message: `Tus gastos no esenciales representan el ${rule50_30_20.wants.percentage.toFixed(1)}% de tus egresos (ideal: máx 30%). Moderar restaurantes y compras libres liberará liquidez inmediata.`,
+        actionText: "Revisar egresos",
+        actionCategory: "Gastos",
+        actionType: "Ajuste Deseos",
+        targetRoute: "/expenses",
+      });
+    }
+
+    // Prioridad 4: Gastos hormiga detectados
+    if (antAnalysis.total > 60) {
+      actionPlan.push({
+        id: "act-ant-expenses",
+        priority: 4,
+        type: "tip",
+        title: "Frenar Fugas por 'Gastos Hormiga'",
+        impact: `Ahorro anual: S/ ${fmt(antAnalysis.annualImpact, 0)}`,
+        message: `Detectamos ${antAnalysis.count} micro-compras (cafés, taxis, delivery, snacks) sumando S/ ${fmt(antAnalysis.total)}. Reduciéndolos a la mitad sumarías S/ ${fmt(antAnalysis.annualImpact / 2, 0)} a tu patrimonio este año.`,
+        actionText: "Ver detalle de gastos",
+        actionCategory: "Gastos",
+        actionType: "Gastos Hormiga",
+        targetRoute: "/expenses",
+      });
+    }
+
+    // Prioridad 5: Fondo de Emergencia
+    if (emergencyMonths < 3 && avgMonthlyExpense > 0) {
+      const neededFor3M = Math.max(0, emergencyTarget3M - effectiveLiquidity);
+      actionPlan.push({
+        id: "act-emergency-fund",
+        priority: 5,
+        type: "opportunity",
+        title: "Construir tu Fondo de Reserva (3 Meses)",
+        impact: `Meta: S/ ${fmt(neededFor3M)} restantes`,
+        message: `Tu saldo cubre ${emergencyMonths.toFixed(1)} meses de gastos. Lo prudente ante emergencias laborales o de salud es acumular al menos 3 meses (S/ ${fmt(emergencyTarget3M)}).`,
+        actionText: "Transferir al Chanchito",
+        actionCategory: "Ahorro",
+        actionType: "Fondo Emergencia",
+        targetRoute: "/pigg",
+      });
+    }
+
+    // Prioridad 6: Cobranzas pendientes por cobrar
+    if (pendingStats.receivable > 0) {
+      actionPlan.push({
+        id: "act-receivables",
+        priority: 6,
+        type: "success",
+        title: "Cobrar Dinero a Tu Favor",
+        impact: `Recuperar: S/ ${fmt(pendingStats.receivable)}`,
+        message: `Tienes S/ ${fmt(pendingStats.receivable)} registrados como cuentas por cobrar. Gestionar su cobro inyectará liquidez directa a tu flujo de caja.`,
+        actionText: "Ver cobranzas",
+        actionCategory: "Ingresos",
+        actionType: "Cobranza",
+        targetRoute: "/pending?tab=RECEIVABLES",
+      });
+    }
+
+    // Proyecciones a 3 meses
+    const monthlyNetSavings = avgMonthlyIncome - avgMonthlyExpense;
     const projections = [
-      { month: "Mes 1", balance: totalBalance + monthlyNetSavings },
-      { month: "Mes 2", balance: totalBalance + monthlyNetSavings * 2 },
-      { month: "Mes 3", balance: totalBalance + monthlyNetSavings * 3 },
+      { month: "En 1 Mes", balance: totalBalance + monthlyNetSavings },
+      { month: "En 2 Meses", balance: totalBalance + monthlyNetSavings * 2 },
+      { month: "En 3 Meses", balance: totalBalance + monthlyNetSavings * 3 },
     ];
 
-    // Money leaks (Fugas de dinero)
-    const moneyLeaks = [] as string[];
-    if ((100 - expenseAnalysis.fixedVsVariable.fixedPct) > 60) {
-      moneyLeaks.push("Tus gastos variables representan más del 60% de tus egresos. Intenta reducirlos.");
-    }
-    expenseAnalysis.topCategories.slice(0, 2).forEach(cat => {
-      if (cat.percentage > 35 && cat.name !== "Alquiler" && cat.name !== "Otros Gastos") {
-        moneyLeaks.push(`El gasto en ${cat.name} es muy alto (S/ ${fmt(cat.amount)}), representando el ${cat.percentage.toFixed(1)}% de tus egresos.`);
-      }
-    });
-
     return {
-      incomeAnalysis,
-      expenseAnalysis,
-      debtAnalysis,
-      savingsAnalysis,
-      liquidityRatio,
-      riskAnalysis,
       score,
       grade,
       healthLabel,
       healthColor,
+      healthDescription,
+      scoreBreakdown: {
+        savings: { score: scoreSavings, max: 25, label: "Tasa de Ahorro" },
+        debt: { score: scoreDebt, max: 25, label: "Control de Deudas" },
+        budget: { score: scoreBudget, max: 20, label: "Regla 50/30/20 & Fugas" },
+        runway: { score: scoreRunway, max: 15, label: "Fondo de Emergencia" },
+        cashFlow: { score: scoreCashFlow, max: 15, label: "Flujo de Caja Neto" },
+      },
+      rule50_30_20,
+      antAnalysis,
+      runwayAnalysis,
+      monthForecast,
+      debtStrategy,
+      topCategories,
+      concentrationAlerts,
+      actionPlan,
       projections,
-      moneyLeaks,
-      activeTx,
+      activeTx: filteredTx,
+      avgMonthlyIncome,
+      avgMonthlyExpense,
+      effectiveLiquidity,
     };
-  }, [activeTx, mIncome, mExpense, mBalance, totalIncome, totalExpense, totalBalance, pendingStats]);
+  }, [
+    activeTx,
+    mIncome,
+    mExpense,
+    mBalance,
+    totalIncome,
+    totalExpense,
+    totalBalance,
+    pendingStats,
+    accountBalances,
+    selectedMonth,
+    selectedYear,
+  ]);
 }

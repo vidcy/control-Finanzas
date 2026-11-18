@@ -84,7 +84,7 @@ const MONTHS = [
   "Nov",
   "Dic",
 ];
-const YEAR = new Date().getFullYear();
+const DEFAULT_YEAR = new Date().getFullYear();
 
 // ─── COMPONENT ─────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
@@ -95,6 +95,7 @@ export default function DashboardPage() {
   const [refreshing, setRefreshing] = useState(false);
 
   // UI States
+  const [selectedYear, setSelectedYear] = useState<number>(DEFAULT_YEAR);
   const [showValues, setShowValues] = useState(true);
   const [isProjectedMode, setIsProjectedMode] = useState(false);
   const [compactChart, setCompactChart] = useState(false);
@@ -105,6 +106,19 @@ export default function DashboardPage() {
   const [showConfetti, setShowConfetti] = useState(false);
   const [simulatorSavings, setSimulatorSavings] = useState(0);
   const [payingId, setPayingId] = useState<string | null>(null);
+
+  // Años disponibles detectados en transacciones
+  const availableYears = useMemo(() => {
+    const years = new Set<number>([DEFAULT_YEAR, DEFAULT_YEAR - 1]);
+    (Array.isArray(transactions) ? transactions : []).forEach((t: any) => {
+      const raw = t.paidAt || t.date || t.dueDate;
+      const d = parseSafeDate(raw);
+      if (!isNaN(d.getTime())) {
+        years.add(d.getFullYear());
+      }
+    });
+    return Array.from(years).sort((a, b) => b - a);
+  }, [transactions]);
 
   // 👇 NUEVO: Referencia para la tabla y altura medida
   const tableRef = useRef<HTMLDivElement>(null);
@@ -206,6 +220,7 @@ export default function DashboardPage() {
       const raw = isPending ? t.dueDate || t.date : t.paidAt || t.date;
       const d = parseSafeDate(raw);
       if (isNaN(d.getTime())) return;
+      if (d.getFullYear() !== selectedYear) return; // Filtrado estricto por año seleccionado
       const mo = d.getMonth();
       const amount =
         Number(t.amount || 0) *
@@ -249,7 +264,7 @@ export default function DashboardPage() {
       incomeMap: incMapRaw,
       expenseMap: expMapRaw,
     };
-  }, [activeTx]);
+  }, [activeTx, selectedYear]);
 
   const mBalance = mIncome.map((inc, i) => inc - mExpense[i]);
   const totalIncome = mIncome.reduce((a, b) => a + b, 0);
@@ -395,6 +410,9 @@ export default function DashboardPage() {
     totalExpense,
     totalBalance,
     pendingStats,
+    accountBalances,
+    selectedMonth,
+    selectedYear,
   });
 
   // ── Month drilldown transactions ────────────────────────────────────────────
@@ -407,7 +425,7 @@ export default function DashboardPage() {
             ? t.dueDate || t.date
             : t.paidAt || t.date;
         const d = parseSafeDate(raw);
-        return !isNaN(d.getTime()) && d.getMonth() === selectedMonth;
+        return !isNaN(d.getTime()) && d.getFullYear() === selectedYear && d.getMonth() === selectedMonth;
       })
       .map((t) => ({
         ...t,
@@ -416,8 +434,8 @@ export default function DashboardPage() {
           (t.currency === "USD" ? Number(t.exchangeRate || 1) : 1),
       }))
       .sort((a, b) => b.amtSoles - a.amtSoles)
-      .slice(0, 8);
-  }, [activeTx, selectedMonth]);
+      .slice(0, 10);
+  }, [activeTx, selectedMonth, selectedYear]);
 
   const renderSimulator = () => {
     return (
@@ -768,12 +786,32 @@ export default function DashboardPage() {
                 </h1>
                 <p className="text-xs text-gray-500 font-bold uppercase tracking-widest mt-0.5 flex items-center gap-2">
                   <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse inline-block" />
-                  Análisis en tiempo real · {YEAR}
+                  Análisis en tiempo real &bull; {selectedMonth !== null ? `${MONTHS[selectedMonth]} ${selectedYear}` : `Ciclo ${selectedYear}`}
                 </p>
               </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2.5">
+              {/* Year Selector */}
+              <div className="flex items-center gap-1.5 bg-slate-100/90 px-3 py-1.5 rounded-2xl border border-slate-200/60 shadow-inner">
+                <Calendar className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                <select
+                  value={selectedYear}
+                  onChange={(e) => {
+                    setSelectedYear(Number(e.target.value));
+                    setSelectedMonth(null);
+                  }}
+                  className="bg-transparent text-xs font-black text-slate-800 outline-none cursor-pointer"
+                  title="Seleccionar Año Fiscal"
+                >
+                  {availableYears.map((yr) => (
+                    <option key={yr} value={yr}>
+                      Año {yr}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {/* Real / Projected toggle */}
               <div className="flex bg-slate-100/80 p-1 rounded-2xl border border-slate-200/50 shadow-inner">
                 {[
@@ -825,61 +863,111 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        {/* ── ACTIVE MONTH BANNER (SI HAY UN MES SELECCIONADO) ── */}
+        {selectedMonth !== null && (
+          <div className="bg-gradient-to-r from-indigo-50/90 via-purple-50/70 to-white border border-indigo-200/80 rounded-2xl p-3 px-4 flex items-center justify-between shadow-xs animate-fadeIn">
+            <div className="flex items-center gap-2.5">
+              <span className="text-lg">📅</span>
+              <div>
+                <p className="text-xs font-black text-indigo-950 uppercase tracking-tight">
+                  Filtrando Mes: {MONTHS[selectedMonth]} {selectedYear}
+                </p>
+                <p className="text-[10px] text-indigo-700 font-medium">
+                  Los indicadores y la lista muestran los movimientos exclusivos de este período.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setSelectedMonth(null)}
+              className="px-3 py-1.5 bg-white hover:bg-indigo-100 text-indigo-700 font-black text-xs rounded-xl border border-indigo-200 transition-all flex items-center gap-1.5 shadow-xs active:scale-95"
+            >
+              <span>Ver Todo el Año</span>
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
         {/* ── KPI CARDS ─────────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-          {/* Income */}
-          <KPICard
-            label={
-              isProjectedMode ? "Ingresos Proyectados" : "Ingresos Totales"
-            }
-            value={fmtVal(totalIncome)}
-            rawValue={totalIncome}
-            color="emerald"
-            icon={<TrendingUp className="w-5 h-5" />}
-            sub={`${((totalIncome / (totalExpense || 1)) * 100).toFixed(0)}% vs gastos`}
-            subPositive
-          />
-          {/* Expenses */}
-          <KPICard
-            label={isProjectedMode ? "Gastos Proyectados" : "Gastos Totales"}
-            value={fmtVal(totalExpense)}
-            rawValue={totalExpense}
-            color="rose"
-            icon={<TrendingDown className="w-5 h-5" />}
-            sub={`${((totalExpense / (totalIncome || 1)) * 100).toFixed(0)}% del ingreso`}
-            subPositive={false}
-          />
-          {/* Net */}
-          <KPICard
-            label={isProjectedMode ? "Ahorro Proyectado" : "Saldo Neto"}
-            value={fmtVal(totalBalance)}
-            rawValue={totalBalance}
-            color={totalBalance >= 0 ? "indigo" : "red"}
-            icon={<Wallet className="w-5 h-5" />}
-            sub={totalBalance >= 0 ? "Saldo positivo ✓" : "Déficit acumulado"}
-            subPositive={totalBalance >= 0}
-          />
-          {/* Pending */}
-          <KPICard
-            label="Por Pagar (Pendientes)"
-            value={fmtVal(pendingStats.payable)}
-            rawValue={pendingStats.payable}
-            color="amber"
-            icon={<Clock className="w-5 h-5" />}
-            sub={`${pendingStats.urgent.length} urgentes`}
-            subPositive={pendingStats.payable === 0}
-          />
-          {/* Piggy Bank */}
-          <KPICard
-            label="Ahorros del Chancho"
-            value={fmtVal(totalAhorrosPiggy)}
-            rawValue={totalAhorrosPiggy}
-            color="teal"
-            icon={<PiggyBank className="w-5 h-5" />}
-            sub="Fondos reservados"
-            subPositive={true}
-          />
-        </div>
+        {(() => {
+          const displayIncome = selectedMonth !== null ? (mIncome[selectedMonth] || 0) : totalIncome;
+          const displayExpense = selectedMonth !== null ? (mExpense[selectedMonth] || 0) : totalExpense;
+          const displayBalance = selectedMonth !== null ? (mBalance[selectedMonth] || 0) : totalBalance;
+
+          return (
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+              {/* Income */}
+              <KPICard
+                label={
+                  selectedMonth !== null
+                    ? `Ingresos (${MONTHS[selectedMonth]})`
+                    : isProjectedMode ? "Ingresos Proyectados" : "Ingresos Totales"
+                }
+                value={fmtVal(displayIncome)}
+                rawValue={displayIncome}
+                color="emerald"
+                icon={<TrendingUp className="w-5 h-5" />}
+                sub={
+                  selectedMonth !== null
+                    ? `Anual: S/ ${fmt(totalIncome, 0)}`
+                    : `${((totalIncome / (totalExpense || 1)) * 100).toFixed(0)}% vs gastos`
+                }
+                subPositive
+              />
+              {/* Expenses */}
+              <KPICard
+                label={
+                  selectedMonth !== null
+                    ? `Gastos (${MONTHS[selectedMonth]})`
+                    : isProjectedMode ? "Gastos Proyectados" : "Gastos Totales"
+                }
+                value={fmtVal(displayExpense)}
+                rawValue={displayExpense}
+                color="rose"
+                icon={<TrendingDown className="w-5 h-5" />}
+                sub={
+                  selectedMonth !== null
+                    ? `Anual: S/ ${fmt(totalExpense, 0)}`
+                    : `${((totalExpense / (totalIncome || 1)) * 100).toFixed(0)}% del ingreso`
+                }
+                subPositive={false}
+              />
+              {/* Net */}
+              <KPICard
+                label={
+                  selectedMonth !== null
+                    ? `Saldo (${MONTHS[selectedMonth]})`
+                    : isProjectedMode ? "Ahorro Proyectado" : "Saldo Neto"
+                }
+                value={fmtVal(displayBalance)}
+                rawValue={displayBalance}
+                color={displayBalance >= 0 ? "indigo" : "red"}
+                icon={<Wallet className="w-5 h-5" />}
+                sub={displayBalance >= 0 ? "Saldo positivo ✓" : "Déficit en período"}
+                subPositive={displayBalance >= 0}
+              />
+              {/* Pending */}
+              <KPICard
+                label="Por Pagar (Pendientes)"
+                value={fmtVal(pendingStats.payable)}
+                rawValue={pendingStats.payable}
+                color="amber"
+                icon={<Clock className="w-5 h-5" />}
+                sub={`${pendingStats.urgent.length} urgentes`}
+                subPositive={pendingStats.payable === 0}
+              />
+              {/* Piggy Bank */}
+              <KPICard
+                label="Ahorros del Chancho"
+                value={fmtVal(totalAhorrosPiggy)}
+                rawValue={totalAhorrosPiggy}
+                color="teal"
+                icon={<PiggyBank className="w-5 h-5" />}
+                sub="Fondos reservados"
+                subPositive={true}
+              />
+            </div>
+          );
+        })()}
 
         {/* ── MAIN GRID: CHART + SIDEBAR ─────────────────────────────────────── */}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
@@ -990,7 +1078,7 @@ export default function DashboardPage() {
                                   className={`absolute top-0 left-0 right-0 h-0.5 rounded-t-2xl ${isPos ? "bg-emerald-400" : "bg-rose-400"}`}
                                 />
                                 <p className="font-black uppercase tracking-widest text-[9px] text-gray-300 mb-1.5">
-                                  {mo} {YEAR}
+                                  {mo} {selectedYear}
                                 </p>
                                 <div className="space-y-1">
                                   <div className="flex justify-between">
@@ -1469,7 +1557,7 @@ export default function DashboardPage() {
           <div className="xl:col-span-1">
             <div className="flex flex-col gap-5">
               {/* Financial Health Advisor (¡Ahora primero!) */}
-              <div className="min-w-[300px] w-full h-[500px]">
+              <div className="min-w-[300px] w-full min-h-[580px] flex flex-col">
                 <PersonalAIAdvisor 
                   analysis={financialAnalysisEngine} 
                   onActionClick={handleRecommendationClick} 
@@ -1564,7 +1652,7 @@ export default function DashboardPage() {
             tiempo real
           </span>
           <span className="flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-indigo-300" /> Ciclo {YEAR}
+            <Calendar className="w-4 h-4 text-indigo-300" /> Ciclo {selectedYear}
           </span>
           <span className="flex items-center gap-2">
             <Wallet className="w-4 h-4 text-indigo-300" /> Control Financiero
