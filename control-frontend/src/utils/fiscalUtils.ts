@@ -265,11 +265,89 @@ export function calculateFiscalBreakdown(
     taxRegime?: string | null;
     department?: string | null;
     igvRate?: number | null;
+    igvAffectation?: string | null;
   }
 ): FiscalBreakdown {
   const total = Number((Number(totalAmount) || 0).toFixed(2));
   const dept = config?.department || "";
   const autoAmazonia = isAmazoniaDepartment(dept);
+
+  // Si se pasa una afectación explícita (ej. desde el modal POS o Facturación)
+  if (config?.igvAffectation === "20") {
+    return {
+      regimeCode: "AMAZONIA_EXONERADO",
+      regimeName: "Régimen Amazonía — Exonerado de IGV 0% (Ley N° 27037)",
+      shortName: "Exonerado 0%",
+      category: "AMAZONIA",
+      isExonerated: true,
+      isAmazonia: true,
+      isRestaurantes: false,
+      isNrus: false,
+      rate: 0.0,
+      incomeTaxRate: 1.5,
+      estimatedIncomeTax: Number((total * 0.015).toFixed(2)),
+      baseGravada: 0,
+      baseExonerada: total,
+      baseInafecta: 0,
+      igv: 0,
+      total,
+      legend: "BIENES TRANSFERIDOS EN LA AMAZONÍA PARA SER CONSUMIDOS EN LA MISMA - LEY N° 27037",
+      allowedDocs: ["FACTURA", "BOLETA", "NOTA_CREDITO", "GUIA_REMISION"],
+    };
+  }
+
+  if (config?.igvAffectation === "30") {
+    return {
+      regimeCode: "INAFECTO_0",
+      regimeName: "Operaciones Inafectas (0% IGV)",
+      shortName: "Inafecto 0%",
+      category: "ESPECIAL",
+      isExonerated: true,
+      isAmazonia: false,
+      isRestaurantes: false,
+      isNrus: false,
+      rate: 0.0,
+      incomeTaxRate: 1.5,
+      estimatedIncomeTax: Number((total * 0.015).toFixed(2)),
+      baseGravada: 0,
+      baseExonerada: 0,
+      baseInafecta: total,
+      igv: 0,
+      total,
+      legend: "",
+      allowedDocs: ["FACTURA", "BOLETA", "NOTA_CREDITO", "GUIA_REMISION"],
+    };
+  }
+
+  if (config?.igvAffectation === "10") {
+    const rate = config.igvRate ? Number(config.igvRate) : 18.0;
+    const isSpecialMype = rate <= 10.5;
+    const divisor = 1 + rate / 100;
+    const base = Number((total / divisor).toFixed(2));
+    const igv = Number((total - base).toFixed(2));
+    return {
+      regimeCode: isSpecialMype ? "RESTAURANTES_10" : "GENERAL_18",
+      regimeName: isSpecialMype
+        ? `Gravado ${rate}% Especial (Ley N° 31556)`
+        : `Gravado ${rate}% General (SUNAT)`,
+      shortName: `Gravado ${rate}%`,
+      category: isSpecialMype ? "ESPECIAL" : "RG",
+      isExonerated: false,
+      isAmazonia: false,
+      isRestaurantes: isSpecialMype,
+      isNrus: false,
+      rate,
+      incomeTaxRate: 1.0,
+      estimatedIncomeTax: Number((base * 0.01).toFixed(2)),
+      baseGravada: base,
+      baseExonerada: 0,
+      baseInafecta: 0,
+      igv,
+      total,
+      legend: "",
+      allowedDocs: ["FACTURA", "BOLETA", "NOTA_CREDITO", "GUIA_REMISION"],
+    };
+  }
 
   // Si no se especificó régimen pero el departamento es amazónico (ej. Madre de Dios), usar Amazonía
   let rawRegimeCode = config?.taxRegime || (autoAmazonia ? "AMAZONIA_EXONERADO" : "RER_18");

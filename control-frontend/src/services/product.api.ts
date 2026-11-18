@@ -200,6 +200,8 @@ export const checkoutCartRequest = async (data: {
   clientDenomination?: string;
   clientAddress?: string;
   clientEmail?: string;
+  igvAffectation?: string;
+  igvRate?: number;
 }) => {
   const res = await API.post("/products/checkout", data);
   return res.data;

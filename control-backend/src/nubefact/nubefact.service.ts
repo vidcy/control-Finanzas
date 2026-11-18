@@ -8,7 +8,10 @@ export class NubefactService {
 
   constructor(private readonly prisma: PrismaService) { }
 
-  async sendInvoice(saleId: string): Promise<{
+  async sendInvoice(
+    saleId: string,
+    options?: { igvAffectation?: string; igvRate?: number },
+  ): Promise<{
     success: boolean;
     pdfUrl?: string;
     xmlUrl?: string;
@@ -143,34 +146,54 @@ export class NubefactService {
         }
       }
 
-      // 3.1 Detección automática de Régimen Amazonía (Ley N° 27037 - Madre de Dios / Selva)
+      // 3.1 Detección automática de Régimen y Afectación al IGV (Exonerado / Gravado / Inafecto)
       const dept = (owner.businessDepartment || '').toLowerCase();
-      const isAmazonia =
+      const isAmazoniaRegion =
         owner.taxRegime === 'AMAZONIA_EXONERADO' ||
         owner.taxRegime === 'AMAZONIA' ||
         ['madre de dios', 'loreto', 'ucayali', 'san martín', 'san martin', 'amazonas'].some((d) =>
           dept.includes(d),
         );
 
+      // Si se envió afectación explícita desde el POS / Facturación, usarla; si no, por defecto Exonerado (Ley Amazonía)
+      const selectedAffectation = options?.igvAffectation || (isAmazoniaRegion ? '20' : '20');
+      const isExonerado = selectedAffectation === '20';
+      const isInafecto = selectedAffectation === '30';
+      const isGravado = !isExonerado && !isInafecto;
+
+      // Tasa de IGV para operaciones gravadas (18% o 10.5% / 10%)
+      const selectedRate = isGravado ? (options?.igvRate ? Number(options.igvRate) : 18.0) : 0.0;
+      const rateDivisor = isGravado ? 1 + selectedRate / 100 : 1;
+
       const amazoniaLegend = 'BIENES TRANSFERIDOS EN LA AMAZONÍA PARA SER CONSUMIDOS EN LA MISMA - LEY N° 27037';
+      const defaultObservation = isExonerado ? amazoniaLegend : undefined;
 
       // Totales generales
       const totalAmount = sale.amount;
-      const totalGravada = isAmazonia ? 0 : parseFloat((totalAmount / 1.18).toFixed(2));
-      const totalExonerada = isAmazonia ? totalAmount : 0;
-      const totalIgv = isAmazonia ? 0 : parseFloat((totalAmount - totalGravada).toFixed(2));
+      const totalGravada = isGravado ? parseFloat((totalAmount / rateDivisor).toFixed(2)) : 0;
+      const totalExonerada = isExonerado ? totalAmount : 0;
+      const totalInafecta = isInafecto ? totalAmount : 0;
+      const totalIgv = isGravado ? parseFloat((totalAmount - totalGravada).toFixed(2)) : 0;
 
       let payload: any;
 
       if (isCcofactNative) {
         // CCOFACT PRO: Motor Soberano UBL 2.1 (Corporación Ccoplex)
+        const tipoAfectacionItem = isExonerado
+          ? '20'
+          : isInafecto
+          ? '30'
+          : selectedRate <= 10.5
+          ? '10_MYPE'
+          : '10';
+
         payload = {
           idempotency_key: `sale_${sale.id}`,
           tipo_comprobante: isFactura ? '01' : '03',
           serie: serie,
           moneda: sale.currency === 'USD' ? 'USD' : 'PEN',
           forma_pago: 'Contado',
-          observaciones: isAmazonia ? amazoniaLegend : undefined,
+          observaciones: defaultObservation,
           cliente: {
             tipo_documento: docType === '-' ? '0' : docType,
             numero_documento: docNum,
@@ -184,7 +207,7 @@ export class NubefactService {
             unidad_medida: 'NIU',
             cantidad: Number(item.quantity),
             precio_unitario: Number(item.price),
-            tipo_afectacion_igv: isAmazonia ? '20' : '10',
+            tipo_afectacion_igv: tipoAfectacionItem,
           })),
           enviar_a_sunat_inmediato: true,
         };
@@ -193,11 +216,11 @@ export class NubefactService {
         const itemsPayload = sale.items.map((item, idx) => {
           const qty = item.quantity;
           const precioUnitario = item.price;
-          const valorUnitario = isAmazonia
-            ? parseFloat(precioUnitario.toFixed(10))
-            : parseFloat((precioUnitario / 1.18).toFixed(10));
+          const valorUnitario = isGravado
+            ? parseFloat((precioUnitario / rateDivisor).toFixed(10))
+            : parseFloat(precioUnitario.toFixed(10));
           const subtotal = parseFloat((valorUnitario * qty).toFixed(10));
-          const igv = isAmazonia ? 0 : parseFloat((subtotal * 0.18).toFixed(10));
+          const igv = isGravado ? parseFloat((subtotal * (selectedRate / 100)).toFixed(10)) : 0;
           const total = parseFloat((precioUnitario * qty).toFixed(10));
           const code = item.product?.sku || item.product?.customCode?.toString() || `PROD-${idx + 1}`;
 
@@ -209,7 +232,7 @@ export class NubefactService {
             valor_unitario: valorUnitario,
             precio_unitario: precioUnitario,
             subtotal: subtotal,
-            tipo_de_igv: isAmazonia ? 8 : 1, // 8 = Exonerado, 1 = Gravado
+            tipo_de_igv: isExonerado ? 8 : isInafecto ? 9 : 1, // 8 = Exonerado, 9 = Inafecto, 1 = Gravado
             igv: igv,
             total: total,
             anticipo_regularizacion: false,
@@ -232,12 +255,13 @@ export class NubefactService {
           fecha_de_emision: formattedDate,
           fecha_de_vencimiento: '',
           moneda: currencyCode,
-          porcentaje_de_igv: isAmazonia ? 0.0 : 18.0,
+          porcentaje_de_igv: selectedRate,
           total_gravada: totalGravada,
           total_exonerada: totalExonerada,
+          total_inafecta: totalInafecta,
           total_igv: totalIgv,
           total: totalAmount,
-          observaciones: isAmazonia ? amazoniaLegend : '',
+          observaciones: defaultObservation || '',
           enviar_automaticamente_a_la_sunat: true,
           enviar_automaticamente_al_cliente: false,
           items: itemsPayload,

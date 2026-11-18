@@ -416,6 +416,46 @@ export default function BusinessBillingPage() {
     setEmitItems(emitItems.filter((_, i) => i !== index));
   };
 
+  const [masterAffectation, setMasterAffectation] = useState<"20" | "10_18" | "10_MYPE" | "30">("20");
+
+  const handleApplyMasterAffectation = (choice: "20" | "10_18" | "10_MYPE" | "30") => {
+    setMasterAffectation(choice);
+    let aff = "20";
+    let type = 8;
+    let rate = 0.0;
+
+    if (choice === "20") {
+      aff = "20";
+      type = 8;
+      rate = 0.0;
+      setEmitNotes(AMAZONIA_DEFAULT_LEGEND);
+    } else if (choice === "10_18") {
+      aff = "10";
+      type = 1;
+      rate = 18.0;
+      if (emitNotes === AMAZONIA_DEFAULT_LEGEND) setEmitNotes("");
+    } else if (choice === "10_MYPE") {
+      aff = "10_MYPE";
+      type = 1;
+      rate = 10.5;
+      if (emitNotes === AMAZONIA_DEFAULT_LEGEND) setEmitNotes("");
+    } else if (choice === "30") {
+      aff = "30";
+      type = 9;
+      rate = 0.0;
+      if (emitNotes === AMAZONIA_DEFAULT_LEGEND) setEmitNotes("");
+    }
+
+    setEmitItems((prev) =>
+      prev.map((item) => ({
+        ...item,
+        igvAffectation: aff,
+        igvType: type,
+        igvRate: rate,
+      }))
+    );
+  };
+
   const handleUpdateItem = (index: number, field: keyof BillingItem, value: any) => {
     const updated = [...emitItems];
     let patch: Partial<BillingItem> = { [field]: value };
@@ -1308,6 +1348,83 @@ export default function BusinessBillingPage() {
                 </div>
               </div>
             )}
+
+            {/* SELECTOR MAESTRO DE AFECTACIÓN AL IGV (SUNAT CATÁLOGO 07) */}
+            <div className="bg-gradient-to-r from-emerald-50/60 to-blue-50/40 border border-emerald-200/90 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                    Régimen / Afectación Global de Comprobante *
+                  </span>
+                  <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
+                    🌿 Por Defecto: Exonerado (0% Amazonía)
+                  </span>
+                </div>
+                <span className="text-[10px] text-slate-500 font-bold">Aplica a todas las líneas</span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleApplyMasterAffectation("20")}
+                  className={`py-2 px-3 rounded-xl border text-xs font-black transition-all flex flex-col items-center justify-center gap-0.5 ${
+                    masterAffectation === "20"
+                      ? "bg-emerald-600 text-white border-emerald-600 shadow-md ring-2 ring-emerald-400/30"
+                      : "bg-white text-slate-600 border-slate-200 hover:border-emerald-300"
+                  }`}
+                >
+                  <span>🌿 EXONERADO (0%)</span>
+                  <span className={`text-[8px] font-bold ${masterAffectation === "20" ? "text-emerald-100" : "text-slate-400"}`}>
+                    Amazonía / Ley 27037
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleApplyMasterAffectation("10_18")}
+                  className={`py-2 px-3 rounded-xl border text-xs font-black transition-all flex flex-col items-center justify-center gap-0.5 ${
+                    masterAffectation === "10_18"
+                      ? "bg-blue-600 text-white border-blue-600 shadow-md ring-2 ring-blue-400/30"
+                      : "bg-white text-slate-600 border-slate-200 hover:border-blue-300"
+                  }`}
+                >
+                  <span>💼 GRAVADO (18%)</span>
+                  <span className={`text-[8px] font-bold ${masterAffectation === "10_18" ? "text-blue-100" : "text-slate-400"}`}>
+                    Tasa General SUNAT
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleApplyMasterAffectation("10_MYPE")}
+                  className={`py-2 px-3 rounded-xl border text-xs font-black transition-all flex flex-col items-center justify-center gap-0.5 ${
+                    masterAffectation === "10_MYPE"
+                      ? "bg-indigo-600 text-white border-indigo-600 shadow-md ring-2 ring-indigo-400/30"
+                      : "bg-white text-slate-600 border-slate-200 hover:border-indigo-300"
+                  }`}
+                >
+                  <span>🟣 GRAVADO (10.5%)</span>
+                  <span className={`text-[8px] font-bold ${masterAffectation === "10_MYPE" ? "text-indigo-100" : "text-slate-400"}`}>
+                    Ley 31556 MYPE
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleApplyMasterAffectation("30")}
+                  className={`py-2 px-3 rounded-xl border text-xs font-black transition-all flex flex-col items-center justify-center gap-0.5 ${
+                    masterAffectation === "30"
+                      ? "bg-purple-600 text-white border-purple-600 shadow-md ring-2 ring-purple-400/30"
+                      : "bg-white text-slate-600 border-slate-200 hover:border-purple-300"
+                  }`}
+                >
+                  <span>📄 INAFECTO (0%)</span>
+                  <span className={`text-[8px] font-bold ${masterAffectation === "30" ? "text-purple-100" : "text-slate-400"}`}>
+                    Fuera de Ámbito
+                  </span>
+                </button>
+              </div>
+            </div>
 
             {/* Items / Detalle de Comprobante con selector de Afectación IGV */}
             <div>

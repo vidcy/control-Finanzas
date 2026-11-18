@@ -361,6 +361,10 @@ export default function BusinessPosPage() {
   const [clientAddress, setClientAddress] = useState("");
   const [clientEmail, setClientEmail] = useState("");
 
+  // Afectación al IGV (Catálogo 07 SUNAT) - POR DEFECTO EXONERADO (0% Ley Amazonía)
+  const [posIgvAffectation, setPosIgvAffectation] = useState<"20" | "10" | "30">("20");
+  const [posIgvRate, setPosIgvRate] = useState<18.0 | 10.5>(18.0);
+
   // Reniec/SUNAT lookup state
   const [isQueryingDocument, setIsQueryingDocument] = useState(false);
 
@@ -1391,6 +1395,8 @@ export default function BusinessPosPage() {
         clientDenomination: clientDenomination.trim() || "CLIENTES VARIOS",
         clientAddress: (billingType === 'BOLETA' || billingType === 'FACTURA') ? clientAddress : undefined,
         clientEmail: (billingType === 'BOLETA' || billingType === 'FACTURA') ? clientEmail : undefined,
+        igvAffectation: posIgvAffectation,
+        igvRate: posIgvAffectation === "10" ? posIgvRate : 0.0,
       });
 
       // Mostrar resultado de facturación si aplica
@@ -4006,6 +4012,159 @@ export default function BusinessPosPage() {
                     </button>
                   );
                 })}
+              </div>
+
+              {/* SELECTOR OFICIAL DE AFECTACIÓN AL IGV (SUNAT CATÁLOGO 07) */}
+              <div className="bg-gradient-to-br from-slate-50 to-emerald-50/30 border border-emerald-200/80 rounded-2xl p-3.5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] font-black text-slate-800 uppercase tracking-wider">
+                      Afectación al IGV (SUNAT) *
+                    </span>
+                    <span className="text-[9px] font-extrabold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
+                      🌿 Por Defecto: Exonerado 0%
+                    </span>
+                  </div>
+                  <span className="text-[9px] font-bold text-slate-400">Catálogo 07</span>
+                </div>
+
+                {/* BOTONES PRINCIPALES: EXONERADO / GRAVADO / INAFECTO */}
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPosIgvAffectation("20")}
+                    className={`py-2.5 px-2 rounded-xl border text-xs font-black transition-all flex flex-col items-center justify-center gap-0.5 ${
+                      posIgvAffectation === "20"
+                        ? "bg-emerald-600 text-white border-emerald-600 shadow-md ring-2 ring-emerald-400/30"
+                        : "bg-white text-slate-600 border-slate-200 hover:border-emerald-300"
+                    }`}
+                  >
+                    <span>🌿 EXONERADO (0%)</span>
+                    <span className={`text-[8px] font-bold ${posIgvAffectation === "20" ? "text-emerald-100" : "text-slate-400"}`}>
+                      Amazonía / Selva
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPosIgvAffectation("10")}
+                    className={`py-2.5 px-2 rounded-xl border text-xs font-black transition-all flex flex-col items-center justify-center gap-0.5 ${
+                      posIgvAffectation === "10"
+                        ? "bg-blue-600 text-white border-blue-600 shadow-md ring-2 ring-blue-400/30"
+                        : "bg-white text-slate-600 border-slate-200 hover:border-blue-300"
+                    }`}
+                  >
+                    <span>💼 GRAVADO (IGV)</span>
+                    <span className={`text-[8px] font-bold ${posIgvAffectation === "10" ? "text-blue-100" : "text-slate-400"}`}>
+                      {posIgvRate}% IGV Activo
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPosIgvAffectation("30")}
+                    className={`py-2.5 px-2 rounded-xl border text-xs font-black transition-all flex flex-col items-center justify-center gap-0.5 ${
+                      posIgvAffectation === "30"
+                        ? "bg-purple-600 text-white border-purple-600 shadow-md ring-2 ring-purple-400/30"
+                        : "bg-white text-slate-600 border-slate-200 hover:border-purple-300"
+                    }`}
+                  >
+                    <span>📄 INAFECTO (0%)</span>
+                    <span className={`text-[8px] font-bold ${posIgvAffectation === "30" ? "text-purple-100" : "text-slate-400"}`}>
+                      Fuera de Ámbito
+                    </span>
+                  </button>
+                </div>
+
+                {/* SELECTOR DE TASA SI ES GRAVADO: 18% vs 10.5% (Ley 31556 MYPE) */}
+                {posIgvAffectation === "10" && (
+                  <div className="pt-2 border-t border-slate-200/80 animate-fadeIn">
+                    <span className="block text-[10px] font-black text-blue-900 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                      <span>Tasa Aplicable de IGV:</span>
+                      <span className="text-[9px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
+                        {posIgvRate === 18 ? "Tasa General SUNAT (18%)" : "Tasa Especial Reducida (10.5%)"}
+                      </span>
+                    </span>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPosIgvRate(18.0)}
+                        className={`py-2 px-3 rounded-xl border text-xs font-black transition-all flex items-center justify-between ${
+                          posIgvRate === 18.0
+                            ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                            : "bg-white text-slate-600 border-slate-200 hover:border-blue-300"
+                        }`}
+                      >
+                        <span>18% IGV Estándar</span>
+                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${posIgvRate === 18.0 ? "bg-blue-700 text-white" : "bg-slate-100 text-slate-500"}`}>
+                          Por Defecto
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setPosIgvRate(10.5)}
+                        className={`py-2 px-3 rounded-xl border text-xs font-black transition-all flex items-center justify-between ${
+                          posIgvRate === 10.5
+                            ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                            : "bg-white text-slate-600 border-slate-200 hover:border-indigo-300"
+                        }`}
+                      >
+                        <span>10.5% / 10% Tasa Especial</span>
+                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${posIgvRate === 10.5 ? "bg-indigo-700 text-white" : "bg-slate-100 text-slate-500"}`}>
+                          Ley 31556 MYPE
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* DESGLOSE FISCAL EN TIEMPO REAL */}
+                <div className="bg-white rounded-xl p-3 border border-emerald-200 text-xs font-mono space-y-1 shadow-inner">
+                  {posIgvAffectation === "20" && (
+                    <>
+                      <div className="flex justify-between text-emerald-800 font-bold text-[11px]">
+                        <span>OP. EXONERADA (0% IGV):</span>
+                        <span>S/ {total.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-400 text-[11px]">
+                        <span>I.G.V. (0.00%):</span>
+                        <span>S/ 0.00</span>
+                      </div>
+                      <p className="text-[9px] font-sans text-emerald-700 italic border-t border-emerald-100 pt-1 mt-1 font-semibold">
+                        Leyenda SUNAT: &quot;BIENES TRANSFERIDOS EN LA AMAZONÍA PARA SER CONSUMIDOS EN LA MISMA - LEY N° 27037&quot;
+                      </p>
+                    </>
+                  )}
+                  {posIgvAffectation === "30" && (
+                    <>
+                      <div className="flex justify-between text-purple-800 font-bold text-[11px]">
+                        <span>OP. INAFECTA (0% IGV):</span>
+                        <span>S/ {total.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-400 text-[11px]">
+                        <span>I.G.V. (0.00%):</span>
+                        <span>S/ 0.00</span>
+                      </div>
+                    </>
+                  )}
+                  {posIgvAffectation === "10" && (
+                    <>
+                      <div className="flex justify-between text-slate-700 text-[11px]">
+                        <span>OP. GRAVADA (BASE IMPONIBLE):</span>
+                        <span>S/ {(total / (1 + posIgvRate / 100)).toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-blue-700 font-bold text-[11px]">
+                        <span>I.G.V. ({posIgvRate.toFixed(1)}%):</span>
+                        <span>S/ {(total - total / (1 + posIgvRate / 100)).toFixed(2)}</span>
+                      </div>
+                    </>
+                  )}
+                  <div className="flex justify-between text-slate-900 font-black text-sm border-t border-slate-200 pt-1 mt-1 font-sans">
+                    <span>TOTAL A COBRAR:</span>
+                    <span>S/ {total.toFixed(2)}</span>
+                  </div>
+                </div>
               </div>
 
               {/* CAMPO DE CLIENTE SIEMPRE VISIBLE */}

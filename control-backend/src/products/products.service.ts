@@ -1262,7 +1262,10 @@ export class ProductsService {
       // Así, si NubeFacT falla, la venta ya quedó guardada y no se revierte.
       if (billingType === 'BOLETA' || billingType === 'FACTURA') {
         try {
-          const billingResult = await this.nubefactService.sendInvoice(result.saleId);
+          const billingResult = await this.nubefactService.sendInvoice(result.saleId, {
+            igvAffectation: checkoutDto.igvAffectation,
+            igvRate: checkoutDto.igvRate,
+          });
           if (billingResult.success) {
             await this.prisma.sale.update({
               where: { id: result.saleId },
