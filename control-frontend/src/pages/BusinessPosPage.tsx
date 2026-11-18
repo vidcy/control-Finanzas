@@ -1293,6 +1293,11 @@ export default function BusinessPosPage() {
         setSelectedSubCategory(firstSub);
       }
     }
+    setBillingType("TICKET_VENTA"); // Por defecto siempre Nota de Venta
+    setClientDenomination("CLIENTES VARIOS");
+    setClientDocumentNumber("");
+    setPosIgvAffectation("20");
+    setPosIgvRate(18.0);
     setAmountPaid(total.toString());
     setIsCheckoutOpen(true);
   };
@@ -1395,8 +1400,8 @@ export default function BusinessPosPage() {
         clientDenomination: clientDenomination.trim() || "CLIENTES VARIOS",
         clientAddress: (billingType === 'BOLETA' || billingType === 'FACTURA') ? clientAddress : undefined,
         clientEmail: (billingType === 'BOLETA' || billingType === 'FACTURA') ? clientEmail : undefined,
-        igvAffectation: posIgvAffectation,
-        igvRate: posIgvAffectation === "10" ? posIgvRate : 0.0,
+        igvAffectation: billingType === "TICKET_VENTA" ? undefined : posIgvAffectation,
+        igvRate: billingType === "TICKET_VENTA" ? undefined : (posIgvAffectation === "10" ? posIgvRate : 0.0),
       });
 
       // Mostrar resultado de facturación si aplica
@@ -3964,8 +3969,8 @@ export default function BusinessPosPage() {
             </div>
           )}
 
-          {/* FACTURACIÓN ELECTRÓNICA - solo si el negocio lo tiene habilitado */}
-          {user?.hasElectronicBilling && (
+          {/* FACTURACIÓN ELECTRÓNICA Y COMPROBANTE */}
+          {user?.hasElectronicBilling ? (
             <div className="space-y-4 pt-4 border-t border-gray-100">
               <div className="flex items-center justify-between">
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">Tipo de Comprobante</label>
@@ -3980,11 +3985,12 @@ export default function BusinessPosPage() {
               </div>
               <div className="grid grid-cols-3 gap-2">
                 {([
-                  { id: "TICKET_VENTA", label: "PROFORMA DE VENTA" },
-                  { id: "BOLETA", label: "Boleta" },
-                  { id: "FACTURA", label: "Factura" },
+                  { id: "TICKET_VENTA", label: "📄 NOTA DE VENTA", sub: "Control Interno" },
+                  { id: "BOLETA", label: "🧾 BOLETA DE VENTA", sub: "SUNAT B001" },
+                  { id: "FACTURA", label: "🏢 FACTURA ELECTRÓNICA", sub: "SUNAT F001" },
                 ] as const).map((opt) => {
                   const isNrusBlocked = opt.id === "FACTURA" && (user?.taxRegime === "NRUS" || user?.taxRegime === "RUS");
+                  const isSelected = billingType === opt.id;
                   return (
                     <button
                       key={opt.id}
@@ -3996,181 +4002,427 @@ export default function BusinessPosPage() {
                           return;
                         }
                         setBillingType(opt.id);
-                        setClientDocumentType(opt.id === "FACTURA" ? "6" : "1");
+                        if (opt.id === "FACTURA") {
+                          setClientDocumentType("6");
+                        } else if (opt.id === "BOLETA") {
+                          setClientDocumentType("1");
+                        }
                       }}
-                      className={`py-2.5 px-3 rounded-xl border text-xs font-black uppercase transition-all ${
-                        billingType === opt.id
-                          ? "bg-emerald-600 text-white border-emerald-600 shadow-md"
+                      className={`py-2.5 px-2 rounded-xl border text-xs font-black transition-all flex flex-col items-center justify-center gap-0.5 ${
+                        isSelected
+                          ? opt.id === "TICKET_VENTA"
+                            ? "bg-slate-800 text-white border-slate-800 shadow-md ring-2 ring-slate-400/30"
+                            : "bg-emerald-600 text-white border-emerald-600 shadow-md ring-2 ring-emerald-400/30"
                           : isNrusBlocked
                           ? "bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed"
-                          : "bg-white text-gray-500 border-gray-200 hover:border-emerald-300 cursor-pointer"
+                          : "bg-white text-gray-600 border-gray-200 hover:border-emerald-300 cursor-pointer"
                       }`}
                       title={isNrusBlocked ? "En el Nuevo RUS no se emiten facturas" : opt.label}
                     >
-                      <span>{opt.label}</span>
-                      {isNrusBlocked && <span className="block text-[8px] font-bold text-rose-500 leading-none mt-0.5">No en RUS</span>}
+                      <span className="leading-tight">{opt.label}</span>
+                      <span
+                        className={`text-[8px] font-bold ${
+                          isSelected
+                            ? opt.id === "TICKET_VENTA"
+                              ? "text-slate-300"
+                              : "text-emerald-100"
+                            : isNrusBlocked
+                            ? "text-rose-400"
+                            : "text-slate-400"
+                        }`}
+                      >
+                        {isNrusBlocked ? "No en RUS" : opt.sub}
+                      </span>
                     </button>
                   );
                 })}
               </div>
 
-              {/* SELECTOR OFICIAL DE AFECTACIÓN AL IGV (SUNAT CATÁLOGO 07) */}
-              <div className="bg-gradient-to-br from-slate-50 to-emerald-50/30 border border-emerald-200/80 rounded-2xl p-3.5 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[11px] font-black text-slate-800 uppercase tracking-wider">
-                      Afectación al IGV (SUNAT) *
-                    </span>
-                    <span className="text-[9px] font-extrabold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
-                      🌿 Por Defecto: Exonerado 0%
+              {/* VISTA A: NOTA DE VENTA (CONTROL INTERNO - TOTALMENTE SIN IGV NI REPORTE SUNAT) */}
+              {billingType === "TICKET_VENTA" && (
+                <div className="space-y-3 bg-slate-50 border border-slate-200/90 rounded-2xl p-3.5 animate-fadeIn">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-slate-200 flex items-center justify-center text-slate-700 text-sm font-bold">
+                        📄
+                      </div>
+                      <div>
+                        <p className="text-xs font-black text-slate-800 uppercase tracking-wide">
+                          Nota de Venta (Control Interno)
+                        </p>
+                        <p className="text-[10px] text-slate-500 font-medium">
+                          Comprobante interno de caja. No aplica IGV ni se declara ante la SUNAT.
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-[9px] font-black text-slate-600 bg-white border border-slate-200 px-2 py-0.5 rounded-md uppercase tracking-wider">
+                      Sin IGV
                     </span>
                   </div>
-                  <span className="text-[9px] font-bold text-slate-400">Catálogo 07</span>
+
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-700 uppercase tracking-widest mb-1 flex items-center justify-between">
+                      <span>Nombre del Cliente (Opcional)</span>
+                      <span className="text-[9px] font-bold text-slate-400">Por defecto: CLIENTES VARIOS</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="CLIENTES VARIOS"
+                      value={clientDenomination}
+                      onChange={(e) => setClientDenomination(e.target.value)}
+                      className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs font-bold bg-white outline-none focus:ring-2 focus:ring-slate-400 text-slate-800"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs">
+                    <span className="font-extrabold text-slate-600 uppercase text-[11px]">Total a Cobrar:</span>
+                    <span className="font-black text-base text-slate-900 font-mono">S/ {total.toFixed(2)}</span>
+                  </div>
                 </div>
+              )}
 
-                {/* BOTONES PRINCIPALES: EXONERADO / GRAVADO / INAFECTO */}
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setPosIgvAffectation("20")}
-                    className={`py-2.5 px-2 rounded-xl border text-xs font-black transition-all flex flex-col items-center justify-center gap-0.5 ${
-                      posIgvAffectation === "20"
-                        ? "bg-emerald-600 text-white border-emerald-600 shadow-md ring-2 ring-emerald-400/30"
-                        : "bg-white text-slate-600 border-slate-200 hover:border-emerald-300"
-                    }`}
-                  >
-                    <span>🌿 EXONERADO (0%)</span>
-                    <span className={`text-[8px] font-bold ${posIgvAffectation === "20" ? "text-emerald-100" : "text-slate-400"}`}>
-                      Amazonía / Selva
+              {/* VISTA B: FACTURACIÓN ELECTRÓNICA SUNAT (BOLETA O FACTURA) */}
+              {(billingType === "BOLETA" || billingType === "FACTURA") && (
+                <div className="space-y-3.5 animate-fadeIn">
+                  {/* BADGE OFICIAL SUNAT */}
+                  <div className="flex items-center justify-between bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">🏛️</span>
+                      <div>
+                        <p className="text-[11px] font-black text-blue-900 uppercase">
+                          Emisión Oficial SUNAT &bull; {billingType === "FACTURA" ? "Factura Electrónica (Serie F001)" : "Boleta de Venta Electrónica (Serie B001)"}
+                        </p>
+                        <p className="text-[9px] text-blue-700 font-medium">
+                          Genera XML UBL 2.1 firmado con certificado digital y CDR de SUNAT.
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-[9px] font-black bg-blue-600 text-white px-2 py-0.5 rounded-md uppercase tracking-wider">
+                      UBL 2.1
                     </span>
-                  </button>
+                  </div>
 
-                  <button
-                    type="button"
-                    onClick={() => setPosIgvAffectation("10")}
-                    className={`py-2.5 px-2 rounded-xl border text-xs font-black transition-all flex flex-col items-center justify-center gap-0.5 ${
-                      posIgvAffectation === "10"
-                        ? "bg-blue-600 text-white border-blue-600 shadow-md ring-2 ring-blue-400/30"
-                        : "bg-white text-slate-600 border-slate-200 hover:border-blue-300"
-                    }`}
-                  >
-                    <span>💼 GRAVADO (IGV)</span>
-                    <span className={`text-[8px] font-bold ${posIgvAffectation === "10" ? "text-blue-100" : "text-slate-400"}`}>
-                      {posIgvRate}% IGV Activo
-                    </span>
-                  </button>
+                  {/* SELECTOR OFICIAL DE AFECTACIÓN AL IGV (SUNAT CATÁLOGO 07) */}
+                  <div className="bg-gradient-to-br from-slate-50 to-emerald-50/30 border border-emerald-200/80 rounded-2xl p-3.5 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-black text-slate-800 uppercase tracking-wider">
+                          Afectación al IGV (SUNAT) *
+                        </span>
+                        <span className="text-[9px] font-extrabold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
+                          🌿 Por Defecto: Exonerado 0%
+                        </span>
+                      </div>
+                      <span className="text-[9px] font-bold text-slate-400">Catálogo 07</span>
+                    </div>
 
-                  <button
-                    type="button"
-                    onClick={() => setPosIgvAffectation("30")}
-                    className={`py-2.5 px-2 rounded-xl border text-xs font-black transition-all flex flex-col items-center justify-center gap-0.5 ${
-                      posIgvAffectation === "30"
-                        ? "bg-purple-600 text-white border-purple-600 shadow-md ring-2 ring-purple-400/30"
-                        : "bg-white text-slate-600 border-slate-200 hover:border-purple-300"
-                    }`}
-                  >
-                    <span>📄 INAFECTO (0%)</span>
-                    <span className={`text-[8px] font-bold ${posIgvAffectation === "30" ? "text-purple-100" : "text-slate-400"}`}>
-                      Fuera de Ámbito
-                    </span>
-                  </button>
-                </div>
-
-                {/* SELECTOR DE TASA SI ES GRAVADO: 18% vs 10.5% (Ley 31556 MYPE) */}
-                {posIgvAffectation === "10" && (
-                  <div className="pt-2 border-t border-slate-200/80 animate-fadeIn">
-                    <span className="block text-[10px] font-black text-blue-900 uppercase tracking-wider mb-1.5 flex items-center justify-between">
-                      <span>Tasa Aplicable de IGV:</span>
-                      <span className="text-[9px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
-                        {posIgvRate === 18 ? "Tasa General SUNAT (18%)" : "Tasa Especial Reducida (10.5%)"}
-                      </span>
-                    </span>
-                    <div className="grid grid-cols-2 gap-2">
+                    {/* BOTONES PRINCIPALES: EXONERADO / GRAVADO / INAFECTO */}
+                    <div className="grid grid-cols-3 gap-2">
                       <button
                         type="button"
-                        onClick={() => setPosIgvRate(18.0)}
-                        className={`py-2 px-3 rounded-xl border text-xs font-black transition-all flex items-center justify-between ${
-                          posIgvRate === 18.0
-                            ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                        onClick={() => setPosIgvAffectation("20")}
+                        className={`py-2.5 px-2 rounded-xl border text-xs font-black transition-all flex flex-col items-center justify-center gap-0.5 ${
+                          posIgvAffectation === "20"
+                            ? "bg-emerald-600 text-white border-emerald-600 shadow-md ring-2 ring-emerald-400/30"
+                            : "bg-white text-slate-600 border-slate-200 hover:border-emerald-300"
+                        }`}
+                      >
+                        <span>🌿 EXONERADO (0%)</span>
+                        <span
+                          className={`text-[8px] font-bold ${
+                            posIgvAffectation === "20" ? "text-emerald-100" : "text-slate-400"
+                          }`}
+                        >
+                          Amazonía / Selva
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setPosIgvAffectation("10")}
+                        className={`py-2.5 px-2 rounded-xl border text-xs font-black transition-all flex flex-col items-center justify-center gap-0.5 ${
+                          posIgvAffectation === "10"
+                            ? "bg-blue-600 text-white border-blue-600 shadow-md ring-2 ring-blue-400/30"
                             : "bg-white text-slate-600 border-slate-200 hover:border-blue-300"
                         }`}
                       >
-                        <span>18% IGV Estándar</span>
-                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${posIgvRate === 18.0 ? "bg-blue-700 text-white" : "bg-slate-100 text-slate-500"}`}>
-                          Por Defecto
+                        <span>💼 GRAVADO (IGV)</span>
+                        <span
+                          className={`text-[8px] font-bold ${
+                            posIgvAffectation === "10" ? "text-blue-100" : "text-slate-400"
+                          }`}
+                        >
+                          {posIgvRate}% IGV Activo
                         </span>
                       </button>
 
                       <button
                         type="button"
-                        onClick={() => setPosIgvRate(10.5)}
-                        className={`py-2 px-3 rounded-xl border text-xs font-black transition-all flex items-center justify-between ${
-                          posIgvRate === 10.5
-                            ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
-                            : "bg-white text-slate-600 border-slate-200 hover:border-indigo-300"
+                        onClick={() => setPosIgvAffectation("30")}
+                        className={`py-2.5 px-2 rounded-xl border text-xs font-black transition-all flex flex-col items-center justify-center gap-0.5 ${
+                          posIgvAffectation === "30"
+                            ? "bg-purple-600 text-white border-purple-600 shadow-md ring-2 ring-purple-400/30"
+                            : "bg-white text-slate-600 border-slate-200 hover:border-purple-300"
                         }`}
                       >
-                        <span>10.5% / 10% Tasa Especial</span>
-                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${posIgvRate === 10.5 ? "bg-indigo-700 text-white" : "bg-slate-100 text-slate-500"}`}>
-                          Ley 31556 MYPE
+                        <span>📄 INAFECTO (0%)</span>
+                        <span
+                          className={`text-[8px] font-bold ${
+                            posIgvAffectation === "30" ? "text-purple-100" : "text-slate-400"
+                          }`}
+                        >
+                          Fuera de Ámbito
                         </span>
                       </button>
                     </div>
-                  </div>
-                )}
 
-                {/* DESGLOSE FISCAL EN TIEMPO REAL */}
-                <div className="bg-white rounded-xl p-3 border border-emerald-200 text-xs font-mono space-y-1 shadow-inner">
-                  {posIgvAffectation === "20" && (
-                    <>
-                      <div className="flex justify-between text-emerald-800 font-bold text-[11px]">
-                        <span>OP. EXONERADA (0% IGV):</span>
+                    {/* SELECTOR DE TASA SI ES GRAVADO: 18% vs 10.5% (Ley 31556 MYPE) */}
+                    {posIgvAffectation === "10" && (
+                      <div className="pt-2 border-t border-slate-200/80 animate-fadeIn">
+                        <span className="block text-[10px] font-black text-blue-900 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                          <span>Tasa Aplicable de IGV:</span>
+                          <span className="text-[9px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
+                            {posIgvRate === 18 ? "Tasa General SUNAT (18%)" : "Tasa Especial Reducida (10.5%)"}
+                          </span>
+                        </span>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setPosIgvRate(18.0)}
+                            className={`py-2 px-3 rounded-xl border text-xs font-black transition-all flex items-center justify-between ${
+                              posIgvRate === 18.0
+                                ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                                : "bg-white text-slate-600 border-slate-200 hover:border-blue-300"
+                            }`}
+                          >
+                            <span>18% IGV Estándar</span>
+                            <span
+                              className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                                posIgvRate === 18.0 ? "bg-blue-700 text-white" : "bg-slate-100 text-slate-500"
+                              }`}
+                            >
+                              Por Defecto
+                            </span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setPosIgvRate(10.5)}
+                            className={`py-2 px-3 rounded-xl border text-xs font-black transition-all flex items-center justify-between ${
+                              posIgvRate === 10.5
+                                ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                                : "bg-white text-slate-600 border-slate-200 hover:border-indigo-300"
+                            }`}
+                          >
+                            <span>10.5% / 10% Tasa Especial</span>
+                            <span
+                              className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                                posIgvRate === 10.5 ? "bg-indigo-700 text-white" : "bg-slate-100 text-slate-500"
+                              }`}
+                            >
+                              Ley 31556 MYPE
+                            </span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* DESGLOSE FISCAL EN TIEMPO REAL */}
+                    <div className="bg-white rounded-xl p-3 border border-emerald-200 text-xs font-mono space-y-1 shadow-inner">
+                      {posIgvAffectation === "20" && (
+                        <>
+                          <div className="flex justify-between text-emerald-800 font-bold text-[11px]">
+                            <span>OP. EXONERADA (0% IGV):</span>
+                            <span>S/ {total.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between text-slate-400 text-[11px]">
+                            <span>I.G.V. (0.00%):</span>
+                            <span>S/ 0.00</span>
+                          </div>
+                          <p className="text-[9px] font-sans text-emerald-700 italic border-t border-emerald-100 pt-1 mt-1 font-semibold">
+                            Leyenda SUNAT: &quot;BIENES TRANSFERIDOS EN LA AMAZONÍA PARA SER CONSUMIDOS EN LA MISMA - LEY N° 27037&quot;
+                          </p>
+                        </>
+                      )}
+                      {posIgvAffectation === "30" && (
+                        <>
+                          <div className="flex justify-between text-purple-800 font-bold text-[11px]">
+                            <span>OP. INAFECTA (0% IGV):</span>
+                            <span>S/ {total.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between text-slate-400 text-[11px]">
+                            <span>I.G.V. (0.00%):</span>
+                            <span>S/ 0.00</span>
+                          </div>
+                        </>
+                      )}
+                      {posIgvAffectation === "10" && (
+                        <>
+                          <div className="flex justify-between text-slate-700 text-[11px]">
+                            <span>OP. GRAVADA (BASE IMPONIBLE):</span>
+                            <span>S/ {(total / (1 + posIgvRate / 100)).toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between text-blue-700 font-bold text-[11px]">
+                            <span>I.G.V. ({posIgvRate.toFixed(1)}%):</span>
+                            <span>S/ {(total - total / (1 + posIgvRate / 100)).toFixed(2)}</span>
+                          </div>
+                        </>
+                      )}
+                      <div className="flex justify-between text-slate-900 font-black text-sm border-t border-slate-200 pt-1 mt-1 font-sans">
+                        <span>TOTAL A COBRAR:</span>
                         <span>S/ {total.toFixed(2)}</span>
                       </div>
-                      <div className="flex justify-between text-slate-400 text-[11px]">
-                        <span>I.G.V. (0.00%):</span>
-                        <span>S/ 0.00</span>
-                      </div>
-                      <p className="text-[9px] font-sans text-emerald-700 italic border-t border-emerald-100 pt-1 mt-1 font-semibold">
-                        Leyenda SUNAT: &quot;BIENES TRANSFERIDOS EN LA AMAZONÍA PARA SER CONSUMIDOS EN LA MISMA - LEY N° 27037&quot;
-                      </p>
-                    </>
-                  )}
-                  {posIgvAffectation === "30" && (
-                    <>
-                      <div className="flex justify-between text-purple-800 font-bold text-[11px]">
-                        <span>OP. INAFECTA (0% IGV):</span>
-                        <span>S/ {total.toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between text-slate-400 text-[11px]">
-                        <span>I.G.V. (0.00%):</span>
-                        <span>S/ 0.00</span>
-                      </div>
-                    </>
-                  )}
-                  {posIgvAffectation === "10" && (
-                    <>
-                      <div className="flex justify-between text-slate-700 text-[11px]">
-                        <span>OP. GRAVADA (BASE IMPONIBLE):</span>
-                        <span>S/ {(total / (1 + posIgvRate / 100)).toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between text-blue-700 font-bold text-[11px]">
-                        <span>I.G.V. ({posIgvRate.toFixed(1)}%):</span>
-                        <span>S/ {(total - total / (1 + posIgvRate / 100)).toFixed(2)}</span>
-                      </div>
-                    </>
-                  )}
-                  <div className="flex justify-between text-slate-900 font-black text-sm border-t border-slate-200 pt-1 mt-1 font-sans">
-                    <span>TOTAL A COBRAR:</span>
-                    <span>S/ {total.toFixed(2)}</span>
+                    </div>
                   </div>
+
+                  {/* DATOS DEL CLIENTE PARA COMPROBANTE SUNAT */}
+                  <div className="space-y-3 bg-emerald-50/60 border border-emerald-200/80 rounded-2xl p-4">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] font-black text-emerald-800 uppercase tracking-widest mb-1">
+                          Tipo Doc. *
+                        </label>
+                        <select
+                          value={clientDocumentType}
+                          onChange={(e) => setClientDocumentType(e.target.value)}
+                          disabled={billingType === "FACTURA"}
+                          className="w-full px-3 py-2 border border-emerald-200 rounded-xl text-xs font-bold bg-white outline-none focus:ring-2 focus:ring-emerald-400 disabled:opacity-60"
+                        >
+                          {billingType === "FACTURA" ? (
+                            <option value="6">RUC (Registro Único de Contribuyente)</option>
+                          ) : (
+                            <>
+                              <option value="1">DNI (Doc. Nacional de Identidad)</option>
+                              <option value="6">RUC</option>
+                              <option value="-">Sin Documento / Varios</option>
+                            </>
+                          )}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black text-emerald-800 uppercase tracking-widest mb-1">
+                          {billingType === "FACTURA" ? "RUC *" : "Número Doc."}
+                        </label>
+                        <div className="flex gap-1.5">
+                          <input
+                            type="text"
+                            placeholder={clientDocumentType === "6" ? "11 dígitos" : "8 dígitos"}
+                            maxLength={clientDocumentType === "6" ? 11 : 8}
+                            value={clientDocumentNumber}
+                            onChange={(e) => setClientDocumentNumber(e.target.value.replace(/\D/g, ""))}
+                            className="flex-1 min-w-0 px-3 py-2 border border-emerald-200 rounded-xl text-xs font-bold bg-white outline-none focus:ring-2 focus:ring-emerald-400"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleQueryDocument}
+                            disabled={
+                              isQueryingDocument ||
+                              (clientDocumentNumber.length !== 8 && clientDocumentNumber.length !== 11)
+                            }
+                            className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:opacity-70 text-white rounded-xl flex items-center justify-center transition-all active:scale-95 shadow-sm"
+                            title="Buscar en Reniec/SUNAT"
+                          >
+                            <Search className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-black text-emerald-800 uppercase tracking-widest mb-1 flex items-center justify-between">
+                        <span>{billingType === "FACTURA" ? "Razón Social *" : "Nombres y Apellidos *"}</span>
+                        {billingType === "BOLETA" && total < 700 && (
+                          <span className="text-[9px] font-bold text-emerald-600">Opcional para Boleta &lt; S/ 700</span>
+                        )}
+                        {billingType === "BOLETA" && total >= 700 && (
+                          <span className="text-[9px] font-bold text-amber-700">Obligatorio por ley SUNAT</span>
+                        )}
+                      </label>
+                      <input
+                        type="text"
+                        placeholder={billingType === "FACTURA" ? "EMPRESA S.A.C." : "CLIENTES VARIOS"}
+                        value={clientDenomination}
+                        onChange={(e) => setClientDenomination(e.target.value)}
+                        className="w-full px-3.5 py-2.5 border border-emerald-200 rounded-xl text-xs font-bold bg-white outline-none focus:ring-2 focus:ring-emerald-400 text-slate-800"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] font-black text-emerald-800 uppercase tracking-widest mb-1">
+                          Dirección (Opc.)
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Av. Los Árboles 123"
+                          value={clientAddress}
+                          onChange={(e) => setClientAddress(e.target.value)}
+                          className="w-full px-3 py-2 border border-emerald-200 rounded-xl text-xs font-bold bg-white outline-none focus:ring-2 focus:ring-emerald-400"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black text-emerald-800 uppercase tracking-widest mb-1">
+                          Correo (Opc.)
+                        </label>
+                        <input
+                          type="email"
+                          placeholder="cliente@email.com"
+                          value={clientEmail}
+                          onChange={(e) => setClientEmail(e.target.value)}
+                          className="w-full px-3 py-2 border border-emerald-200 rounded-xl text-xs font-bold bg-white outline-none focus:ring-2 focus:ring-emerald-400"
+                        />
+                      </div>
+                    </div>
+
+                    {/* ALERTA NORMATIVA: BOLETA >= 700 REQUIERE DNI Y NOMBRES */}
+                    {billingType === "BOLETA" &&
+                      total >= 700 &&
+                      (!clientDocumentNumber ||
+                        clientDocumentNumber.trim().length !== 8 ||
+                        !clientDenomination ||
+                        clientDenomination.trim().toUpperCase() === "CLIENTES VARIOS") && (
+                        <div className="text-[11px] text-amber-900 font-bold bg-amber-50 border border-amber-300 rounded-xl p-3 flex items-start gap-2">
+                          <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                          <div>
+                            <span className="font-black text-amber-950">
+                              Exigencia Legal SUNAT (R.S. N° 193-2020/SUNAT):
+                            </span>
+                            <p className="font-normal text-[10px] text-amber-800 mt-0.5">
+                              Toda Boleta de Venta igual o mayor a S/ 700.00 requiere consignar obligatoriamente el
+                              DNI (8 dígitos) y los apellidos y nombres completos del comprador. No se permite
+                              &quot;CLIENTES VARIOS&quot;.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                  </div>
+
+                  {/* ALERTA BANCARIZACIÓN OBLIGATORIA (TOTAL >= 2000 - D.L. 1529 / Ley 28194) */}
+                  {total >= 2000 && (
+                    <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-amber-900 text-xs flex items-start gap-2.5">
+                      <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-bold">Alerta de Bancarización Obligatoria (D.L. N° 1529 / Ley N° 28194)</p>
+                        <p className="text-[11px] text-amber-800 mt-0.5">
+                          Para operaciones iguales o mayores a S/ 2,000.00 o USD 500.00, el pago debe realizarse
+                          mediante medios de pago bancarizados (transferencia, tarjeta de débito/crédito, Yape/Plin o
+                          depósito en cuenta) para tener validez tributaria ante SUNAT.
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
-
-              {/* CAMPO DE CLIENTE SIEMPRE VISIBLE */}
-              <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 space-y-2">
-                <label className="block text-[10px] font-black text-slate-700 uppercase tracking-widest flex items-center justify-between">
-                  <span>{billingType === "FACTURA" ? "Razón Social *" : "Nombre del Cliente"}</span>
+              )}
+            </div>
+          ) : (
+            /* SI EL NEGOCIO NO TIENE FACTURACIÓN ELECTRÓNICA ACTIVA */
+            <div className="space-y-3 pt-4 border-t border-gray-100">
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">
+                Datos del Comprobante (Nota de Venta)
+              </label>
+              <div>
+                <label className="block text-[10px] font-black text-slate-700 uppercase tracking-widest mb-1 flex items-center justify-between">
+                  <span>Nombre del Cliente (Opcional)</span>
                   <span className="text-[9px] font-bold text-slate-400">Por defecto: CLIENTES VARIOS</span>
                 </label>
                 <input
@@ -4178,99 +4430,9 @@ export default function BusinessPosPage() {
                   placeholder="CLIENTES VARIOS"
                   value={clientDenomination}
                   onChange={(e) => setClientDenomination(e.target.value)}
-                  className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs font-black bg-white outline-none focus:ring-2 focus:ring-emerald-400 text-slate-800"
+                  className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs font-bold bg-white outline-none focus:ring-2 focus:ring-slate-400 text-slate-800"
                 />
               </div>
-
-              {(billingType === "BOLETA" || billingType === "FACTURA") && (
-                <div className="space-y-3 bg-emerald-50/60 border border-emerald-100 rounded-2xl p-4 animate-fadeIn">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[10px] font-black text-emerald-800 uppercase tracking-widest mb-1">Tipo Doc.</label>
-                      <select
-                        value={clientDocumentType}
-                        onChange={(e) => setClientDocumentType(e.target.value)}
-                        disabled={billingType === "FACTURA"}
-                        className="w-full px-3 py-2 border border-emerald-200 rounded-xl text-xs font-bold bg-white outline-none focus:ring-2 focus:ring-emerald-400 disabled:opacity-60"
-                      >
-                        <option value="1">DNI</option>
-                        <option value="6">RUC</option>
-                        <option value="-">Varios</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-black text-emerald-800 uppercase tracking-widest mb-1">
-                        {billingType === "FACTURA" ? "RUC *" : "Número Doc."}
-                      </label>
-                      <div className="flex gap-1.5">
-                        <input
-                          type="text"
-                          placeholder={clientDocumentType === "6" ? "11 dígitos" : "8 dígitos"}
-                          maxLength={clientDocumentType === "6" ? 11 : 8}
-                          value={clientDocumentNumber}
-                          onChange={(e) => setClientDocumentNumber(e.target.value.replace(/\D/g, ""))}
-                          className="flex-1 min-w-0 px-3 py-2 border border-emerald-200 rounded-xl text-xs font-bold bg-white outline-none focus:ring-2 focus:ring-emerald-400"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleQueryDocument}
-                          disabled={isQueryingDocument || (clientDocumentNumber.length !== 8 && clientDocumentNumber.length !== 11)}
-                          className="px-3 py-2 bg-emerald-600 hover:bg-emerald-750 disabled:bg-gray-200 disabled:text-gray-400 disabled:opacity-70 text-white rounded-xl flex items-center justify-center transition-all active:scale-95 shadow-sm"
-                          title="Buscar en Reniec/SUNAT"
-                        >
-                          <Search className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[10px] font-black text-emerald-800 uppercase tracking-widest mb-1">Dirección (Opc.)</label>
-                      <input
-                        type="text"
-                        placeholder="Av. Los Árboles 123"
-                        value={clientAddress}
-                        onChange={(e) => setClientAddress(e.target.value)}
-                        className="w-full px-3 py-2 border border-emerald-200 rounded-xl text-xs font-bold bg-white outline-none focus:ring-2 focus:ring-emerald-400"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-black text-emerald-800 uppercase tracking-widest mb-1">Correo (Opc.)</label>
-                      <input
-                        type="email"
-                        placeholder="cliente@email.com"
-                        value={clientEmail}
-                        onChange={(e) => setClientEmail(e.target.value)}
-                        className="w-full px-3 py-2 border border-emerald-200 rounded-xl text-xs font-bold bg-white outline-none focus:ring-2 focus:ring-emerald-400"
-                      />
-                    </div>
-                  </div>
-                  {billingType === "BOLETA" && total >= 700 && (!clientDocumentNumber || clientDocumentNumber.trim().length < 8) && (
-                    <div className="text-[11px] text-amber-800 font-bold bg-amber-50 border border-amber-300 rounded-xl p-3 flex items-start gap-2">
-                      <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
-                      <div>
-                        <span>Exigencia Legal SUNAT (R.S. N° 193-2020):</span>
-                        <p className="font-normal text-[10px] text-amber-700 mt-0.5">
-                          Para Boletas iguales o mayores a S/ 700.00 es obligatorio ingresar DNI válido (8 dígitos) y nombres completos del cliente.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Alerta de Bancarización Obligatoria (> S/ 2,000 o USD 500 - D.L. 1529 / Ley 28194) */}
-              {total >= 2000 && (
-                <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-amber-900 text-xs flex items-start gap-2.5">
-                  <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-bold">Alerta de Bancarización Obligatoria (D.L. N° 1529 / Ley N° 28194)</p>
-                    <p className="text-[11px] text-amber-800 mt-0.5">
-                      Para operaciones iguales o mayores a S/ 2,000.00, el pago debe realizarse mediante medios bancarizados (transferencia, tarjeta o depósito en cuenta) para sustentar costo o gasto deducible ante SUNAT.
-                    </p>
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
