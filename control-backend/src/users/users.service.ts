@@ -16,7 +16,7 @@ export class UsersService {
     private prisma: PrismaService,
     private categoryService: CategoriesService,
     private filesService: FilesService,
-  ) {}
+  ) { }
   async createUsers(data: any) {
     const existingUser = await this.findByEmail(data.email);
     if (existingUser) {
@@ -88,10 +88,10 @@ export class UsersService {
               data.taxRegime === 'INAFECTO_0' ||
               data.taxRegime === 'NRUS' ||
               data.taxRegime === 'RUS'
-            ? 0.0
-            : data.taxRegime === 'RESTAURANTE_10' || data.taxRegime === 'RESTAURANTES_10'
-            ? 10.0
-            : 18.0,
+              ? 0.0
+              : data.taxRegime === 'RESTAURANTE_10' || data.taxRegime === 'RESTAURANTES_10'
+                ? 10.0
+                : 18.0,
         businessDepartment: data.businessDepartment || null,
         isActive: data.isActive !== undefined ? data.isActive : true,
         parentId: data.parentId || null,
@@ -192,8 +192,8 @@ export class UsersService {
     if (data.taxRegime !== undefined) updateData.taxRegime = data.taxRegime;
     if (data.igvRate !== undefined) updateData.igvRate = Number(data.igvRate);
     if (data.businessDepartment !== undefined) updateData.businessDepartment = data.businessDepartment;
-    if (data.nubefactUrl !== undefined) updateData.nubefactUrl = data.nubefactUrl;
-    if (data.nubefactToken !== undefined) updateData.nubefactToken = data.nubefactToken;
+    if (data.ccofactUrl !== undefined) updateData.ccofactUrl = data.ccofactUrl;
+    if (data.ccofactApiKey !== undefined) updateData.ccofactApiKey = data.ccofactApiKey;
     if (data.password && String(data.password).trim() !== '') {
       updateData.password = await bcrypt.hash(String(data.password).trim(), 10);
     }
@@ -231,8 +231,8 @@ export class UsersService {
         agentRolePlural: true,
         defaultCommissionModel: true,
         hasElectronicBilling: true,
-        nubefactUrl: true,
-        nubefactToken: true,
+        ccofactUrl: true,
+        ccofactApiKey: true,
         isSelfRegistered: true,
         trialEndsAt: true,
         taxRegime: true,
@@ -293,8 +293,8 @@ export class UsersService {
       'agentRoleSingular',
       'agentRolePlural',
       'defaultCommissionModel',
-      'nubefactUrl',
-      'nubefactToken',
+      'ccofactUrl',
+      'ccofactApiKey',
       'catalogConfig',
       'businessAddress',
       'businessPhone',
@@ -319,11 +319,11 @@ export class UsersService {
     if (data.businessSlug !== undefined) {
       const cleanSlug = data.businessSlug
         ? String(data.businessSlug)
-            .toLowerCase()
-            .trim()
-            .replace(/[^a-z0-9_-]/g, '-')
-            .replace(/-+/g, '-')
-            .replace(/^-|-$/g, '')
+          .toLowerCase()
+          .trim()
+          .replace(/[^a-z0-9_-]/g, '-')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '')
         : null;
 
       if (cleanSlug) {
@@ -432,8 +432,8 @@ export class UsersService {
         agentRolePlural: true,
         defaultCommissionModel: true,
         hasElectronicBilling: true,
-        nubefactUrl: true,
-        nubefactToken: true,
+        ccofactUrl: true,
+        ccofactApiKey: true,
         businessAddress: true,
         businessPhone: true,
         businessEmail: true,

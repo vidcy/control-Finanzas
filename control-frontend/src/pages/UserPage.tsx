@@ -1522,7 +1522,7 @@ export default function UserPage() {
                   {hasElectronicBilling && (
                     <p className="text-[11px] text-emerald-700 font-semibold bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-2.5 flex items-center gap-2">
                       <Zap className="w-3.5 h-3.5 flex-shrink-0" />
-                      El usuario configurará sus credenciales NubeFacT desde su panel de negocio.
+                      El usuario configurará sus credenciales CCOFACT PRO desde su panel de negocio.
                     </p>
                   )}
 

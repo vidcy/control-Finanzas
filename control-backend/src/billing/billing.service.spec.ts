@@ -1,14 +1,14 @@
-﻿import { Test, TestingModule } from '@nestjs/testing';
+import { Test, TestingModule } from '@nestjs/testing';
 import { BillingService } from './billing.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { NubefactService } from '../nubefact/nubefact.service';
+import { CcofactService } from '../ccofact/ccofact.service';
 import { BadRequestException } from '@nestjs/common';
 import { BillingDocTypeEnum } from './emit-billing.dto';
 
 describe('BillingService (Unit Tests)', () => {
   let service: BillingService;
   let prismaMock: any;
-  let nubefactMock: any;
+  let ccofactMock: any;
 
   beforeEach(async () => {
     prismaMock = {
@@ -27,7 +27,7 @@ describe('BillingService (Unit Tests)', () => {
       },
     };
 
-    nubefactMock = {
+    ccofactMock = {
       sendInvoice: jest.fn(),
     };
 
@@ -35,7 +35,7 @@ describe('BillingService (Unit Tests)', () => {
       providers: [
         BillingService,
         { provide: PrismaService, useValue: prismaMock },
-        { provide: NubefactService, useValue: nubefactMock },
+        { provide: CcofactService, useValue: ccofactMock },
       ],
     }).compile();
 
@@ -72,13 +72,13 @@ describe('BillingService (Unit Tests)', () => {
   describe('validateCustomerIdentity', () => {
     it('should pass validation for a valid 11-digit RUC starting with 20', () => {
       expect(() => {
-        service.validateCustomerIdentity(BillingDocTypeEnum.FACTURA, '6', '20601234567');
+        service.validateCustomerIdentity(BillingDocTypeEnum.FACTURA, '6', '20601234567', 'EMPRESA TEST SAC');
       }).not.toThrow();
     });
 
     it('should pass validation for a valid 11-digit RUC starting with 10', () => {
       expect(() => {
-        service.validateCustomerIdentity(BillingDocTypeEnum.FACTURA, '6', '10456789012');
+        service.validateCustomerIdentity(BillingDocTypeEnum.FACTURA, '6', '10456789012', 'JUAN PEREZ');
       }).not.toThrow();
     });
 

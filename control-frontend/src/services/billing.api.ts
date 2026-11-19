@@ -105,7 +105,8 @@ export interface BillingConfig {
   businessRuc: string;
   businessReason: string;
   businessName: string;
-  nubefactUrl: string;
+  ccofactUrl?: string;
+  ccofactApiKey?: string;
   hasToken: boolean;
 }
 
@@ -179,8 +180,8 @@ export const updateBillingConfigRequest = async (config: {
   businessRuc?: string;
   businessReason?: string;
   businessName?: string;
-  nubefactUrl?: string;
-  nubefactToken?: string;
+  ccofactUrl?: string;
+  ccofactApiKey?: string;
 }) => {
   const { data } = await axios.put('/billing/config', config);
   return data;

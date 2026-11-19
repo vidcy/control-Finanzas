@@ -109,8 +109,8 @@ export class BillingController {
       businessRuc?: string;
       businessReason?: string;
       businessName?: string;
-      nubefactUrl?: string;
-      nubefactToken?: string;
+      ccofactUrl?: string;
+      ccofactApiKey?: string;
     },
   ) {
     const ownerId = req.user.parentId || req.user.id;

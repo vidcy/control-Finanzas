@@ -163,12 +163,10 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
   const [igvRate, setIgvRate] = useState<number>(user?.igvRate !== undefined ? user.igvRate : 18);
   const [businessLogo, setBusinessLogo] = useState<string | File>(user?.businessLogo || "");
   const [businessBanner, setBusinessBanner] = useState<string | File>(user?.businessBanner || "");
-  const [nubefactUrl, setNubefactUrl] = useState(user?.nubefactUrl || "");
-  const [nubefactToken, setNubefactToken] = useState(user?.nubefactToken || "");
+  const [ccofactUrl, setCcofactUrl] = useState(user?.ccofactUrl || "");
+  const [ccofactApiKey, setCcofactApiKey] = useState(user?.ccofactApiKey || "");
   const [hasElectronicBilling, setHasElectronicBilling] = useState<boolean>(Boolean(user?.hasElectronicBilling));
-  const [billingProvider, setBillingProvider] = useState<"CCOFACT" | "NUBEFACT">(
-    user?.nubefactUrl?.toLowerCase().includes("nubefact.com") ? "NUBEFACT" : "CCOFACT"
-  );
+
   const [showBillingToken, setShowBillingToken] = useState(false);
   const [isTestingBilling, setIsTestingBilling] = useState(false);
   const [businessSlug, setBusinessSlug] = useState(user?.businessSlug || "");
@@ -221,8 +219,8 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       setIgvRate(user.igvRate !== undefined ? user.igvRate : (initialRegime === "AMAZONIA_EXONERADO" ? 0 : 18));
       setBusinessLogo(user.businessLogo || "");
       setBusinessBanner(user.businessBanner || "");
-      setNubefactUrl(user.nubefactUrl || "");
-      setNubefactToken(user.nubefactToken || "");
+      setCcofactUrl(user.ccofactUrl || "");
+      setCcofactApiKey(user.ccofactApiKey || "");
       setIsCatalogActive((user as any)?.catalogConfig?.isEnabled !== false);
       setBusinessSlug(user.businessSlug || getStoreCatalogSlug(user) || "");
 
@@ -250,12 +248,10 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
         }
         if (fresh.businessLogo !== undefined) setBusinessLogo(fresh.businessLogo || "");
         if (fresh.businessBanner !== undefined) setBusinessBanner(fresh.businessBanner || "");
-        if (fresh.nubefactUrl !== undefined) setNubefactUrl(fresh.nubefactUrl || "");
-        if (fresh.nubefactToken !== undefined) setNubefactToken(fresh.nubefactToken || "");
+        if (fresh.ccofactUrl !== undefined) setCcofactUrl(fresh.ccofactUrl || "");
+        if (fresh.ccofactApiKey !== undefined) setCcofactApiKey(fresh.ccofactApiKey || "");
         if (fresh.hasElectronicBilling !== undefined) setHasElectronicBilling(Boolean(fresh.hasElectronicBilling));
-        if (fresh.nubefactUrl) {
-          setBillingProvider(fresh.nubefactUrl.toLowerCase().includes("nubefact.com") ? "NUBEFACT" : "CCOFACT");
-        }
+
         if (fresh.businessSlug !== undefined) setBusinessSlug(fresh.businessSlug || "");
         if (fresh.catalogConfig?.isEnabled !== undefined) {
           setIsCatalogActive(fresh.catalogConfig.isEnabled !== false);
@@ -265,22 +261,26 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
   }, [isProfileModalOpen]);
 
   const handleTestBillingConnection = async () => {
-    if (!nubefactUrl || !nubefactToken) {
+    if (!ccofactUrl || !ccofactApiKey) {
       toast.error("Ingresa la URL y el Token / API Key de CCOFACT PRO para probar");
       return;
     }
     setIsTestingBilling(true);
-    const toastId = toast.loading("Verificando enlace con el facturador electrónico...");
+    const toastId = toast.loading("Verificando enlace con CCOFACT PRO Enterprise...");
     try {
-      const isLocal = nubefactUrl.includes("localhost") || nubefactUrl.includes("127.0.0.1");
-      const testUrl = isLocal ? "http://localhost:3000/api/v1/health" : nubefactUrl;
-      const res = await fetch(testUrl, {
+      let statusUrl = ccofactUrl.includes("/emitir")
+        ? ccofactUrl.replace(/\/emitir\/?$/, "/status")
+        : `${ccofactUrl.replace(/\/+$/, "")}/status`;
+
+      const res = await fetch(statusUrl, {
         method: "GET",
-        headers: { "x-api-key": nubefactToken }
+        headers: { "x-api-key": ccofactApiKey }
       }).catch(() => null);
 
-      if (res && (res.status === 200 || res.status === 404 || res.status === 405)) {
-        toast.success("¡Enlace verificado con CCOFACT PRO! El facturador responde correctamente.", { id: toastId });
+      if (res && (res.status === 200 || res.status === 204)) {
+        toast.success("¡Enlace verificado con CCOFACT PRO! Motor fiscal activo y listo.", { id: toastId });
+      } else if (res && (res.status === 401 || res.status === 403)) {
+        toast.error("Servidor alcanzado, pero el API Key es inválido o no autorizado.", { id: toastId });
       } else {
         toast.success("Servidor CCOFACT PRO configurado y listo para emisión UBL 2.1.", { id: toastId });
       }
@@ -318,8 +318,8 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       const cleanSlug = businessSlug
         ? generateCatalogSlug(businessSlug)
         : businessName
-        ? generateCatalogSlug(businessName)
-        : null;
+          ? generateCatalogSlug(businessName)
+          : null;
 
       const currentConfig = (user as any)?.catalogConfig || {};
       const updatedConfig = {
@@ -349,8 +349,8 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
         igvRate: Number(igvRate),
         businessLogo: finalLogoUrl || null,
         businessBanner: finalBannerUrl || null,
-        nubefactUrl: nubefactUrl || null,
-        nubefactToken: nubefactToken || null,
+        ccofactUrl: ccofactUrl || null,
+        ccofactApiKey: ccofactApiKey || null,
         hasElectronicBilling: hasElectronicBilling,
         catalogConfig: updatedConfig,
       });
@@ -378,8 +378,8 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
         igvRate: Number(igvRate),
         businessLogo: finalLogoUrl || null,
         businessBanner: finalBannerUrl || null,
-        nubefactUrl: nubefactUrl || null,
-        nubefactToken: nubefactToken || null,
+        ccofactUrl: ccofactUrl || null,
+        ccofactApiKey: ccofactApiKey || null,
         catalogConfig: updatedConfig,
       };
       setUser(updatedUser);
@@ -961,11 +961,10 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                   navigate("/leads?scope=PLATFORM");
                   setIsMobileMenuOpen(false);
                 }}
-                className={`w-full p-3 rounded-2xl flex items-center justify-between group transition-all cursor-pointer shadow-md border ${
-                  location.pathname === "/leads" && (!location.search || location.search.includes("scope=PLATFORM"))
+                className={`w-full p-3 rounded-2xl flex items-center justify-between group transition-all cursor-pointer shadow-md border ${location.pathname === "/leads" && (!location.search || location.search.includes("scope=PLATFORM"))
                     ? "bg-gradient-to-r from-purple-700 via-indigo-700 to-indigo-900 text-white shadow-purple-500/25 border-purple-500"
                     : "bg-gradient-to-r from-purple-50 to-indigo-50 hover:from-purple-100 hover:to-indigo-100 text-purple-950 border-purple-200/70"
-                }`}
+                  }`}
               >
                 <div className="flex items-center gap-2.5">
                   <div className={`p-1.5 rounded-xl ${location.pathname === "/leads" && (!location.search || location.search.includes("scope=PLATFORM")) ? "bg-white/20 text-white" : "bg-purple-600 text-white shadow-sm"}`}>
@@ -989,11 +988,10 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                   navigate("/users");
                   setIsMobileMenuOpen(false);
                 }}
-                className={`w-full p-3 rounded-2xl flex items-center justify-between group transition-all cursor-pointer shadow-md border ${
-                  location.pathname === "/users"
+                className={`w-full p-3 rounded-2xl flex items-center justify-between group transition-all cursor-pointer shadow-md border ${location.pathname === "/users"
                     ? "bg-gradient-to-r from-purple-600 to-indigo-700 text-white shadow-purple-500/25 border-purple-500"
                     : "bg-gradient-to-r from-purple-50 to-indigo-50 hover:from-purple-100 hover:to-indigo-100 text-purple-950 border-purple-200/70"
-                }`}
+                  }`}
               >
                 <div className="flex items-center gap-2.5">
                   <div className={`p-1.5 rounded-xl ${location.pathname === "/users" ? "bg-white/20 text-white" : "bg-purple-600 text-white shadow-sm"}`}>
@@ -1018,31 +1016,31 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
           {/* ACCESO RÁPIDO A MI CATÁLOGO (SOLO SI ESTÁ ACTIVADO EN EL PERFIL DE NEGOCIO) */}
           {(activeWorkspace === "BUSINESS" || user?.profiles?.includes("BUSINESS")) &&
             (user as any)?.catalogConfig?.isEnabled !== false && (
-            <div className="px-2 pt-2 animate-fadeIn">
-              <button
-                type="button"
-                onClick={() => window.open(getStoreCatalogUrl(user), "_blank")}
-                className="w-full p-2.5 rounded-2xl bg-gradient-to-r from-indigo-50/90 via-purple-50/70 to-blue-50/90 border border-indigo-200/80 hover:border-indigo-400 text-slate-800 flex items-center gap-2 group hover:shadow-md transition-all cursor-pointer shadow-xs overflow-hidden"
-                title={`Ver catálogo de ${user?.businessName || "mi negocio"}`}
-              >
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center text-white shrink-0 shadow-xs">
-                  <Store className="w-4 h-4" />
-                </div>
-                <div className="min-w-0 flex-1 text-left overflow-hidden">
-                  <span className="text-[9px] font-black text-indigo-600 uppercase tracking-wider block leading-tight truncate">
-                    Catálogo Web
-                  </span>
-                  <span className="text-xs font-extrabold text-slate-800 group-hover:text-indigo-600 transition-colors block truncate" title={user?.businessName || "Ver mi Catálogo"}>
-                    {user?.businessName || "Ver mi Catálogo"}
-                  </span>
-                </div>
-                <div className="shrink-0 flex items-center gap-1 text-[10px] bg-indigo-600 group-hover:bg-indigo-700 text-white font-extrabold px-2.5 py-1 rounded-xl uppercase tracking-wider transition-all shadow-xs">
-                  <span>Ver</span>
-                  <ExternalLink className="w-3 h-3" />
-                </div>
-              </button>
-            </div>
-          )}
+              <div className="px-2 pt-2 animate-fadeIn">
+                <button
+                  type="button"
+                  onClick={() => window.open(getStoreCatalogUrl(user), "_blank")}
+                  className="w-full p-2.5 rounded-2xl bg-gradient-to-r from-indigo-50/90 via-purple-50/70 to-blue-50/90 border border-indigo-200/80 hover:border-indigo-400 text-slate-800 flex items-center gap-2 group hover:shadow-md transition-all cursor-pointer shadow-xs overflow-hidden"
+                  title={`Ver catálogo de ${user?.businessName || "mi negocio"}`}
+                >
+                  <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center text-white shrink-0 shadow-xs">
+                    <Store className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0 flex-1 text-left overflow-hidden">
+                    <span className="text-[9px] font-black text-indigo-600 uppercase tracking-wider block leading-tight truncate">
+                      Catálogo Web
+                    </span>
+                    <span className="text-xs font-extrabold text-slate-800 group-hover:text-indigo-600 transition-colors block truncate" title={user?.businessName || "Ver mi Catálogo"}>
+                      {user?.businessName || "Ver mi Catálogo"}
+                    </span>
+                  </div>
+                  <div className="shrink-0 flex items-center gap-1 text-[10px] bg-indigo-600 group-hover:bg-indigo-700 text-white font-extrabold px-2.5 py-1 rounded-xl uppercase tracking-wider transition-all shadow-xs">
+                    <span>Ver</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </div>
+                </button>
+              </div>
+            )}
         </nav>
 
         {/* PROFILE */}
@@ -1633,12 +1631,12 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                                 {opt.category === "RER"
                                   ? "Cuota fija 1.5% mensual cancelatoria definitiva (Sin Declaración Jurada Anual)."
                                   : opt.category === "RMT"
-                                  ? "1.0% mensual a cuenta. Escala progresiva anual de 10% y 29.5%."
-                                  : opt.category === "RG"
-                                  ? "1.5% o Coeficiente mensual. Regularización anual del 29.5%."
-                                  : opt.category === "NRUS"
-                                  ? "Cuota fija de S/ 20 o S/ 50 mensuales según categoría de ingresos."
-                                  : "Según régimen base."}
+                                    ? "1.0% mensual a cuenta. Escala progresiva anual de 10% y 29.5%."
+                                    : opt.category === "RG"
+                                      ? "1.5% o Coeficiente mensual. Regularización anual del 29.5%."
+                                      : opt.category === "NRUS"
+                                        ? "Cuota fija de S/ 20 o S/ 50 mensuales según categoría de ingresos."
+                                        : "Según régimen base."}
                               </span>
                             </div>
 
@@ -1696,7 +1694,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                 )}
               </div>
 
-              {/* FACTURACIÓN ELECTRÓNICA SUNAT (CCOFACT PRO / NubeFacT) */}
+              {/* FACTURACIÓN ELECTRÓNICA SUNAT (CCOFACT PRO ENTERPRISE) */}
               <div className="md:col-span-2 bg-gradient-to-br from-indigo-50/80 via-white to-blue-50/60 border border-indigo-200/90 rounded-2xl p-5 space-y-4 shadow-sm">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-indigo-100/80 pb-3">
                   <div className="flex items-center gap-3">
@@ -1729,139 +1727,60 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                   </label>
                 </div>
 
-                {/* Selector de Motor */}
-                <div>
-                  <div className="text-xs font-black uppercase tracking-wider text-slate-600 mb-2 flex items-center justify-between">
-                    <span>Motor / Proveedor Fiscal:</span>
-                    <span className="text-[10px] font-bold text-indigo-700 bg-indigo-100/70 px-2 py-0.5 rounded">
-                      {billingProvider === "CCOFACT" ? "⚡ CCOFACT PRO (Ccoplex)" : "🏢 NubeFacT PSE"}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setBillingProvider("CCOFACT");
-                        if (!nubefactUrl || nubefactUrl.includes("nubefact.com")) {
-                          setNubefactUrl("http://localhost:3000/api/v1/ccofact/emitir");
-                        }
-                      }}
-                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
-                        billingProvider === "CCOFACT"
-                          ? "bg-indigo-600 text-white border-indigo-600 shadow-md ring-2 ring-indigo-300"
-                          : "bg-white text-slate-700 border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-black flex items-center gap-1.5">
-                          <Zap className="w-4 h-4 text-amber-300 fill-amber-300" />
-                          CCOFACT PRO Enterprise
-                        </span>
-                        <span className={`text-[9px] font-black uppercase px-1.5 py-0.2 rounded ${billingProvider === "CCOFACT" ? "bg-white/20 text-white" : "bg-emerald-100 text-emerald-800"}`}>
-                          Recomendado
-                        </span>
-                      </div>
-                      <p className={`text-[10px] mt-1 line-clamp-2 ${billingProvider === "CCOFACT" ? "text-indigo-100" : "text-slate-500"}`}>
-                        Motor autónomo propio UBL 2.1 directo SUNAT. Cero costos por emisión de comprobante y firma RSA X.509 nativa.
-                      </p>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setBillingProvider("NUBEFACT");
-                        if (!nubefactUrl || nubefactUrl.includes("localhost") || nubefactUrl.includes("ccofact")) {
-                          setNubefactUrl("https://api.nubefact.com/api/v1/");
-                        }
-                      }}
-                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
-                        billingProvider === "NUBEFACT"
-                          ? "bg-indigo-600 text-white border-indigo-600 shadow-md ring-2 ring-indigo-300"
-                          : "bg-white text-slate-700 border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-black flex items-center gap-1.5">
-                          <Globe className="w-4 h-4 text-blue-400" />
-                          NubeFacT PSE (Oficial)
-                        </span>
-                        <span className={`text-[9px] font-black uppercase px-1.5 py-0.2 rounded ${billingProvider === "NUBEFACT" ? "bg-white/20 text-white" : "bg-slate-100 text-slate-700"}`}>
-                          Externo
-                        </span>
-                      </div>
-                      <p className={`text-[10px] mt-1 line-clamp-2 ${billingProvider === "NUBEFACT" ? "text-indigo-100" : "text-slate-500"}`}>
-                        Servicio en la nube de NubeFacT PSE para transmisión tercerizada de comprobantes electrónicos.
-                      </p>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Presets Rápidos CCOFACT PRO */}
-                {billingProvider === "CCOFACT" && (
-                  <div className="p-3 bg-white/90 rounded-xl border border-indigo-100 space-y-1.5">
+                {/* Endpoints Preconfigurados CCOFACT PRO */}
+                <div className="p-3 bg-white/90 rounded-xl border border-indigo-100 space-y-2">
+                  <div className="flex items-center justify-between">
                     <span className="text-[10px] font-black uppercase tracking-wider text-indigo-900 block">
                       Endpoints Preconfigurados CCOFACT PRO:
                     </span>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setNubefactUrl("http://localhost:3000/api/v1/ccofact/emitir")}
-                        className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
-                          nubefactUrl === "http://localhost:3000/api/v1/ccofact/emitir"
-                            ? "bg-indigo-50 text-indigo-700 border-indigo-400 font-black shadow-2xs"
-                            : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-indigo-50/50"
-                        }`}
-                      >
-                        🚀 Local (:3000/api/v1/ccofact/emitir)
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setNubefactUrl("https://api.ccofact.com/api/v1/ccofact/emitir")}
-                        className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
-                          nubefactUrl === "https://api.ccofact.com/api/v1/ccofact/emitir"
-                            ? "bg-indigo-50 text-indigo-700 border-indigo-400 font-black shadow-2xs"
-                            : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-indigo-50/50"
-                        }`}
-                      >
-                        ☁️ Nube Ccoplex (api.ccofact.com)
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setNubefactUrl("http://localhost:3000/api/v1/nubefact")}
-                        className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
-                          nubefactUrl === "http://localhost:3000/api/v1/nubefact"
-                            ? "bg-indigo-50 text-indigo-700 border-indigo-400 font-black shadow-2xs"
-                            : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-indigo-50/50"
-                        }`}
-                      >
-                        🔄 Adaptador NubeFacT (:3000/api/v1/nubefact)
-                      </button>
-                    </div>
+                    <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 flex items-center gap-1">
+                      <Zap className="w-2.5 h-2.5 text-amber-500 fill-amber-500" /> CCOFACT PRO Enterprise
+                    </span>
                   </div>
-                )}
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setCcofactUrl("http://localhost:4001/api/v1/ccofact/emitir")}
+                      className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${ccofactUrl === "http://localhost:4001/api/v1/ccofact/emitir" || ccofactUrl.includes("4001")
+                          ? "bg-indigo-50 text-indigo-700 border-indigo-400 font-black shadow-2xs"
+                          : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-indigo-50/50"
+                        }`}
+                    >
+                      🚀 Local CCOFACT (:4001/api/v1/ccofact/emitir)
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setCcofactUrl("https://api.ccofact.com/api/v1/ccofact/emitir")}
+                      className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${ccofactUrl === "https://api.ccofact.com/api/v1/ccofact/emitir"
+                          ? "bg-indigo-50 text-indigo-700 border-indigo-400 font-black shadow-2xs"
+                          : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-indigo-50/50"
+                        }`}
+                    >
+                      ☁️ Nube Ccoplex (api.ccofact.com)
+                    </button>
+                  </div>
+                </div>
 
                 {/* Inputs de Conexión */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div className="md:col-span-2">
                     <label className="block text-xs font-black text-slate-800 uppercase tracking-wider mb-1">
-                      {billingProvider === "CCOFACT" ? "URL del Servidor / Endpoint CCOFACT PRO" : "URL de API NubeFacT"}
+                      "URL del Servidor / Endpoint CCOFACT PRO"
                     </label>
                     <input
                       type="url"
-                      placeholder={billingProvider === "CCOFACT" ? "http://localhost:3000/api/v1/ccofact/emitir" : "https://api.nubefact.com/api/v1/..."}
+                      placeholder="http://localhost:4001/api/v1/ccofact/emitir"
                       className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-mono font-bold text-slate-800 bg-white"
-                      value={nubefactUrl}
-                      onChange={(e) => setNubefactUrl(e.target.value)}
+                      value={ccofactUrl}
+                      onChange={(e) => setCcofactUrl(e.target.value)}
                     />
                   </div>
 
                   <div className="md:col-span-2">
                     <div className="flex items-center justify-between mb-1">
                       <label className="text-xs font-black text-slate-800 uppercase tracking-wider">
-                        {billingProvider === "CCOFACT" ? "API Key Secreta CCOFACT (x-api-key)" : "Token Secreto de NubeFacT"}
+                        "API Key Secreta CCOFACT PRO (x-api-key)"
                       </label>
                       <button
                         type="button"
@@ -1873,11 +1792,11 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                     </div>
                     <input
                       type={showBillingToken ? "text" : "password"}
-                      placeholder={billingProvider === "CCOFACT" ? "Ej: fact_demo_key_pro_2026" : "Tu token secreto de NubeFacT"}
+                      placeholder="Ej: fact_live_0b092b0566..."
                       autoComplete="new-password"
                       className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-mono font-bold text-slate-800 bg-white"
-                      value={nubefactToken}
-                      onChange={(e) => setNubefactToken(e.target.value)}
+                      value={ccofactApiKey}
+                      onChange={(e) => setCcofactApiKey(e.target.value)}
                     />
                   </div>
 
@@ -1889,7 +1808,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                     <input
                       type="text"
                       maxLength={4}
-                      placeholder={billingProvider === "CCOFACT" ? "B001" : "BBB1"}
+                      placeholder="B001"
                       className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-mono font-extrabold uppercase text-slate-800 bg-white"
                       value={billingSerieBoleta}
                       onChange={(e) => setBillingSerieBoleta(e.target.value.toUpperCase())}
@@ -1903,7 +1822,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                     <input
                       type="text"
                       maxLength={4}
-                      placeholder={billingProvider === "CCOFACT" ? "F001" : "FFF1"}
+                      placeholder="F001"
                       className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-mono font-extrabold uppercase text-slate-800 bg-white"
                       value={billingSerieInvoice}
                       onChange={(e) => setBillingSerieInvoice(e.target.value.toUpperCase())}
@@ -1914,7 +1833,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                 {/* Acciones y Estado */}
                 <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-indigo-100">
                   <div className="flex items-center gap-2">
-                    {nubefactUrl && nubefactToken ? (
+                    {ccofactUrl && ccofactApiKey ? (
                       <span className="text-[11px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg flex items-center gap-1.5">
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                         Credenciales listas para POS
@@ -1928,7 +1847,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
 
                   <button
                     type="button"
-                    disabled={!nubefactUrl || !nubefactToken || isTestingBilling}
+                    disabled={!ccofactUrl || !ccofactApiKey || isTestingBilling}
                     onClick={handleTestBillingConnection}
                     className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-sm transition-all cursor-pointer active:scale-95"
                   >
@@ -2026,145 +1945,140 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                 </div>
               </div>
 
-                            {/* VIP MODULE: VITRINA DIGITAL & CATÁLOGO ONLINE UNIFICADO AL FINAL */}
+              {/* VIP MODULE: VITRINA DIGITAL & CATÁLOGO ONLINE UNIFICADO AL FINAL */}
               <div className="md:col-span-2">
-{/* VIP MODULE: VITRINA DIGITAL & TIENDA ONLINE */}
-            <div className={`p-5 rounded-3xl border transition-all duration-300 shadow-md ${
-              isCatalogActive
-                ? "bg-gradient-to-br from-[#FFFBF2] via-[#FFFDF9] to-[#FFF6E9] border-amber-300 shadow-amber-500/10"
-                : "bg-slate-50 border-slate-200"
-            }`}>
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex items-start sm:items-center gap-3.5">
-                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 transition-all ${
-                    isCatalogActive
-                      ? "bg-gradient-to-tr from-amber-500 via-amber-600 to-amber-700 text-white shadow-lg shadow-amber-500/30 scale-100"
-                      : "bg-slate-200 text-slate-400 scale-95"
+                {/* VIP MODULE: VITRINA DIGITAL & TIENDA ONLINE */}
+                <div className={`p-5 rounded-3xl border transition-all duration-300 shadow-md ${isCatalogActive
+                    ? "bg-gradient-to-br from-[#FFFBF2] via-[#FFFDF9] to-[#FFF6E9] border-amber-300 shadow-amber-500/10"
+                    : "bg-slate-50 border-slate-200"
                   }`}>
-                    <Store className="w-6 h-6 stroke-[2.2]" />
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-start sm:items-center gap-3.5">
+                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 transition-all ${isCatalogActive
+                          ? "bg-gradient-to-tr from-amber-500 via-amber-600 to-amber-700 text-white shadow-lg shadow-amber-500/30 scale-100"
+                          : "bg-slate-200 text-slate-400 scale-95"
+                        }`}>
+                        <Store className="w-6 h-6 stroke-[2.2]" />
+                      </div>
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="text-sm font-black text-slate-900 uppercase tracking-tight">
+                            Mi Tienda Online & Catálogo Digital
+                          </h4>
+                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-colors ${isCatalogActive
+                              ? "bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs"
+                              : "bg-slate-200 text-slate-500 border border-slate-300"
+                            }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${isCatalogActive ? "bg-emerald-600 animate-pulse" : "bg-slate-400"}`} />
+                            {isCatalogActive ? "Tienda Activa & Pública" : "Tienda Pausada"}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-600 mt-0.5 leading-relaxed font-medium">
+                          {isCatalogActive
+                            ? "Tus clientes pueden ver tu catálogo en tiempo real y hacerte pedidos directos por WhatsApp."
+                            : "El catálogo está actualmente pausado. Tus clientes verán que la tienda está fuera de línea."}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* INTERACTIVE TOGGLE SWITCH */}
+                    <div className="flex items-center gap-2.5 self-end sm:self-auto shrink-0 bg-white p-1.5 px-3 rounded-2xl border border-slate-200 shadow-2xs">
+                      <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                        {isCatalogActive ? "Activo" : "Desactivado"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setIsCatalogActive(!isCatalogActive)}
+                        className={`relative inline-flex h-7 w-13 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${isCatalogActive ? "bg-amber-600" : "bg-slate-300"
+                          }`}
+                        role="switch"
+                        aria-checked={isCatalogActive}
+                        title={isCatalogActive ? "Desactivar Catálogo" : "Activar Catálogo"}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${isCatalogActive ? "translate-x-6" : "translate-x-0"
+                            }`}
+                        />
+                      </button>
+                    </div>
                   </div>
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h4 className="text-sm font-black text-slate-900 uppercase tracking-tight">
-                        Mi Tienda Online & Catálogo Digital
-                      </h4>
-                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-colors ${
-                        isCatalogActive
-                          ? "bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs"
-                          : "bg-slate-200 text-slate-500 border border-slate-300"
-                      }`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${isCatalogActive ? "bg-emerald-600 animate-pulse" : "bg-slate-400"}`} />
-                        {isCatalogActive ? "Tienda Activa & Pública" : "Tienda Pausada"}
+
+                  {/* SLUG & ACTIONS ROW */}
+                  {isCatalogActive ? (
+                    <div className="mt-4 pt-4 border-t border-amber-200 flex flex-col gap-3 animate-fadeIn">
+                      <div>
+                        <label className="block text-[11px] font-black text-amber-900 uppercase tracking-wider mb-1">
+                          Enlace Web Oficial de tu Negocio:
+                        </label>
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                          <div className="flex-1 flex items-center bg-white rounded-xl border border-amber-300 shadow-2xs overflow-hidden focus-within:ring-2 focus-within:ring-amber-500">
+                            <span className="px-3 py-2 bg-amber-50 text-[11px] font-mono font-bold text-amber-900 border-r border-amber-200 shrink-0 select-none">
+                              {window.location.origin}/catalogo/
+                            </span>
+                            <input
+                              type="text"
+                              value={businessSlug}
+                              onChange={(e) => {
+                                const val = e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, "");
+                                setBusinessSlug(val);
+                              }}
+                              placeholder={generateCatalogSlug(businessName) || "mi-tienda"}
+                              className="flex-1 px-3 py-2 text-xs font-mono font-bold text-slate-800 outline-none bg-transparent"
+                            />
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const fullUrl = `${window.location.origin}/catalogo/${businessSlug || generateCatalogSlug(businessName) || "mi-tienda"}`;
+                                navigator.clipboard.writeText(fullUrl);
+                                toast.success("¡Enlace público copiado al portapapeles!");
+                              }}
+                              className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs hover:shadow-xs active:scale-95"
+                              title="Copiar URL"
+                            >
+                              <Copy className="w-3.5 h-3.5 text-slate-500" />
+                              <span>Copiar</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const fullUrl = `${window.location.origin}/catalogo/${businessSlug || generateCatalogSlug(businessName) || "mi-tienda"}`;
+                                window.open(fullUrl, "_blank");
+                              }}
+                              className="px-3.5 py-2 rounded-xl bg-slate-950 hover:bg-black text-amber-300 hover:text-amber-200 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              <span>Ver mi Tienda</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsProfileModalOpen(false);
+                                setIsCatalogModalOpen(true);
+                              }}
+                              className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-600 via-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-amber-600/25 active:scale-95"
+                            >
+                              <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+                              <span>Configurar Vitrina</span>
+                            </button>
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-amber-800 font-medium mt-1">
+                          💡 Este enlace es público. Puedes compartirlo con tus clientes o en redes para que hagan pedidos a tu WhatsApp oficial.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-3 p-3.5 rounded-2xl bg-white border border-slate-200 text-xs text-slate-500 flex items-center gap-2.5 animate-fadeIn">
+                      <span className="text-base">⏸️</span>
+                      <span className="font-medium">
+                        Tu tienda virtual está temporalmente pausada. Activa el interruptor arriba para abrir tu vitrina digital y empezar a recibir pedidos por WhatsApp.
                       </span>
                     </div>
-                    <p className="text-xs text-slate-600 mt-0.5 leading-relaxed font-medium">
-                      {isCatalogActive
-                        ? "Tus clientes pueden ver tu catálogo en tiempo real y hacerte pedidos directos por WhatsApp."
-                        : "El catálogo está actualmente pausado. Tus clientes verán que la tienda está fuera de línea."}
-                    </p>
-                  </div>
+                  )}
                 </div>
-
-                {/* INTERACTIVE TOGGLE SWITCH */}
-                <div className="flex items-center gap-2.5 self-end sm:self-auto shrink-0 bg-white p-1.5 px-3 rounded-2xl border border-slate-200 shadow-2xs">
-                  <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
-                    {isCatalogActive ? "Activo" : "Desactivado"}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setIsCatalogActive(!isCatalogActive)}
-                    className={`relative inline-flex h-7 w-13 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
-                      isCatalogActive ? "bg-amber-600" : "bg-slate-300"
-                    }`}
-                    role="switch"
-                    aria-checked={isCatalogActive}
-                    title={isCatalogActive ? "Desactivar Catálogo" : "Activar Catálogo"}
-                  >
-                    <span
-                      className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
-                        isCatalogActive ? "translate-x-6" : "translate-x-0"
-                      }`}
-                    />
-                  </button>
-                </div>
-              </div>
-
-              {/* SLUG & ACTIONS ROW */}
-              {isCatalogActive ? (
-                <div className="mt-4 pt-4 border-t border-amber-200 flex flex-col gap-3 animate-fadeIn">
-                  <div>
-                    <label className="block text-[11px] font-black text-amber-900 uppercase tracking-wider mb-1">
-                      Enlace Web Oficial de tu Negocio:
-                    </label>
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                      <div className="flex-1 flex items-center bg-white rounded-xl border border-amber-300 shadow-2xs overflow-hidden focus-within:ring-2 focus-within:ring-amber-500">
-                        <span className="px-3 py-2 bg-amber-50 text-[11px] font-mono font-bold text-amber-900 border-r border-amber-200 shrink-0 select-none">
-                          {window.location.origin}/catalogo/
-                        </span>
-                        <input
-                          type="text"
-                          value={businessSlug}
-                          onChange={(e) => {
-                            const val = e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, "");
-                            setBusinessSlug(val);
-                          }}
-                          placeholder={generateCatalogSlug(businessName) || "mi-tienda"}
-                          className="flex-1 px-3 py-2 text-xs font-mono font-bold text-slate-800 outline-none bg-transparent"
-                        />
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const fullUrl = `${window.location.origin}/catalogo/${businessSlug || generateCatalogSlug(businessName) || "mi-tienda"}`;
-                            navigator.clipboard.writeText(fullUrl);
-                            toast.success("¡Enlace público copiado al portapapeles!");
-                          }}
-                          className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs hover:shadow-xs active:scale-95"
-                          title="Copiar URL"
-                        >
-                          <Copy className="w-3.5 h-3.5 text-slate-500" />
-                          <span>Copiar</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const fullUrl = `${window.location.origin}/catalogo/${businessSlug || generateCatalogSlug(businessName) || "mi-tienda"}`;
-                            window.open(fullUrl, "_blank");
-                          }}
-                          className="px-3.5 py-2 rounded-xl bg-slate-950 hover:bg-black text-amber-300 hover:text-amber-200 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                          <span>Ver mi Tienda</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsProfileModalOpen(false);
-                            setIsCatalogModalOpen(true);
-                          }}
-                          className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-600 via-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-amber-600/25 active:scale-95"
-                        >
-                          <Sparkles className="w-3.5 h-3.5 text-amber-200" />
-                          <span>Configurar Vitrina</span>
-                        </button>
-                      </div>
-                    </div>
-                    <p className="text-[10px] text-amber-800 font-medium mt-1">
-                      💡 Este enlace es público. Puedes compartirlo con tus clientes o en redes para que hagan pedidos a tu WhatsApp oficial.
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-3 p-3.5 rounded-2xl bg-white border border-slate-200 text-xs text-slate-500 flex items-center gap-2.5 animate-fadeIn">
-                  <span className="text-base">⏸️</span>
-                  <span className="font-medium">
-                    Tu tienda virtual está temporalmente pausada. Activa el interruptor arriba para abrir tu vitrina digital y empezar a recibir pedidos por WhatsApp.
-                  </span>
-                </div>
-              )}
-            </div>
               </div>
             </div>
 

@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { NubefactService } from '../nubefact/nubefact.service';
+import { CcofactService } from '../ccofact/ccofact.service';
 import {
   EmitBillingDto,
   IssueNoteDto,
@@ -16,7 +16,7 @@ export class BillingService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly nubefactService: NubefactService,
+    private readonly ccofactService: CcofactService,
   ) {}
 
   private mapDocType(dtoType: BillingDocTypeEnum): FiscalDocType {
@@ -169,7 +169,6 @@ export class BillingService {
 
   normalizeCcofactEmitUrl(url: string): string {
     if (url.includes('/api/v1/ccofact/emitir')) return url;
-    if (url.includes('/api/v1/nubefact')) return url;
     const base = this.normalizeCcofactBaseUrl(url);
     return `${base}/api/v1/ccofact/emitir`;
   }
@@ -210,7 +209,7 @@ export class BillingService {
     let correlative = lastDoc ? lastDoc.correlative + 1 : 1;
     let fullNumber = `${serie}-${String(correlative).padStart(8, '0')}`;
 
-    const hasLiveBilling = Boolean(owner.hasElectronicBilling && owner.nubefactUrl && owner.nubefactToken);
+    const hasLiveBilling = Boolean(owner.hasElectronicBilling && owner.ccofactUrl && owner.ccofactApiKey);
 
     let status: FiscalStatus = FiscalStatus.ACCEPTED;
     let hash: string | null = null;
@@ -223,7 +222,7 @@ export class BillingService {
     if (hasLiveBilling) {
       if (dto.saleId) {
         try {
-          const result = await this.nubefactService.sendInvoice(dto.saleId);
+          const result = await this.ccofactService.sendInvoice(dto.saleId);
           if (result.success) {
             pdfUrl = result.pdfUrl || null;
             xmlUrl = result.xmlUrl || null;
@@ -282,13 +281,13 @@ export class BillingService {
             enviar_a_sunat_inmediato: true,
           };
 
-          const emitUrl = this.normalizeCcofactEmitUrl(owner.nubefactUrl);
+          const emitUrl = this.normalizeCcofactEmitUrl(owner.ccofactUrl);
           const resp = await fetch(emitUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'x-api-key': owner.nubefactToken,
-              'Authorization': `Bearer ${owner.nubefactToken}`,
+              'x-api-key': owner.ccofactApiKey,
+              'Authorization': `Bearer ${owner.ccofactApiKey}`,
             },
             body: JSON.stringify(ccofactPayload),
           });
@@ -452,7 +451,7 @@ export class BillingService {
         hasElectronicBilling: true,
         businessRuc: true,
         businessName: true,
-        nubefactUrl: true,
+        ccofactUrl: true,
       },
     });
 
@@ -468,7 +467,7 @@ export class BillingService {
       totalGravadaPen: Number(totalGravadaPen.toFixed(2)),
       totalExoneradaPen: Number(totalExoneradaPen.toFixed(2)),
       breakdownByType,
-      credentialsConfigured: Boolean(owner?.hasElectronicBilling && owner?.nubefactUrl),
+      credentialsConfigured: Boolean(owner?.hasElectronicBilling && owner?.ccofactUrl),
       issuerRuc: owner?.businessRuc || 'No configurado',
       issuerName: owner?.businessName || 'Empresa Principal',
     };
@@ -551,7 +550,7 @@ export class BillingService {
     if (!owner) throw new NotFoundException('Usuario propietario no encontrado');
 
     if (doc.saleId) {
-      const saleResult = await this.nubefactService.sendInvoice(doc.saleId);
+      const saleResult = await this.ccofactService.sendInvoice(doc.saleId);
       if (saleResult.success) {
         const updated = await this.prisma.fiscalDocument.update({
           where: { id },
@@ -579,7 +578,7 @@ export class BillingService {
     }
 
     // Si es comprobante independiente, reintentar a CCOFACT PRO
-    if (owner.hasElectronicBilling && owner.nubefactUrl && owner.nubefactToken) {
+    if (owner.hasElectronicBilling && owner.ccofactUrl && owner.ccofactApiKey) {
       try {
         const ccofactPayload = {
           idempotency_key: `retry_${doc.id}_${Date.now()}`,
@@ -613,13 +612,13 @@ export class BillingService {
           enviar_a_sunat_inmediato: true,
         };
 
-        const emitUrl = this.normalizeCcofactEmitUrl(owner.nubefactUrl);
+        const emitUrl = this.normalizeCcofactEmitUrl(owner.ccofactUrl);
         const resp = await fetch(emitUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-api-key': owner.nubefactToken,
-            'Authorization': `Bearer ${owner.nubefactToken}`,
+            'x-api-key': owner.ccofactApiKey,
+            'Authorization': `Bearer ${owner.ccofactApiKey}`,
           },
           body: JSON.stringify(ccofactPayload),
         });
@@ -689,7 +688,7 @@ export class BillingService {
     let sunatResponseCode = '0';
     let sunatDescription = `Nota de ${isCredit ? 'Crédito' : 'Débito'} generada exitosamente. Modifica a ${original.fullNumber}`;
 
-    const hasLiveBilling = Boolean(owner.hasElectronicBilling && owner.nubefactUrl && owner.nubefactToken);
+    const hasLiveBilling = Boolean(owner.hasElectronicBilling && owner.ccofactUrl && owner.ccofactApiKey);
 
     if (hasLiveBilling) {
       try {
@@ -726,13 +725,13 @@ export class BillingService {
           enviar_a_sunat_inmediato: true,
         };
 
-        const emitUrl = this.normalizeCcofactEmitUrl(owner.nubefactUrl);
+        const emitUrl = this.normalizeCcofactEmitUrl(owner.ccofactUrl);
         const resp = await fetch(emitUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-api-key': owner.nubefactToken,
-            'Authorization': `Bearer ${owner.nubefactToken}`,
+            'x-api-key': owner.ccofactApiKey,
+            'Authorization': `Bearer ${owner.ccofactApiKey}`,
           },
           body: JSON.stringify(payload),
         });
@@ -935,21 +934,21 @@ export class BillingService {
     if (!doc) throw new NotFoundException('Comprobante fiscal no encontrado');
 
     const owner = await this.prisma.user.findUnique({ where: { id: ownerId } });
-    const hasLiveBilling = Boolean(owner?.hasElectronicBilling && owner?.nubefactUrl && owner?.nubefactToken);
+    const hasLiveBilling = Boolean(owner?.hasElectronicBilling && owner?.ccofactUrl && owner?.ccofactApiKey);
 
     // Si ya está ACEPTADO por SUNAT: No se puede eliminar en frío, debe anularse legalmente
     if (doc.status === FiscalStatus.ACCEPTED) {
       const motivo = options?.motivo || 'ANULACION DE LA OPERACION POR EL EMISOR';
 
-      if (hasLiveBilling && owner?.nubefactUrl && owner?.nubefactToken) {
-        const baseUrl = this.normalizeCcofactBaseUrl(owner.nubefactUrl);
+      if (hasLiveBilling && owner?.ccofactUrl && owner?.ccofactApiKey) {
+        const baseUrl = this.normalizeCcofactBaseUrl(owner.ccofactUrl);
         try {
           const anularRes = await fetch(`${baseUrl}/api/v1/documents/by-series-number/${doc.serie}/${doc.correlative}/anular-fiscal`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'x-api-key': owner.nubefactToken,
-              'Authorization': `Bearer ${owner.nubefactToken}`,
+              'x-api-key': owner.ccofactApiKey,
+              'Authorization': `Bearer ${owner.ccofactApiKey}`,
             },
             body: JSON.stringify({ motivo }),
           });
@@ -1031,14 +1030,14 @@ export class BillingService {
     }
 
     // Si NO estaba aceptado (DRAFT, ERROR, REJECTED)
-    if (hasLiveBilling && owner?.nubefactUrl && owner?.nubefactToken) {
-      const baseUrl = this.normalizeCcofactBaseUrl(owner.nubefactUrl);
+    if (hasLiveBilling && owner?.ccofactUrl && owner?.ccofactApiKey) {
+      const baseUrl = this.normalizeCcofactBaseUrl(owner.ccofactUrl);
       try {
         await fetch(`${baseUrl}/api/v1/documents/by-series-number/${doc.serie}/${doc.correlative}`, {
           method: 'DELETE',
           headers: {
-            'x-api-key': owner.nubefactToken,
-            'Authorization': `Bearer ${owner.nubefactToken}`,
+            'x-api-key': owner.ccofactApiKey,
+            'Authorization': `Bearer ${owner.ccofactApiKey}`,
           },
         });
       } catch (e) {}
@@ -1062,14 +1061,14 @@ export class BillingService {
         businessRuc: true,
         businessReason: true,
         businessName: true,
-        nubefactUrl: true,
-        nubefactToken: true,
+        ccofactUrl: true,
+        ccofactApiKey: true,
       },
     });
 
     if (!owner) throw new NotFoundException('Usuario no encontrado');
 
-    if (!owner.nubefactUrl || !owner.nubefactToken) {
+    if (!owner.ccofactUrl || !owner.ccofactApiKey) {
       return {
         connected: false,
         online: false,
@@ -1077,15 +1076,15 @@ export class BillingService {
       };
     }
 
-    const baseUrl = this.normalizeCcofactBaseUrl(owner.nubefactUrl);
+    const baseUrl = this.normalizeCcofactBaseUrl(owner.ccofactUrl);
     const statusUrl = `${baseUrl}/api/v1/ccofact/status`;
 
     try {
       const resp = await fetch(statusUrl, {
         method: 'GET',
         headers: {
-          'x-api-key': owner.nubefactToken,
-          'Authorization': `Bearer ${owner.nubefactToken}`,
+          'x-api-key': owner.ccofactApiKey,
+          'Authorization': `Bearer ${owner.ccofactApiKey}`,
         },
       });
 
@@ -1158,8 +1157,8 @@ export class BillingService {
         businessRuc: true,
         businessReason: true,
         businessName: true,
-        nubefactUrl: true,
-        nubefactToken: true,
+        ccofactUrl: true,
+        ccofactApiKey: true,
       },
     });
     if (!user) throw new NotFoundException('Usuario no encontrado');
@@ -1169,8 +1168,9 @@ export class BillingService {
       businessRuc: user.businessRuc || '',
       businessReason: user.businessReason || '',
       businessName: user.businessName || '',
-      nubefactUrl: user.nubefactUrl || '',
-      hasToken: Boolean(user.nubefactToken),
+      ccofactUrl: user.ccofactUrl || 'http://localhost:4001/api/v1/ccofact/emitir',
+      ccofactApiKey: user.ccofactApiKey || '',
+      hasToken: Boolean(user.ccofactApiKey),
     };
   }
 
@@ -1179,16 +1179,16 @@ export class BillingService {
     businessRuc?: string;
     businessReason?: string;
     businessName?: string;
-    nubefactUrl?: string;
-    nubefactToken?: string;
+    ccofactUrl?: string;
+    ccofactApiKey?: string;
   }) {
     const updateData: any = {};
     if (data.hasElectronicBilling !== undefined) updateData.hasElectronicBilling = data.hasElectronicBilling;
     if (data.businessRuc !== undefined) updateData.businessRuc = data.businessRuc;
     if (data.businessReason !== undefined) updateData.businessReason = data.businessReason;
     if (data.businessName !== undefined) updateData.businessName = data.businessName;
-    if (data.nubefactUrl !== undefined) updateData.nubefactUrl = data.nubefactUrl;
-    if (data.nubefactToken !== undefined) updateData.nubefactToken = data.nubefactToken;
+    if (data.ccofactUrl !== undefined) updateData.ccofactUrl = data.ccofactUrl;
+    if (data.ccofactApiKey !== undefined) updateData.ccofactApiKey = data.ccofactApiKey;
 
     const updated = await this.prisma.user.update({
       where: { id: ownerId },
@@ -1200,8 +1200,9 @@ export class BillingService {
       hasElectronicBilling: updated.hasElectronicBilling,
       businessRuc: updated.businessRuc,
       businessName: updated.businessName,
-      nubefactUrl: updated.nubefactUrl,
-      hasToken: Boolean(updated.nubefactToken),
+      ccofactUrl: updated.ccofactUrl || '',
+      ccofactApiKey: updated.ccofactApiKey || '',
+      hasToken: Boolean(updated.ccofactApiKey),
     };
   }
 }

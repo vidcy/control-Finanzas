@@ -1,12 +1,12 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { NubefactService } from '../nubefact/nubefact.service';
+import { CcofactService } from '../ccofact/ccofact.service';
 
 @Injectable()
 export class SalesService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly nubefactService: NubefactService,
+    private readonly ccofactService: CcofactService,
   ) { }
 
   async listSalesFiltered(options: {
@@ -86,7 +86,7 @@ export class SalesService {
       data: { billingStatus: 'PENDING', billingError: null },
     });
 
-    const result = await this.nubefactService.sendInvoice(id);
+    const result = await this.ccofactService.sendInvoice(id);
 
     if (result.success) {
       await this.prisma.sale.update({
@@ -128,7 +128,7 @@ export class SalesService {
       return { success: false, error: 'Venta no encontrada o no facturada' };
     }
 
-    const result = await this.nubefactService.sendNote(
+    const result = await this.ccofactService.sendNote(
       originalSale.id,
       originalSale.id,
       'CREDIT',
@@ -187,7 +187,7 @@ export class SalesService {
       return { success: false, error: 'Venta no encontrada o no facturada' };
     }
 
-    const result = await this.nubefactService.sendNote(
+    const result = await this.ccofactService.sendNote(
       originalSale.id,
       originalSale.id,
       'DEBIT',
@@ -312,36 +312,16 @@ export class SalesService {
             where: { id: ownerId },
           });
 
-          if (owner?.nubefactUrl && owner?.nubefactToken) {
-            const urlObj = new URL(owner.nubefactUrl);
-            const anularFiscalUrl = `${urlObj.origin}/api/v1/documents/by-series-number/${sale.billingSerie}/${sale.billingNumber}/anular-fiscal`;
-
-            const anularRes = await fetch(anularFiscalUrl, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'x-api-key': owner.nubefactToken,
-                'Authorization': `Bearer ${owner.nubefactToken}`,
-              },
-              body: JSON.stringify({
-                motivo: 'ANULACION DE VENTA EN SISTEMA COMERCIAL',
-              }),
-            });
-
-            // Si por alguna razón no se pudo anular con NC (ej. comprobante de prueba local), intentar eliminar
-            if (!anularRes.ok) {
-              const deleteUrl = `${urlObj.origin}/api/v1/documents/by-series-number/${sale.billingSerie}/${sale.billingNumber}`;
-              await fetch(deleteUrl, {
-                method: 'DELETE',
-                headers: {
-                  'x-api-key': owner.nubefactToken,
-                  'Authorization': `Bearer ${owner.nubefactToken}`,
-                },
-              });
-            }
+          if (owner?.ccofactUrl && owner?.ccofactApiKey) {
+            await this.ccofactService.anularFiscal(
+              owner,
+              sale.billingSerie,
+              sale.billingNumber,
+              'ANULACION DE VENTA EN SISTEMA COMERCIAL',
+            );
           }
         } catch (billingErr: any) {
-          console.warn(`[Sincronización CCOFACT] Error al anular comprobante ${sale.billingSerie}-${sale.billingNumber}:`, billingErr?.message);
+          console.warn(`[Sincronización CCOFACT PRO] Error al anular comprobante ${sale.billingSerie}-${sale.billingNumber}:`, billingErr?.message);
         }
 
         // Sincronizar comprobante fiscal centralizado
@@ -411,23 +391,16 @@ export class SalesService {
         // Rectificación:
         // 1. Anular comprobante original con Nota de Crédito en CCOFACT
         const owner = await this.prisma.user.findUnique({ where: { id: ownerId } });
-        if (owner?.nubefactUrl && owner?.nubefactToken) {
+        if (owner?.ccofactUrl && owner?.ccofactApiKey) {
           try {
-            const urlObj = new URL(owner.nubefactUrl);
-            const anularUrl = `${urlObj.origin}/api/v1/documents/by-series-number/${sale.billingSerie}/${sale.billingNumber}/anular-fiscal`;
-            await fetch(anularUrl, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'x-api-key': owner.nubefactToken,
-                'Authorization': `Bearer ${owner.nubefactToken}`,
-              },
-              body: JSON.stringify({
-                motivo: dto.rectifyReason || 'ANULACION POR MODIFICACION Y RECTIFICACION DE VENTA',
-              }),
-            });
+            await this.ccofactService.anularFiscal(
+              owner,
+              sale.billingSerie,
+              sale.billingNumber,
+              dto.rectifyReason || 'ANULACION POR MODIFICACION Y RECTIFICACION DE VENTA',
+            );
           } catch (e: any) {
-            console.warn(`Error anulando en CCOFACT: ${e.message}`);
+            console.warn(`Error anulando en CCOFACT PRO: ${e.message}`);
           }
         }
 
@@ -551,7 +524,7 @@ export class SalesService {
 
     // Si se requiere reemitir el comprobante a CCOFACT tras la modificación
     if ((isBilled && dto.rectifyAccepted) || dto.reemitBilling) {
-      const billingRes = await this.nubefactService.sendInvoice(updatedSale.id);
+      const billingRes = await this.ccofactService.sendInvoice(updatedSale.id);
       if (billingRes.success) {
         await this.prisma.sale.update({
           where: { id: updatedSale.id },

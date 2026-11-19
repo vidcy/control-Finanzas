@@ -7,7 +7,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { FilesService } from '../files/files.service';
 import { CommissionEngine } from './commission-engine';
-import { NubefactService } from '../nubefact/nubefact.service';
+import { CcofactService } from '../ccofact/ccofact.service';
 
 @Injectable()
 export class ProductsService {
@@ -15,7 +15,7 @@ export class ProductsService {
   constructor(
     private prisma: PrismaService,
     private filesService: FilesService,
-    private nubefactService: NubefactService,
+    private ccofactService: CcofactService,
   ) { }
 
   async create(userId: string, data: any) {
@@ -1259,13 +1259,10 @@ export class ProductsService {
       };
     }).then(async (result) => {
       // ✅ FACTURACIÓN ELECTRÓNICA: Se ejecuta FUERA de la transacción DB
-      // Así, si NubeFacT falla, la venta ya quedó guardada y no se revierte.
+      // Así, si la comunicación con CCOFACT PRO falla, la venta ya quedó guardada y no se revierte.
       if (billingType === 'BOLETA' || billingType === 'FACTURA') {
         try {
-          const billingResult = await this.nubefactService.sendInvoice(result.saleId, {
-            igvAffectation: checkoutDto.igvAffectation,
-            igvRate: checkoutDto.igvRate,
-          });
+          const billingResult = await this.ccofactService.sendInvoice(result.saleId);
           if (billingResult.success) {
             await this.prisma.sale.update({
               where: { id: result.saleId },
@@ -1284,7 +1281,7 @@ export class ProductsService {
               where: { id: result.saleId },
               data: {
                 billingStatus: 'ERROR',
-                billingError: billingResult.error || 'Error desconocido en NubeFacT',
+                billingError: billingResult.error || 'Error desconocido en CCOFACT PRO',
               },
             });
             return { ...result, billing: { success: false, error: billingResult.error } };

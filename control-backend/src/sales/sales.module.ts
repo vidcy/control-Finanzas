@@ -3,10 +3,10 @@ import { SalesService } from './sales.service';
 import { SalesController } from './sales.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ProductsModule } from '../products/products.module';
-import { NubefactModule } from 'src/nubefact/nubefact.module';
+import { CcofactModule } from '../ccofact/ccofact.module';
 
 @Module({
-  imports: [PrismaModule, ProductsModule, NubefactModule],
+  imports: [PrismaModule, ProductsModule, CcofactModule],
   controllers: [SalesController],
   providers: [SalesService],
   exports: [SalesService],

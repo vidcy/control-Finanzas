@@ -64,8 +64,8 @@ model User {
   billingSerieBoleta   String?   @default("B001")
   catalogConfig        Json?
   hasElectronicBilling Boolean @default(false)
-  nubefactUrl          String?
-  nubefactToken        String?
+  ccofactUrl           String?
+  ccofactApiKey        String?
   taxRegime            String?   @default("GENERAL_18")
   igvRate              Float?    @default(18.0)
 

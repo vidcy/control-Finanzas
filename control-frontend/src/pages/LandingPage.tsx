@@ -556,7 +556,7 @@ export default function LandingPage() {
                         Boletas y Facturas automáticas conectadas con SUNAT
                       </h4>
                       <p className="text-sm text-slate-600 font-medium leading-relaxed">
-                        Compatible con CCOFACT PRO y NubeFacT. Emite comprobantes electrónicos con CDR verde instantáneo, código QR tributario y firma digital SHA-256. Duerme tranquilo sabiendo que tu negocio cumple al 100% con la normativa fiscal sin depender de contadores para cada venta.
+                        Motor nativo CCOFACT PRO Enterprise. Emite comprobantes electrónicos con CDR verde instantáneo, código QR tributario y firma digital SHA-256. Duerme tranquilo sabiendo que tu negocio cumple al 100% con la normativa fiscal sin depender de contadores para cada venta.
                       </p>
                       <div className="flex flex-wrap gap-2 pt-2">
                         <span className="px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-1.5">
@@ -1079,7 +1079,7 @@ export default function LandingPage() {
                 Facturación SUNAT UBL 2.1 Oficial
               </h3>
               <p className="text-sm sm:text-base text-slate-700 font-medium mb-6 leading-relaxed">
-                Conexión directa mediante CCOFACT PRO y NubeFacT. Emite Boletas F001/B001, Facturas con consulta automática de RUC y Notas de Crédito con CDR verde en 1 segundo.
+                Conexión directa mediante CCOFACT PRO Enterprise. Emite Boletas F001/B001, Facturas con consulta automática de RUC y Notas de Crédito con CDR verde en 1 segundo.
               </p>
               <div className="flex items-center gap-2 text-xs font-bold text-blue-900 bg-blue-100/80 px-3.5 py-2 rounded-xl border border-blue-300 w-fit">
                 <Shield className="w-4 h-4 text-blue-700" />

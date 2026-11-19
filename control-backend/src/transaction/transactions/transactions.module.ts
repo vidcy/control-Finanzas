@@ -4,12 +4,11 @@ import { TransactionController } from './transactions.controller';
 import { PrismaModule } from 'src/prisma/prisma.module';
 import { CategoriesService } from 'src/category/category.service';
 import { FilesModule } from '../../files/files.module';
-import { NubefactService } from '../../nubefact/nubefact.service';
 
 @Module({
   imports: [PrismaModule, FilesModule],
   controllers: [TransactionController],
-  providers: [TransactionService, CategoriesService, NubefactService],
+  providers: [TransactionService, CategoriesService],
   exports: [TransactionService],
 })
 export class TransactionsModule { }

@@ -201,7 +201,7 @@ export default function BusinessBillingPage() {
       setConfigRuc(cfg.businessRuc || user?.businessRuc || "");
       setConfigName(cfg.businessName || user?.businessName || "");
       setConfigReason(cfg.businessReason || user?.businessReason || "");
-      setConfigUrl(cfg.nubefactUrl || "");
+      setConfigUrl(cfg.ccofactUrl || "");
       setConfigToken("");
       setIsConfigModalOpen(true);
     } catch (err: any) {
@@ -217,8 +217,8 @@ export default function BusinessBillingPage() {
         businessRuc: configRuc,
         businessName: configName,
         businessReason: configReason,
-        nubefactUrl: configUrl,
-        ...(configToken ? { nubefactToken: configToken } : {}),
+        ccofactUrl: configUrl,
+        ...(configToken ? { ccofactApiKey: configToken } : {}),
       });
       toast.success("Configuración fiscal guardada con éxito");
       setIsConfigModalOpen(false);
@@ -759,9 +759,7 @@ export default function BusinessBillingPage() {
                 </span>
                 <span className="text-xs font-mono font-extrabold uppercase tracking-wider text-emerald-700">
                   {stats?.credentialsConfigured
-                    ? (user?.nubefactUrl?.toLowerCase().includes("ccofact") || configUrl?.toLowerCase().includes("ccofact")
-                        ? "CONEXIÓN OFICIAL: MOTOR SOBERANO CCOFACT PRO (UBL 2.1)"
-                        : "CONEXIÓN OFICIAL: SERVICIO NUBEFAC SUNAT PSE")
+                    ? "CONEXIÓN OFICIAL: MOTOR SOBERANO CCOFACT PRO (UBL 2.1)"
                     : "SISTEMA TRIBUTARIO SUNAT ACTIVO & SINCRONIZADO"}
                 </span>
               </div>
@@ -1788,7 +1786,7 @@ export default function BusinessBillingPage() {
         <Modal
           isOpen={isConfigModalOpen}
           onClose={() => setIsConfigModalOpen(false)}
-          title="Configuración de Motor Fiscal SUNAT (CCOFACT PRO / NubeFacT)"
+          title="Configuración de Motor Fiscal SUNAT (CCOFACT PRO Enterprise)"
           maxWidth="max-w-2xl"
         >
           <div className="p-6 space-y-5">
@@ -1822,23 +1820,19 @@ export default function BusinessBillingPage() {
                   Seleccionar Motor / Proveedor de Facturación
                 </label>
                 <span className="text-[11px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-200">
-                  {configUrl.toLowerCase().includes("ccofact/emitir")
-                    ? "🚀 CCOFACT PRO Nativo"
-                    : configUrl.toLowerCase().includes("ccofact") || (configUrl.toLowerCase().includes("nubefact") && configUrl.includes("localhost"))
-                    ? "🔄 CCOFACT PRO Adaptador"
-                    : configUrl.toLowerCase().includes("nubefact.com")
-                    ? "☁️ NubeFacT Oficial"
+                  {configUrl.toLowerCase().includes("ccofact") || configUrl.includes("4001")
+                    ? "🚀 CCOFACT PRO Enterprise"
                     : "⚙️ Servidor Personalizado"}
                 </span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {/* Opción 1: CCOFACT PRO Nativo */}
+                {/* Opción 1: CCOFACT PRO Local 4001 */}
                 <button
                   type="button"
-                  onClick={() => setConfigUrl("http://localhost:3000/api/v1/ccofact/emitir")}
+                  onClick={() => setConfigUrl("http://localhost:4001/api/v1/ccofact/emitir")}
                   className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                    configUrl.toLowerCase().includes("ccofact/emitir")
+                    configUrl.includes("4001") || configUrl.toLowerCase().includes("ccofact/emitir")
                       ? "bg-indigo-50/80 border-indigo-500 shadow-sm ring-2 ring-indigo-500/20"
                       : "bg-slate-50 hover:bg-white border-slate-200"
                   }`}
@@ -1846,17 +1840,17 @@ export default function BusinessBillingPage() {
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
                       <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-                      CCOFACT PRO (Nativo)
+                      CCOFACT PRO (Local :4001)
                     </span>
                     <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">
                       Recomendado
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-500 line-clamp-2">
-                    Motor soberano UBL 2.1 directo SUNAT. Firma X.509, A4/Ticket 80mm y CDR sin cobro por factura.
+                    Motor fiscal autónomo UBL 2.1 directo SUNAT. Firma X.509, A4/Ticket 80mm y CDR sin cobro por factura.
                   </p>
                   <div className="mt-2 text-[10px] font-mono font-bold text-indigo-700 bg-indigo-100/60 px-2 py-0.5 rounded">
-                    :3000/api/v1/ccofact/emitir
+                    http://localhost:4001/api/v1/ccofact/emitir
                   </div>
                 </button>
 
@@ -1884,60 +1878,6 @@ export default function BusinessBillingPage() {
                   </p>
                   <div className="mt-2 text-[10px] font-mono font-bold text-blue-700 bg-blue-100/60 px-2 py-0.5 rounded">
                     api.ccofact.com/api/v1/ccofact/emitir
-                  </div>
-                </button>
-
-                {/* Opción 3: CCOFACT PRO Adaptador NubeFacT */}
-                <button
-                  type="button"
-                  onClick={() => setConfigUrl("http://localhost:3000/api/v1/nubefact")}
-                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                    configUrl.toLowerCase().includes("nubefact") && (configUrl.includes("localhost") || configUrl.includes("3000"))
-                      ? "bg-indigo-50/80 border-indigo-500 shadow-sm ring-2 ring-indigo-500/20"
-                      : "bg-slate-50 hover:bg-white border-slate-200"
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
-                      <Layers className="w-3.5 h-3.5 text-purple-500" />
-                      CCOFACT (Adaptador Legacy)
-                    </span>
-                    <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-purple-100 text-purple-800">
-                      Compatible
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 line-clamp-2">
-                    Acepta esquemas JSON estándar NubeFacT y los traduce internamente al motor UBL 2.1 propio.
-                  </p>
-                  <div className="mt-2 text-[10px] font-mono font-bold text-purple-700 bg-purple-100/60 px-2 py-0.5 rounded">
-                    :3000/api/v1/nubefact
-                  </div>
-                </button>
-
-                {/* Opción 4: NubeFacT PSE Oficial */}
-                <button
-                  type="button"
-                  onClick={() => setConfigUrl("https://api.nubefact.com/api/v1/")}
-                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                    configUrl.toLowerCase().includes("nubefact.com")
-                      ? "bg-indigo-50/80 border-indigo-500 shadow-sm ring-2 ring-indigo-500/20"
-                      : "bg-slate-50 hover:bg-white border-slate-200"
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
-                      <Globe className="w-3.5 h-3.5 text-cyan-600" />
-                      NubeFacT PSE (Oficial)
-                    </span>
-                    <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-cyan-100 text-cyan-800">
-                      PSE Externo
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 line-clamp-2">
-                    Conexión con la nube oficial del proveedor NubeFacT mediante Bearer Token.
-                  </p>
-                  <div className="mt-2 text-[10px] font-mono font-bold text-cyan-700 bg-cyan-100/60 px-2 py-0.5 rounded truncate">
-                    api.nubefact.com/api/v1/...
                   </div>
                 </button>
               </div>
@@ -2012,7 +1952,7 @@ export default function BusinessBillingPage() {
             {/* Token Secreto */}
             <div>
               <label className="block text-xs font-black uppercase text-slate-600 mb-1">
-                Clave API / Token Secreto ({configUrl.toLowerCase().includes("ccofact") ? "x-api-key CCOFACT" : "Bearer Token NubeFacT"})
+                Clave API Secreta CCOFACT PRO (x-api-key)
               </label>
               <div className="relative">
                 <Key className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -2025,7 +1965,7 @@ export default function BusinessBillingPage() {
                 />
               </div>
               <span className="text-[10px] text-slate-400 mt-1 block">
-                * Las cabeceras se transmiten de forma segura como <code>x-api-key</code> y <code>Authorization: Bearer</code> simultáneamente para garantizar interoperabilidad completa con CCOFACT PRO y NubeFacT.
+                * La clave se transmite de forma segura como cabecera <code>x-api-key</code> para autenticación directa con el motor fiscal CCOFACT PRO.
               </span>
             </div>
 
