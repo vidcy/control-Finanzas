@@ -60,6 +60,7 @@ import {
   testBillingSandboxRequest,
   getBillingConfigRequest,
   updateBillingConfigRequest,
+  syncSeriesRequest,
   updateBillingDocumentRequest,
   deleteBillingDocumentRequest,
   testCcofactConnectionRequest,
@@ -141,6 +142,11 @@ export default function BusinessBillingPage() {
   const [configReason, setConfigReason] = useState("");
   const [configUrl, setConfigUrl] = useState("");
   const [configToken, setConfigToken] = useState("");
+  const [configSerieBoleta, setConfigSerieBoleta] = useState("B001");
+  const [configSerieFactura, setConfigSerieFactura] = useState("F001");
+  const [configInitialBoleta, setConfigInitialBoleta] = useState<number | string>("");
+  const [configInitialFactura, setConfigInitialFactura] = useState<number | string>("");
+  const [isSyncingSeries, setIsSyncingSeries] = useState(false);
   const [isSavingConfig, setIsSavingConfig] = useState(false);
 
   // Edit / Rectify State
@@ -203,6 +209,10 @@ export default function BusinessBillingPage() {
       setConfigReason(cfg.businessReason || user?.businessReason || "");
       setConfigUrl(cfg.ccofactUrl || "");
       setConfigToken("");
+      setConfigSerieBoleta(cfg.billingSerieBoleta || "B001");
+      setConfigSerieFactura(cfg.billingSerieInvoice || "F001");
+      setConfigInitialBoleta("");
+      setConfigInitialFactura("");
       setIsConfigModalOpen(true);
     } catch (err: any) {
       toast.error("Error al abrir configuración: " + err.message);
@@ -218,6 +228,8 @@ export default function BusinessBillingPage() {
         businessName: configName,
         businessReason: configReason,
         ccofactUrl: configUrl,
+        billingSerieBoleta: configSerieBoleta,
+        billingSerieInvoice: configSerieFactura,
         ...(configToken ? { ccofactApiKey: configToken } : {}),
       });
       toast.success("Configuración fiscal guardada con éxito");
@@ -227,6 +239,28 @@ export default function BusinessBillingPage() {
       toast.error("Error al guardar: " + err.message);
     } finally {
       setIsSavingConfig(false);
+    }
+  };
+
+  const handleSyncSeries = async () => {
+    try {
+      setIsSyncingSeries(true);
+      toast.loading("Sincronizando series y correlativos con CCOFACT...", { id: "sync-series" });
+      const res = await syncSeriesRequest({
+        serieBoleta: configSerieBoleta,
+        serieFactura: configSerieFactura,
+        ...(configInitialBoleta !== "" ? { initialBoletaNumber: Number(configInitialBoleta) } : {}),
+        ...(configInitialFactura !== "" ? { initialFacturaNumber: Number(configInitialFactura) } : {}),
+      });
+      if (res.success) {
+        toast.success(res.message || "Series sincronizadas con éxito", { id: "sync-series" });
+      } else {
+        toast.error("Error sincronizando series: " + res.message, { id: "sync-series" });
+      }
+    } catch (err: any) {
+      toast.error("Error al sincronizar series: " + err.message, { id: "sync-series" });
+    } finally {
+      setIsSyncingSeries(false);
     }
   };
 
@@ -1967,6 +2001,109 @@ export default function BusinessBillingPage() {
               <span className="text-[10px] text-slate-400 mt-1 block">
                 * La clave se transmite de forma segura como cabecera <code>x-api-key</code> para autenticación directa con el motor fiscal CCOFACT PRO.
               </span>
+            </div>
+
+            {/* Gestión de Series y Correlativos SUNAT */}
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-black uppercase text-slate-800 flex items-center gap-1.5">
+                    <FileText className="w-4 h-4 text-indigo-600" />
+                    Series y Correlativos de Emisión SUNAT
+                  </h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Configure las series activas y ajuste el correlativo inicial si ya emitió comprobantes en SUNAT.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                {/* Boleta */}
+                <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-700">Boletas de Venta (03)</span>
+                    <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 font-mono text-[10px] rounded font-bold">
+                      {configSerieBoleta}
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                      Serie Activa (4 caracteres):
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={4}
+                      placeholder="B001"
+                      value={configSerieBoleta}
+                      onChange={(e) => setConfigSerieBoleta(e.target.value.toUpperCase().trim())}
+                      className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                      Último número en SUNAT (Opcional):
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      placeholder="Ej. 8 (Próxima será 9)"
+                      value={configInitialBoleta}
+                      onChange={(e) => setConfigInitialBoleta(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Factura */}
+                <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-700">Facturas Electrónicas (01)</span>
+                    <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 font-mono text-[10px] rounded font-bold">
+                      {configSerieFactura}
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                      Serie Activa (4 caracteres):
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={4}
+                      placeholder="F001"
+                      value={configSerieFactura}
+                      onChange={(e) => setConfigSerieFactura(e.target.value.toUpperCase().trim())}
+                      className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                      Último número en SUNAT (Opcional):
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      placeholder="Ej. 5 (Próxima será 6)"
+                      value={configInitialFactura}
+                      onChange={(e) => setConfigInitialFactura(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">
+                <span className="text-[10px] text-slate-500">
+                  💡 Si migró de servidor o SUNAT ya registró números en pruebas locales, cambie la serie a <strong>B002 / F002</strong> o ingrese el último número emitido para continuar sin colisión.
+                </span>
+                <button
+                  type="button"
+                  onClick={handleSyncSeries}
+                  disabled={isSyncingSeries}
+                  className="px-3 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors cursor-pointer shrink-0 disabled:opacity-50"
+                >
+                  {isSyncingSeries ? "Sincronizando..." : "Sincronizar Series con CCOFACT PRO"}
+                </button>
+              </div>
             </div>
 
             {/* Info Card de Especificaciones */}

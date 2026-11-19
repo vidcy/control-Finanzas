@@ -107,6 +107,8 @@ export interface BillingConfig {
   businessName: string;
   ccofactUrl?: string;
   ccofactApiKey?: string;
+  billingSerieBoleta?: string;
+  billingSerieInvoice?: string;
   hasToken: boolean;
 }
 
@@ -182,7 +184,19 @@ export const updateBillingConfigRequest = async (config: {
   businessName?: string;
   ccofactUrl?: string;
   ccofactApiKey?: string;
+  billingSerieBoleta?: string;
+  billingSerieInvoice?: string;
 }) => {
   const { data } = await axios.put('/billing/config', config);
+  return data;
+};
+
+export const syncSeriesRequest = async (payload: {
+  serieBoleta?: string;
+  serieFactura?: string;
+  initialBoletaNumber?: number;
+  initialFacturaNumber?: number;
+}) => {
+  const { data } = await axios.post('/billing/sync-series', payload);
   return data;
 };

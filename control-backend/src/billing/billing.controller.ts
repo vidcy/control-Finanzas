@@ -111,9 +111,27 @@ export class BillingController {
       businessName?: string;
       ccofactUrl?: string;
       ccofactApiKey?: string;
+      billingSerieBoleta?: string;
+      billingSerieInvoice?: string;
     },
   ) {
     const ownerId = req.user.parentId || req.user.id;
     return this.billingService.updateConfig(ownerId, body);
+  }
+
+  @UseGuards(AuthGuard('jwt'))
+  @Post('sync-series')
+  syncSeries(
+    @Req() req,
+    @Body()
+    body: {
+      serieBoleta?: string;
+      serieFactura?: string;
+      initialBoletaNumber?: number;
+      initialFacturaNumber?: number;
+    },
+  ) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.billingService.syncSeries(ownerId, body);
   }
 }

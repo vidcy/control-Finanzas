@@ -1184,6 +1184,8 @@ export class BillingService {
         businessName: true,
         ccofactUrl: true,
         ccofactApiKey: true,
+        billingSerieBoleta: true,
+        billingSerieInvoice: true,
       },
     });
     if (!user) throw new NotFoundException('Usuario no encontrado');
@@ -1195,6 +1197,8 @@ export class BillingService {
       businessName: user.businessName || '',
       ccofactUrl: user.ccofactUrl || 'http://localhost:4001/api/v1/ccofact/emitir',
       ccofactApiKey: user.ccofactApiKey || '',
+      billingSerieBoleta: user.billingSerieBoleta || 'B001',
+      billingSerieInvoice: user.billingSerieInvoice || 'F001',
       hasToken: Boolean(user.ccofactApiKey),
     };
   }
@@ -1206,6 +1210,8 @@ export class BillingService {
     businessName?: string;
     ccofactUrl?: string;
     ccofactApiKey?: string;
+    billingSerieBoleta?: string;
+    billingSerieInvoice?: string;
   }) {
     const updateData: any = {};
     if (data.hasElectronicBilling !== undefined) updateData.hasElectronicBilling = data.hasElectronicBilling;
@@ -1214,6 +1220,8 @@ export class BillingService {
     if (data.businessName !== undefined) updateData.businessName = data.businessName;
     if (data.ccofactUrl !== undefined) updateData.ccofactUrl = data.ccofactUrl;
     if (data.ccofactApiKey !== undefined) updateData.ccofactApiKey = data.ccofactApiKey;
+    if (data.billingSerieBoleta !== undefined) updateData.billingSerieBoleta = data.billingSerieBoleta.toUpperCase().trim();
+    if (data.billingSerieInvoice !== undefined) updateData.billingSerieInvoice = data.billingSerieInvoice.toUpperCase().trim();
 
     const updated = await this.prisma.user.update({
       where: { id: ownerId },
@@ -1227,7 +1235,88 @@ export class BillingService {
       businessName: updated.businessName,
       ccofactUrl: updated.ccofactUrl || '',
       ccofactApiKey: updated.ccofactApiKey || '',
+      billingSerieBoleta: updated.billingSerieBoleta || 'B001',
+      billingSerieInvoice: updated.billingSerieInvoice || 'F001',
       hasToken: Boolean(updated.ccofactApiKey),
+    };
+  }
+
+  async syncSeries(ownerId: string, data: {
+    serieBoleta?: string;
+    serieFactura?: string;
+    initialBoletaNumber?: number;
+    initialFacturaNumber?: number;
+  }) {
+    const owner = await this.prisma.user.findUnique({ where: { id: ownerId } });
+    if (!owner) throw new NotFoundException('Usuario no encontrado');
+
+    const updateUserData: any = {};
+    if (data.serieBoleta) updateUserData.billingSerieBoleta = data.serieBoleta.toUpperCase().trim();
+    if (data.serieFactura) updateUserData.billingSerieInvoice = data.serieFactura.toUpperCase().trim();
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: ownerId },
+      data: updateUserData,
+    });
+
+    const serieBoleta = updatedUser.billingSerieBoleta || 'B001';
+    const serieFactura = updatedUser.billingSerieInvoice || 'F001';
+
+    let ccofactSyncResult: any = null;
+    const baseUrl = this.normalizeCcofactBaseUrl(owner.ccofactUrl || 'http://localhost:4001');
+    const apiKey = owner.ccofactApiKey || 'fact_demo_key_pro_2026';
+
+    try {
+      const promises = [];
+      if (data.serieBoleta || data.initialBoletaNumber !== undefined) {
+        promises.push(
+          fetch(`${baseUrl}/api/v1/series`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': apiKey,
+              'Authorization': `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+              document_type: '03',
+              series: serieBoleta,
+              initial_number: Number(data.initialBoletaNumber || 0),
+            }),
+          }).then(r => r.json()).catch(e => ({ error: e.message }))
+        );
+      }
+
+      if (data.serieFactura || data.initialFacturaNumber !== undefined) {
+        promises.push(
+          fetch(`${baseUrl}/api/v1/series`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': apiKey,
+              'Authorization': `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+              document_type: '01',
+              series: serieFactura,
+              initial_number: Number(data.initialFacturaNumber || 0),
+            }),
+          }).then(r => r.json()).catch(e => ({ error: e.message }))
+        );
+      }
+
+      if (promises.length > 0) {
+        ccofactSyncResult = await Promise.all(promises);
+      }
+    } catch (err: any) {
+      this.logger.warn(`No se pudo sincronizar series con CCOFACT PRO: ${err.message}`);
+    }
+
+    return {
+      success: true,
+      message: 'Series y correlativos iniciales configurados exitosamente.',
+      billingSerieBoleta: serieBoleta,
+      billingSerieInvoice: serieFactura,
+      ccofactSyncResult,
     };
   }
 }

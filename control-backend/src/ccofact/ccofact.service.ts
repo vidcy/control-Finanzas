@@ -95,7 +95,9 @@ export class CcofactService {
       }
 
       const isFactura = sale.billingType === 'FACTURA';
-      const serie = isFactura ? 'F001' : 'B001';
+      const serie = isFactura
+        ? (sale.billingSerie || owner.billingSerieInvoice || 'F001')
+        : (sale.billingSerie || owner.billingSerieBoleta || 'B001');
 
       // Validaciones tributarias cliente
       let docType = sale.clientDocumentType || '-';
@@ -357,11 +359,28 @@ export class CcofactService {
 
       const isCredit = noteType === 'CREDIT';
       const isOriginalFactura = originalSale.billingType === 'FACTURA';
-      const serie = isOriginalFactura ? (isCredit ? 'FC01' : 'FD01') : (isCredit ? 'BC01' : 'BD01');
+      const origSerie = originalSale.billingSerie || (isOriginalFactura ? 'F001' : 'B001');
+      const serie = isOriginalFactura
+        ? (isCredit ? (origSerie.startsWith('F') && origSerie.length === 4 ? `FC${origSerie.substring(2)}` : 'FC01') : 'FD01')
+        : (isCredit ? (origSerie.startsWith('B') && origSerie.length === 4 ? `BC${origSerie.substring(2)}` : 'BC01') : 'BD01');
 
+      const affectation = (originalSale as any).igvAffectation || '20';
       const totalAmount = sale.amount;
-      const totalGravada = parseFloat((totalAmount / 1.18).toFixed(2));
-      const totalIgv = parseFloat((totalAmount - totalGravada).toFixed(2));
+      let totalGravada = 0;
+      let totalExonerada = 0;
+      let totalInafecta = 0;
+      let totalIgv = 0;
+
+      if (affectation === '20') {
+        totalExonerada = parseFloat(totalAmount.toFixed(2));
+      } else if (affectation === '30') {
+        totalInafecta = parseFloat(totalAmount.toFixed(2));
+      } else {
+        const rate = Number((originalSale as any).igvRate) || 18.0;
+        const divisor = 1 + (rate / 100);
+        totalGravada = parseFloat((totalAmount / divisor).toFixed(2));
+        totalIgv = parseFloat((totalAmount - totalGravada).toFixed(2));
+      }
 
       const payload = {
         idempotency_key: `note_${sale.id}`,
@@ -382,8 +401,15 @@ export class CcofactService {
           unidad_medida: 'NIU',
           cantidad: Number(item.quantity),
           precio_unitario: Number(item.price),
-          tipo_afectacion_igv: '10',
+          valor_unitario: affectation === '20' || affectation === '30' ? Number(item.price) : parseFloat((Number(item.price) / 1.18).toFixed(4)),
+          tipo_afectacion_igv: affectation,
         })),
+        total_gravada: totalGravada,
+        total_exonerada: totalExonerada,
+        total_inafecta: totalInafecta,
+        total_igv: totalIgv,
+        total_impuestos: totalIgv,
+        observaciones: affectation === '20' ? 'BIENES TRANSFERIDOS EN LA AMAZONÍA PARA SER CONSUMIDOS EN LA MISMA - LEY N° 27037' : undefined,
         ref_documento: {
           tipo: isOriginalFactura ? '01' : '03',
           serie: originalSale.billingSerie,
@@ -399,7 +425,7 @@ export class CcofactService {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': owner.ccofactApiKey,
+          'x-api-key': owner.ccofactApiKey || 'fact_demo_key_pro_2026',
         },
         body: JSON.stringify(payload),
       });
