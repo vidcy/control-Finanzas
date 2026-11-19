@@ -808,6 +808,9 @@ export class ProductsService {
       clientDenomination,
       clientAddress,
       clientEmail,
+      igvAffectation,
+      igvRate,
+      taxRegime,
     } = checkoutDto;
 
     if (!items || items.length === 0) {
@@ -1131,8 +1134,26 @@ export class ProductsService {
       }
 
       // 1. Create Sale Record
-      // Determinar el estado inicial de facturación
+      // Determinar el estado inicial de facturación y cálculo fiscal
       const hasBilling = billingType === 'BOLETA' || billingType === 'FACTURA';
+      const effectiveAffectation = hasBilling ? (igvAffectation || '20') : null;
+      const effectiveRate = hasBilling ? (Number(igvRate) || 18.0) : null;
+      let totalGravada = 0;
+      let totalExonerada = 0;
+      let totalInafecta = 0;
+      let totalIgv = 0;
+
+      if (hasBilling) {
+        if (effectiveAffectation === '20') {
+          totalExonerada = parseFloat(totalAmount.toFixed(2));
+        } else if (effectiveAffectation === '30') {
+          totalInafecta = parseFloat(totalAmount.toFixed(2));
+        } else {
+          const divisor = 1 + (effectiveRate / 100);
+          totalGravada = parseFloat((totalAmount / divisor).toFixed(2));
+          totalIgv = parseFloat((totalAmount - totalGravada).toFixed(2));
+        }
+      }
 
       const sale = await tx.sale.create({
         data: {
@@ -1152,6 +1173,13 @@ export class ProductsService {
           clientDenomination: clientDenomination || null,
           clientAddress: clientAddress || null,
           clientEmail: clientEmail || null,
+          taxRegime: hasBilling ? (taxRegime || 'AMAZONIA_EXONERADO') : null,
+          igvAffectation: effectiveAffectation,
+          igvRate: effectiveRate,
+          totalGravada,
+          totalExonerada,
+          totalInafecta,
+          totalIgv,
         },
       });
 
@@ -1262,7 +1290,10 @@ export class ProductsService {
       // Así, si la comunicación con CCOFACT PRO falla, la venta ya quedó guardada y no se revierte.
       if (billingType === 'BOLETA' || billingType === 'FACTURA') {
         try {
-          const billingResult = await this.ccofactService.sendInvoice(result.saleId);
+          const billingResult = await this.ccofactService.sendInvoice(result.saleId, {
+            igvAffectation: igvAffectation || '20',
+            igvRate: Number(igvRate) || 18.0,
+          });
           if (billingResult.success) {
             await this.prisma.sale.update({
               where: { id: result.saleId },

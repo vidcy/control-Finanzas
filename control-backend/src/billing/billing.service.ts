@@ -286,8 +286,8 @@ export class BillingService {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'x-api-key': owner.ccofactApiKey,
-              'Authorization': `Bearer ${owner.ccofactApiKey}`,
+              'x-api-key': owner.ccofactApiKey || 'fact_demo_key_pro_2026',
+              'Authorization': `Bearer ${owner.ccofactApiKey || 'fact_demo_key_pro_2026'}`,
             },
             body: JSON.stringify(ccofactPayload),
           });
@@ -606,9 +606,15 @@ export class BillingService {
               unidad_medida: 'NIU',
               cantidad: 1,
               precio_unitario: doc.totalAmount,
-              tipo_afectacion_igv: '10',
+              tipo_afectacion_igv: doc.totalOpExonerada > 0 ? '20' : (doc.totalOpInafecta > 0 ? '30' : '10'),
             },
           ],
+          total_gravada: doc.totalOpGravada,
+          total_exonerada: doc.totalOpExonerada,
+          total_inafecta: doc.totalOpInafecta,
+          total_igv: doc.totalIgv,
+          total_impuestos: doc.totalIgv,
+          observaciones: doc.totalOpExonerada > 0 ? 'BIENES TRANSFERIDOS EN LA AMAZONÍA PARA SER CONSUMIDOS EN LA MISMA - LEY N° 27037' : undefined,
           enviar_a_sunat_inmediato: true,
         };
 
@@ -617,8 +623,8 @@ export class BillingService {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-api-key': owner.ccofactApiKey,
-            'Authorization': `Bearer ${owner.ccofactApiKey}`,
+            'x-api-key': owner.ccofactApiKey || 'fact_demo_key_pro_2026',
+            'Authorization': `Bearer ${owner.ccofactApiKey || 'fact_demo_key_pro_2026'}`,
           },
           body: JSON.stringify(ccofactPayload),
         });
@@ -677,8 +683,26 @@ export class BillingService {
     let correlative = lastNote ? lastNote.correlative + 1 : 1;
     let fullNumber = `${serie}-${String(correlative).padStart(8, '0')}`;
     const amount = dto.amount || original.totalAmount;
-    const base = Number((amount / 1.18).toFixed(2));
-    const igv = Number((amount - base).toFixed(2));
+
+    // Respetar la afectación tributaria del comprobante original (Exonerado / Inafecto / Gravado)
+    const isExonerado = (original.totalOpExonerada || 0) > 0;
+    const isInafecto = (original.totalOpInafecta || 0) > 0;
+    let base = 0;
+    let igv = 0;
+    let opExonerada = 0;
+    let opInafecta = 0;
+    let affectation = '10';
+
+    if (isExonerado) {
+      opExonerada = Number(amount.toFixed(2));
+      affectation = '20';
+    } else if (isInafecto) {
+      opInafecta = Number(amount.toFixed(2));
+      affectation = '30';
+    } else {
+      base = Number((amount / 1.18).toFixed(2));
+      igv = Number((amount - base).toFixed(2));
+    }
 
     let status: FiscalStatus = FiscalStatus.ACCEPTED;
     let pdfUrl: string | null = null;
@@ -712,9 +736,14 @@ export class BillingService {
               unidad_medida: 'NIU',
               cantidad: 1,
               precio_unitario: amount,
-              tipo_afectacion_igv: '10',
+              tipo_afectacion_igv: affectation,
             },
           ],
+          total_gravada: base,
+          total_exonerada: opExonerada,
+          total_inafecta: opInafecta,
+          total_igv: igv,
+          total_impuestos: igv,
           ref_documento: {
             tipo: original.docType === FiscalDocType.INVOICE ? '01' : '03',
             serie: original.serie,
@@ -730,8 +759,8 @@ export class BillingService {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-api-key': owner.ccofactApiKey,
-            'Authorization': `Bearer ${owner.ccofactApiKey}`,
+            'x-api-key': owner.ccofactApiKey || 'fact_demo_key_pro_2026',
+            'Authorization': `Bearer ${owner.ccofactApiKey || 'fact_demo_key_pro_2026'}`,
           },
           body: JSON.stringify(payload),
         });
@@ -779,6 +808,8 @@ export class BillingService {
         customerName: original.customerName,
         customerAddress: original.customerAddress,
         totalOpGravada: base,
+        totalOpExonerada: opExonerada,
+        totalOpInafecta: opInafecta,
         totalIgv: igv,
         totalAmount: amount,
         currency: original.currency,
@@ -947,8 +978,8 @@ export class BillingService {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'x-api-key': owner.ccofactApiKey,
-              'Authorization': `Bearer ${owner.ccofactApiKey}`,
+              'x-api-key': owner.ccofactApiKey || 'fact_demo_key_pro_2026',
+              'Authorization': `Bearer ${owner.ccofactApiKey || 'fact_demo_key_pro_2026'}`,
             },
             body: JSON.stringify({ motivo }),
           });
@@ -1036,8 +1067,8 @@ export class BillingService {
         await fetch(`${baseUrl}/api/v1/documents/by-series-number/${doc.serie}/${doc.correlative}`, {
           method: 'DELETE',
           headers: {
-            'x-api-key': owner.ccofactApiKey,
-            'Authorization': `Bearer ${owner.ccofactApiKey}`,
+            'x-api-key': owner.ccofactApiKey || 'fact_demo_key_pro_2026',
+            'Authorization': `Bearer ${owner.ccofactApiKey || 'fact_demo_key_pro_2026'}`,
           },
         });
       } catch (e) {}
@@ -1068,23 +1099,17 @@ export class BillingService {
 
     if (!owner) throw new NotFoundException('Usuario no encontrado');
 
-    if (!owner.ccofactUrl || !owner.ccofactApiKey) {
-      return {
-        connected: false,
-        online: false,
-        message: 'No se han configurado la URL o API Key de CCOFACT PRO.',
-      };
-    }
-
-    const baseUrl = this.normalizeCcofactBaseUrl(owner.ccofactUrl);
+    const effectiveKey = owner.ccofactApiKey || 'fact_demo_key_pro_2026';
+    const rawUrl = owner.ccofactUrl || 'http://localhost:4001';
+    const baseUrl = this.normalizeCcofactBaseUrl(rawUrl);
     const statusUrl = `${baseUrl}/api/v1/ccofact/status`;
 
     try {
       const resp = await fetch(statusUrl, {
         method: 'GET',
         headers: {
-          'x-api-key': owner.ccofactApiKey,
-          'Authorization': `Bearer ${owner.ccofactApiKey}`,
+          'x-api-key': effectiveKey,
+          'Authorization': `Bearer ${effectiveKey}`,
         },
       });
 

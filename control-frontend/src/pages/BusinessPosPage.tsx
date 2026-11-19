@@ -533,6 +533,7 @@ export default function BusinessPosPage() {
       taxRegime: activeBranch?.taxRegime || user?.taxRegime,
       department: activeBranch?.department || user?.businessDepartment,
       igvRate: activeBranch?.igvRate ?? user?.igvRate,
+      igvAffectation: (lastSale as any)?.igvAffectation || "20",
     });
 
     const formattedCorrelative = lastSale.billingNumber ? String(lastSale.billingNumber).padStart(8, "0") : "00000001";
@@ -1485,6 +1486,7 @@ export default function BusinessPosPage() {
       taxRegime: branchInfo?.taxRegime || user?.taxRegime,
       department: branchInfo?.department || user?.businessDepartment,
       igvRate: branchInfo?.igvRate ?? user?.igvRate,
+      igvAffectation: (lastSale as any)?.igvAffectation || "20",
     });
 
     const formattedCorrelative = lastSale.billingNumber ? String(lastSale.billingNumber).padStart(8, "0") : "00000001";
@@ -2423,6 +2425,7 @@ export default function BusinessPosPage() {
                 taxRegime: activeBranch?.taxRegime || user?.taxRegime,
                 department: activeBranch?.department || user?.businessDepartment,
                 igvRate: activeBranch?.igvRate ?? user?.igvRate,
+                igvAffectation: (lastSale as any)?.igvAffectation || "20",
               });
 
               return isFiscal ? (
@@ -3515,6 +3518,7 @@ export default function BusinessPosPage() {
                   taxRegime: activeBranch?.taxRegime || user?.taxRegime,
                   department: activeBranch?.department || user?.businessDepartment,
                   igvRate: activeBranch?.igvRate ?? user?.igvRate,
+                  igvAffectation: (lastSale as any)?.igvAffectation || "20",
                 });
 
                 return isFiscal ? (

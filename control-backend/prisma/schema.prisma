@@ -684,6 +684,7 @@ model Sale {
   clientEmail          String?
   taxRegime            String?   @default("GENERAL_18")
   igvRate              Float?    @default(18.0)
+  igvAffectation       String?   @default("20")
   totalGravada         Float?    @default(0)
   totalExonerada       Float?    @default(0)
   totalInafecta        Float?    @default(0)
