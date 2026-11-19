@@ -35,6 +35,12 @@ npm run build
 # 4. Reiniciar proceso en PM2
 echo ""
 echo "🔄 [3/4] Reiniciando servicio en PM2..."
+cd "$REPO_ROOT/control-backend"
+if pm2 describe backend > /dev/null 2>&1; then
+  pm2 delete backend || true
+fi
+pm2 start dist/main.js --name backend
 pm2 restart all || pm2 reload all
+pm2 save
 pm2 status
 
