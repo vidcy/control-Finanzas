@@ -44,6 +44,22 @@ pm2 restart all || pm2 reload all
 pm2 save
 pm2 status
 
+# 4.1. Actualizar Motor Fiscal CCOFACT PRO si existe en el servidor
+for FACT_PATH in "$HOME/apps/fact-apps/fact-backend" "$HOME/apps/fact-backend" "$REPO_ROOT/../apps/fact-apps/fact-backend" "$REPO_ROOT/../fact-backend"; do
+  if [ -d "$FACT_PATH" ]; then
+    echo ""
+    echo "⚡ Actualizando Motor Fiscal CCOFACT PRO en $FACT_PATH..."
+    cd "$FACT_PATH"
+    git stash || true
+    git pull origin main || true
+    npm install --legacy-peer-deps || true
+    npx prisma generate || true
+    npm run build || true
+    pm2 restart fact-backend || true
+    break
+  fi
+done
+
 # 5. Compilar Frontend (Vite + React)
 echo ""
 echo "🎨 [4/4] Compilando Frontend (control-frontend)..."
