@@ -46,6 +46,8 @@ import ReceiptUploader, {
 } from "../components/ui/ImageUploader";
 import Pagination from "../components/ui/Pagination";
 import ConfirmModal from "../components/ui/ConfirmModal";
+import SystemErrorModal from "../components/ui/SystemErrorModal";
+import { parseSystemError, type SystemErrorInfo } from "../utils/systemErrorHandler";
 
 import { formatStock } from "./BusinessInventoryPage";
 import { useHardwareScanner } from "../hooks/useHardwareScanner";
@@ -391,6 +393,9 @@ export default function BusinessPosPage() {
     message: "",
     onConfirm: () => {},
   });
+
+  // Modal de diagnóstico / error oficial del sistema
+  const [systemError, setSystemError] = useState<SystemErrorInfo | null>(null);
 
   // Link unassigned barcode state
   const [isLinkBarcodeModalOpen, setIsLinkBarcodeModalOpen] = useState(false);
@@ -767,7 +772,8 @@ export default function BusinessPosPage() {
       loadData();
     } catch (err: any) {
       toast.dismiss(loadingToast);
-      toast.error(err.message || "Error al emitir la nota");
+      const parsed = parseSystemError(err, `Error al Emitir Nota de ${noteType === "CREDIT" ? "Crédito" : "Débito"}`);
+      setSystemError(parsed);
     } finally {
       setIsSubmittingNote(false);
     }
@@ -826,7 +832,8 @@ export default function BusinessPosPage() {
           loadSales();
           loadData();
         } catch (error: any) {
-          toast.error(error.message || "Error al eliminar la venta");
+          const parsed = parseSystemError(error, "Error al Anular Venta y Comprobante");
+          setSystemError(parsed);
         }
       },
     });
@@ -900,7 +907,8 @@ export default function BusinessPosPage() {
           loadData();
           loadSales();
         } catch (error: any) {
-          toast.error(error.message || "Error al editar la venta");
+          const parsed = parseSystemError(error, "Error al Modificar Venta");
+          setSystemError(parsed);
         }
       },
     });
@@ -1413,10 +1421,8 @@ export default function BusinessPosPage() {
             { duration: 5000 }
           );
         } else {
-          toast(
-            `⚠️ Venta guardada, pero el comprobante electrónico falló: ${txResult.billing.error}. Puedes reintentarlo desde el historial.`,
-            { duration: 8000, icon: '⚠️' }
-          );
+          const parsed = parseSystemError(txResult.billing.error, "Observación en Facturación Electrónica SUNAT");
+          setSystemError(parsed);
         }
       } else {
         toast.success("¡Venta completada con éxito!");
@@ -1465,7 +1471,8 @@ export default function BusinessPosPage() {
       setShowTicket(true);
       loadData();
     } catch (error: any) {
-      toast.error(error.message || "Error al procesar la venta");
+      const parsed = parseSystemError(error, "No se Pudo Completar la Venta");
+      setSystemError(parsed);
     } finally {
       setIsProcessing(false);
     }
@@ -4659,7 +4666,7 @@ export default function BusinessPosPage() {
                                                 loadData();
                                               } catch (err: any) {
                                                 toast.dismiss(loading);
-                                                toast.error(err.message || "Error al reintentar");
+                                                setSystemError(parseSystemError(err, "Diagnóstico de Reintento SUNAT"));
                                               }
                                             }}
                                             className="p-0.5 bg-gray-50 hover:bg-gray-150 border border-gray-200 rounded text-gray-650 hover:text-gray-950 transition-colors animate-pulse"
@@ -5526,6 +5533,13 @@ export default function BusinessPosPage() {
         confirmText={posConfirmModal.confirmText}
         cancelText={posConfirmModal.cancelText}
         variant={posConfirmModal.variant || "danger"}
+      />
+
+      {/* Modal de Diagnóstico y Asistencia Oficial de Errores del Sistema y SUNAT */}
+      <SystemErrorModal
+        isOpen={Boolean(systemError)}
+        onClose={() => setSystemError(null)}
+        error={systemError}
       />
     </Appshell>
   );

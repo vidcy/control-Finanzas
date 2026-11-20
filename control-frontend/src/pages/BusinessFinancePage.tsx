@@ -36,6 +36,8 @@ import {
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
 import ConfirmModal from "../components/ui/ConfirmModal";
+import SystemErrorModal from "../components/ui/SystemErrorModal";
+import { parseSystemError, type SystemErrorInfo } from "../utils/systemErrorHandler";
 import { format } from "date-fns";
 import BusinessAiAdvisor from "../components/dashboard/BusinessAiAdvisor";
 import ImageUploader, { getReceiptAbsoluteUrl, uploadReceiptFile } from "../components/ui/ImageUploader";
@@ -63,6 +65,7 @@ export default function BusinessFinancePage() {
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isRevertConfirmOpen, setIsRevertConfirmOpen] = useState(false);
   const [txIdToConfirm, setTxIdToConfirm] = useState<string | null>(null);
+  const [systemError, setSystemError] = useState<SystemErrorInfo | null>(null);
 
   // Cancel purchase order states
   const [isCancelOrderConfirmOpen, setIsCancelOrderConfirmOpen] = useState(false);
@@ -262,8 +265,8 @@ export default function BusinessFinancePage() {
       await deleteTransactionRequest(id);
       toast.success("Operación eliminada con éxito");
       loadData();
-    } catch (error) {
-      toast.error("Error al eliminar la operación");
+    } catch (error: any) {
+      setSystemError(parseSystemError(error, "Error al Eliminar Operación"));
     }
   };
 
@@ -272,8 +275,8 @@ export default function BusinessFinancePage() {
       await markAsPendingRequest(id, { status: "PENDING" });
       toast.success("Movimiento devuelto a cuentas pendientes");
       loadData();
-    } catch (error) {
-      toast.error("Error al devolver a cuentas pendientes");
+    } catch (error: any) {
+      setSystemError(parseSystemError(error, "Error al Devolver a Cuentas Pendientes"));
     }
   };
 
@@ -1519,6 +1522,13 @@ export default function BusinessFinancePage() {
         cancelText="Cancelar"
         variant="warning"
         buttonIcon={<AlertCircle className="w-5 h-5" />}
+      />
+
+      {/* Modal de Diagnóstico y Errores del Sistema */}
+      <SystemErrorModal
+        isOpen={Boolean(systemError)}
+        onClose={() => setSystemError(null)}
+        error={systemError}
       />
     </Appshell>
   );

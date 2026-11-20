@@ -52,6 +52,8 @@ import {
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
+import SystemErrorModal from "../components/ui/SystemErrorModal";
+import { parseSystemError, type SystemErrorInfo } from "../utils/systemErrorHandler";
 import {
   getBillingStatsRequest,
   getBillingDocumentsRequest,
@@ -186,6 +188,26 @@ export default function BusinessBillingPage() {
   // CCOFACT Connection test State
   const [isTestingConn, setIsTestingConn] = useState(false);
   const [connResult, setConnResult] = useState<any>(null);
+
+  // Diagnostic / System Error Modal State
+  const [systemError, setSystemError] = useState<SystemErrorInfo | null>(null);
+  const [systemErrorRetryAction, setSystemErrorRetryAction] = useState<(() => void) | null>(null);
+
+  const handleShowDiagnostic = (doc: FiscalDocument) => {
+    const rawMsg =
+      doc.sunatDescription ||
+      (doc.status === "REJECTED" ? "Comprobante rechazado u observado por SUNAT." : doc.status);
+    const parsed = parseSystemError(
+      {
+        code: doc.sunatResponseCode,
+        message: rawMsg,
+        detail: `Comprobante: ${doc.fullNumber} | Tipo: ${doc.docType} | Receptor: ${doc.customerDocNum} - ${doc.customerName}`,
+      },
+      `Diagnóstico Tributario SUNAT: ${doc.fullNumber}`
+    );
+    setSystemErrorRetryAction(() => () => handleRetry(doc.id, doc.fullNumber));
+    setSystemError(parsed);
+  };
 
   useEffect(() => {
     loadData();
@@ -359,16 +381,25 @@ export default function BusinessBillingPage() {
   // Retry document
   const handleRetry = async (docId: string, fullNumber: string) => {
     try {
-      toast.loading(`Reintentando envío a SUNAT de ${fullNumber}...`, { id: "retry" });
+      toast.loading(`Reintentando transmisión de ${fullNumber}...`, { id: "retry" });
       const res = await retryBillingDocumentRequest(docId);
       if (res.success) {
         toast.success(`Comprobante ${fullNumber} aceptado por SUNAT`, { id: "retry" });
         loadData();
       } else {
-        toast.error(`Reintento fallido: ${res.error || "Rechazado por SUNAT"}`, { id: "retry" });
+        toast.dismiss("retry");
+        setSystemErrorRetryAction(() => () => handleRetry(docId, fullNumber));
+        setSystemError(
+          parseSystemError(
+            res.error || res.message || "Rechazado por SUNAT",
+            `Diagnóstico de Reintento SUNAT: ${fullNumber}`
+          )
+        );
       }
     } catch (err: any) {
-      toast.error("Error en reintento: " + err.message, { id: "retry" });
+      toast.dismiss("retry");
+      setSystemErrorRetryAction(() => () => handleRetry(docId, fullNumber));
+      setSystemError(parseSystemError(err, `Error en Reintento de ${fullNumber}`));
     }
   };
 
@@ -452,7 +483,12 @@ export default function BusinessBillingPage() {
       setIsDeleteModalOpen(false);
       loadData();
     } catch (err: any) {
-      toast.error(err.response?.data?.message || err.message || "Error al procesar anulación");
+      setSystemError(
+        parseSystemError(
+          err.response?.data?.message || err.message || "Error al procesar anulación",
+          `Error al Anular Comprobante ${selectedDocForDelete?.fullNumber || ""}`
+        )
+      );
     } finally {
       setIsSubmittingDelete(false);
     }
@@ -468,12 +504,12 @@ export default function BusinessBillingPage() {
       if (res.connected) {
         toast.success("¡Conexión verificada con CCOFACT PRO Engine!");
       } else {
-        toast.error(res.message || "No se pudo conectar");
+        setSystemError(parseSystemError(res.message || "No se pudo conectar con el facturador CCOFACT", "Diagnóstico de Conexión CCOFACT"));
       }
     } catch (err: any) {
       const msg = err.response?.data?.message || err.message;
       setConnResult({ connected: false, message: msg });
-      toast.error("Error de conexión: " + msg);
+      setSystemError(parseSystemError(msg, "Error de Conexión con CCOFACT"));
     } finally {
       setIsTestingConn(false);
     }
@@ -733,10 +769,17 @@ export default function BusinessBillingPage() {
         ]);
         loadData();
       } else {
-        toast.error(`Rechazado: ${res.message}`, { id: "emit" });
+        toast.dismiss("emit");
+        setSystemError(
+          parseSystemError(
+            res.message || res.error || "Comprobante rechazado por SUNAT",
+            "Atención Tributaria en Emisión de Comprobante"
+          )
+        );
       }
     } catch (err: any) {
-      toast.error("Error al emitir: " + err.message, { id: "emit" });
+      toast.dismiss("emit");
+      setSystemError(parseSystemError(err, "Error al Emitir Comprobante"));
     } finally {
       setIsSubmittingEmit(false);
     }
@@ -1157,10 +1200,15 @@ export default function BusinessBillingPage() {
                               Aceptado CDR
                             </span>
                           ) : doc.status === "REJECTED" ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                              <AlertCircle className="h-3.5 w-3.5 text-rose-600" />
-                              Observado
-                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleShowDiagnostic(doc)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 hover:border-rose-300 transition-all cursor-pointer shadow-xs group"
+                              title="Hacer clic para ver diagnóstico detallado de SUNAT y solución sugerida"
+                            >
+                              <AlertCircle className="h-3.5 w-3.5 text-rose-600 group-hover:scale-110 transition-transform" />
+                              <span>Observado (Diagnóstico)</span>
+                            </button>
                           ) : (
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200">
                               <Clock className="h-3.5 w-3.5 text-slate-500" />
@@ -2712,6 +2760,17 @@ export default function BusinessBillingPage() {
             </div>
           </div>
         </Modal>
+
+        {/* Modal de Diagnóstico y Asistencia Oficial de Errores del Sistema y SUNAT */}
+        <SystemErrorModal
+          isOpen={Boolean(systemError)}
+          onClose={() => {
+            setSystemError(null);
+            setSystemErrorRetryAction(null);
+          }}
+          error={systemError}
+          onRetry={systemErrorRetryAction ? systemErrorRetryAction : undefined}
+        />
       </div>
     </Appshell>
   );

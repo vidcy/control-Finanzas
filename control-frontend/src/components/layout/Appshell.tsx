@@ -53,6 +53,8 @@ import CatalogManagerModal from "../catalog/CatalogManagerModal";
 import NotificationDropdown from "./NotificationDropdown";
 import { formatPeruTime } from "../../utils/date.utils";
 import Modal from "../ui/Modal";
+import SystemErrorModal from "../ui/SystemErrorModal";
+import { parseSystemError, type SystemErrorInfo } from "../../utils/systemErrorHandler";
 import { changePasswordRequest } from "../../services/auth.api";
 import { FloatingSaveButton } from "../../pages/PiggPage";
 import PersonalAIChatFloating from "../dashboard/PersonalAIChatFloating";
@@ -160,6 +162,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
   const [businessProvince, setBusinessProvince] = useState(user?.businessProvince || "");
   const [businessDistrict, setBusinessDistrict] = useState(user?.businessDistrict || "");
   const [isLookingUpSunat, setIsLookingUpSunat] = useState(false);
+  const [systemError, setSystemError] = useState<SystemErrorInfo | null>(null);
 
   const handleSyncCorrelatives = async () => {
     try {
@@ -182,10 +185,12 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
         );
         if (syncProfile) syncProfile();
       } else {
-        toast.error(res?.message || "Error al sincronizar correlativos", { id: "sync-corr-profile" });
+        toast.dismiss("sync-corr-profile");
+        setSystemError(parseSystemError(res?.message || "Error al sincronizar correlativos", "Inicializadores de Correlativos"));
       }
     } catch (err: any) {
-      toast.error(err.response?.data?.message || err.message || "Error al inicializar correlativos", { id: "sync-corr-profile" });
+      toast.dismiss("sync-corr-profile");
+      setSystemError(parseSystemError(err, "Error al Inicializar Correlativos"));
     } finally {
       setIsSyncingCorrelatives(false);
     }
@@ -250,13 +255,12 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
           );
         }
       } else {
-        toast.error("No se encontraron datos en SUNAT para este RUC.", { id: "sunat-profile-ruc" });
+        toast.dismiss("sunat-profile-ruc");
+        setSystemError(parseSystemError("No se encontraron datos en SUNAT para este RUC. Verifica que el número esté bien escrito y registrado.", "Consulta de RUC en SUNAT"));
       }
     } catch (err: any) {
-      toast.error(
-        err.response?.data?.message || err.message || "Error al consultar RUC en SUNAT",
-        { id: "sunat-profile-ruc" }
-      );
+      toast.dismiss("sunat-profile-ruc");
+      setSystemError(parseSystemError(err, "Consulta de RUC en SUNAT"));
     } finally {
       setIsLookingUpSunat(false);
     }
@@ -2933,6 +2937,13 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       <CatalogManagerModal
         isOpen={isCatalogModalOpen}
         onClose={() => setIsCatalogModalOpen(false)}
+      />
+
+      {/* Modal de Diagnóstico y Errores del Sistema */}
+      <SystemErrorModal
+        isOpen={Boolean(systemError)}
+        onClose={() => setSystemError(null)}
+        error={systemError}
       />
     </div>
   );
