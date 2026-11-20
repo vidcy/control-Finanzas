@@ -613,7 +613,7 @@ export class BillingService {
               unidad_medida: 'NIU',
               cantidad: 1,
               precio_unitario: doc.totalAmount,
-              tipo_afectacion_igv: '10',
+              tipo_afectacion_igv: (Number(doc.totalIgv || 0) === 0 && Number(doc.totalOpExonerada || 0) > 0) ? '20' : (Number(doc.totalIgv || 0) === 0 && Number(doc.totalOpInafecta || 0) > 0) ? '30' : '10',
             },
           ],
           enviar_a_sunat_inmediato: true,
