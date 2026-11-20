@@ -45,8 +45,10 @@ pm2 save
 pm2 status
 
 # 4.1. Actualizar Motor Fiscal CCOFACT PRO si existe en el servidor
-for FACT_PATH in "$HOME/apps/fact-apps/fact-backend" "$HOME/apps/fact-backend" "$REPO_ROOT/../apps/fact-apps/fact-backend" "$REPO_ROOT/../fact-backend"; do
-  if [ -d "$FACT_PATH" ]; then
+PM2_FACT_DIR=$(node -e "try { const list = JSON.parse(require('child_process').execSync('pm2 jlist').toString()); const proc = list.find(p => p.name === 'fact-backend'); if (proc && proc.pm2_env) console.log(proc.pm2_env.pm_cwd); } catch(e){}" 2>/dev/null)
+
+for FACT_PATH in "$PM2_FACT_DIR" "$HOME/apps/fact-apps/fact-backend" "$HOME/apps/fact-backend" "$REPO_ROOT/../apps/fact-apps/fact-backend" "$REPO_ROOT/../fact-backend" "$REPO_ROOT/../../fact-apps/fact-backend"; do
+  if [ -n "$FACT_PATH" ] && [ -d "$FACT_PATH" ]; then
     echo ""
     echo "⚡ Actualizando Motor Fiscal CCOFACT PRO en $FACT_PATH..."
     cd "$FACT_PATH"
@@ -55,7 +57,13 @@ for FACT_PATH in "$HOME/apps/fact-apps/fact-backend" "$HOME/apps/fact-backend" "
     npm install --legacy-peer-deps || true
     npx prisma generate || true
     npm run build || true
-    pm2 restart fact-backend || true
+    node scripts/postbuild.js 2>/dev/null || node -e "const fs=require('fs'); fs.writeFileSync('dist/main.js', 'require(\"./src/main.js\");\n');" 2>/dev/null || true
+    if pm2 describe fact-backend > /dev/null 2>&1; then
+      pm2 restart fact-backend --update-env || pm2 reload fact-backend || true
+    else
+      pm2 start dist/main.js --name fact-backend || true
+    fi
+    echo "✅ Motor Fiscal CCOFACT PRO actualizado y reiniciado en PM2."
     break
   fi
 done

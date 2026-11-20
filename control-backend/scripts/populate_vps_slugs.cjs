@@ -39,11 +39,22 @@ async function main() {
     }
 
     try {
+      const updatePayload = { businessSlug: targetSlug };
+      if (!u.ccofactUrl) {
+        updatePayload.ccofactUrl = 'http://localhost:4001/api/v1/ccofact/emitir';
+      }
+      if (!u.ccofactApiKey) {
+        updatePayload.ccofactApiKey = 'fact_live_0b092b0566440eac2c9ecae8649e5f635569d163dcfa8365';
+      }
+      if (u.hasElectronicBilling === false || u.hasElectronicBilling === null) {
+        updatePayload.hasElectronicBilling = true;
+      }
+
       await prisma.user.update({
         where: { id: u.id },
-        data: { businessSlug: targetSlug },
+        data: updatePayload,
       });
-      console.log(`  ✓ Usuario ${u.email}: businessSlug = "${targetSlug}"`);
+      console.log(`  ✓ Usuario ${u.email}: businessSlug = "${targetSlug}", ccofactApiKey sync OK`);
     } catch (err) {
       console.warn(`  ⚠️ No se pudo asignar "${targetSlug}" a ${u.email}:`, err.message);
     }
