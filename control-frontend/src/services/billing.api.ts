@@ -106,9 +106,12 @@ export interface BillingConfig {
   businessRuc: string;
   businessReason: string;
   businessName: string;
+  businessAddress?: string;
+  businessDepartment?: string;
+  businessProvince?: string;
+  businessDistrict?: string;
   ccofactUrl?: string;
   ccofactApiKey?: string;
-  nubefactUrl?: string;
   hasToken: boolean;
   billingSerieBoleta?: string;
   billingSerieInvoice?: string;
@@ -194,12 +197,14 @@ export const updateBillingConfigRequest = async (config: {
   businessRuc?: string;
   businessReason?: string;
   businessName?: string;
+  businessAddress?: string;
+  businessDepartment?: string;
+  businessProvince?: string;
+  businessDistrict?: string;
   ccofactUrl?: string;
   ccofactApiKey?: string;
   billingSerieBoleta?: string;
   billingSerieInvoice?: string;
-  nubefactUrl?: string;
-  nubefactToken?: string;
 }) => {
   const { data } = await axios.put('/billing/config', config);
   return data;
@@ -260,7 +265,44 @@ export const consultarRucRequest = async (ruc: string): Promise<{
       };
     }
   } catch (backendErr: any) {
-    console.warn('Backend /billing/consultar-ruc en espera o no disponible, usando pasarela directa SUNAT...');
+    console.warn('Backend /billing/consultar-ruc en espera, probando CCOFACT PRO directo...');
+  }
+
+  // 1b. Conexión directa ultra rápida a CCOFACT PRO Engine (CORS habilitado)
+  const ccofactDirectEndpoints = [
+    `http://127.0.0.1:4001/api/v1/consultas/ruc/${cleanRuc}`,
+    `http://localhost:4001/api/v1/consultas/ruc/${cleanRuc}`,
+    `https://api.ccofact.com/api/v1/consultas/ruc/${cleanRuc}`,
+  ];
+  for (const ccoUrl of ccofactDirectEndpoints) {
+    try {
+      const ccoRes = await fetch(ccoUrl, {
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(3000),
+      });
+      if (ccoRes.ok) {
+        const ccoData = await ccoRes.json();
+        if (ccoData && (ccoData.razon_social || ccoData.razonSocial)) {
+          const razon = ccoData.razon_social || ccoData.razonSocial;
+          const comercial = ccoData.nombre_comercial || ccoData.nombreComercial || razon;
+          const rawAddr = ccoData.direccion && ccoData.direccion !== '-' ? ccoData.direccion : '';
+          const loc = resolveLocationFromUbigeoOrAddress(ccoData.ubigeo, rawAddr);
+          return {
+            success: true,
+            ruc: cleanRuc,
+            razonSocial: razon,
+            nombreComercial: comercial,
+            direccion: loc.cleanAddress || rawAddr,
+            departamento: ccoData.departamento || loc.departamento,
+            provincia: ccoData.provincia || loc.provincia,
+            distrito: ccoData.distrito || loc.distrito,
+            ubigeo: ccoData.ubigeo || '',
+            estado: ccoData.estado || 'ACTIVO',
+            condicion: ccoData.condicion || 'HABIDO',
+          };
+        }
+      }
+    } catch (_) {}
   }
 
   // 2. Pasarela directa OpenRUC (ultra rápida, sin captcha, compatible CORS en navegador para RUC 20)

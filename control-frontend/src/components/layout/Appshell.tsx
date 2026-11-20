@@ -192,7 +192,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
   };
 
   const handleLookupSunat = async () => {
-    const cleanRuc = businessRuc.trim().replace(/\D/g, "");
+    const cleanRuc = businessRuc.trim().replace(/\D/g, "").slice(0, 11);
     if (!cleanRuc || cleanRuc.length !== 11) {
       toast.error("Ingresa un RUC válido de 11 dígitos para consultar ante SUNAT.");
       return;
@@ -202,8 +202,10 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       toast.loading("Consultando datos oficiales en SUNAT...", { id: "sunat-profile-ruc" });
       const res = await consultarRucRequest(cleanRuc);
       if (res && res.success) {
-        if (res.razonSocial) setBusinessReason(res.razonSocial);
-        if (res.nombreComercial) setBusinessName(res.nombreComercial);
+        const razon = res.razonSocial || res.nombreComercial || "";
+        const comercial = res.nombreComercial || res.razonSocial || "";
+        setBusinessReason(razon);
+        setBusinessName(comercial);
 
         // 1. Dirección Fiscal Completa
         if (res.direccion && res.direccion !== "-" && res.direccion !== "--" && res.direccion.toUpperCase() !== "SIN DIRECCION") {
@@ -1715,34 +1717,37 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                           </button>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           {/* Boleta */}
-                          <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2 shadow-2xs">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[11px] font-black text-slate-800">Boletas (03)</span>
-                              <span className="text-[10px] font-mono font-bold text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.2 rounded">
-                                Próx: {billingSerieBoleta}-{String(Number(initialBoletaNumber || 0) + 1).padStart(8, '0')}
+                          <div className="p-3 bg-white rounded-xl border border-slate-200/90 space-y-2 shadow-xs">
+                            <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-1.5">
+                              <span className="text-xs font-black text-slate-800 flex items-center gap-1.5 min-w-0">
+                                <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+                                <span className="truncate">Boletas de Venta (03)</span>
+                              </span>
+                              <span className="text-[10px] font-mono font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded shrink-0">
+                                Próx: {billingSerieBoleta || "B001"}-{String(Number(initialBoletaNumber || 0) + 1).padStart(8, '0')}
                               </span>
                             </div>
-                            <div className="grid grid-cols-2 gap-2">
-                              <div>
-                                <span className="text-[9px] text-slate-500 font-bold block uppercase mb-0.5">Serie</span>
+                            <div className="grid grid-cols-12 gap-2.5 pt-0.5">
+                              <div className="col-span-5">
+                                <span className="text-[10px] text-slate-500 font-bold block uppercase mb-1">Serie</span>
                                 <input
                                   type="text"
                                   maxLength={4}
                                   placeholder="B001"
-                                  className="w-full px-2.5 py-1.5 font-mono text-xs uppercase font-extrabold border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50/50 focus:bg-white"
+                                  className="w-full px-2.5 py-1.5 font-mono text-xs uppercase font-extrabold border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50/50 focus:bg-white text-center"
                                   value={billingSerieBoleta}
                                   onChange={(e) => setBillingSerieBoleta(e.target.value.toUpperCase().trim())}
                                 />
                               </div>
-                              <div>
-                                <span className="text-[9px] text-slate-500 font-bold block uppercase mb-0.5">Último SUNAT</span>
+                              <div className="col-span-7">
+                                <span className="text-[10px] text-slate-500 font-bold block uppercase mb-1">Último SUNAT</span>
                                 <input
                                   type="number"
                                   min={0}
-                                  placeholder="Ej. 21"
-                                  className="w-full px-2.5 py-1.5 font-mono text-xs font-bold border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50/50 focus:bg-white"
+                                  placeholder="0"
+                                  className="w-full px-2.5 py-1.5 font-mono text-xs font-bold border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50/50 focus:bg-white text-right"
                                   value={initialBoletaNumber}
                                   onChange={(e) => setInitialBoletaNumber(e.target.value)}
                                 />
@@ -1751,32 +1756,35 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                           </div>
 
                           {/* Factura */}
-                          <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2 shadow-2xs">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[11px] font-black text-slate-800">Facturas (01)</span>
-                              <span className="text-[10px] font-mono font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.2 rounded">
-                                Próx: {billingSerieInvoice}-{String(Number(initialFacturaNumber || 0) + 1).padStart(8, '0')}
+                          <div className="p-3 bg-white rounded-xl border border-slate-200/90 space-y-2 shadow-xs">
+                            <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-1.5">
+                              <span className="text-xs font-black text-slate-800 flex items-center gap-1.5 min-w-0">
+                                <span className="w-2 h-2 rounded-full bg-indigo-500 shrink-0" />
+                                <span className="truncate">Facturas Electrónicas (01)</span>
+                              </span>
+                              <span className="text-[10px] font-mono font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded shrink-0">
+                                Próx: {billingSerieInvoice || "F001"}-{String(Number(initialFacturaNumber || 0) + 1).padStart(8, '0')}
                               </span>
                             </div>
-                            <div className="grid grid-cols-2 gap-2">
-                              <div>
-                                <span className="text-[9px] text-slate-500 font-bold block uppercase mb-0.5">Serie</span>
+                            <div className="grid grid-cols-12 gap-2.5 pt-0.5">
+                              <div className="col-span-5">
+                                <span className="text-[10px] text-slate-500 font-bold block uppercase mb-1">Serie</span>
                                 <input
                                   type="text"
                                   maxLength={4}
                                   placeholder="F001"
-                                  className="w-full px-2.5 py-1.5 font-mono text-xs uppercase font-extrabold border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50/50 focus:bg-white"
+                                  className="w-full px-2.5 py-1.5 font-mono text-xs uppercase font-extrabold border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50/50 focus:bg-white text-center"
                                   value={billingSerieInvoice}
                                   onChange={(e) => setBillingSerieInvoice(e.target.value.toUpperCase().trim())}
                                 />
                               </div>
-                              <div>
-                                <span className="text-[9px] text-slate-500 font-bold block uppercase mb-0.5">Último SUNAT</span>
+                              <div className="col-span-7">
+                                <span className="text-[10px] text-slate-500 font-bold block uppercase mb-1">Último SUNAT</span>
                                 <input
                                   type="number"
                                   min={0}
-                                  placeholder="Ej. 0"
-                                  className="w-full px-2.5 py-1.5 font-mono text-xs font-bold border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50/50 focus:bg-white"
+                                  placeholder="0"
+                                  className="w-full px-2.5 py-1.5 font-mono text-xs font-bold border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50/50 focus:bg-white text-right"
                                   value={initialFacturaNumber}
                                   onChange={(e) => setInitialFacturaNumber(e.target.value)}
                                 />
@@ -1785,32 +1793,35 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                           </div>
 
                           {/* Nota de Crédito */}
-                          <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2 shadow-2xs">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[11px] font-black text-slate-800">Nota Crédito (07)</span>
-                              <span className="text-[10px] font-mono font-bold text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.2 rounded">
-                                Próx: {serieNotaCreditoBoleta}-{String(Number(initialNcBoletaNumber || 0) + 1).padStart(8, '0')}
+                          <div className="p-3 bg-white rounded-xl border border-slate-200/90 space-y-2 shadow-xs">
+                            <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-1.5">
+                              <span className="text-xs font-black text-slate-800 flex items-center gap-1.5 min-w-0">
+                                <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0" />
+                                <span className="truncate">Notas de Crédito (07)</span>
+                              </span>
+                              <span className="text-[10px] font-mono font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded shrink-0">
+                                Próx: {serieNotaCreditoBoleta || "BC01"}-{String(Number(initialNcBoletaNumber || 0) + 1).padStart(8, '0')}
                               </span>
                             </div>
-                            <div className="grid grid-cols-2 gap-2">
-                              <div>
-                                <span className="text-[9px] text-slate-500 font-bold block uppercase mb-0.5">Serie</span>
+                            <div className="grid grid-cols-12 gap-2.5 pt-0.5">
+                              <div className="col-span-5">
+                                <span className="text-[10px] text-slate-500 font-bold block uppercase mb-1">Serie</span>
                                 <input
                                   type="text"
                                   maxLength={4}
                                   placeholder="BC01"
-                                  className="w-full px-2.5 py-1.5 font-mono text-xs uppercase font-extrabold border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50/50 focus:bg-white"
+                                  className="w-full px-2.5 py-1.5 font-mono text-xs uppercase font-extrabold border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50/50 focus:bg-white text-center"
                                   value={serieNotaCreditoBoleta}
                                   onChange={(e) => setSerieNotaCreditoBoleta(e.target.value.toUpperCase().trim())}
                                 />
                               </div>
-                              <div>
-                                <span className="text-[9px] text-slate-500 font-bold block uppercase mb-0.5">Último SUNAT</span>
+                              <div className="col-span-7">
+                                <span className="text-[10px] text-slate-500 font-bold block uppercase mb-1">Último SUNAT</span>
                                 <input
                                   type="number"
                                   min={0}
-                                  placeholder="Ej. 1"
-                                  className="w-full px-2.5 py-1.5 font-mono text-xs font-bold border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50/50 focus:bg-white"
+                                  placeholder="0"
+                                  className="w-full px-2.5 py-1.5 font-mono text-xs font-bold border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50/50 focus:bg-white text-right"
                                   value={initialNcBoletaNumber}
                                   onChange={(e) => setInitialNcBoletaNumber(e.target.value)}
                                 />
@@ -1819,32 +1830,35 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                           </div>
 
                           {/* Nota de Débito */}
-                          <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2 shadow-2xs">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[11px] font-black text-slate-800">Nota Débito (08)</span>
-                              <span className="text-[10px] font-mono font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded">
-                                Próx: {serieNotaDebitoBoleta}-{String(Number(initialNdBoletaNumber || 0) + 1).padStart(8, '0')}
+                          <div className="p-3 bg-white rounded-xl border border-slate-200/90 space-y-2 shadow-xs">
+                            <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-1.5">
+                              <span className="text-xs font-black text-slate-800 flex items-center gap-1.5 min-w-0">
+                                <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+                                <span className="truncate">Notas de Débito (08)</span>
+                              </span>
+                              <span className="text-[10px] font-mono font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded shrink-0">
+                                Próx: {serieNotaDebitoBoleta || "BD01"}-{String(Number(initialNdBoletaNumber || 0) + 1).padStart(8, '0')}
                               </span>
                             </div>
-                            <div className="grid grid-cols-2 gap-2">
-                              <div>
-                                <span className="text-[9px] text-slate-500 font-bold block uppercase mb-0.5">Serie</span>
+                            <div className="grid grid-cols-12 gap-2.5 pt-0.5">
+                              <div className="col-span-5">
+                                <span className="text-[10px] text-slate-500 font-bold block uppercase mb-1">Serie</span>
                                 <input
                                   type="text"
                                   maxLength={4}
                                   placeholder="BD01"
-                                  className="w-full px-2.5 py-1.5 font-mono text-xs uppercase font-extrabold border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50/50 focus:bg-white"
+                                  className="w-full px-2.5 py-1.5 font-mono text-xs uppercase font-extrabold border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50/50 focus:bg-white text-center"
                                   value={serieNotaDebitoBoleta}
                                   onChange={(e) => setSerieNotaDebitoBoleta(e.target.value.toUpperCase().trim())}
                                 />
                               </div>
-                              <div>
-                                <span className="text-[9px] text-slate-500 font-bold block uppercase mb-0.5">Último SUNAT</span>
+                              <div className="col-span-7">
+                                <span className="text-[10px] text-slate-500 font-bold block uppercase mb-1">Último SUNAT</span>
                                 <input
                                   type="number"
                                   min={0}
-                                  placeholder="Ej. 0"
-                                  className="w-full px-2.5 py-1.5 font-mono text-xs font-bold border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50/50 focus:bg-white"
+                                  placeholder="0"
+                                  className="w-full px-2.5 py-1.5 font-mono text-xs font-bold border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50/50 focus:bg-white text-right"
                                   value={initialNdBoletaNumber}
                                   onChange={(e) => setInitialNdBoletaNumber(e.target.value)}
                                 />

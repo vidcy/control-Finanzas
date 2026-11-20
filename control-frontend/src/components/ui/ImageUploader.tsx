@@ -20,6 +20,13 @@ export function getReceiptAbsoluteUrl(
   url: string | null | undefined,
 ): string | null {
   if (!url) return null;
+  const rawUrl = String(url).trim();
+  if (rawUrl.includes("digitaloceanspaces.com")) {
+    return rawUrl
+      .replace(/https?:\/\/[^/]+\.digitaloceanspaces\.com\/controlfinanzas\//gi, "https://controlfinanzas.nyc3.digitaloceanspaces.com/")
+      .replace(/https?:\/\/[^/]+\.cdn\.digitaloceanspaces\.com\/controlfinanzas\//gi, "https://controlfinanzas.nyc3.digitaloceanspaces.com/")
+      .replace("controlfinanzas.nyc3.cdn.digitaloceanspaces.com", "controlfinanzas.nyc3.digitaloceanspaces.com");
+  }
 
   if (
     url.startsWith("http://") ||
@@ -41,6 +48,20 @@ export function getReceiptAbsoluteUrl(
     }
   }
   return `${base}${url}`;
+}
+
+export function handleImageErrorFallback(e: React.SyntheticEvent<HTMLImageElement, Event>, fallbackUrl?: string) {
+  const target = e.currentTarget;
+  const currentSrc = target.src;
+  if (currentSrc.includes("cdn.digitaloceanspaces.com")) {
+    target.src = currentSrc.replace("cdn.digitaloceanspaces.com", "digitaloceanspaces.com");
+    return;
+  }
+  if (fallbackUrl && currentSrc !== fallbackUrl) {
+    target.src = fallbackUrl;
+    return;
+  }
+  target.style.display = "none";
 }
 
 // ─────────────────────────────────────────────────────────

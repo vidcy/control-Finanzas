@@ -109,6 +109,10 @@ export class BillingController {
       businessRuc?: string;
       businessReason?: string;
       businessName?: string;
+      businessAddress?: string;
+      businessDepartment?: string;
+      businessProvince?: string;
+      businessDistrict?: string;
       ccofactUrl?: string;
       ccofactApiKey?: string;
       billingSerieBoleta?: string;

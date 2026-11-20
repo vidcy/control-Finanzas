@@ -30,7 +30,7 @@ export class FilesService {
   private generateKey(folder: string, originalName: string): string {
     const cleanName = originalName.replace(/[^a-zA-Z0-9.-]/g, '_');
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    return `${folder}/${uniqueSuffix}-${cleanName}`;
+    return `control-finanzas/${folder}/${uniqueSuffix}-${cleanName}`;
   }
 
   private getAbsoluteUrl(key: string): string {
@@ -44,12 +44,12 @@ export class FilesService {
         const parsed = new URL(cleanCdn);
         // Si es el host CDN genérico de DO y no comienza con el nombre del bucket
         if (parsed.hostname.endsWith('.cdn.digitaloceanspaces.com') && !parsed.hostname.startsWith(bucket)) {
-          return `https://${bucket}.${parsed.hostname}/${key}`;
+          return `https://${bucket}.nyc3.digitaloceanspaces.com/${key}`;
         }
       } catch (e) {
         // Fallback si no es una URL válida
       }
-      return `${cleanCdn}/${key}`;
+      return `https://${bucket || 'controlfinanzas'}.nyc3.digitaloceanspaces.com/${key}`;
     }
 
     // Endpoint estándar de DO Spaces: https://{bucket}.{region}.digitaloceanspaces.com o similar

@@ -142,6 +142,10 @@ export default function BusinessBillingPage() {
   const [configRuc, setConfigRuc] = useState("");
   const [configName, setConfigName] = useState("");
   const [configReason, setConfigReason] = useState("");
+  const [configAddress, setConfigAddress] = useState("");
+  const [configDepartment, setConfigDepartment] = useState("");
+  const [configProvince, setConfigProvince] = useState("");
+  const [configDistrict, setConfigDistrict] = useState("");
   const [configUrl, setConfigUrl] = useState("");
   const [configToken, setConfigToken] = useState("");
   const [configSerieBoleta, setConfigSerieBoleta] = useState("B001");
@@ -212,7 +216,7 @@ export default function BusinessBillingPage() {
 
   // Consultar RUC y autocompletar datos de empresa en modal de configuración
   const handleLookupSunatInBilling = async () => {
-    const cleanRuc = configRuc.trim().replace(/\D/g, "");
+    const cleanRuc = configRuc.trim().replace(/\D/g, "").slice(0, 11);
     if (!cleanRuc || cleanRuc.length !== 11) {
       toast.error("Ingresa un RUC válido de 11 dígitos para consultar ante SUNAT.");
       return;
@@ -222,10 +226,16 @@ export default function BusinessBillingPage() {
       toast.loading("Consultando padrón oficial de SUNAT...", { id: "sunat-billing-ruc" });
       const res = await consultarRucRequest(cleanRuc);
       if (res && res.success) {
-        if (res.razonSocial) setConfigReason(res.razonSocial);
-        if (res.nombreComercial) setConfigName(res.nombreComercial);
+        const razon = res.razonSocial || res.nombreComercial || "";
+        const comercial = res.nombreComercial || res.razonSocial || "";
+        setConfigReason(razon);
+        setConfigName(comercial);
+        if (res.direccion) setConfigAddress(res.direccion);
+        if (res.departamento) setConfigDepartment(res.departamento);
+        if (res.provincia) setConfigProvince(res.provincia);
+        if (res.distrito) setConfigDistrict(res.distrito);
         toast.success(
-          `✓ Datos SUNAT cargados: ${res.razonSocial} (${res.estado || 'ACTIVO'} - ${res.condicion || 'HABIDO'})`,
+          `✓ Datos SUNAT cargados: ${razon} (${res.estado || 'ACTIVO'} - ${res.condicion || 'HABIDO'})`,
           { id: "sunat-billing-ruc", duration: 4000 }
         );
       } else {
@@ -247,8 +257,12 @@ export default function BusinessBillingPage() {
       const cfg = await getBillingConfigRequest();
       setConfigHasBilling(cfg.hasElectronicBilling);
       setConfigRuc(cfg.businessRuc || user?.businessRuc || "");
-      setConfigName(cfg.businessName || user?.businessName || "");
-      setConfigReason(cfg.businessReason || user?.businessReason || "");
+      setConfigName(cfg.businessName || cfg.businessReason || user?.businessName || "");
+      setConfigReason(cfg.businessReason || cfg.businessName || user?.businessReason || "");
+      setConfigAddress(cfg.businessAddress || (user as any)?.businessAddress || "");
+      setConfigDepartment(cfg.businessDepartment || (user as any)?.businessDepartment || "");
+      setConfigProvince(cfg.businessProvince || (user as any)?.businessProvince || "");
+      setConfigDistrict(cfg.businessDistrict || (user as any)?.businessDistrict || "");
       setConfigUrl(cfg.ccofactUrl || "");
       setConfigToken("");
       setConfigSerieBoleta(cfg.billingSerieBoleta || "B001");
@@ -275,8 +289,12 @@ export default function BusinessBillingPage() {
       await updateBillingConfigRequest({
         hasElectronicBilling: configHasBilling,
         businessRuc: configRuc,
-        businessName: configName,
-        businessReason: configReason,
+        businessName: configName || configReason,
+        businessReason: configReason || configName,
+        businessAddress: configAddress,
+        businessDepartment: configDepartment,
+        businessProvince: configProvince,
+        businessDistrict: configDistrict,
         ccofactUrl: configUrl,
         billingSerieBoleta: configSerieBoleta,
         billingSerieInvoice: configSerieFactura,
@@ -1988,7 +2006,12 @@ export default function BusinessBillingPage() {
                     maxLength={11}
                     placeholder="20601234567"
                     value={configRuc}
-                    onChange={(e) => setConfigRuc(e.target.value.replace(/\D/g, ""))}
+                    onChange={(e) => setConfigRuc(e.target.value.replace(/\D/g, "").slice(0, 11))}
+                    onPaste={(e) => {
+                      e.preventDefault();
+                      const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 11);
+                      setConfigRuc(pasted);
+                    }}
                     className="w-full pl-9 pr-24 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl font-mono focus:bg-white focus:outline-none focus:border-indigo-500 font-bold"
                   />
                   <button
@@ -1996,7 +2019,7 @@ export default function BusinessBillingPage() {
                     disabled={isLookingUpSunat || configRuc.trim().replace(/\D/g, "").length !== 11}
                     onClick={handleLookupSunatInBilling}
                     className="absolute right-1.5 top-1.5 bottom-1.5 px-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg inline-flex items-center gap-1 shadow-2xs transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer active:scale-95"
-                    title="Consultar padrón oficial de SUNAT y autocompletar razón social"
+                    title="Consultar padrón oficial de SUNAT y autocompletar automáticamente los datos"
                   >
                     {isLookingUpSunat ? (
                       <>
@@ -2015,15 +2038,72 @@ export default function BusinessBillingPage() {
 
               <div>
                 <label className="block text-xs font-black uppercase text-slate-600 mb-1">
-                  Razón Social Registrada en SUNAT
+                  Razón Social Oficial SUNAT
                 </label>
                 <input
                   type="text"
-                  placeholder="MI EMPRESA S.A.C."
-                  value={configName}
-                  onChange={(e) => setConfigName(e.target.value.toUpperCase())}
-                  className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-indigo-500"
+                  placeholder="QUISPE AYCA DAVID o MI EMPRESA S.A.C."
+                  value={configReason || configName}
+                  onChange={(e) => {
+                    setConfigReason(e.target.value.toUpperCase());
+                    setConfigName(e.target.value.toUpperCase());
+                  }}
+                  className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-indigo-500 font-bold"
                 />
+              </div>
+
+              {/* Domicilio Fiscal */}
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-black uppercase text-slate-600 mb-1">
+                  Domicilio Fiscal Oficial
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej. Av. Las Américas 1240, Juliaca"
+                  value={configAddress}
+                  onChange={(e) => setConfigAddress(e.target.value)}
+                  className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-indigo-500 font-medium"
+                />
+              </div>
+
+              {/* Ubicación: Departamento, Provincia, Distrito */}
+              <div className="sm:col-span-2 grid grid-cols-3 gap-2">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-500 mb-0.5">
+                    Departamento
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="PUNO"
+                    value={configDepartment}
+                    onChange={(e) => setConfigDepartment(e.target.value.toUpperCase())}
+                    className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500 font-semibold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-500 mb-0.5">
+                    Provincia
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="SAN ROMAN"
+                    value={configProvince}
+                    onChange={(e) => setConfigProvince(e.target.value.toUpperCase())}
+                    className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500 font-semibold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-500 mb-0.5">
+                    Distrito
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="JULIACA"
+                    value={configDistrict}
+                    onChange={(e) => setConfigDistrict(e.target.value.toUpperCase())}
+                    className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500 font-semibold"
+                  />
+                </div>
               </div>
             </div>
 
@@ -2096,218 +2176,224 @@ export default function BusinessBillingPage() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
                 {/* Boleta */}
-                <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2 shadow-2xs">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-700">Boletas de Venta (03)</span>
-                    <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 font-mono text-[10px] rounded font-bold">
-                      {configSerieBoleta}
+                <div className="p-3 bg-white rounded-xl border border-slate-200/90 space-y-2 shadow-xs">
+                  <div className="flex items-center justify-between gap-1.5 border-b border-slate-100 pb-1.5">
+                    <span className="text-xs font-black text-slate-800 flex items-center gap-1.5 min-w-0">
+                      <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+                      <span className="truncate">Boletas (03)</span>
+                    </span>
+                    <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 font-mono text-[10px] rounded font-bold shrink-0">
+                      Próx: {configSerieBoleta || "B001"}-{String(Number(configInitialBoleta || 0) + 1).padStart(8, '0')}
                     </span>
                   </div>
-                  <div>
-                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
-                      Serie Activa (ej. B001):
-                    </label>
-                    <input
-                      type="text"
-                      maxLength={4}
-                      placeholder="B001"
-                      value={configSerieBoleta}
-                      onChange={(e) => setConfigSerieBoleta(e.target.value.toUpperCase().trim())}
-                      className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
-                      Último correlativo en SUNAT:
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      placeholder="Ej. 18 (Próxima: 19)"
-                      value={configInitialBoleta}
-                      onChange={(e) => setConfigInitialBoleta(e.target.value)}
-                      className="w-full px-2.5 py-1.5 text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500"
-                    />
+                  <div className="grid grid-cols-12 gap-2 pt-0.5">
+                    <div className="col-span-5">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Serie</label>
+                      <input
+                        type="text"
+                        maxLength={4}
+                        placeholder="B001"
+                        value={configSerieBoleta}
+                        onChange={(e) => setConfigSerieBoleta(e.target.value.toUpperCase().trim())}
+                        className="w-full px-2 py-1.5 text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500 text-center"
+                      />
+                    </div>
+                    <div className="col-span-7">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Último SUNAT</label>
+                      <input
+                        type="number"
+                        min={0}
+                        placeholder="0"
+                        value={configInitialBoleta}
+                        onChange={(e) => setConfigInitialBoleta(e.target.value)}
+                        className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500 text-right"
+                      />
+                    </div>
                   </div>
                 </div>
 
                 {/* Factura */}
-                <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2 shadow-2xs">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-700">Facturas Electrónicas (01)</span>
-                    <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 font-mono text-[10px] rounded font-bold">
-                      {configSerieFactura}
+                <div className="p-3 bg-white rounded-xl border border-slate-200/90 space-y-2 shadow-xs">
+                  <div className="flex items-center justify-between gap-1.5 border-b border-slate-100 pb-1.5">
+                    <span className="text-xs font-black text-slate-800 flex items-center gap-1.5 min-w-0">
+                      <span className="w-2 h-2 rounded-full bg-indigo-500 shrink-0" />
+                      <span className="truncate">Facturas (01)</span>
+                    </span>
+                    <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 font-mono text-[10px] rounded font-bold shrink-0">
+                      Próx: {configSerieFactura || "F001"}-{String(Number(configInitialFactura || 0) + 1).padStart(8, '0')}
                     </span>
                   </div>
-                  <div>
-                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
-                      Serie Activa (ej. F001):
-                    </label>
-                    <input
-                      type="text"
-                      maxLength={4}
-                      placeholder="F001"
-                      value={configSerieFactura}
-                      onChange={(e) => setConfigSerieFactura(e.target.value.toUpperCase().trim())}
-                      className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
-                      Último correlativo en SUNAT:
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      placeholder="Ej. 0 (Próxima: 1)"
-                      value={configInitialFactura}
-                      onChange={(e) => setConfigInitialFactura(e.target.value)}
-                      className="w-full px-2.5 py-1.5 text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500"
-                    />
+                  <div className="grid grid-cols-12 gap-2 pt-0.5">
+                    <div className="col-span-5">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Serie</label>
+                      <input
+                        type="text"
+                        maxLength={4}
+                        placeholder="F001"
+                        value={configSerieFactura}
+                        onChange={(e) => setConfigSerieFactura(e.target.value.toUpperCase().trim())}
+                        className="w-full px-2 py-1.5 text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500 text-center"
+                      />
+                    </div>
+                    <div className="col-span-7">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Último SUNAT</label>
+                      <input
+                        type="number"
+                        min={0}
+                        placeholder="0"
+                        value={configInitialFactura}
+                        onChange={(e) => setConfigInitialFactura(e.target.value)}
+                        className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500 text-right"
+                      />
+                    </div>
                   </div>
                 </div>
 
                 {/* Nota de Crédito Boleta */}
-                <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2 shadow-2xs">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-700">Nota Crédito Boleta (07)</span>
-                    <span className="px-1.5 py-0.5 bg-rose-50 text-rose-700 font-mono text-[10px] rounded font-bold">
-                      {configSerieNcBoleta}
+                <div className="p-3 bg-white rounded-xl border border-slate-200/90 space-y-2 shadow-xs">
+                  <div className="flex items-center justify-between gap-1.5 border-b border-slate-100 pb-1.5">
+                    <span className="text-xs font-black text-slate-800 flex items-center gap-1.5 min-w-0">
+                      <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0" />
+                      <span className="truncate">NC Boleta (07)</span>
+                    </span>
+                    <span className="px-1.5 py-0.5 bg-rose-50 text-rose-700 font-mono text-[10px] rounded font-bold shrink-0">
+                      Próx: {configSerieNcBoleta || "BC01"}-{String(Number(configInitialNcBoleta || 0) + 1).padStart(8, '0')}
                     </span>
                   </div>
-                  <div>
-                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
-                      Serie Activa (ej. BC01):
-                    </label>
-                    <input
-                      type="text"
-                      maxLength={4}
-                      placeholder="BC01"
-                      value={configSerieNcBoleta}
-                      onChange={(e) => setConfigSerieNcBoleta(e.target.value.toUpperCase().trim())}
-                      className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
-                      Último correlativo en SUNAT:
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      placeholder="Ej. 0 (Próxima: 1)"
-                      value={configInitialNcBoleta}
-                      onChange={(e) => setConfigInitialNcBoleta(e.target.value)}
-                      className="w-full px-2.5 py-1.5 text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500"
-                    />
+                  <div className="grid grid-cols-12 gap-2 pt-0.5">
+                    <div className="col-span-5">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Serie</label>
+                      <input
+                        type="text"
+                        maxLength={4}
+                        placeholder="BC01"
+                        value={configSerieNcBoleta}
+                        onChange={(e) => setConfigSerieNcBoleta(e.target.value.toUpperCase().trim())}
+                        className="w-full px-2 py-1.5 text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500 text-center"
+                      />
+                    </div>
+                    <div className="col-span-7">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Último SUNAT</label>
+                      <input
+                        type="number"
+                        min={0}
+                        placeholder="0"
+                        value={configInitialNcBoleta}
+                        onChange={(e) => setConfigInitialNcBoleta(e.target.value)}
+                        className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500 text-right"
+                      />
+                    </div>
                   </div>
                 </div>
 
                 {/* Nota de Crédito Factura */}
-                <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2 shadow-2xs">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-700">Nota Crédito Factura (07)</span>
-                    <span className="px-1.5 py-0.5 bg-rose-50 text-rose-700 font-mono text-[10px] rounded font-bold">
-                      {configSerieNcFactura}
+                <div className="p-3 bg-white rounded-xl border border-slate-200/90 space-y-2 shadow-xs">
+                  <div className="flex items-center justify-between gap-1.5 border-b border-slate-100 pb-1.5">
+                    <span className="text-xs font-black text-slate-800 flex items-center gap-1.5 min-w-0">
+                      <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0" />
+                      <span className="truncate">NC Factura (07)</span>
+                    </span>
+                    <span className="px-1.5 py-0.5 bg-rose-50 text-rose-700 font-mono text-[10px] rounded font-bold shrink-0">
+                      Próx: {configSerieNcFactura || "FC01"}-{String(Number(configInitialNcFactura || 0) + 1).padStart(8, '0')}
                     </span>
                   </div>
-                  <div>
-                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
-                      Serie Activa (ej. FC01):
-                    </label>
-                    <input
-                      type="text"
-                      maxLength={4}
-                      placeholder="FC01"
-                      value={configSerieNcFactura}
-                      onChange={(e) => setConfigSerieNcFactura(e.target.value.toUpperCase().trim())}
-                      className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
-                      Último correlativo en SUNAT:
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      placeholder="Ej. 0 (Próxima: 1)"
-                      value={configInitialNcFactura}
-                      onChange={(e) => setConfigInitialNcFactura(e.target.value)}
-                      className="w-full px-2.5 py-1.5 text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500"
-                    />
+                  <div className="grid grid-cols-12 gap-2 pt-0.5">
+                    <div className="col-span-5">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Serie</label>
+                      <input
+                        type="text"
+                        maxLength={4}
+                        placeholder="FC01"
+                        value={configSerieNcFactura}
+                        onChange={(e) => setConfigSerieNcFactura(e.target.value.toUpperCase().trim())}
+                        className="w-full px-2 py-1.5 text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500 text-center"
+                      />
+                    </div>
+                    <div className="col-span-7">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Último SUNAT</label>
+                      <input
+                        type="number"
+                        min={0}
+                        placeholder="0"
+                        value={configInitialNcFactura}
+                        onChange={(e) => setConfigInitialNcFactura(e.target.value)}
+                        className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500 text-right"
+                      />
+                    </div>
                   </div>
                 </div>
 
                 {/* Nota de Débito Boleta */}
-                <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2 shadow-2xs">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-700">Nota Débito Boleta (08)</span>
-                    <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 font-mono text-[10px] rounded font-bold">
-                      {configSerieNdBoleta}
+                <div className="p-3 bg-white rounded-xl border border-slate-200/90 space-y-2 shadow-xs">
+                  <div className="flex items-center justify-between gap-1.5 border-b border-slate-100 pb-1.5">
+                    <span className="text-xs font-black text-slate-800 flex items-center gap-1.5 min-w-0">
+                      <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+                      <span className="truncate">ND Boleta (08)</span>
+                    </span>
+                    <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 font-mono text-[10px] rounded font-bold shrink-0">
+                      Próx: {configSerieNdBoleta || "BD01"}-{String(Number(configInitialNdBoleta || 0) + 1).padStart(8, '0')}
                     </span>
                   </div>
-                  <div>
-                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
-                      Serie Activa (ej. BD01):
-                    </label>
-                    <input
-                      type="text"
-                      maxLength={4}
-                      placeholder="BD01"
-                      value={configSerieNdBoleta}
-                      onChange={(e) => setConfigSerieNdBoleta(e.target.value.toUpperCase().trim())}
-                      className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
-                      Último correlativo en SUNAT:
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      placeholder="Ej. 0 (Próxima: 1)"
-                      value={configInitialNdBoleta}
-                      onChange={(e) => setConfigInitialNdBoleta(e.target.value)}
-                      className="w-full px-2.5 py-1.5 text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500"
-                    />
+                  <div className="grid grid-cols-12 gap-2 pt-0.5">
+                    <div className="col-span-5">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Serie</label>
+                      <input
+                        type="text"
+                        maxLength={4}
+                        placeholder="BD01"
+                        value={configSerieNdBoleta}
+                        onChange={(e) => setConfigSerieNdBoleta(e.target.value.toUpperCase().trim())}
+                        className="w-full px-2 py-1.5 text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500 text-center"
+                      />
+                    </div>
+                    <div className="col-span-7">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Último SUNAT</label>
+                      <input
+                        type="number"
+                        min={0}
+                        placeholder="0"
+                        value={configInitialNdBoleta}
+                        onChange={(e) => setConfigInitialNdBoleta(e.target.value)}
+                        className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500 text-right"
+                      />
+                    </div>
                   </div>
                 </div>
 
                 {/* Nota de Débito Factura */}
-                <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2 shadow-2xs">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-700">Nota Débito Factura (08)</span>
-                    <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 font-mono text-[10px] rounded font-bold">
-                      {configSerieNdFactura}
+                <div className="p-3 bg-white rounded-xl border border-slate-200/90 space-y-2 shadow-xs">
+                  <div className="flex items-center justify-between gap-1.5 border-b border-slate-100 pb-1.5">
+                    <span className="text-xs font-black text-slate-800 flex items-center gap-1.5 min-w-0">
+                      <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+                      <span className="truncate">ND Factura (08)</span>
+                    </span>
+                    <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 font-mono text-[10px] rounded font-bold shrink-0">
+                      Próx: {configSerieNdFactura || "FD01"}-{String(Number(configInitialNdFactura || 0) + 1).padStart(8, '0')}
                     </span>
                   </div>
-                  <div>
-                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
-                      Serie Activa (ej. FD01):
-                    </label>
-                    <input
-                      type="text"
-                      maxLength={4}
-                      placeholder="FD01"
-                      value={configSerieNdFactura}
-                      onChange={(e) => setConfigSerieNdFactura(e.target.value.toUpperCase().trim())}
-                      className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
-                      Último correlativo en SUNAT:
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      placeholder="Ej. 0 (Próxima: 1)"
-                      value={configInitialNdFactura}
-                      onChange={(e) => setConfigInitialNdFactura(e.target.value)}
-                      className="w-full px-2.5 py-1.5 text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500"
-                    />
+                  <div className="grid grid-cols-12 gap-2 pt-0.5">
+                    <div className="col-span-5">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Serie</label>
+                      <input
+                        type="text"
+                        maxLength={4}
+                        placeholder="FD01"
+                        value={configSerieNdFactura}
+                        onChange={(e) => setConfigSerieNdFactura(e.target.value.toUpperCase().trim())}
+                        className="w-full px-2 py-1.5 text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500 text-center"
+                      />
+                    </div>
+                    <div className="col-span-7">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Último SUNAT</label>
+                      <input
+                        type="number"
+                        min={0}
+                        placeholder="0"
+                        value={configInitialNdFactura}
+                        onChange={(e) => setConfigInitialNdFactura(e.target.value)}
+                        className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500 text-right"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
