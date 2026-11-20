@@ -41,10 +41,12 @@ import {
   ChevronUp,
   Landmark,
   ShieldCheck,
+  Layers,
 } from "lucide-react";
 
 import { toast } from "react-hot-toast";
 import { updateUserProfilesRequest, updateMyProfileRequest, getUserRequest } from "../../services/user.api";
+import { consultarRucRequest, syncSeriesRequest } from "../../services/billing.api";
 import { ProductImageUploader, uploadProductImageFile, getReceiptAbsoluteUrl } from "../ui/ImageUploader";
 import CatalogManagerModal from "../catalog/CatalogManagerModal";
 
@@ -157,8 +159,135 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
   const [businessDepartment, setBusinessDepartment] = useState(user?.businessDepartment || "");
   const [businessProvince, setBusinessProvince] = useState(user?.businessProvince || "");
   const [businessDistrict, setBusinessDistrict] = useState(user?.businessDistrict || "");
+  const [isLookingUpSunat, setIsLookingUpSunat] = useState(false);
+
+  const handleSyncCorrelatives = async () => {
+    try {
+      setIsSyncingCorrelatives(true);
+      toast.loading("Inicializando y sincronizando correlativos...", { id: "sync-corr-profile" });
+      const res = await syncSeriesRequest({
+        serieBoleta: billingSerieBoleta,
+        serieFactura: billingSerieInvoice,
+        serieNotaCreditoBoleta: serieNotaCreditoBoleta || "BC01",
+        serieNotaDebitoBoleta: serieNotaDebitoBoleta || "BD01",
+        ...(initialBoletaNumber !== "" ? { initialBoletaNumber: Number(initialBoletaNumber) } : {}),
+        ...(initialFacturaNumber !== "" ? { initialFacturaNumber: Number(initialFacturaNumber) } : {}),
+        ...(initialNcBoletaNumber !== "" ? { initialNcBoletaNumber: Number(initialNcBoletaNumber) } : {}),
+        ...(initialNdBoletaNumber !== "" ? { initialNdBoletaNumber: Number(initialNdBoletaNumber) } : {}),
+      });
+      if (res && res.success) {
+        toast.success(
+          `✓ Correlativos inicializados: Boleta (${billingSerieBoleta}-${String(Number(initialBoletaNumber || 0) + 1).padStart(8, '0')}), Factura (${billingSerieInvoice}-${String(Number(initialFacturaNumber || 0) + 1).padStart(8, '0')}), NC (${serieNotaCreditoBoleta || 'BC01'}-${String(Number(initialNcBoletaNumber || 0) + 1).padStart(8, '0')}), ND (${serieNotaDebitoBoleta || 'BD01'}-${String(Number(initialNdBoletaNumber || 0) + 1).padStart(8, '0')})`,
+          { id: "sync-corr-profile", duration: 5000 }
+        );
+        if (syncProfile) syncProfile();
+      } else {
+        toast.error(res?.message || "Error al sincronizar correlativos", { id: "sync-corr-profile" });
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || err.message || "Error al inicializar correlativos", { id: "sync-corr-profile" });
+    } finally {
+      setIsSyncingCorrelatives(false);
+    }
+  };
+
+  const handleLookupSunat = async () => {
+    const cleanRuc = businessRuc.trim().replace(/\D/g, "");
+    if (!cleanRuc || cleanRuc.length !== 11) {
+      toast.error("Ingresa un RUC válido de 11 dígitos para consultar ante SUNAT.");
+      return;
+    }
+    try {
+      setIsLookingUpSunat(true);
+      toast.loading("Consultando datos oficiales en SUNAT...", { id: "sunat-profile-ruc" });
+      const res = await consultarRucRequest(cleanRuc);
+      if (res && res.success) {
+        if (res.razonSocial) setBusinessReason(res.razonSocial);
+        if (res.nombreComercial) setBusinessName(res.nombreComercial);
+
+        // 1. Dirección Fiscal Completa
+        if (res.direccion && res.direccion !== "-" && res.direccion !== "--" && res.direccion.toUpperCase() !== "SIN DIRECCION") {
+          setBusinessAddress(res.direccion);
+        } else if (!businessAddress && user?.businessAddress) {
+          setBusinessAddress(user.businessAddress);
+        }
+
+        // 2. Localización: Departamento, Provincia, Distrito
+        const resolvedDept = res.departamento || businessDepartment || user?.businessDepartment || user?.department || "";
+        const resolvedProv = res.provincia || businessProvince || user?.businessProvince || "";
+        const resolvedDist = res.distrito || businessDistrict || user?.businessDistrict || "";
+
+        if (resolvedDept) setBusinessDepartment(resolvedDept);
+        if (resolvedProv) setBusinessProvince(resolvedProv);
+        if (resolvedDist) setBusinessDistrict(resolvedDist);
+
+        // 3. Correo Electrónico Comercial / Fiscal
+        if (!businessEmail || businessEmail.trim() === "") {
+          const autoEmail = res.email || user?.businessEmail || user?.email || "";
+          if (autoEmail) setBusinessEmail(autoEmail);
+        }
+
+        // 4. Teléfono Comercial / Fiscal
+        if (!businessPhone || businessPhone.trim() === "") {
+          const autoPhone = res.telefono || user?.businessPhone || user?.phone || "";
+          if (autoPhone) setBusinessPhone(autoPhone);
+        }
+
+        // 5. Autoconfiguración inteligente de Régimen Tributario (Amazonía / Madre de Dios)
+        if (isAmazoniaDepartment(resolvedDept)) {
+          setTaxRegime("AMAZONIA_EXONERADO");
+          setIgvRate(0);
+          toast.success(
+            `✓ Datos SUNAT cargados: ${res.razonSocial} (${res.estado || 'ACTIVO'}). Se aplicó el Régimen Exonerado de Amazonía (0% IGV - Ley 27037).`,
+            { id: "sunat-profile-ruc", duration: 5500 }
+          );
+        } else {
+          toast.success(
+            `✓ Datos oficiales SUNAT cargados: ${res.razonSocial} (${res.estado || 'ACTIVO'} - ${res.condicion || 'HABIDO'})`,
+            { id: "sunat-profile-ruc", duration: 4500 }
+          );
+        }
+      } else {
+        toast.error("No se encontraron datos en SUNAT para este RUC.", { id: "sunat-profile-ruc" });
+      }
+    } catch (err: any) {
+      toast.error(
+        err.response?.data?.message || err.message || "Error al consultar RUC en SUNAT",
+        { id: "sunat-profile-ruc" }
+      );
+    } finally {
+      setIsLookingUpSunat(false);
+    }
+  };
   const [billingSerieInvoice, setBillingSerieInvoice] = useState(user?.billingSerieInvoice || "F001");
   const [billingSerieBoleta, setBillingSerieBoleta] = useState(user?.billingSerieBoleta || "B001");
+  const [initialBoletaNumber, setInitialBoletaNumber] = useState<number | string>(
+    ((user as any)?.catalogConfig?.seriesConfig?.initialBoletaNumber !== undefined && (user as any)?.catalogConfig?.seriesConfig?.initialBoletaNumber > 0)
+      ? String((user as any)?.catalogConfig?.seriesConfig?.initialBoletaNumber)
+      : ""
+  );
+  const [initialFacturaNumber, setInitialFacturaNumber] = useState<number | string>(
+    ((user as any)?.catalogConfig?.seriesConfig?.initialFacturaNumber !== undefined && (user as any)?.catalogConfig?.seriesConfig?.initialFacturaNumber > 0)
+      ? String((user as any)?.catalogConfig?.seriesConfig?.initialFacturaNumber)
+      : ""
+  );
+  const [serieNotaCreditoBoleta, setSerieNotaCreditoBoleta] = useState(
+    (user as any)?.catalogConfig?.seriesConfig?.serieNotaCreditoBoleta || "BC01"
+  );
+  const [initialNcBoletaNumber, setInitialNcBoletaNumber] = useState<number | string>(
+    ((user as any)?.catalogConfig?.seriesConfig?.initialNcBoletaNumber !== undefined && (user as any)?.catalogConfig?.seriesConfig?.initialNcBoletaNumber > 0)
+      ? String((user as any)?.catalogConfig?.seriesConfig?.initialNcBoletaNumber)
+      : ""
+  );
+  const [serieNotaDebitoBoleta, setSerieNotaDebitoBoleta] = useState(
+    (user as any)?.catalogConfig?.seriesConfig?.serieNotaDebitoBoleta || "BD01"
+  );
+  const [initialNdBoletaNumber, setInitialNdBoletaNumber] = useState<number | string>(
+    ((user as any)?.catalogConfig?.seriesConfig?.initialNdBoletaNumber !== undefined && (user as any)?.catalogConfig?.seriesConfig?.initialNdBoletaNumber > 0)
+      ? String((user as any)?.catalogConfig?.seriesConfig?.initialNdBoletaNumber)
+      : ""
+  );
+  const [isSyncingCorrelatives, setIsSyncingCorrelatives] = useState(false);
   const [taxRegime, setTaxRegime] = useState(user?.taxRegime || "GENERAL_18");
   const [igvRate, setIgvRate] = useState<number>(user?.igvRate !== undefined ? user.igvRate : 18);
   const [businessLogo, setBusinessLogo] = useState<string | File>(user?.businessLogo || "");
@@ -173,6 +302,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
   const [isCatalogActive, setIsCatalogActive] = useState<boolean>(true);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [showRegimeDetails, setShowRegimeDetails] = useState(false);
+  const [showCorrelativesPanel, setShowCorrelativesPanel] = useState(false);
 
   // Temporary states for sub-modal staging
   const [tempAvatar, setTempAvatar] = useState<string | File>("");
@@ -207,13 +337,20 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
       setBusinessReason(user.businessReason || "");
       setBusinessRubro(user.businessRubro || "");
       setBusinessAddress(user.businessAddress || "");
-      setBusinessPhone(user.businessPhone || "");
-      setBusinessEmail(user.businessEmail || "");
-      setBusinessDepartment(user.businessDepartment || "");
+      setBusinessPhone(user.businessPhone || user.phone || "");
+      setBusinessEmail(user.businessEmail || user.email || "");
+      setBusinessDepartment(user.businessDepartment || user.department || "");
       setBusinessProvince(user.businessProvince || "");
       setBusinessDistrict(user.businessDistrict || "");
       setBillingSerieInvoice(user.billingSerieInvoice || "F001");
       setBillingSerieBoleta(user.billingSerieBoleta || "B001");
+      const sCfg = (user as any)?.catalogConfig?.seriesConfig || {};
+      setInitialBoletaNumber(sCfg.initialBoletaNumber !== undefined && sCfg.initialBoletaNumber > 0 ? String(sCfg.initialBoletaNumber) : "");
+      setInitialFacturaNumber(sCfg.initialFacturaNumber !== undefined && sCfg.initialFacturaNumber > 0 ? String(sCfg.initialFacturaNumber) : "");
+      setSerieNotaCreditoBoleta(sCfg.serieNotaCreditoBoleta || "BC01");
+      setInitialNcBoletaNumber(sCfg.initialNcBoletaNumber !== undefined && sCfg.initialNcBoletaNumber > 0 ? String(sCfg.initialNcBoletaNumber) : "");
+      setSerieNotaDebitoBoleta(sCfg.serieNotaDebitoBoleta || "BD01");
+      setInitialNdBoletaNumber(sCfg.initialNdBoletaNumber !== undefined && sCfg.initialNdBoletaNumber > 0 ? String(sCfg.initialNdBoletaNumber) : "");
       const initialRegime = user.taxRegime || (isAmazoniaDepartment(user.businessDepartment) ? "AMAZONIA_EXONERADO" : "GENERAL_18");
       setTaxRegime(initialRegime);
       setIgvRate(user.igvRate !== undefined ? user.igvRate : (initialRegime === "AMAZONIA_EXONERADO" ? 0 : 18));
@@ -235,9 +372,9 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
         if (fresh.businessReason !== undefined) setBusinessReason(fresh.businessReason || "");
         if (fresh.businessRubro !== undefined) setBusinessRubro(fresh.businessRubro || "");
         if (fresh.businessAddress !== undefined) setBusinessAddress(fresh.businessAddress || "");
-        if (fresh.businessPhone !== undefined) setBusinessPhone(fresh.businessPhone || "");
-        if (fresh.businessEmail !== undefined) setBusinessEmail(fresh.businessEmail || "");
-        if (fresh.businessDepartment !== undefined) setBusinessDepartment(fresh.businessDepartment || "");
+        if (fresh.businessPhone !== undefined) setBusinessPhone(fresh.businessPhone || fresh.phone || "");
+        if (fresh.businessEmail !== undefined) setBusinessEmail(fresh.businessEmail || fresh.email || "");
+        if (fresh.businessDepartment !== undefined) setBusinessDepartment(fresh.businessDepartment || fresh.department || "");
         if (fresh.businessProvince !== undefined) setBusinessProvince(fresh.businessProvince || "");
         if (fresh.businessDistrict !== undefined) setBusinessDistrict(fresh.businessDistrict || "");
         if (fresh.billingSerieInvoice !== undefined) setBillingSerieInvoice(fresh.billingSerieInvoice || "F001");
@@ -1349,27 +1486,51 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
 
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1">
-                  RUC (11 dígitos)
+                  RUC del Negocio (11 dígitos)
                 </label>
-                <input
-                  type="text"
-                  maxLength={11}
-                  placeholder="Ej. 10203040506"
-                  className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 focus:ring-purple-500 outline-none text-sm font-bold text-gray-700 bg-white ${businessRuc && businessRuc.trim().replace(/\D/g, "").length !== 11 ? "border-rose-300 focus:ring-rose-500" : "border-gray-200"
+                <div className="relative flex items-center">
+                  <input
+                    type="text"
+                    maxLength={11}
+                    placeholder="Ej. 10475675946 o 20616634560"
+                    className={`w-full pl-3.5 pr-24 py-2.5 border rounded-xl font-mono text-sm font-bold text-gray-800 bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all ${
+                      businessRuc && businessRuc.trim().replace(/\D/g, "").length !== 11
+                        ? "border-rose-300 focus:ring-rose-500"
+                        : "border-gray-200"
                     }`}
-                  value={businessRuc}
-                  onChange={(e) => {
-                    const val = e.target.value.replace(/\D/g, "").slice(0, 11);
-                    setBusinessRuc(val);
-                  }}
-                  onPaste={(e) => {
-                    e.preventDefault();
-                    const text = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 11);
-                    setBusinessRuc(text);
-                  }}
-                />
+                    value={businessRuc}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, "").slice(0, 11);
+                      setBusinessRuc(val);
+                    }}
+                    onPaste={(e) => {
+                      e.preventDefault();
+                      const text = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 11);
+                      setBusinessRuc(text);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    disabled={isLookingUpSunat || businessRuc.trim().replace(/\D/g, "").length !== 11}
+                    onClick={handleLookupSunat}
+                    className="absolute right-1.5 top-1.5 bottom-1.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg inline-flex items-center gap-1.5 shadow-2xs transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer active:scale-95"
+                    title="Consultar datos oficiales en SUNAT y autocompletar automáticamente el perfil"
+                  >
+                    {isLookingUpSunat ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Buscando</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
+                        <span>SUNAT</span>
+                      </>
+                    )}
+                  </button>
+                </div>
                 {businessRuc && businessRuc.trim().replace(/\D/g, "").length !== 11 && (
-                  <p className="text-[11px] text-rose-500 font-extrabold mt-1 animate-pulse">
+                  <p className="text-[11px] text-rose-500 font-semibold mt-1">
                     ⚠️ El RUC debe tener exactamente 11 dígitos numéricos. (Tiene {businessRuc.trim().replace(/\D/g, "").length})
                   </p>
                 )}
@@ -1441,7 +1602,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
 
                   <div>
                     <label className="block text-xs font-black text-gray-700 uppercase tracking-wider mb-1">
-                      Correo Electrónico Fiscal
+                      Correo Electrónico Fiscal / Comercial
                     </label>
                     <input
                       type="email"
@@ -1450,6 +1611,9 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                       value={businessEmail}
                       onChange={(e) => setBusinessEmail(e.target.value)}
                     />
+                    <span className="text-[10px] text-slate-400 mt-1 block">
+                      * SUNAT no publica correos por privacidad. Usamos este correo comercial para la cabecera de tus comprobantes electrónicos y contacto oficial.
+                    </span>
                   </div>
 
                   <div>
@@ -1459,21 +1623,21 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                     <div className="grid grid-cols-3 gap-1.5">
                       <input
                         type="text"
-                        placeholder="Dpto"
+                        placeholder="Dpto (ej. Madre de Dios)"
                         className="px-2.5 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-bold text-gray-700 bg-white"
                         value={businessDepartment}
                         onChange={(e) => setBusinessDepartment(e.target.value)}
                       />
                       <input
                         type="text"
-                        placeholder="Prov"
+                        placeholder="Prov (ej. Tambopata)"
                         className="px-2.5 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-bold text-gray-700 bg-white"
                         value={businessProvince}
                         onChange={(e) => setBusinessProvince(e.target.value)}
                       />
                       <input
                         type="text"
-                        placeholder="Dist"
+                        placeholder="Dist (ej. Tambopata)"
                         className="px-2.5 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-bold text-gray-700 bg-white"
                         value={businessDistrict}
                         onChange={(e) => setBusinessDistrict(e.target.value)}
@@ -1481,34 +1645,215 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
                     </div>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-black text-gray-700 uppercase tracking-wider mb-1">
-                      Series SUNAT por Defecto
-                    </label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <span className="text-[10px] text-gray-500 font-bold block mb-0.5">Serie Boleta</span>
-                        <input
-                          type="text"
-                          maxLength={4}
-                          placeholder="B001"
-                          className="w-full px-3 py-1.5 font-mono text-xs uppercase font-extrabold border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
-                          value={billingSerieBoleta}
-                          onChange={(e) => setBillingSerieBoleta(e.target.value.toUpperCase())}
-                        />
+                  <div className="md:col-span-2 bg-white/95 border border-indigo-200/90 rounded-2xl p-3.5 sm:p-4 space-y-3 shadow-2xs transition-all">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                      <div className="flex items-center gap-2.5">
+                        <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100">
+                          <Layers className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                              Correlativos y Series SUNAT
+                            </h5>
+                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                              Opcional
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                            <span className="text-[10px] text-slate-400 font-semibold">Series activas:</span>
+                            <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                              {billingSerieBoleta || "B001"}
+                            </span>
+                            <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
+                              {billingSerieInvoice || "F001"}
+                            </span>
+                            <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-rose-50 text-rose-700 border border-rose-200">
+                              {serieNotaCreditoBoleta || "BC01"}
+                            </span>
+                            <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-amber-50 text-amber-700 border border-amber-200">
+                              {serieNotaDebitoBoleta || "BD01"}
+                            </span>
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <span className="text-[10px] text-gray-500 font-bold block mb-0.5">Serie Factura</span>
-                        <input
-                          type="text"
-                          maxLength={4}
-                          placeholder="F001"
-                          className="w-full px-3 py-1.5 font-mono text-xs uppercase font-extrabold border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
-                          value={billingSerieInvoice}
-                          onChange={(e) => setBillingSerieInvoice(e.target.value.toUpperCase())}
-                        />
-                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setShowCorrelativesPanel(!showCorrelativesPanel)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-indigo-700 bg-white hover:bg-indigo-50 border border-indigo-200 rounded-xl transition-all shadow-2xs self-start sm:self-auto cursor-pointer shrink-0 active:scale-95"
+                      >
+                        <span>{showCorrelativesPanel ? "Ocultar correlativos" : "Configurar correlativos"}</span>
+                        {showCorrelativesPanel ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                      </button>
                     </div>
+
+                    {showCorrelativesPanel && (
+                      <div className="pt-3 border-t border-slate-100 space-y-3.5 animate-fadeIn">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-50/80 p-2.5 rounded-xl border border-slate-200/70">
+                          <p className="text-[11px] text-slate-600 font-medium">
+                            💡 Ingresa el último número declarado en SUNAT para que la numeración oficial continúe exactamente donde se quedó sin duplicidades ni saltos.
+                          </p>
+                          <button
+                            type="button"
+                            disabled={isSyncingCorrelatives}
+                            onClick={handleSyncCorrelatives}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm transition-all disabled:opacity-50 cursor-pointer shrink-0 active:scale-95"
+                            title="Guardar las series e inicializar los correlativos ante SUNAT y CCOFACT PRO"
+                          >
+                            {isSyncingCorrelatives ? (
+                              <>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                <span>Guardando...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Zap className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
+                                <span>Inicializar y Guardar</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                          {/* Boleta */}
+                          <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2 shadow-2xs">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-black text-slate-800">Boletas (03)</span>
+                              <span className="text-[10px] font-mono font-bold text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.2 rounded">
+                                Próx: {billingSerieBoleta}-{String(Number(initialBoletaNumber || 0) + 1).padStart(8, '0')}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <span className="text-[9px] text-slate-500 font-bold block uppercase mb-0.5">Serie</span>
+                                <input
+                                  type="text"
+                                  maxLength={4}
+                                  placeholder="B001"
+                                  className="w-full px-2.5 py-1.5 font-mono text-xs uppercase font-extrabold border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50/50 focus:bg-white"
+                                  value={billingSerieBoleta}
+                                  onChange={(e) => setBillingSerieBoleta(e.target.value.toUpperCase().trim())}
+                                />
+                              </div>
+                              <div>
+                                <span className="text-[9px] text-slate-500 font-bold block uppercase mb-0.5">Último SUNAT</span>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  placeholder="Ej. 21"
+                                  className="w-full px-2.5 py-1.5 font-mono text-xs font-bold border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50/50 focus:bg-white"
+                                  value={initialBoletaNumber}
+                                  onChange={(e) => setInitialBoletaNumber(e.target.value)}
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Factura */}
+                          <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2 shadow-2xs">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-black text-slate-800">Facturas (01)</span>
+                              <span className="text-[10px] font-mono font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.2 rounded">
+                                Próx: {billingSerieInvoice}-{String(Number(initialFacturaNumber || 0) + 1).padStart(8, '0')}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <span className="text-[9px] text-slate-500 font-bold block uppercase mb-0.5">Serie</span>
+                                <input
+                                  type="text"
+                                  maxLength={4}
+                                  placeholder="F001"
+                                  className="w-full px-2.5 py-1.5 font-mono text-xs uppercase font-extrabold border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50/50 focus:bg-white"
+                                  value={billingSerieInvoice}
+                                  onChange={(e) => setBillingSerieInvoice(e.target.value.toUpperCase().trim())}
+                                />
+                              </div>
+                              <div>
+                                <span className="text-[9px] text-slate-500 font-bold block uppercase mb-0.5">Último SUNAT</span>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  placeholder="Ej. 0"
+                                  className="w-full px-2.5 py-1.5 font-mono text-xs font-bold border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50/50 focus:bg-white"
+                                  value={initialFacturaNumber}
+                                  onChange={(e) => setInitialFacturaNumber(e.target.value)}
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Nota de Crédito */}
+                          <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2 shadow-2xs">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-black text-slate-800">Nota Crédito (07)</span>
+                              <span className="text-[10px] font-mono font-bold text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.2 rounded">
+                                Próx: {serieNotaCreditoBoleta}-{String(Number(initialNcBoletaNumber || 0) + 1).padStart(8, '0')}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <span className="text-[9px] text-slate-500 font-bold block uppercase mb-0.5">Serie</span>
+                                <input
+                                  type="text"
+                                  maxLength={4}
+                                  placeholder="BC01"
+                                  className="w-full px-2.5 py-1.5 font-mono text-xs uppercase font-extrabold border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50/50 focus:bg-white"
+                                  value={serieNotaCreditoBoleta}
+                                  onChange={(e) => setSerieNotaCreditoBoleta(e.target.value.toUpperCase().trim())}
+                                />
+                              </div>
+                              <div>
+                                <span className="text-[9px] text-slate-500 font-bold block uppercase mb-0.5">Último SUNAT</span>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  placeholder="Ej. 1"
+                                  className="w-full px-2.5 py-1.5 font-mono text-xs font-bold border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50/50 focus:bg-white"
+                                  value={initialNcBoletaNumber}
+                                  onChange={(e) => setInitialNcBoletaNumber(e.target.value)}
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Nota de Débito */}
+                          <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2 shadow-2xs">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-black text-slate-800">Nota Débito (08)</span>
+                              <span className="text-[10px] font-mono font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded">
+                                Próx: {serieNotaDebitoBoleta}-{String(Number(initialNdBoletaNumber || 0) + 1).padStart(8, '0')}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <span className="text-[9px] text-slate-500 font-bold block uppercase mb-0.5">Serie</span>
+                                <input
+                                  type="text"
+                                  maxLength={4}
+                                  placeholder="BD01"
+                                  className="w-full px-2.5 py-1.5 font-mono text-xs uppercase font-extrabold border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50/50 focus:bg-white"
+                                  value={serieNotaDebitoBoleta}
+                                  onChange={(e) => setSerieNotaDebitoBoleta(e.target.value.toUpperCase().trim())}
+                                />
+                              </div>
+                              <div>
+                                <span className="text-[9px] text-slate-500 font-bold block uppercase mb-0.5">Último SUNAT</span>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  placeholder="Ej. 0"
+                                  className="w-full px-2.5 py-1.5 font-mono text-xs font-bold border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50/50 focus:bg-white"
+                                  value={initialNdBoletaNumber}
+                                  onChange={(e) => setInitialNdBoletaNumber(e.target.value)}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

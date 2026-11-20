@@ -270,29 +270,78 @@ export class UsersController {
   @Get('api/document/:type/:number')
   async queryDocument(@Param('type') type: string, @Param('number') number: string) {
     try {
-      let url = '';
-      if (type.toUpperCase() === 'DNI') {
-        url = `https://api.apis.net.pe/v1/dni?numero=${number}`;
-      } else if (type.toUpperCase() === 'RUC') {
-        url = `https://api.apis.net.pe/v1/ruc?numero=${number}`;
+      const cleanNum = (number || '').trim().replace(/\D/g, '');
+      const docType = (type || '').toUpperCase();
+
+      if (docType === 'RUC') {
+        // 1. Probar OpenRUC si empieza en 20
+        if (cleanNum.startsWith('20')) {
+          try {
+            const respOpen = await fetch(`https://openruc.com/api/ruc/${cleanNum}`, {
+              headers: { Accept: 'application/json' },
+              signal: AbortSignal.timeout(4000),
+            });
+            if (respOpen.ok) {
+              const openData = await respOpen.json();
+              if (openData && (openData.razon_social || openData.nombre_o_razon_social)) {
+                return {
+                  success: true,
+                  nombre: openData.razon_social || openData.nombre_o_razon_social,
+                  direccion: openData.direccion || openData.direccion_completa || '',
+                  data: openData,
+                };
+              }
+            }
+          } catch (_) {}
+        }
+
+        // 2. Probar apis.net.pe v1 con User-Agent
+        try {
+          const resp = await fetch(`https://api.apis.net.pe/v1/ruc?numero=${cleanNum}`, {
+            headers: {
+              Accept: 'application/json',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            },
+            signal: AbortSignal.timeout(4500),
+          });
+          if (resp.ok) {
+            const data: any = await resp.json();
+            if (data && (data.nombre || data.razonSocial)) {
+              return {
+                success: true,
+                nombre: data.nombre || data.razonSocial,
+                direccion: data.direccion && data.direccion !== '-' ? data.direccion : '',
+                data,
+              };
+            }
+          }
+        } catch (_) {}
+      } else if (docType === 'DNI') {
+        try {
+          const resp = await fetch(`https://api.apis.net.pe/v1/dni?numero=${cleanNum}`, {
+            headers: {
+              Accept: 'application/json',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            },
+            signal: AbortSignal.timeout(4500),
+          });
+          if (resp.ok) {
+            const data: any = await resp.json();
+            if (data && data.nombre) {
+              return {
+                success: true,
+                nombre: data.nombre,
+                direccion: data.direccion || '',
+                data,
+              };
+            }
+          }
+        } catch (_) {}
       } else {
         throw new BadRequestException('Tipo de documento no soportado para consulta automática');
       }
 
-      const response = await fetch(url);
-      
-      if (!response.ok) {
-        throw new Error('No se pudo obtener información del documento');
-      }
-      
-      const data: any = await response.json();
-      
-      return {
-        success: true,
-        nombre: data.nombre || data.razonSocial,
-        direccion: data.direccion || '',
-        data
-      };
+      throw new Error('No se pudo obtener información del documento en los registros oficiales.');
     } catch (error: any) {
       return { success: false, error: error.message };
     }

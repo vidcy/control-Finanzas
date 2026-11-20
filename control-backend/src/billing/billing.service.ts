@@ -17,7 +17,7 @@ export class BillingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ccofactService: CcofactService,
-  ) {}
+  ) { }
 
   private mapDocType(dtoType: BillingDocTypeEnum): FiscalDocType {
     switch (dtoType) {
@@ -197,6 +197,12 @@ export class BillingService {
       else serie = 'FD01';
     }
 
+    const isFactura = dto.docType === BillingDocTypeEnum.FACTURA;
+    const sCfg = (owner?.catalogConfig as any)?.seriesConfig || {};
+    const configuredFloor = Number(
+      isFactura ? sCfg.initialFacturaNumber : sCfg.initialBoletaNumber
+    ) || 0;
+
     const lastDoc = await this.prisma.fiscalDocument.findFirst({
       where: {
         userId: ownerId,
@@ -206,7 +212,8 @@ export class BillingService {
       orderBy: { correlative: 'desc' },
     });
 
-    let correlative = lastDoc ? lastDoc.correlative + 1 : 1;
+    const highestExisting = lastDoc ? lastDoc.correlative : 0;
+    let correlative = Math.max(highestExisting, configuredFloor) + 1;
     let fullNumber = `${serie}-${String(correlative).padStart(8, '0')}`;
 
     const hasLiveBilling = Boolean(owner.hasElectronicBilling && owner.ccofactUrl && owner.ccofactApiKey);
@@ -250,10 +257,10 @@ export class BillingService {
               dto.docType === BillingDocTypeEnum.FACTURA
                 ? '01'
                 : dto.docType === BillingDocTypeEnum.BOLETA
-                ? '03'
-                : dto.docType === BillingDocTypeEnum.NOTA_CREDITO
-                ? '07'
-                : '08',
+                  ? '03'
+                  : dto.docType === BillingDocTypeEnum.NOTA_CREDITO
+                    ? '07'
+                    : '08',
             serie: serie,
             fecha_de_emision: dto.issueDate || undefined,
             moneda: dto.currency || 'PEN',
@@ -286,8 +293,8 @@ export class BillingService {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'x-api-key': owner.ccofactApiKey || 'fact_demo_key_pro_2026',
-              'Authorization': `Bearer ${owner.ccofactApiKey || 'fact_demo_key_pro_2026'}`,
+              'x-api-key': owner.ccofactApiKey,
+              'Authorization': `Bearer ${owner.ccofactApiKey}`,
             },
             body: JSON.stringify(ccofactPayload),
           });
@@ -586,10 +593,10 @@ export class BillingService {
             doc.docType === FiscalDocType.INVOICE
               ? '01'
               : doc.docType === FiscalDocType.BOLETA
-              ? '03'
-              : doc.docType === FiscalDocType.CREDIT_NOTE
-              ? '07'
-              : '08',
+                ? '03'
+                : doc.docType === FiscalDocType.CREDIT_NOTE
+                  ? '07'
+                  : '08',
           serie: doc.serie,
           moneda: doc.currency || 'PEN',
           forma_pago: 'Contado',
@@ -606,15 +613,9 @@ export class BillingService {
               unidad_medida: 'NIU',
               cantidad: 1,
               precio_unitario: doc.totalAmount,
-              tipo_afectacion_igv: doc.totalOpExonerada > 0 ? '20' : (doc.totalOpInafecta > 0 ? '30' : '10'),
+              tipo_afectacion_igv: '10',
             },
           ],
-          total_gravada: doc.totalOpGravada,
-          total_exonerada: doc.totalOpExonerada,
-          total_inafecta: doc.totalOpInafecta,
-          total_igv: doc.totalIgv,
-          total_impuestos: doc.totalIgv,
-          observaciones: doc.totalOpExonerada > 0 ? 'BIENES TRANSFERIDOS EN LA AMAZONÍA PARA SER CONSUMIDOS EN LA MISMA - LEY N° 27037' : undefined,
           enviar_a_sunat_inmediato: true,
         };
 
@@ -623,8 +624,8 @@ export class BillingService {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-api-key': owner.ccofactApiKey || 'fact_demo_key_pro_2026',
-            'Authorization': `Bearer ${owner.ccofactApiKey || 'fact_demo_key_pro_2026'}`,
+            'x-api-key': owner.ccofactApiKey,
+            'Authorization': `Bearer ${owner.ccofactApiKey}`,
           },
           body: JSON.stringify(ccofactPayload),
         });
@@ -672,37 +673,34 @@ export class BillingService {
 
     const isCredit = dto.noteType === 'CREDIT';
     const isOriginalInvoice = original.docType === FiscalDocType.INVOICE;
-    const serie = isOriginalInvoice ? (isCredit ? 'FC01' : 'FD01') : (isCredit ? 'BC01' : 'BD01');
+    const seriesConfig = (owner?.catalogConfig as any)?.seriesConfig || {};
+
+    const configuredSerie = isOriginalInvoice
+      ? (isCredit ? (seriesConfig.serieNotaCreditoFactura || 'FC01') : (seriesConfig.serieNotaDebitoFactura || 'FD01'))
+      : (isCredit ? (seriesConfig.serieNotaCreditoBoleta || 'BC01') : (seriesConfig.serieNotaDebitoBoleta || 'BD01'));
+
+    const serie = configuredSerie.toUpperCase().trim();
     const docType = isCredit ? FiscalDocType.CREDIT_NOTE : FiscalDocType.DEBIT_NOTE;
+
+    const configuredFloor = Number(
+      isOriginalInvoice
+        ? (isCredit ? seriesConfig.initialNcFacturaNumber : seriesConfig.initialNdFacturaNumber)
+        : (isCredit ? seriesConfig.initialNcBoletaNumber : seriesConfig.initialNdBoletaNumber)
+    ) || 0;
 
     const lastNote = await this.prisma.fiscalDocument.findFirst({
       where: { userId: ownerId, docType, serie },
       orderBy: { correlative: 'desc' },
     });
 
-    let correlative = lastNote ? lastNote.correlative + 1 : 1;
+    const highestExisting = lastNote ? lastNote.correlative : 0;
+    let correlative = Math.max(highestExisting, configuredFloor) + 1;
     let fullNumber = `${serie}-${String(correlative).padStart(8, '0')}`;
     const amount = dto.amount || original.totalAmount;
-
-    // Respetar la afectación tributaria del comprobante original (Exonerado / Inafecto / Gravado)
-    const isExonerado = (original.totalOpExonerada || 0) > 0;
-    const isInafecto = (original.totalOpInafecta || 0) > 0;
-    let base = 0;
-    let igv = 0;
-    let opExonerada = 0;
-    let opInafecta = 0;
-    let affectation = '10';
-
-    if (isExonerado) {
-      opExonerada = Number(amount.toFixed(2));
-      affectation = '20';
-    } else if (isInafecto) {
-      opInafecta = Number(amount.toFixed(2));
-      affectation = '30';
-    } else {
-      base = Number((amount / 1.18).toFixed(2));
-      igv = Number((amount - base).toFixed(2));
-    }
+    const affectation = original.totalOpExonerada > 0 ? '20' : (original.totalOpInafecta > 0 ? '30' : '10');
+    const isTaxExempt = affectation === '20' || affectation === '30';
+    const base = isTaxExempt ? amount : Number((amount / 1.18).toFixed(2));
+    const igv = isTaxExempt ? 0 : Number((amount - base).toFixed(2));
 
     let status: FiscalStatus = FiscalStatus.ACCEPTED;
     let pdfUrl: string | null = null;
@@ -739,11 +737,6 @@ export class BillingService {
               tipo_afectacion_igv: affectation,
             },
           ],
-          total_gravada: base,
-          total_exonerada: opExonerada,
-          total_inafecta: opInafecta,
-          total_igv: igv,
-          total_impuestos: igv,
           ref_documento: {
             tipo: original.docType === FiscalDocType.INVOICE ? '01' : '03',
             serie: original.serie,
@@ -759,8 +752,8 @@ export class BillingService {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-api-key': owner.ccofactApiKey || 'fact_demo_key_pro_2026',
-            'Authorization': `Bearer ${owner.ccofactApiKey || 'fact_demo_key_pro_2026'}`,
+            'x-api-key': owner.ccofactApiKey,
+            'Authorization': `Bearer ${owner.ccofactApiKey}`,
           },
           body: JSON.stringify(payload),
         });
@@ -788,11 +781,9 @@ export class BillingService {
         sunatDescription = err.message;
       }
     } else {
-      const randomHash = Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 10);
-      hash = Buffer.from(randomHash).toString('base64').substring(0, 28);
-      pdfUrl = `https://controlfinanzas.pe/comprobantes/${fullNumber}.pdf`;
-      xmlUrl = `https://controlfinanzas.pe/comprobantes/${fullNumber}.xml`;
-      cdrUrl = `https://controlfinanzas.pe/comprobantes/R-${fullNumber}.zip`;
+      status = FiscalStatus.LOCAL_DRAFT;
+      sunatResponseCode = 'LOCAL';
+      sunatDescription = 'Borrador local: Credenciales CCOFACT PRO no configuradas o facturación en vivo inactiva.';
     }
 
     const noteDoc = await this.prisma.fiscalDocument.create({
@@ -807,9 +798,9 @@ export class BillingService {
         customerDocNum: original.customerDocNum,
         customerName: original.customerName,
         customerAddress: original.customerAddress,
-        totalOpGravada: base,
-        totalOpExonerada: opExonerada,
-        totalOpInafecta: opInafecta,
+        totalOpGravada: isTaxExempt ? 0 : base,
+        totalOpExonerada: affectation === '20' ? base : 0,
+        totalOpInafecta: affectation === '30' ? base : 0,
         totalIgv: igv,
         totalAmount: amount,
         currency: original.currency,
@@ -840,7 +831,7 @@ export class BillingService {
           data: {
             billingStatus: 'CANCELLED',
           },
-        }).catch(() => {});
+        }).catch(() => { });
       }
     }
 
@@ -978,8 +969,8 @@ export class BillingService {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'x-api-key': owner.ccofactApiKey || 'fact_demo_key_pro_2026',
-              'Authorization': `Bearer ${owner.ccofactApiKey || 'fact_demo_key_pro_2026'}`,
+              'x-api-key': owner.ccofactApiKey,
+              'Authorization': `Bearer ${owner.ccofactApiKey}`,
             },
             body: JSON.stringify({ motivo }),
           });
@@ -1004,7 +995,7 @@ export class BillingService {
         await this.prisma.sale.update({
           where: { id: doc.saleId },
           data: { billingStatus: 'CANCELLED' },
-        }).catch(() => {});
+        }).catch(() => { });
 
         // Si se solicitó revertir stock
         if (options?.restoreStock) {
@@ -1067,11 +1058,11 @@ export class BillingService {
         await fetch(`${baseUrl}/api/v1/documents/by-series-number/${doc.serie}/${doc.correlative}`, {
           method: 'DELETE',
           headers: {
-            'x-api-key': owner.ccofactApiKey || 'fact_demo_key_pro_2026',
-            'Authorization': `Bearer ${owner.ccofactApiKey || 'fact_demo_key_pro_2026'}`,
+            'x-api-key': owner.ccofactApiKey,
+            'Authorization': `Bearer ${owner.ccofactApiKey}`,
           },
         });
-      } catch (e) {}
+      } catch (e) { }
     }
 
     await this.prisma.fiscalDocument.delete({ where: { id } });
@@ -1099,17 +1090,23 @@ export class BillingService {
 
     if (!owner) throw new NotFoundException('Usuario no encontrado');
 
-    const effectiveKey = owner.ccofactApiKey || 'fact_demo_key_pro_2026';
-    const rawUrl = owner.ccofactUrl || 'http://localhost:4001';
-    const baseUrl = this.normalizeCcofactBaseUrl(rawUrl);
+    if (!owner.ccofactUrl || !owner.ccofactApiKey) {
+      return {
+        connected: false,
+        online: false,
+        message: 'No se han configurado la URL o API Key de CCOFACT PRO.',
+      };
+    }
+
+    const baseUrl = this.normalizeCcofactBaseUrl(owner.ccofactUrl);
     const statusUrl = `${baseUrl}/api/v1/ccofact/status`;
 
     try {
       const resp = await fetch(statusUrl, {
         method: 'GET',
         headers: {
-          'x-api-key': effectiveKey,
-          'Authorization': `Bearer ${effectiveKey}`,
+          'x-api-key': owner.ccofactApiKey,
+          'Authorization': `Bearer ${owner.ccofactApiKey}`,
         },
       });
 
@@ -1184,11 +1181,14 @@ export class BillingService {
         businessName: true,
         ccofactUrl: true,
         ccofactApiKey: true,
-        billingSerieBoleta: true,
         billingSerieInvoice: true,
+        billingSerieBoleta: true,
+        catalogConfig: true,
       },
     });
     if (!user) throw new NotFoundException('Usuario no encontrado');
+
+    const sCfg = ((user.catalogConfig as any)?.seriesConfig) || {};
 
     return {
       hasElectronicBilling: user.hasElectronicBilling,
@@ -1197,9 +1197,19 @@ export class BillingService {
       businessName: user.businessName || '',
       ccofactUrl: user.ccofactUrl || 'http://localhost:4001/api/v1/ccofact/emitir',
       ccofactApiKey: user.ccofactApiKey || '',
+      hasToken: Boolean(user.ccofactApiKey),
       billingSerieBoleta: user.billingSerieBoleta || 'B001',
       billingSerieInvoice: user.billingSerieInvoice || 'F001',
-      hasToken: Boolean(user.ccofactApiKey),
+      serieNotaCreditoBoleta: sCfg.serieNotaCreditoBoleta || 'BC01',
+      serieNotaCreditoFactura: sCfg.serieNotaCreditoFactura || 'FC01',
+      serieNotaDebitoBoleta: sCfg.serieNotaDebitoBoleta || 'BD01',
+      serieNotaDebitoFactura: sCfg.serieNotaDebitoFactura || 'FD01',
+      initialBoletaNumber: sCfg.initialBoletaNumber ?? 0,
+      initialFacturaNumber: sCfg.initialFacturaNumber ?? 0,
+      initialNcBoletaNumber: sCfg.initialNcBoletaNumber ?? 0,
+      initialNcFacturaNumber: sCfg.initialNcFacturaNumber ?? 0,
+      initialNdBoletaNumber: sCfg.initialNdBoletaNumber ?? 0,
+      initialNdFacturaNumber: sCfg.initialNdFacturaNumber ?? 0,
     };
   }
 
@@ -1210,8 +1220,6 @@ export class BillingService {
     businessName?: string;
     ccofactUrl?: string;
     ccofactApiKey?: string;
-    billingSerieBoleta?: string;
-    billingSerieInvoice?: string;
   }) {
     const updateData: any = {};
     if (data.hasElectronicBilling !== undefined) updateData.hasElectronicBilling = data.hasElectronicBilling;
@@ -1220,8 +1228,6 @@ export class BillingService {
     if (data.businessName !== undefined) updateData.businessName = data.businessName;
     if (data.ccofactUrl !== undefined) updateData.ccofactUrl = data.ccofactUrl;
     if (data.ccofactApiKey !== undefined) updateData.ccofactApiKey = data.ccofactApiKey;
-    if (data.billingSerieBoleta !== undefined) updateData.billingSerieBoleta = data.billingSerieBoleta.toUpperCase().trim();
-    if (data.billingSerieInvoice !== undefined) updateData.billingSerieInvoice = data.billingSerieInvoice.toUpperCase().trim();
 
     const updated = await this.prisma.user.update({
       where: { id: ownerId },
@@ -1235,88 +1241,408 @@ export class BillingService {
       businessName: updated.businessName,
       ccofactUrl: updated.ccofactUrl || '',
       ccofactApiKey: updated.ccofactApiKey || '',
-      billingSerieBoleta: updated.billingSerieBoleta || 'B001',
-      billingSerieInvoice: updated.billingSerieInvoice || 'F001',
       hasToken: Boolean(updated.ccofactApiKey),
     };
   }
 
-  async syncSeries(ownerId: string, data: {
-    serieBoleta?: string;
-    serieFactura?: string;
-    initialBoletaNumber?: number;
-    initialFacturaNumber?: number;
-  }) {
+  /**
+   * CONSULTA INTEGRAL DE RUC SUNAT CON MULTI-PASARELA Y RESOLUCIÓN DE UBIGEO
+   */
+  async consultarRuc(rucInput: string) {
+    const ruc = (rucInput || '').trim().replace(/\D/g, '');
+    if (!ruc || ruc.length !== 11) {
+      throw new BadRequestException('El RUC debe contener exactamente 11 dígitos numéricos.');
+    }
+
+    // 0. Búsqueda local en base de datos para empresas o usuarios ya registrados
+    const localUser = await this.prisma.user.findFirst({
+      where: { businessRuc: ruc },
+      select: {
+        businessRuc: true,
+        businessName: true,
+        businessReason: true,
+        businessAddress: true,
+        businessDepartment: true,
+        businessProvince: true,
+        businessDistrict: true,
+        businessPhone: true,
+        businessEmail: true,
+        email: true,
+      },
+    });
+
+    let sunatData: any = null;
+
+    // 1. Probar primero con el motor CCOFACT PRO local si está activo en el puerto 4001
+    try {
+      const respCcofact = await fetch(`http://localhost:4001/api/v1/consultas/ruc/${ruc}`, {
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(3500),
+      });
+      if (respCcofact.ok) {
+        const ccoData = await respCcofact.json();
+        if (ccoData && (ccoData.razon_social || ccoData.razonSocial)) {
+          sunatData = ccoData;
+        }
+      }
+    } catch (_) {}
+
+    // 2. Pasarela OpenRUC directa (ultra rápida, sin captcha, compatible con empresas RUC 20)
+    if ((!sunatData || (!sunatData.razon_social && !sunatData.razonSocial)) && ruc.startsWith('20')) {
+      try {
+        const respOpen = await fetch(`https://openruc.com/api/ruc/${ruc}`, {
+          headers: { 'Accept': 'application/json' },
+          signal: AbortSignal.timeout(4500),
+        });
+        if (respOpen.ok) {
+          const openData = await respOpen.json();
+          if (openData && (openData.razon_social || openData.nombre_o_razon_social)) {
+            sunatData = {
+              razon_social: openData.razon_social || openData.nombre_o_razon_social,
+              nombre_comercial: openData.nombre_comercial || openData.razon_social,
+              direccion: openData.direccion || openData.direccion_completa || '',
+              ubigeo: openData.ubigeo || '',
+              estado: openData.estado || 'ACTIVO',
+              condicion: openData.condicion || 'HABIDO',
+            };
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 3. Pasarela apis.net.pe v1 (soporta RUC 10 y RUC 20)
+    if (!sunatData || (!sunatData.razon_social && !sunatData.razonSocial && !sunatData.nombre)) {
+      try {
+        const resp = await fetch(`https://api.apis.net.pe/v1/ruc?numero=${ruc}`, {
+          headers: {
+            Accept: 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          },
+          signal: AbortSignal.timeout(4500),
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data && (data.nombre || data.razonSocial)) {
+            sunatData = {
+              razon_social: data.nombre || data.razonSocial,
+              nombre_comercial: data.nombreComercial || data.nombre || data.razonSocial,
+              direccion: data.direccion && data.direccion !== '-' ? data.direccion : '',
+              departamento: data.departamento || '',
+              provincia: data.provincia || '',
+              distrito: data.distrito || '',
+              ubigeo: data.ubigeo && data.ubigeo !== '-' ? data.ubigeo : '',
+              estado: data.estado || 'ACTIVO',
+              condicion: data.condicion || 'HABIDO',
+            };
+          }
+        }
+      } catch (err: any) {
+        console.warn(`apis.net.pe v1 RUC falló para ${ruc}:`, err.message);
+      }
+    }
+
+    // 4. Si es RUC 10 y no hay datos, consultar RENIEC por DNI para recuperar nombres oficiales
+    if ((!sunatData || (!sunatData.razon_social && !sunatData.razonSocial && !sunatData.nombre)) && ruc.startsWith('10')) {
+      const dni = ruc.substring(2, 10);
+      try {
+        const respDni = await fetch(`https://api.apis.net.pe/v1/dni?numero=${dni}`, {
+          headers: {
+            Accept: 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          },
+          signal: AbortSignal.timeout(4000),
+        });
+        if (respDni.ok) {
+          const dniData = await respDni.json();
+          const fullName = `${dniData.nombres || ''} ${dniData.apellidoPaterno || ''} ${dniData.apellidoMaterno || ''}`.trim();
+          if (fullName) {
+            sunatData = {
+              razon_social: fullName,
+              nombre_comercial: fullName,
+              direccion: '',
+              departamento: '',
+              provincia: '',
+              distrito: '',
+              ubigeo: '',
+              estado: 'ACTIVO',
+              condicion: 'HABIDO',
+            };
+          }
+        }
+      } catch (_) {}
+    }
+
+    // Si aún no hay datos pero existe registro local del usuario en la base de datos
+    if (!sunatData && localUser) {
+      sunatData = {
+        razon_social: localUser.businessReason || localUser.businessName,
+        nombre_comercial: localUser.businessName || localUser.businessReason,
+        direccion: localUser.businessAddress || '',
+        departamento: localUser.businessDepartment || '',
+        provincia: localUser.businessProvince || '',
+        distrito: localUser.businessDistrict || '',
+        estado: 'ACTIVO',
+        condicion: 'HABIDO',
+      };
+    }
+
+    if (!sunatData || (!sunatData.razon_social && !sunatData.razonSocial && !sunatData.nombre)) {
+      throw new NotFoundException(`No se encontraron datos oficiales en SUNAT para el RUC ${ruc}.`);
+    }
+
+    const razonSocial = sunatData.razon_social || sunatData.razonSocial || sunatData.nombre || localUser?.businessReason || '';
+    const nombreComercial = sunatData.nombre_comercial || sunatData.nombreComercial || localUser?.businessName || razonSocial;
+    let rawAddress = sunatData.direccion || sunatData.domicilio_fiscal || sunatData.direccion_completa || '';
+    if ((!rawAddress || rawAddress === '-' || rawAddress === '--') && localUser?.businessAddress) {
+      rawAddress = localUser.businessAddress;
+    }
+
+    let ubigeo = sunatData.ubigeo || '';
+    let departamento = sunatData.departamento || '';
+    let provincia = sunatData.provincia || '';
+    let distrito = sunatData.distrito || '';
+
+    // =========================================================================
+    // RESOLUTOR NACIONAL DE UBIGEOS Y LOCALIZACIÓN SUNAT
+    // =========================================================================
+    const COMMON_UBIGEOS: Record<string, { dpto: string; prov: string; dist: string }> = {
+      // MADRE DE DIOS
+      '170101': { dpto: 'MADRE DE DIOS', prov: 'TAMBOPATA', dist: 'TAMBOPATA' },
+      '170102': { dpto: 'MADRE DE DIOS', prov: 'TAMBOPATA', dist: 'INAMBARI' },
+      '170103': { dpto: 'MADRE DE DIOS', prov: 'TAMBOPATA', dist: 'LAS PIEDRAS' },
+      '170104': { dpto: 'MADRE DE DIOS', prov: 'TAMBOPATA', dist: 'LABERINTO' },
+      '170201': { dpto: 'MADRE DE DIOS', prov: 'MANU', dist: 'MANU' },
+      '170301': { dpto: 'MADRE DE DIOS', prov: 'TAHUAMANU', dist: 'IÑAPARI' },
+      '170302': { dpto: 'MADRE DE DIOS', prov: 'TAHUAMANU', dist: 'IBERIA' },
+      // PUNO
+      '210101': { dpto: 'PUNO', prov: 'PUNO', dist: 'PUNO' },
+      '211101': { dpto: 'PUNO', prov: 'SAN ROMAN', dist: 'JULIACA' },
+      '211102': { dpto: 'PUNO', prov: 'SAN ROMAN', dist: 'CABANA' },
+      '211103': { dpto: 'PUNO', prov: 'SAN ROMAN', dist: 'CABANILLAS' },
+      '211104': { dpto: 'PUNO', prov: 'SAN ROMAN', dist: 'CARACOTO' },
+      '211105': { dpto: 'PUNO', prov: 'SAN ROMAN', dist: 'SAN MIGUEL' },
+      '210201': { dpto: 'PUNO', prov: 'AZANGARO', dist: 'AZANGARO' },
+      // LIMA
+      '150101': { dpto: 'LIMA', prov: 'LIMA', dist: 'LIMA' },
+      '150114': { dpto: 'LIMA', prov: 'LIMA', dist: 'LA MOLINA' },
+      '150122': { dpto: 'LIMA', prov: 'LIMA', dist: 'MIRAFLORES' },
+      '150131': { dpto: 'LIMA', prov: 'LIMA', dist: 'SAN ISIDRO' },
+      '150140': { dpto: 'LIMA', prov: 'LIMA', dist: 'SANTIAGO DE SURCO' },
+      '150130': { dpto: 'LIMA', prov: 'LIMA', dist: 'SAN BORJA' },
+      '150141': { dpto: 'LIMA', prov: 'LIMA', dist: 'SURQUILLO' },
+      '150132': { dpto: 'LIMA', prov: 'LIMA', dist: 'SAN JUAN DE LURIGANCHO' },
+      '150135': { dpto: 'LIMA', prov: 'LIMA', dist: 'SAN MARTIN DE PORRES' },
+      '150117': { dpto: 'LIMA', prov: 'LIMA', dist: 'LOS OLIVOS' },
+      // CUSCO
+      '080101': { dpto: 'CUSCO', prov: 'CUSCO', dist: 'CUSCO' },
+      '080108': { dpto: 'CUSCO', prov: 'CUSCO', dist: 'WANCHAQ' },
+      '080105': { dpto: 'CUSCO', prov: 'CUSCO', dist: 'SAN SEBASTIAN' },
+      // AREQUIPA
+      '040101': { dpto: 'AREQUIPA', prov: 'AREQUIPA', dist: 'AREQUIPA' },
+      '040103': { dpto: 'AREQUIPA', prov: 'AREQUIPA', dist: 'CERRO COLORADO' },
+      '040104': { dpto: 'AREQUIPA', prov: 'AREQUIPA', dist: 'CAYMA' },
+      // LORETO
+      '160101': { dpto: 'LORETO', prov: 'MAYNAS', dist: 'IQUITOS' },
+      // SAN MARTIN
+      '220901': { dpto: 'SAN MARTIN', prov: 'SAN MARTIN', dist: 'TARAPOTO' },
+      // UCAYALI
+      '250101': { dpto: 'UCAYALI', prov: 'CORONEL PORTILLO', dist: 'CALLERIA' },
+    };
+
+    const DEPT_CODES: Record<string, string> = {
+      '01': 'AMAZONAS', '02': 'ANCASH', '03': 'APURIMAC', '04': 'AREQUIPA',
+      '05': 'AYACUCHO', '06': 'CAJAMARCA', '07': 'CALLAO', '08': 'CUSCO',
+      '09': 'HUANCAVELICA', '10': 'HUANUCO', '11': 'ICA', '12': 'JUNIN',
+      '13': 'LA LIBERTAD', '14': 'LAMBAYEQUE', '15': 'LIMA', '16': 'LORETO',
+      '17': 'MADRE DE DIOS', '18': 'MOQUEGUA', '19': 'PASCO', '20': 'PIURA',
+      '21': 'PUNO', '22': 'SAN MARTIN', '23': 'TACNA', '24': 'TUMBES', '25': 'UCAYALI'
+    };
+
+    const cleanUbigeo = ubigeo.trim().replace(/\D/g, '');
+    if (cleanUbigeo && COMMON_UBIGEOS[cleanUbigeo]) {
+      departamento = departamento || COMMON_UBIGEOS[cleanUbigeo].dpto;
+      provincia = provincia || COMMON_UBIGEOS[cleanUbigeo].prov;
+      distrito = distrito || COMMON_UBIGEOS[cleanUbigeo].dist;
+    } else if (cleanUbigeo.length >= 2 && !departamento) {
+      const code = cleanUbigeo.substring(0, 2);
+      if (DEPT_CODES[code]) departamento = DEPT_CODES[code];
+    }
+
+    // Parsear dirección con sufijo SUNAT "DIRECCION - DISTRITO - PROVINCIA - DEPARTAMENTO"
+    let cleanAddress = rawAddress;
+    if (rawAddress.includes(' - ')) {
+      const parts = rawAddress.split(' - ').map((p: string) => p.trim()).filter(Boolean);
+      if (parts.length >= 4) {
+        departamento = departamento || parts[parts.length - 1].toUpperCase();
+        provincia = provincia || parts[parts.length - 2].toUpperCase();
+        distrito = distrito || parts[parts.length - 3].toUpperCase();
+        cleanAddress = parts.slice(0, parts.length - 3).join(' - ');
+      }
+    }
+
+    // Inferencia contextual de ciudades si faltan departamento/provincia
+    const upperAddr = cleanAddress.toUpperCase();
+    if (!departamento || !distrito) {
+      if (upperAddr.includes('JULIACA')) {
+        distrito = distrito || 'JULIACA';
+        provincia = provincia || 'SAN ROMAN';
+        departamento = 'PUNO';
+      } else if (upperAddr.includes('PUERTO MALDONADO') || upperAddr.includes('TAMBOPATA')) {
+        distrito = distrito || 'TAMBOPATA';
+        provincia = provincia || 'TAMBOPATA';
+        departamento = 'MADRE DE DIOS';
+      } else if (upperAddr.includes('IQUITOS')) {
+        distrito = distrito || 'IQUITOS';
+        provincia = provincia || 'MAYNAS';
+        departamento = 'LORETO';
+      } else if (upperAddr.includes('TARAPOTO')) {
+        distrito = distrito || 'TARAPOTO';
+        provincia = provincia || 'SAN MARTIN';
+        departamento = 'SAN MARTIN';
+      } else if (upperAddr.includes('PUCALLPA')) {
+        distrito = distrito || 'CALLERIA';
+        provincia = provincia || 'CORONEL PORTILLO';
+        departamento = 'UCAYALI';
+      } else if (upperAddr.includes('CUSCO') || upperAddr.includes('CUZCO')) {
+        distrito = distrito || 'CUSCO';
+        provincia = provincia || 'CUSCO';
+        departamento = 'CUSCO';
+      } else if (upperAddr.includes('AREQUIPA')) {
+        distrito = distrito || 'AREQUIPA';
+        provincia = provincia || 'AREQUIPA';
+        departamento = 'AREQUIPA';
+      }
+    }
+
+    // Si aún falta departamento, recurrir a los datos registrados del usuario
+    if (!departamento && localUser?.businessDepartment) {
+      departamento = localUser.businessDepartment || '';
+    }
+    if (!provincia && localUser?.businessProvince) provincia = localUser.businessProvince;
+    if (!distrito && localUser?.businessDistrict) distrito = localUser.businessDistrict;
+
+    const estado = sunatData.estado || 'ACTIVO';
+    const condicion = sunatData.condicion || 'HABIDO';
+    const email = localUser?.businessEmail || localUser?.email || undefined;
+    const telefono = localUser?.businessPhone || undefined;
+
+    return {
+      success: true,
+      ruc,
+      razonSocial,
+      nombreComercial,
+      direccion: cleanAddress,
+      departamento,
+      provincia,
+      distrito,
+      ubigeo,
+      estado,
+      condicion,
+      email,
+      telefono,
+    };
+  }
+
+  async syncSeries(
+    ownerId: string,
+    body: {
+      serieBoleta?: string;
+      serieFactura?: string;
+      serieNotaCreditoBoleta?: string;
+      serieNotaCreditoFactura?: string;
+      serieNotaDebitoBoleta?: string;
+      serieNotaDebitoFactura?: string;
+      initialBoletaNumber?: number;
+      initialFacturaNumber?: number;
+      initialNcBoletaNumber?: number;
+      initialNcFacturaNumber?: number;
+      initialNdBoletaNumber?: number;
+      initialNdFacturaNumber?: number;
+    },
+  ) {
     const owner = await this.prisma.user.findUnique({ where: { id: ownerId } });
     if (!owner) throw new NotFoundException('Usuario no encontrado');
 
-    const updateUserData: any = {};
-    if (data.serieBoleta) updateUserData.billingSerieBoleta = data.serieBoleta.toUpperCase().trim();
-    if (data.serieFactura) updateUserData.billingSerieInvoice = data.serieFactura.toUpperCase().trim();
+    const currentCatalog = (owner.catalogConfig as any) || {};
+    const prevSeriesConfig = currentCatalog.seriesConfig || {};
 
-    const updatedUser = await this.prisma.user.update({
+    const updatedSeriesConfig = {
+      ...prevSeriesConfig,
+      serieBoleta: (body.serieBoleta || owner.billingSerieBoleta || 'B001').toUpperCase(),
+      serieFactura: (body.serieFactura || owner.billingSerieInvoice || 'F001').toUpperCase(),
+      serieNotaCreditoBoleta: (body.serieNotaCreditoBoleta || prevSeriesConfig.serieNotaCreditoBoleta || 'BC01').toUpperCase(),
+      serieNotaCreditoFactura: (body.serieNotaCreditoFactura || prevSeriesConfig.serieNotaCreditoFactura || 'FC01').toUpperCase(),
+      serieNotaDebitoBoleta: (body.serieNotaDebitoBoleta || prevSeriesConfig.serieNotaDebitoBoleta || 'BD01').toUpperCase(),
+      serieNotaDebitoFactura: (body.serieNotaDebitoFactura || prevSeriesConfig.serieNotaDebitoFactura || 'FD01').toUpperCase(),
+      initialBoletaNumber: body.initialBoletaNumber !== undefined ? Number(body.initialBoletaNumber) : (prevSeriesConfig.initialBoletaNumber ?? 0),
+      initialFacturaNumber: body.initialFacturaNumber !== undefined ? Number(body.initialFacturaNumber) : (prevSeriesConfig.initialFacturaNumber ?? 0),
+      initialNcBoletaNumber: body.initialNcBoletaNumber !== undefined ? Number(body.initialNcBoletaNumber) : (prevSeriesConfig.initialNcBoletaNumber ?? 0),
+      initialNcFacturaNumber: body.initialNcFacturaNumber !== undefined ? Number(body.initialNcFacturaNumber) : (prevSeriesConfig.initialNcFacturaNumber ?? 0),
+      initialNdBoletaNumber: body.initialNdBoletaNumber !== undefined ? Number(body.initialNdBoletaNumber) : (prevSeriesConfig.initialNdBoletaNumber ?? 0),
+      initialNdFacturaNumber: body.initialNdFacturaNumber !== undefined ? Number(body.initialNdFacturaNumber) : (prevSeriesConfig.initialNdFacturaNumber ?? 0),
+    };
+
+    const updateData: any = {
+      billingSerieBoleta: updatedSeriesConfig.serieBoleta,
+      billingSerieInvoice: updatedSeriesConfig.serieFactura,
+      catalogConfig: {
+        ...currentCatalog,
+        seriesConfig: updatedSeriesConfig,
+      },
+    };
+
+    const updated = await this.prisma.user.update({
       where: { id: ownerId },
-      data: updateUserData,
+      data: updateData,
     });
 
-    const serieBoleta = updatedUser.billingSerieBoleta || 'B001';
-    const serieFactura = updatedUser.billingSerieInvoice || 'F001';
+    // Sincronizar en tiempo real con el motor CCOFACT PRO si estÃ¡ conectado
+    let syncedWithCcofact = false;
+    let ccofactMessage = '';
 
-    let ccofactSyncResult: any = null;
-    const baseUrl = this.normalizeCcofactBaseUrl(owner.ccofactUrl || 'http://localhost:4001');
-    const apiKey = owner.ccofactApiKey || 'fact_demo_key_pro_2026';
+    if (owner.hasElectronicBilling && owner.ccofactUrl && owner.ccofactApiKey) {
+      const baseUrl = this.normalizeCcofactBaseUrl(owner.ccofactUrl);
+      const seriesToSync = [
+        { type: '03', series: updatedSeriesConfig.serieBoleta, initial: updatedSeriesConfig.initialBoletaNumber },
+        { type: '01', series: updatedSeriesConfig.serieFactura, initial: updatedSeriesConfig.initialFacturaNumber },
+        { type: '07', series: updatedSeriesConfig.serieNotaCreditoBoleta, initial: updatedSeriesConfig.initialNcBoletaNumber },
+        { type: '07', series: updatedSeriesConfig.serieNotaCreditoFactura, initial: updatedSeriesConfig.initialNcFacturaNumber },
+        { type: '08', series: updatedSeriesConfig.serieNotaDebitoBoleta, initial: updatedSeriesConfig.initialNdBoletaNumber },
+        { type: '08', series: updatedSeriesConfig.serieNotaDebitoFactura, initial: updatedSeriesConfig.initialNdFacturaNumber },
+      ];
 
-    try {
-      const promises = [];
-      if (data.serieBoleta || data.initialBoletaNumber !== undefined) {
-        promises.push(
-          fetch(`${baseUrl}/api/v1/series`, {
+      try {
+        for (const item of seriesToSync) {
+          await fetch(`${baseUrl}/api/v1/series`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'x-api-key': apiKey,
-              'Authorization': `Bearer ${apiKey}`,
+              'x-api-key': owner.ccofactApiKey,
+              'Authorization': `Bearer ${owner.ccofactApiKey}`,
             },
             body: JSON.stringify({
-              document_type: '03',
-              series: serieBoleta,
-              initial_number: Number(data.initialBoletaNumber || 0),
+              document_type: item.type,
+              series: item.series,
+              initial_number: item.initial,
             }),
-          }).then(r => r.json()).catch(e => ({ error: e.message }))
-        );
+          });
+        }
+        syncedWithCcofact = true;
+        ccofactMessage = 'Series y correlativos sincronizados con el motor CCOFACT PRO.';
+      } catch (err: any) {
+        this.logger.warn(`No se pudo sincronizar series con CCOFACT PRO: ${err.message}`);
+        ccofactMessage = `Guardado local. CCOFACT PRO no respondió: ${err.message}`;
       }
-
-      if (data.serieFactura || data.initialFacturaNumber !== undefined) {
-        promises.push(
-          fetch(`${baseUrl}/api/v1/series`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-api-key': apiKey,
-              'Authorization': `Bearer ${apiKey}`,
-            },
-            body: JSON.stringify({
-              document_type: '01',
-              series: serieFactura,
-              initial_number: Number(data.initialFacturaNumber || 0),
-            }),
-          }).then(r => r.json()).catch(e => ({ error: e.message }))
-        );
-      }
-
-      if (promises.length > 0) {
-        ccofactSyncResult = await Promise.all(promises);
-      }
-    } catch (err: any) {
-      this.logger.warn(`No se pudo sincronizar series con CCOFACT PRO: ${err.message}`);
     }
 
     return {
       success: true,
-      message: 'Series y correlativos iniciales configurados exitosamente.',
-      billingSerieBoleta: serieBoleta,
-      billingSerieInvoice: serieFactura,
-      ccofactSyncResult,
+      message: syncedWithCcofact
+        ? 'Series y correlativos sincronizados con éxito en Control Finanzas y CCOFACT PRO.'
+        : 'Series y correlativos guardados localmente.',
+      ccofactMessage,
+      seriesConfig: updatedSeriesConfig,
     };
   }
+
 }

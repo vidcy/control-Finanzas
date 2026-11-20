@@ -28,14 +28,14 @@ export class ProductsService {
     const salePrice = parseFloat(productData.salePrice || 0) || 0;
     const adjustedPrice =
       productData.adjustedPrice !== undefined &&
-      productData.adjustedPrice !== null &&
-      !isNaN(parseFloat(productData.adjustedPrice))
+        productData.adjustedPrice !== null &&
+        !isNaN(parseFloat(productData.adjustedPrice))
         ? parseFloat(productData.adjustedPrice)
         : null;
     const priceWithAgent =
       productData.priceWithAgent !== undefined &&
-      productData.priceWithAgent !== null &&
-      !isNaN(parseFloat(productData.priceWithAgent))
+        productData.priceWithAgent !== null &&
+        !isNaN(parseFloat(productData.priceWithAgent))
         ? parseFloat(productData.priceWithAgent)
         : null;
     const commissionValue = parseFloat(productData.commissionValue || 0) || 0;
@@ -436,7 +436,7 @@ export class ProductsService {
     }, { maxWait: 15000, timeout: 30000 });
   }
 
-  
+
   async bulkDelete(userId: string, productIds: string[]) {
     if (!productIds || productIds.length === 0) return { deletedCount: 0 };
     const uniqueIds = Array.from(new Set(productIds));
@@ -808,9 +808,6 @@ export class ProductsService {
       clientDenomination,
       clientAddress,
       clientEmail,
-      igvAffectation,
-      igvRate,
-      taxRegime,
     } = checkoutDto;
 
     if (!items || items.length === 0) {
@@ -1134,26 +1131,8 @@ export class ProductsService {
       }
 
       // 1. Create Sale Record
-      // Determinar el estado inicial de facturación y cálculo fiscal
+      // Determinar el estado inicial de facturación
       const hasBilling = billingType === 'BOLETA' || billingType === 'FACTURA';
-      const effectiveAffectation = hasBilling ? (igvAffectation || '20') : null;
-      const effectiveRate = hasBilling ? (Number(igvRate) || 18.0) : null;
-      let totalGravada = 0;
-      let totalExonerada = 0;
-      let totalInafecta = 0;
-      let totalIgv = 0;
-
-      if (hasBilling) {
-        if (effectiveAffectation === '20') {
-          totalExonerada = parseFloat(totalAmount.toFixed(2));
-        } else if (effectiveAffectation === '30') {
-          totalInafecta = parseFloat(totalAmount.toFixed(2));
-        } else {
-          const divisor = 1 + (effectiveRate / 100);
-          totalGravada = parseFloat((totalAmount / divisor).toFixed(2));
-          totalIgv = parseFloat((totalAmount - totalGravada).toFixed(2));
-        }
-      }
 
       const sale = await tx.sale.create({
         data: {
@@ -1173,13 +1152,6 @@ export class ProductsService {
           clientDenomination: clientDenomination || null,
           clientAddress: clientAddress || null,
           clientEmail: clientEmail || null,
-          taxRegime: hasBilling ? (taxRegime || 'AMAZONIA_EXONERADO') : null,
-          igvAffectation: effectiveAffectation,
-          igvRate: effectiveRate,
-          totalGravada,
-          totalExonerada,
-          totalInafecta,
-          totalIgv,
         },
       });
 
@@ -1291,8 +1263,8 @@ export class ProductsService {
       if (billingType === 'BOLETA' || billingType === 'FACTURA') {
         try {
           const billingResult = await this.ccofactService.sendInvoice(result.saleId, {
-            igvAffectation: igvAffectation || '20',
-            igvRate: Number(igvRate) || 18.0,
+            igvAffectation: checkoutDto.igvAffectation,
+            igvRate: checkoutDto.igvRate,
           });
           if (billingResult.success) {
             await this.prisma.sale.update({

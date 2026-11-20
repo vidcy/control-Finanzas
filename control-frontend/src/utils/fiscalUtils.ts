@@ -737,3 +737,201 @@ export function validateDni(dni: string): boolean {
   const clean = dni.trim().replace(/\D/g, "");
   return clean.length === 8;
 }
+
+// ============================================================================
+// DICCIONARIO NACIONAL DE UBIGEOS Y PARSER DE LOCALIZACIÓN SUNAT
+// ============================================================================
+
+export const PERU_DEPARTMENTS_BY_CODE: Record<string, string> = {
+  "01": "AMAZONAS",
+  "02": "ANCASH",
+  "03": "APURIMAC",
+  "04": "AREQUIPA",
+  "05": "AYACUCHO",
+  "06": "CAJAMARCA",
+  "07": "CALLAO",
+  "08": "CUSCO",
+  "09": "HUANCAVELICA",
+  "10": "HUANUCO",
+  "11": "ICA",
+  "12": "JUNIN",
+  "13": "LA LIBERTAD",
+  "14": "LAMBAYEQUE",
+  "15": "LIMA",
+  "16": "LORETO",
+  "17": "MADRE DE DIOS",
+  "18": "MOQUEGUA",
+  "19": "PASCO",
+  "20": "PIURA",
+  "21": "PUNO",
+  "22": "SAN MARTIN",
+  "23": "TACNA",
+  "24": "TUMBES",
+  "25": "UCAYALI",
+};
+
+export const COMMON_PERU_UBIGEOS: Record<
+  string,
+  { departamento: string; provincia: string; distrito: string }
+> = {
+  // MADRE DE DIOS (17)
+  "170101": { departamento: "MADRE DE DIOS", provincia: "TAMBOPATA", distrito: "TAMBOPATA" },
+  "170102": { departamento: "MADRE DE DIOS", provincia: "TAMBOPATA", distrito: "INAMBARI" },
+  "170103": { departamento: "MADRE DE DIOS", provincia: "TAMBOPATA", distrito: "LAS PIEDRAS" },
+  "170104": { departamento: "MADRE DE DIOS", provincia: "TAMBOPATA", distrito: "LABERINTO" },
+  "170201": { departamento: "MADRE DE DIOS", provincia: "MANU", distrito: "MANU" },
+  "170202": { departamento: "MADRE DE DIOS", provincia: "MANU", distrito: "FITZCARRALD" },
+  "170203": { departamento: "MADRE DE DIOS", provincia: "MANU", distrito: "MADRE DE DIOS" },
+  "170204": { departamento: "MADRE DE DIOS", provincia: "MANU", distrito: "HUEPETUHE" },
+  "170301": { departamento: "MADRE DE DIOS", provincia: "TAHUAMANU", distrito: "IÑAPARI" },
+  "170302": { departamento: "MADRE DE DIOS", provincia: "TAHUAMANU", distrito: "IBERIA" },
+  "170303": { departamento: "MADRE DE DIOS", provincia: "TAHUAMANU", distrito: "TAHUAMANU" },
+
+  // PUNO (21)
+  "210101": { departamento: "PUNO", provincia: "PUNO", distrito: "PUNO" },
+  "211101": { departamento: "PUNO", provincia: "SAN ROMAN", distrito: "JULIACA" },
+  "211102": { departamento: "PUNO", provincia: "SAN ROMAN", distrito: "CABANA" },
+  "211103": { departamento: "PUNO", provincia: "SAN ROMAN", distrito: "CABANILLAS" },
+  "211104": { departamento: "PUNO", provincia: "SAN ROMAN", distrito: "CARACOTO" },
+  "211105": { departamento: "PUNO", provincia: "SAN ROMAN", distrito: "SAN MIGUEL" },
+  "210201": { departamento: "PUNO", provincia: "AZANGARO", distrito: "AZANGARO" },
+
+  // LIMA (15)
+  "150101": { departamento: "LIMA", provincia: "LIMA", distrito: "LIMA" },
+  "150114": { departamento: "LIMA", provincia: "LIMA", distrito: "LA MOLINA" },
+  "150122": { departamento: "LIMA", provincia: "LIMA", distrito: "MIRAFLORES" },
+  "150131": { departamento: "LIMA", provincia: "LIMA", distrito: "SAN ISIDRO" },
+  "150140": { departamento: "LIMA", provincia: "LIMA", distrito: "SANTIAGO DE SURCO" },
+  "150130": { departamento: "LIMA", provincia: "LIMA", distrito: "SAN BORJA" },
+  "150141": { departamento: "LIMA", provincia: "LIMA", distrito: "SURQUILLO" },
+  "150132": { departamento: "LIMA", provincia: "LIMA", distrito: "SAN JUAN DE LURIGANCHO" },
+  "150135": { departamento: "LIMA", provincia: "LIMA", distrito: "SAN MARTIN DE PORRES" },
+  "150117": { departamento: "LIMA", provincia: "LIMA", distrito: "LOS OLIVOS" },
+  "150103": { departamento: "LIMA", provincia: "LIMA", distrito: "ATE" },
+
+  // CUSCO (08)
+  "080101": { departamento: "CUSCO", provincia: "CUSCO", distrito: "CUSCO" },
+  "080108": { departamento: "CUSCO", provincia: "CUSCO", distrito: "WANCHAQ" },
+  "080105": { departamento: "CUSCO", provincia: "CUSCO", distrito: "SAN SEBASTIAN" },
+  "080106": { departamento: "CUSCO", provincia: "CUSCO", distrito: "SAN JERONIMO" },
+  "080107": { departamento: "CUSCO", provincia: "CUSCO", distrito: "SANTIAGO" },
+
+  // AREQUIPA (04)
+  "040101": { departamento: "AREQUIPA", provincia: "AREQUIPA", distrito: "AREQUIPA" },
+  "040103": { departamento: "AREQUIPA", provincia: "AREQUIPA", distrito: "CERRO COLORADO" },
+  "040104": { departamento: "AREQUIPA", provincia: "AREQUIPA", distrito: "CAYMA" },
+  "040126": { departamento: "AREQUIPA", provincia: "AREQUIPA", distrito: "YANAHUARA" },
+
+  // UCAYALI (25)
+  "250101": { departamento: "UCAYALI", provincia: "CORONEL PORTILLO", distrito: "CALLERIA" },
+  "250102": { departamento: "UCAYALI", provincia: "CORONEL PORTILLO", distrito: "YARINACOCHA" },
+  "250107": { departamento: "UCAYALI", provincia: "CORONEL PORTILLO", distrito: "MANANTAY" },
+
+  // LORETO (16)
+  "160101": { departamento: "LORETO", provincia: "MAYNAS", distrito: "IQUITOS" },
+  "160108": { departamento: "LORETO", provincia: "MAYNAS", distrito: "PUNCHANA" },
+  "160112": { departamento: "LORETO", provincia: "MAYNAS", distrito: "BELEN" },
+  "160113": { departamento: "LORETO", provincia: "MAYNAS", distrito: "SAN JUAN BAUTISTA" },
+
+  // SAN MARTIN (22)
+  "220901": { departamento: "SAN MARTIN", provincia: "SAN MARTIN", distrito: "TARAPOTO" },
+  "220101": { departamento: "SAN MARTIN", provincia: "MOYOBAMBA", distrito: "MOYOBAMBA" },
+};
+
+/**
+ * Resuelve y normaliza el departamento, provincia y distrito a partir del ubigeo
+ * y/o de la dirección fiscal devuelta por SUNAT.
+ */
+export function resolveLocationFromUbigeoOrAddress(
+  ubigeoInput?: string | null,
+  addressInput?: string | null
+): {
+  departamento: string;
+  provincia: string;
+  distrito: string;
+  cleanAddress: string;
+} {
+  let departamento = "";
+  let provincia = "";
+  let distrito = "";
+  let cleanAddress = (addressInput || "").trim();
+
+  // Limpiar guiones o marcadores de campos vacíos típicos de SUNAT
+  if (cleanAddress === "-" || cleanAddress === "--" || cleanAddress.toUpperCase() === "SIN DIRECCION") {
+    cleanAddress = "";
+  }
+
+  const cleanUbigeo = (ubigeoInput || "").trim().replace(/\D/g, "");
+
+  // 1. Si existe ubigeo exacto conocido en el catálogo
+  if (cleanUbigeo && COMMON_PERU_UBIGEOS[cleanUbigeo]) {
+    const loc = COMMON_PERU_UBIGEOS[cleanUbigeo];
+    departamento = loc.departamento;
+    provincia = loc.provincia;
+    distrito = loc.distrito;
+  } else if (cleanUbigeo.length >= 2) {
+    // Resolver al menos el Departamento por los primeros 2 dígitos del ubigeo nacional
+    const deptCode = cleanUbigeo.substring(0, 2);
+    if (PERU_DEPARTMENTS_BY_CODE[deptCode]) {
+      departamento = PERU_DEPARTMENTS_BY_CODE[deptCode];
+    }
+  }
+
+  // 2. Si la dirección viene con el formato de SUNAT: "DIRECCION - DISTRITO - PROVINCIA - DEPARTAMENTO"
+  if (cleanAddress.includes(" - ")) {
+    const parts = cleanAddress.split(" - ").map((p) => p.trim()).filter(Boolean);
+    if (parts.length >= 4) {
+      const maybeDpto = parts[parts.length - 1].toUpperCase();
+      const maybeProv = parts[parts.length - 2].toUpperCase();
+      const maybeDist = parts[parts.length - 3].toUpperCase();
+
+      if (!departamento || departamento === maybeDpto) departamento = maybeDpto;
+      if (!provincia) provincia = maybeProv;
+      if (!distrito) distrito = maybeDist;
+
+      // Dejar la dirección limpia sin la cola de distrito/provincia/dpto repetidos
+      cleanAddress = parts.slice(0, parts.length - 3).join(" - ");
+    }
+  }
+
+  // 3. Inferencia contextual de ciudades clave si aún faltan datos de departamento
+  const upperAddr = cleanAddress.toUpperCase();
+  if (!departamento || !distrito) {
+    if (upperAddr.includes("JULIACA")) {
+      distrito = distrito || "JULIACA";
+      provincia = provincia || "SAN ROMAN";
+      departamento = "PUNO";
+    } else if (upperAddr.includes("PUERTO MALDONADO") || upperAddr.includes("TAMBOPATA")) {
+      distrito = distrito || "TAMBOPATA";
+      provincia = provincia || "TAMBOPATA";
+      departamento = "MADRE DE DIOS";
+    } else if (upperAddr.includes("IQUITOS")) {
+      distrito = distrito || "IQUITOS";
+      provincia = provincia || "MAYNAS";
+      departamento = "LORETO";
+    } else if (upperAddr.includes("TARAPOTO")) {
+      distrito = distrito || "TARAPOTO";
+      provincia = provincia || "SAN MARTIN";
+      departamento = "SAN MARTIN";
+    } else if (upperAddr.includes("PUCALLPA")) {
+      distrito = distrito || "CALLERIA";
+      provincia = provincia || "CORONEL PORTILLO";
+      departamento = "UCAYALI";
+    } else if (upperAddr.includes("CUSCO") || upperAddr.includes("CUZCO")) {
+      distrito = distrito || "CUSCO";
+      provincia = provincia || "CUSCO";
+      departamento = "CUSCO";
+    } else if (upperAddr.includes("AREQUIPA")) {
+      distrito = distrito || "AREQUIPA";
+      provincia = provincia || "AREQUIPA";
+      departamento = "AREQUIPA";
+    }
+  }
+
+  return {
+    departamento,
+    provincia,
+    distrito,
+    cleanAddress,
+  };
+}

@@ -1,4 +1,4 @@
-﻿import { LeadsModule } from './leads/leads.module';
+import { LeadsModule } from './leads/leads.module';
 import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AuthModule } from './auth/auth.module';
@@ -25,6 +25,7 @@ import { BranchesModule } from './branches/branches.module';
 import { AdvisorsModule } from './advisors/advisors.module';
 import { CommissionModelsModule } from './commission-models/commission-models.module';
 import { SalesModule } from './sales/sales.module';
+import { CcofactModule } from './ccofact/ccofact.module';
 import { BillingModule } from './billing/billing.module';
 
 @Module({
@@ -39,6 +40,7 @@ import { BillingModule } from './billing/billing.module';
     UploadModule,
     ScheduleModule.forRoot(),
     PrismaModule,
+    CcofactModule,
     UsersModule,
     CategoriesModule,
     AnalyticsModule,

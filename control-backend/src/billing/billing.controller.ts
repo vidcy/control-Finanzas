@@ -119,6 +119,13 @@ export class BillingController {
     return this.billingService.updateConfig(ownerId, body);
   }
 
+
+  @UseGuards(AuthGuard('jwt'))
+  @Get('consultar-ruc/:ruc')
+  consultarRuc(@Param('ruc') ruc: string) {
+    return this.billingService.consultarRuc(ruc);
+  }
+
   @UseGuards(AuthGuard('jwt'))
   @Post('sync-series')
   syncSeries(
@@ -127,8 +134,16 @@ export class BillingController {
     body: {
       serieBoleta?: string;
       serieFactura?: string;
+      serieNotaCreditoBoleta?: string;
+      serieNotaCreditoFactura?: string;
+      serieNotaDebitoBoleta?: string;
+      serieNotaDebitoFactura?: string;
       initialBoletaNumber?: number;
       initialFacturaNumber?: number;
+      initialNcBoletaNumber?: number;
+      initialNcFacturaNumber?: number;
+      initialNdBoletaNumber?: number;
+      initialNdFacturaNumber?: number;
     },
   ) {
     const ownerId = req.user.parentId || req.user.id;

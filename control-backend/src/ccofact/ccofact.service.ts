@@ -119,11 +119,14 @@ export class CcofactService {
       }
 
       // DETERMINACIÓN DINÁMICA DE AFECTACIÓN TRIBUTARIA (SUNAT Catálogo 07)
-      // En Madre de Dios / Amazonía por defecto es '20' (Exonerado - Ley 27037, 0% IGV)
+      const isExonerado = owner.taxRegime === 'AMAZONIA_EXONERADO' || (owner.igvRate !== undefined && owner.igvRate === 0);
+      const isInafecto = owner.taxRegime === 'INAFECTO_TOTAL';
+      const defaultAffectation = isExonerado ? '20' : isInafecto ? '30' : '10';
+
       const affectation =
         options?.igvAffectation ||
         (sale as any).igvAffectation ||
-        '20';
+        defaultAffectation;
 
       const effectiveIgvRate = options?.igvRate ?? (sale as any).igvRate ?? (owner.igvRate || 18.0);
       const totalAmount = sale.amount;
@@ -353,7 +356,10 @@ export class CcofactService {
       const ownerId = sale.user.parentId || sale.user.id;
       const owner = await this.prisma.user.findUnique({ where: { id: ownerId } });
 
-      if (!owner || !owner.hasElectronicBilling || !owner.ccofactUrl || !owner.ccofactApiKey) {
+      const apiUrl = owner?.ccofactUrl;
+      const apiKey = owner?.ccofactApiKey;
+
+      if (!owner || !owner.hasElectronicBilling || !apiUrl || !apiKey) {
         return { success: false, error: 'Credenciales de CCOFACT PRO no configuradas para emisión de notas' };
       }
 
@@ -364,7 +370,12 @@ export class CcofactService {
         ? (isCredit ? (origSerie.startsWith('F') && origSerie.length === 4 ? `FC${origSerie.substring(2)}` : 'FC01') : 'FD01')
         : (isCredit ? (origSerie.startsWith('B') && origSerie.length === 4 ? `BC${origSerie.substring(2)}` : 'BC01') : 'BD01');
 
-      const affectation = (originalSale as any).igvAffectation || '20';
+      // Afectación idéntica a la venta original
+      const isExonerado = owner.taxRegime === 'AMAZONIA_EXONERADO' || (owner.igvRate !== undefined && owner.igvRate === 0);
+      const isInafecto = owner.taxRegime === 'INAFECTO_TOTAL';
+      const defaultAffectation = isExonerado ? '20' : isInafecto ? '30' : '10';
+      const affectation = (originalSale as any).igvAffectation || defaultAffectation;
+
       const totalAmount = sale.amount;
       let totalGravada = 0;
       let totalExonerada = 0;
@@ -376,34 +387,45 @@ export class CcofactService {
       } else if (affectation === '30') {
         totalInafecta = parseFloat(totalAmount.toFixed(2));
       } else {
-        const rate = Number((originalSale as any).igvRate) || 18.0;
+        const rate = Number((originalSale as any).igvRate) || Number(owner.igvRate) || 18.0;
         const divisor = 1 + (rate / 100);
         totalGravada = parseFloat((totalAmount / divisor).toFixed(2));
         totalIgv = parseFloat((totalAmount - totalGravada).toFixed(2));
       }
 
+      const formattedReasonCode = String(reasonCode || (isCredit ? 1 : 2)).padStart(2, '0');
+      const formattedReasonDesc = (reasonText || (isCredit ? 'ANULACION DE LA OPERACION' : 'AUMENTO EN EL VALOR')).toUpperCase();
+
+      const docType = isOriginalFactura ? '6' : (originalSale.clientDocumentType === '-' || !originalSale.clientDocumentType ? '0' : originalSale.clientDocumentType);
+      const docNum = isOriginalFactura ? (originalSale.clientDocumentNumber || '20000000001') : (originalSale.clientDocumentNumber && originalSale.clientDocumentNumber !== '-' ? originalSale.clientDocumentNumber : '00000000');
+      const docDenom = originalSale.clientDenomination || (isOriginalFactura ? 'CLIENTE CON RUC' : 'CLIENTES VARIOS');
+
       const payload = {
-        idempotency_key: `note_${sale.id}`,
+        idempotency_key: `note_${sale.id}_${Date.now()}`,
         tipo_comprobante: isCredit ? '07' : '08',
         serie: serie,
         moneda: sale.currency === 'USD' ? 'USD' : 'PEN',
         forma_pago: 'Contado',
         cliente: {
-          tipo_documento: isOriginalFactura ? '6' : (originalSale.clientDocumentType || '0'),
-          numero_documento: originalSale.clientDocumentNumber || '00000000',
-          razon_social: originalSale.clientDenomination || 'CLIENTE VARIOS',
+          tipo_documento: docType,
+          numero_documento: docNum,
+          razon_social: docDenom,
           direccion: originalSale.clientAddress || '',
           email: originalSale.clientEmail || '',
         },
-        items: sale.items.map((item, idx) => ({
-          codigo: item.product?.sku || `PROD-${idx + 1}`,
-          descripcion: item.name || 'PRODUCTO',
-          unidad_medida: 'NIU',
-          cantidad: Number(item.quantity),
-          precio_unitario: Number(item.price),
-          valor_unitario: affectation === '20' || affectation === '30' ? Number(item.price) : parseFloat((Number(item.price) / 1.18).toFixed(4)),
-          tipo_afectacion_igv: affectation,
-        })),
+        items: sale.items.map((item, idx) => {
+          const itemPrice = Number(item.price);
+          const valorUnitario = (affectation === '20' || affectation === '30') ? itemPrice : parseFloat((itemPrice / 1.18).toFixed(4));
+          return {
+            codigo: item.product?.sku || item.product?.customCode?.toString() || `PROD-${idx + 1}`,
+            descripcion: item.name || item.product?.name || 'PRODUCTO O SERVICIO',
+            unidad_medida: 'NIU',
+            cantidad: Number(item.quantity),
+            precio_unitario: itemPrice,
+            valor_unitario: valorUnitario,
+            tipo_afectacion_igv: affectation,
+          };
+        }),
         total_gravada: totalGravada,
         total_exonerada: totalExonerada,
         total_inafecta: totalInafecta,
@@ -414,18 +436,23 @@ export class CcofactService {
           tipo: isOriginalFactura ? '01' : '03',
           serie: originalSale.billingSerie,
           numero: originalSale.billingNumber,
-          motivo_codigo: String(reasonCode).padStart(2, '0'),
-          motivo_descripcion: reasonText || (isCredit ? 'Anulación de la operación' : 'Ajuste de precio'),
+          motivo_codigo: formattedReasonCode,
+          motivo_descripcion: formattedReasonDesc,
         },
+        referencia_tipo_comprobante: isOriginalFactura ? '01' : '03',
+        referencia_serie: originalSale.billingSerie,
+        referencia_numero: originalSale.billingNumber,
+        referencia_codigo_motivo: formattedReasonCode,
+        referencia_motivo_descripcion: formattedReasonDesc,
         enviar_a_sunat_inmediato: true,
       };
 
-      const emitEndpoint = this.normalizeEmitUrl(owner.ccofactUrl);
+      const emitEndpoint = this.normalizeEmitUrl(apiUrl);
       const response = await fetch(emitEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': owner.ccofactApiKey || 'fact_demo_key_pro_2026',
+          'x-api-key': apiKey,
         },
         body: JSON.stringify(payload),
       });
@@ -518,15 +545,17 @@ export class CcofactService {
     number: number,
     motivo: string = 'ANULACION DE LA OPERACION',
   ) {
-    if (!owner.ccofactUrl || !owner.ccofactApiKey) return { success: false };
-    const baseUrl = this.normalizeBaseUrl(owner.ccofactUrl);
+    const apiUrl = owner.ccofactUrl;
+    const apiKey = owner.ccofactApiKey;
+    if (!apiUrl || !apiKey) return { success: false };
+    const baseUrl = this.normalizeBaseUrl(apiUrl);
     const url = `${baseUrl}/api/v1/documents/by-series-number/${serie}/${number}/anular-fiscal`;
 
     const res = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': owner.ccofactApiKey,
+        'x-api-key': apiKey,
       },
       body: JSON.stringify({ motivo }),
     });

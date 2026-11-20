@@ -48,6 +48,7 @@ import {
   AlertTriangle,
   Calendar,
   CreditCard,
+  Loader2,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
@@ -61,6 +62,7 @@ import {
   getBillingConfigRequest,
   updateBillingConfigRequest,
   syncSeriesRequest,
+  consultarRucRequest,
   updateBillingDocumentRequest,
   deleteBillingDocumentRequest,
   testCcofactConnectionRequest,
@@ -146,6 +148,15 @@ export default function BusinessBillingPage() {
   const [configSerieFactura, setConfigSerieFactura] = useState("F001");
   const [configInitialBoleta, setConfigInitialBoleta] = useState<number | string>("");
   const [configInitialFactura, setConfigInitialFactura] = useState<number | string>("");
+  const [configSerieNcBoleta, setConfigSerieNcBoleta] = useState("BC01");
+  const [configSerieNcFactura, setConfigSerieNcFactura] = useState("FC01");
+  const [configSerieNdBoleta, setConfigSerieNdBoleta] = useState("BD01");
+  const [configSerieNdFactura, setConfigSerieNdFactura] = useState("FD01");
+  const [configInitialNcBoleta, setConfigInitialNcBoleta] = useState<number | string>("");
+  const [configInitialNcFactura, setConfigInitialNcFactura] = useState<number | string>("");
+  const [configInitialNdBoleta, setConfigInitialNdBoleta] = useState<number | string>("");
+  const [configInitialNdFactura, setConfigInitialNdFactura] = useState<number | string>("");
+  const [isLookingUpSunat, setIsLookingUpSunat] = useState(false);
   const [isSyncingSeries, setIsSyncingSeries] = useState(false);
   const [isSavingConfig, setIsSavingConfig] = useState(false);
 
@@ -199,6 +210,37 @@ export default function BusinessBillingPage() {
     toast.success("Datos sincronizados con SUNAT");
   };
 
+  // Consultar RUC y autocompletar datos de empresa en modal de configuración
+  const handleLookupSunatInBilling = async () => {
+    const cleanRuc = configRuc.trim().replace(/\D/g, "");
+    if (!cleanRuc || cleanRuc.length !== 11) {
+      toast.error("Ingresa un RUC válido de 11 dígitos para consultar ante SUNAT.");
+      return;
+    }
+    try {
+      setIsLookingUpSunat(true);
+      toast.loading("Consultando padrón oficial de SUNAT...", { id: "sunat-billing-ruc" });
+      const res = await consultarRucRequest(cleanRuc);
+      if (res && res.success) {
+        if (res.razonSocial) setConfigReason(res.razonSocial);
+        if (res.nombreComercial) setConfigName(res.nombreComercial);
+        toast.success(
+          `✓ Datos SUNAT cargados: ${res.razonSocial} (${res.estado || 'ACTIVO'} - ${res.condicion || 'HABIDO'})`,
+          { id: "sunat-billing-ruc", duration: 4000 }
+        );
+      } else {
+        toast.error("No se encontraron datos en SUNAT para este RUC.", { id: "sunat-billing-ruc" });
+      }
+    } catch (err: any) {
+      toast.error(
+        err.response?.data?.message || err.message || "Error al consultar RUC en SUNAT",
+        { id: "sunat-billing-ruc" }
+      );
+    } finally {
+      setIsLookingUpSunat(false);
+    }
+  };
+
   // Open Config
   const handleOpenConfig = async () => {
     try {
@@ -211,8 +253,16 @@ export default function BusinessBillingPage() {
       setConfigToken("");
       setConfigSerieBoleta(cfg.billingSerieBoleta || "B001");
       setConfigSerieFactura(cfg.billingSerieInvoice || "F001");
-      setConfigInitialBoleta("");
-      setConfigInitialFactura("");
+      setConfigSerieNcBoleta(cfg.serieNotaCreditoBoleta || "BC01");
+      setConfigSerieNcFactura(cfg.serieNotaCreditoFactura || "FC01");
+      setConfigSerieNdBoleta(cfg.serieNotaDebitoBoleta || "BD01");
+      setConfigSerieNdFactura(cfg.serieNotaDebitoFactura || "FD01");
+      setConfigInitialBoleta(cfg.initialBoletaNumber !== undefined && cfg.initialBoletaNumber > 0 ? String(cfg.initialBoletaNumber) : "");
+      setConfigInitialFactura(cfg.initialFacturaNumber !== undefined && cfg.initialFacturaNumber > 0 ? String(cfg.initialFacturaNumber) : "");
+      setConfigInitialNcBoleta(cfg.initialNcBoletaNumber !== undefined && cfg.initialNcBoletaNumber > 0 ? String(cfg.initialNcBoletaNumber) : "");
+      setConfigInitialNcFactura(cfg.initialNcFacturaNumber !== undefined && cfg.initialNcFacturaNumber > 0 ? String(cfg.initialNcFacturaNumber) : "");
+      setConfigInitialNdBoleta(cfg.initialNdBoletaNumber !== undefined && cfg.initialNdBoletaNumber > 0 ? String(cfg.initialNdBoletaNumber) : "");
+      setConfigInitialNdFactura(cfg.initialNdFacturaNumber !== undefined && cfg.initialNdFacturaNumber > 0 ? String(cfg.initialNdFacturaNumber) : "");
       setIsConfigModalOpen(true);
     } catch (err: any) {
       toast.error("Error al abrir configuración: " + err.message);
@@ -245,15 +295,23 @@ export default function BusinessBillingPage() {
   const handleSyncSeries = async () => {
     try {
       setIsSyncingSeries(true);
-      toast.loading("Sincronizando series y correlativos con CCOFACT...", { id: "sync-series" });
+      toast.loading("Sincronizando series y correlativos con CCOFACT PRO...", { id: "sync-series" });
       const res = await syncSeriesRequest({
         serieBoleta: configSerieBoleta,
         serieFactura: configSerieFactura,
+        serieNotaCreditoBoleta: configSerieNcBoleta,
+        serieNotaCreditoFactura: configSerieNcFactura,
+        serieNotaDebitoBoleta: configSerieNdBoleta,
+        serieNotaDebitoFactura: configSerieNdFactura,
         ...(configInitialBoleta !== "" ? { initialBoletaNumber: Number(configInitialBoleta) } : {}),
         ...(configInitialFactura !== "" ? { initialFacturaNumber: Number(configInitialFactura) } : {}),
+        ...(configInitialNcBoleta !== "" ? { initialNcBoletaNumber: Number(configInitialNcBoleta) } : {}),
+        ...(configInitialNcFactura !== "" ? { initialNcFacturaNumber: Number(configInitialNcFactura) } : {}),
+        ...(configInitialNdBoleta !== "" ? { initialNdBoletaNumber: Number(configInitialNdBoleta) } : {}),
+        ...(configInitialNdFactura !== "" ? { initialNdFacturaNumber: Number(configInitialNdFactura) } : {}),
       });
       if (res.success) {
-        toast.success(res.message || "Series sincronizadas con éxito", { id: "sync-series" });
+        toast.success(res.message || "Series y correlativos sincronizados con éxito", { id: "sync-series" });
       } else {
         toast.error("Error sincronizando series: " + res.message, { id: "sync-series" });
       }
@@ -1923,7 +1981,7 @@ export default function BusinessBillingPage() {
                 <label className="block text-xs font-black uppercase text-slate-600 mb-1">
                   RUC Emisor Oficial (11 dígitos)
                 </label>
-                <div className="relative">
+                <div className="relative flex items-center">
                   <Building2 className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     type="text"
@@ -1931,8 +1989,27 @@ export default function BusinessBillingPage() {
                     placeholder="20601234567"
                     value={configRuc}
                     onChange={(e) => setConfigRuc(e.target.value.replace(/\D/g, ""))}
-                    className="w-full pl-9 pr-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl font-mono focus:bg-white focus:outline-none focus:border-indigo-500"
+                    className="w-full pl-9 pr-24 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl font-mono focus:bg-white focus:outline-none focus:border-indigo-500 font-bold"
                   />
+                  <button
+                    type="button"
+                    disabled={isLookingUpSunat || configRuc.trim().replace(/\D/g, "").length !== 11}
+                    onClick={handleLookupSunatInBilling}
+                    className="absolute right-1.5 top-1.5 bottom-1.5 px-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg inline-flex items-center gap-1 shadow-2xs transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer active:scale-95"
+                    title="Consultar padrón oficial de SUNAT y autocompletar razón social"
+                  >
+                    {isLookingUpSunat ? (
+                      <>
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        <span>Buscando</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-3 h-3 text-amber-300 fill-amber-300" />
+                        <span>SUNAT</span>
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
 
@@ -2017,9 +2094,9 @@ export default function BusinessBillingPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
                 {/* Boleta */}
-                <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-2">
+                <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2 shadow-2xs">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-slate-700">Boletas de Venta (03)</span>
                     <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 font-mono text-[10px] rounded font-bold">
@@ -2028,7 +2105,7 @@ export default function BusinessBillingPage() {
                   </div>
                   <div>
                     <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
-                      Serie Activa (4 caracteres):
+                      Serie Activa (ej. B001):
                     </label>
                     <input
                       type="text"
@@ -2041,12 +2118,12 @@ export default function BusinessBillingPage() {
                   </div>
                   <div>
                     <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
-                      Último número en SUNAT (Opcional):
+                      Último correlativo en SUNAT:
                     </label>
                     <input
                       type="number"
                       min={0}
-                      placeholder="Ej. 8 (Próxima será 9)"
+                      placeholder="Ej. 18 (Próxima: 19)"
                       value={configInitialBoleta}
                       onChange={(e) => setConfigInitialBoleta(e.target.value)}
                       className="w-full px-2.5 py-1.5 text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500"
@@ -2055,7 +2132,7 @@ export default function BusinessBillingPage() {
                 </div>
 
                 {/* Factura */}
-                <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-2">
+                <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2 shadow-2xs">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-slate-700">Facturas Electrónicas (01)</span>
                     <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 font-mono text-[10px] rounded font-bold">
@@ -2064,7 +2141,7 @@ export default function BusinessBillingPage() {
                   </div>
                   <div>
                     <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
-                      Serie Activa (4 caracteres):
+                      Serie Activa (ej. F001):
                     </label>
                     <input
                       type="text"
@@ -2077,14 +2154,158 @@ export default function BusinessBillingPage() {
                   </div>
                   <div>
                     <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
-                      Último número en SUNAT (Opcional):
+                      Último correlativo en SUNAT:
                     </label>
                     <input
                       type="number"
                       min={0}
-                      placeholder="Ej. 5 (Próxima será 6)"
+                      placeholder="Ej. 0 (Próxima: 1)"
                       value={configInitialFactura}
                       onChange={(e) => setConfigInitialFactura(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Nota de Crédito Boleta */}
+                <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-700">Nota Crédito Boleta (07)</span>
+                    <span className="px-1.5 py-0.5 bg-rose-50 text-rose-700 font-mono text-[10px] rounded font-bold">
+                      {configSerieNcBoleta}
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                      Serie Activa (ej. BC01):
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={4}
+                      placeholder="BC01"
+                      value={configSerieNcBoleta}
+                      onChange={(e) => setConfigSerieNcBoleta(e.target.value.toUpperCase().trim())}
+                      className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                      Último correlativo en SUNAT:
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      placeholder="Ej. 0 (Próxima: 1)"
+                      value={configInitialNcBoleta}
+                      onChange={(e) => setConfigInitialNcBoleta(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Nota de Crédito Factura */}
+                <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-700">Nota Crédito Factura (07)</span>
+                    <span className="px-1.5 py-0.5 bg-rose-50 text-rose-700 font-mono text-[10px] rounded font-bold">
+                      {configSerieNcFactura}
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                      Serie Activa (ej. FC01):
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={4}
+                      placeholder="FC01"
+                      value={configSerieNcFactura}
+                      onChange={(e) => setConfigSerieNcFactura(e.target.value.toUpperCase().trim())}
+                      className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                      Último correlativo en SUNAT:
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      placeholder="Ej. 0 (Próxima: 1)"
+                      value={configInitialNcFactura}
+                      onChange={(e) => setConfigInitialNcFactura(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Nota de Débito Boleta */}
+                <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-700">Nota Débito Boleta (08)</span>
+                    <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 font-mono text-[10px] rounded font-bold">
+                      {configSerieNdBoleta}
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                      Serie Activa (ej. BD01):
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={4}
+                      placeholder="BD01"
+                      value={configSerieNdBoleta}
+                      onChange={(e) => setConfigSerieNdBoleta(e.target.value.toUpperCase().trim())}
+                      className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                      Último correlativo en SUNAT:
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      placeholder="Ej. 0 (Próxima: 1)"
+                      value={configInitialNdBoleta}
+                      onChange={(e) => setConfigInitialNdBoleta(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Nota de Débito Factura */}
+                <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-700">Nota Débito Factura (08)</span>
+                    <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 font-mono text-[10px] rounded font-bold">
+                      {configSerieNdFactura}
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                      Serie Activa (ej. FD01):
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={4}
+                      placeholder="FD01"
+                      value={configSerieNdFactura}
+                      onChange={(e) => setConfigSerieNdFactura(e.target.value.toUpperCase().trim())}
+                      className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                      Último correlativo en SUNAT:
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      placeholder="Ej. 0 (Próxima: 1)"
+                      value={configInitialNdFactura}
+                      onChange={(e) => setConfigInitialNdFactura(e.target.value)}
                       className="w-full px-2.5 py-1.5 text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:border-indigo-500"
                     />
                   </div>
