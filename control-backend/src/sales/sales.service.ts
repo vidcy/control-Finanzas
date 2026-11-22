@@ -307,13 +307,14 @@ export class SalesService {
       // 2. Sincronización con Facturación Electrónica CCOFACT PRO:
       // Anulación oficial con Nota de Crédito conforme a Ley SUNAT (Catálogo 09 Motivo 01)
       if (sale.billingSerie && sale.billingNumber) {
+        let anularResult: any = null;
         try {
           const owner = await tx.user.findUnique({
             where: { id: ownerId },
           });
 
           if (owner?.ccofactUrl && owner?.ccofactApiKey) {
-            await this.ccofactService.anularFiscal(
+            anularResult = await this.ccofactService.anularFiscal(
               owner,
               sale.billingSerie,
               sale.billingNumber,
@@ -324,16 +325,70 @@ export class SalesService {
           console.warn(`[Sincronización CCOFACT PRO] Error al anular comprobante ${sale.billingSerie}-${sale.billingNumber}:`, billingErr?.message);
         }
 
-        // Sincronizar comprobante fiscal centralizado
+        const ncFullNumber = anularResult?.nota_credito?.full_number;
+        const annulDescription = ncFullNumber
+          ? `Comprobante anulado formalmente ante SUNAT mediante Nota de Crédito ${ncFullNumber} (Catálogo 09 Motivo 01: Anulación de la operación).`
+          : 'Comprobante anulado formalmente ante SUNAT por anulación de la venta comercial.';
+
+        // Sincronizar comprobante fiscal centralizado (garantizar que permanezca como CANCELLED)
         await tx.fiscalDocument.updateMany({
           where: {
-            saleId: sale.id,
+            userId: ownerId,
+            OR: [
+              { saleId: sale.id },
+              { serie: sale.billingSerie, correlative: sale.billingNumber },
+            ],
           },
           data: {
             status: 'CANCELLED',
-            sunatDescription: 'Comprobante anulado formalmente por eliminación de venta.',
+            sunatDescription: annulDescription,
           },
         }).catch(() => {});
+
+        // Si CCOFACT generó la Nota de Crédito oficial, registrarla en FiscalDocument
+        if (ncFullNumber && anularResult?.nota_credito) {
+          const parts = ncFullNumber.split('-');
+          const ncSerie = parts[0];
+          const ncCorrelative = parseInt(parts[1], 10) || 1;
+          const owner = await tx.user.findUnique({ where: { id: ownerId } });
+
+          await tx.fiscalDocument.upsert({
+            where: {
+              userId_docType_serie_correlative: {
+                userId: ownerId,
+                docType: 'CREDIT_NOTE',
+                serie: ncSerie,
+                correlative: ncCorrelative,
+              },
+            },
+            update: {
+              status: 'ACCEPTED',
+              sunatDescription: `Nota de Crédito oficial por anulación de ${sale.billingSerie}-${String(sale.billingNumber).padStart(8, '0')}`,
+            },
+            create: {
+              docType: 'CREDIT_NOTE',
+              serie: ncSerie,
+              correlative: ncCorrelative,
+              fullNumber: ncFullNumber,
+              status: 'ACCEPTED',
+              issuerRuc: owner?.businessRuc || '20000000001',
+              customerDocType: sale.clientDocumentType || '0',
+              customerDocNum: sale.clientDocumentNumber || '00000000',
+              customerName: sale.clientDenomination || 'CLIENTES VARIOS',
+              customerAddress: sale.clientAddress || null,
+              totalOpGravada: (sale as any).totalGravada || 0,
+              totalOpExonerada: (sale as any).totalExonerada || (sale.amount && !(sale as any).totalGravada ? sale.amount : 0),
+              totalOpInafecta: (sale as any).totalInafecta || 0,
+              totalIgv: (sale as any).totalIgv || 0,
+              totalAmount: sale.amount,
+              currency: sale.currency || 'PEN',
+              sunatResponseCode: '0',
+              sunatDescription: `Nota de Crédito por anulación de comprobante ${sale.billingSerie}-${String(sale.billingNumber).padStart(8, '0')}`,
+              userId: ownerId,
+              branchId: sale.branchId || null,
+            },
+          }).catch((err) => console.warn(`[FiscalDocument CreditNote Upsert] Warn: ${err.message}`));
+        }
       }
 
       // 3. Delete the Sale (cascade will delete items and commissions)

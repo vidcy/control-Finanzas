@@ -1209,6 +1209,16 @@ export default function BusinessBillingPage() {
                               <AlertCircle className="h-3.5 w-3.5 text-rose-600 group-hover:scale-110 transition-transform" />
                               <span>Observado (Diagnóstico)</span>
                             </button>
+                          ) : doc.status === "CANCELLED" ? (
+                            <button
+                              type="button"
+                              onClick={() => handleShowDiagnostic(doc)}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 transition-all cursor-pointer shadow-xs group"
+                              title={doc.sunatDescription || "Comprobante dado de baja / anulado formalmente ante SUNAT. Clic para ver diagnóstico."}
+                            >
+                              <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse"></span>
+                              <span>Anulado (Baja)</span>
+                            </button>
                           ) : (
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200">
                               <Clock className="h-3.5 w-3.5 text-slate-500" />
@@ -1836,7 +1846,20 @@ export default function BusinessBillingPage() {
           {selectedDocForPreview && (
             <div className="p-6 space-y-4">
               {/* Ticket Layout Printable */}
-              <div className="bg-white border border-slate-300 rounded-xl p-6 font-mono text-xs text-slate-800 shadow-sm space-y-3">
+              <div className="bg-white border border-slate-300 rounded-xl p-6 font-mono text-xs text-slate-800 shadow-sm space-y-3 relative overflow-hidden">
+                {selectedDocForPreview.status === "CANCELLED" && (
+                  <div className="bg-rose-50 border-2 border-rose-300 text-rose-900 p-2.5 rounded-lg text-center font-bold text-xs space-y-1 mb-2">
+                    <div className="flex items-center justify-center gap-1.5 text-rose-800 uppercase tracking-wider text-[11px]">
+                      <span className="h-2 w-2 rounded-full bg-rose-600"></span>
+                      <span>COMPROBANTE ANULADO ANTE SUNAT (SIN VALOR FISCAL)</span>
+                    </div>
+                    {selectedDocForPreview.sunatDescription && (
+                      <div className="text-[10px] font-medium text-rose-700 leading-tight">
+                        {selectedDocForPreview.sunatDescription}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="text-center space-y-1">
                   <div className="font-bold text-sm text-slate-900">{stats?.issuerName || "EMPRESA PRINCIPAL"}</div>
                   <div>RUC: {selectedDocForPreview.issuerRuc}</div>
@@ -2687,7 +2710,7 @@ export default function BusinessBillingPage() {
                   Este comprobante está <strong>ACEPTADO</strong> por SUNAT. Al anularlo, el motor CCOFACT PRO generará y transmitirá de inmediato la <strong>Nota de Crédito Oficial (Catálogo 09 Motivo 01: Anulación de la operación)</strong>.
                 </p>
                 <p className="text-xs text-rose-800 leading-relaxed">
-                  El comprobante quedará marcado como <strong>ANULADO (CANCELLED)</strong> en los registros tributarios.
+                  El comprobante permanecerá visible en el sistema con el estado oficial <strong>ANULADO (CANCELLED)</strong> junto a su Nota de Crédito, garantizando la conservación del correlativo quemado y la trazabilidad contable auditada exigida por SUNAT (R.S. 097-2012).
                 </p>
               </div>
             ) : (

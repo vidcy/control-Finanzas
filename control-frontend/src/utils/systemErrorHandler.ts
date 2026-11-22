@@ -191,6 +191,34 @@ export function parseSystemError(err: any, fallbackTitle: string = 'Atención de
     };
   }
 
+  // 5c. Comprobante anulado formalmente ante SUNAT (CANCELLED / Baja)
+  if (
+    normalized.includes('anulado formalmente') ||
+    normalized.includes('cancelled') ||
+    rawCode === 'CANCELLED' ||
+    normalized.includes('anulacion de la operacion')
+  ) {
+    return {
+      code: 'SUNAT-ANULADO',
+      category: 'SUNAT',
+      title: 'Comprobante Anulado Formalmente ante SUNAT',
+      message:
+        rawMessage ||
+        'Este comprobante fiscal fue dado de baja legalmente ante SUNAT mediante Nota de Crédito oficial.',
+      cause:
+        'La venta comercial fue anulada en el sistema. Conforme al Código Tributario y a la R.S. N° 097-2012/SUNAT, el número correlativo queda inutilizado (quemado) y debe conservarse registrado en estado ANULADO para efectos de auditoría y conciliación fiscal.',
+      actionPlan: [
+        'Este comprobante ya no genera ninguna obligación tributaria de pago de IGV ni débito fiscal.',
+        'La Nota de Crédito asociada regulariza la anulación de la operación ante SUNAT.',
+        'El stock de los productos asociados a la venta fue devuelto al inventario.',
+        'Si necesitas emitir un nuevo comprobante, utiliza el siguiente número correlativo disponible.',
+      ],
+      technicalDetails: technical || rawMessage,
+      actionUrl: '/business/billing',
+      actionText: 'Ver Comprobantes',
+    };
+  }
+
   // 6. Certificado digital vencido o no válido (0100..0199)
   if (
     normalized.includes('certificado') ||

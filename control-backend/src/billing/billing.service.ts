@@ -971,6 +971,7 @@ export class BillingService {
     if (doc.status === FiscalStatus.ACCEPTED) {
       const motivo = options?.motivo || 'ANULACION DE LA OPERACION POR EL EMISOR';
 
+      let anularData: any = null;
       if (hasLiveBilling && owner?.ccofactUrl && owner?.ccofactApiKey) {
         const baseUrl = this.normalizeCcofactBaseUrl(owner.ccofactUrl);
         try {
@@ -983,21 +984,69 @@ export class BillingService {
             },
             body: JSON.stringify({ motivo }),
           });
-          const anularData = await anularRes.json();
+          anularData = await anularRes.json();
           this.logger.log(`Resultado de anulación CCOFACT: ${JSON.stringify(anularData)}`);
         } catch (e: any) {
           this.logger.warn(`Error al comunicar anulación a CCOFACT: ${e.message}`);
         }
       }
 
+      const ncFullNumber = anularData?.nota_credito?.full_number;
+
       // Marcar comprobante como CANCELLED
       const cancelledDoc = await this.prisma.fiscalDocument.update({
         where: { id },
         data: {
           status: FiscalStatus.CANCELLED,
-          sunatDescription: `Comprobante anulado formalmente ante SUNAT conforme a Ley (Catálogo 09 Motivo 01). Motivo: ${motivo}`,
+          sunatDescription: ncFullNumber
+            ? `Comprobante anulado formalmente ante SUNAT mediante Nota de Crédito ${ncFullNumber} (Catálogo 09 Motivo 01). Motivo: ${motivo}`
+            : `Comprobante anulado formalmente ante SUNAT conforme a Ley (Catálogo 09 Motivo 01). Motivo: ${motivo}`,
         },
       });
+
+      // Si CCOFACT generó la Nota de Crédito, registrarla formalmente en FiscalDocument
+      if (ncFullNumber && anularData?.nota_credito) {
+        const parts = ncFullNumber.split('-');
+        const ncSerie = parts[0];
+        const ncCorrelative = parseInt(parts[1], 10) || 1;
+
+        await this.prisma.fiscalDocument.upsert({
+          where: {
+            userId_docType_serie_correlative: {
+              userId: ownerId,
+              docType: FiscalDocType.CREDIT_NOTE,
+              serie: ncSerie,
+              correlative: ncCorrelative,
+            },
+          },
+          update: {
+            status: FiscalStatus.ACCEPTED,
+            sunatDescription: `Nota de Crédito oficial por anulación de ${doc.fullNumber}`,
+          },
+          create: {
+            docType: FiscalDocType.CREDIT_NOTE,
+            serie: ncSerie,
+            correlative: ncCorrelative,
+            fullNumber: ncFullNumber,
+            status: FiscalStatus.ACCEPTED,
+            issuerRuc: doc.issuerRuc || '20000000001',
+            customerDocType: doc.customerDocType || '0',
+            customerDocNum: doc.customerDocNum || '00000000',
+            customerName: doc.customerName || 'CLIENTES VARIOS',
+            customerAddress: doc.customerAddress || null,
+            totalOpGravada: doc.totalOpGravada || 0,
+            totalOpExonerada: doc.totalOpExonerada || 0,
+            totalOpInafecta: doc.totalOpInafecta || 0,
+            totalIgv: doc.totalIgv || 0,
+            totalAmount: doc.totalAmount,
+            currency: doc.currency || Currency.PEN,
+            sunatResponseCode: '0',
+            sunatDescription: `Nota de Crédito de anulación de comprobante ${doc.fullNumber}`,
+            userId: ownerId,
+            branchId: doc.branchId || null,
+          },
+        }).catch((err) => this.logger.warn(`[FiscalDocument CreditNote Upsert] Warn: ${err.message}`));
+      }
 
       // Si estaba asociado a una venta
       if (doc.saleId) {
