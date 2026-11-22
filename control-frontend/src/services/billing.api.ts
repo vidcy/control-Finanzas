@@ -224,8 +224,16 @@ export const syncSeriesRequest = async (payload: {
   initialNdBoletaNumber?: number;
   initialNdFacturaNumber?: number;
 }) => {
-  const { data } = await axios.post('/billing/sync-series', payload);
-  return data;
+  try {
+    const { data } = await axios.post('/billing/sync-series', payload);
+    return data;
+  } catch (err: any) {
+    if (err.response?.status === 404) {
+      const { data } = await axios.post('/billing/series', payload);
+      return data;
+    }
+    throw err;
+  }
 };
 
 export const consultarRucRequest = async (ruc: string): Promise<{

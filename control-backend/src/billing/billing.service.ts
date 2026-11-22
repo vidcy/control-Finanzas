@@ -958,6 +958,15 @@ export class BillingService {
     const owner = await this.prisma.user.findUnique({ where: { id: ownerId } });
     const hasLiveBilling = Boolean(owner?.hasElectronicBilling && owner?.ccofactUrl && owner?.ccofactApiKey);
 
+    // Si ya está CANCELLED (Anulado ante SUNAT), no se destruye la fila legal
+    if (doc.status === FiscalStatus.CANCELLED) {
+      return {
+        success: true,
+        message: `El comprobante ${doc.fullNumber} ya se encuentra anulado oficialmente ante SUNAT. Se mantiene en el registro contable para efectos de auditoría tributaria.`,
+        document: doc,
+      };
+    }
+
     // Si ya está ACEPTADO por SUNAT: No se puede eliminar en frío, debe anularse legalmente
     if (doc.status === FiscalStatus.ACCEPTED) {
       const motivo = options?.motivo || 'ANULACION DE LA OPERACION POR EL EMISOR';
@@ -1037,10 +1046,10 @@ export class BillingService {
       }
 
       if (options?.forceDelete) {
-        await this.prisma.fiscalDocument.delete({ where: { id } });
         return {
           success: true,
-          message: `Comprobante ${doc.fullNumber} anulado formalmente ante SUNAT y removido de la vista.`,
+          message: `Comprobante ${doc.fullNumber} anulado formalmente ante SUNAT. Se preserva en el archivo fiscal con estado Anulado conforme a normativa tributaria.`,
+          document: cancelledDoc,
         };
       }
 

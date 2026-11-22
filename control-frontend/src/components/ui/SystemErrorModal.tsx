@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   AlertTriangle,
   ShieldAlert,
@@ -30,6 +31,15 @@ export default function SystemErrorModal({
 }: SystemErrorModalProps) {
   const [showTechnical, setShowTechnical] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "unset";
+    }
+    return () => { document.body.style.overflow = "unset"; };
+  }, [isOpen]);
 
   if (!isOpen || !error) return null;
 
@@ -77,11 +87,11 @@ export default function SystemErrorModal({
 
   const badge = getCategoryBadge();
 
-  return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6 overflow-hidden">
+  return createPortal(
+    <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 sm:p-6 overflow-hidden">
       {/* BACKDROP */}
       <div
-        className="absolute inset-0 bg-slate-900/60 backdrop-blur-md transition-opacity duration-300"
+        className="absolute inset-0 bg-slate-900/70 backdrop-blur-md transition-opacity duration-300"
         onClick={onClose}
       />
 
@@ -231,6 +241,7 @@ export default function SystemErrorModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

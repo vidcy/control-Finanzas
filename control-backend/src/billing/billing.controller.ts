@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Put, Delete, Param, Body, Query, Req, UseGuards } from '@nestjs/common';
 import { BillingService } from './billing.service';
 import { AuthGuard } from '@nestjs/passport';
-import { EmitBillingDto, IssueNoteDto, UpdateBillingDto, DeleteBillingDto } from './emit-billing.dto';
+import { EmitBillingDto, IssueNoteDto, UpdateBillingDto, DeleteBillingDto, SyncSeriesDto } from './emit-billing.dto';
 
 @Controller('billing')
 export class BillingController {
@@ -132,24 +132,22 @@ export class BillingController {
 
   @UseGuards(AuthGuard('jwt'))
   @Post('sync-series')
-  syncSeries(
-    @Req() req,
-    @Body()
-    body: {
-      serieBoleta?: string;
-      serieFactura?: string;
-      serieNotaCreditoBoleta?: string;
-      serieNotaCreditoFactura?: string;
-      serieNotaDebitoBoleta?: string;
-      serieNotaDebitoFactura?: string;
-      initialBoletaNumber?: number;
-      initialFacturaNumber?: number;
-      initialNcBoletaNumber?: number;
-      initialNcFacturaNumber?: number;
-      initialNdBoletaNumber?: number;
-      initialNdFacturaNumber?: number;
-    },
-  ) {
+  syncSeries(@Req() req, @Body() body: SyncSeriesDto) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.billingService.syncSeries(ownerId, body);
+  }
+
+  // Rutas alias para compatibilidad universal
+  @UseGuards(AuthGuard('jwt'))
+  @Post('series')
+  syncSeriesPostAlias(@Req() req, @Body() body: SyncSeriesDto) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.billingService.syncSeries(ownerId, body);
+  }
+
+  @UseGuards(AuthGuard('jwt'))
+  @Put('series')
+  syncSeriesPutAlias(@Req() req, @Body() body: SyncSeriesDto) {
     const ownerId = req.user.parentId || req.user.id;
     return this.billingService.syncSeries(ownerId, body);
   }

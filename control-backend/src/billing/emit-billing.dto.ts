@@ -190,3 +190,53 @@ export class DeleteBillingDto {
   @IsOptional()
   restoreStock?: boolean;
 }
+
+export class SyncSeriesDto {
+  @IsOptional()
+  @IsString()
+  serieBoleta?: string;
+
+  @IsOptional()
+  @IsString()
+  serieFactura?: string;
+
+  @IsOptional()
+  @IsString()
+  serieNotaCreditoBoleta?: string;
+
+  @IsOptional()
+  @IsString()
+  serieNotaCreditoFactura?: string;
+
+  @IsOptional()
+  @IsString()
+  serieNotaDebitoBoleta?: string;
+
+  @IsOptional()
+  @IsString()
+  serieNotaDebitoFactura?: string;
+
+  @IsOptional()
+  @IsNumber()
+  initialBoletaNumber?: number;
+
+  @IsOptional()
+  @IsNumber()
+  initialFacturaNumber?: number;
+
+  @IsOptional()
+  @IsNumber()
+  initialNcBoletaNumber?: number;
+
+  @IsOptional()
+  @IsNumber()
+  initialNcFacturaNumber?: number;
+
+  @IsOptional()
+  @IsNumber()
+  initialNdBoletaNumber?: number;
+
+  @IsOptional()
+  @IsNumber()
+  initialNdFacturaNumber?: number;
+}
