@@ -144,6 +144,7 @@ export function parseSystemError(err: any, fallbackTitle: string = 'Atención de
   // 5. Comprobante de referencia para Nota de Crédito no existe o ya anulado (2800 / 2801)
   if (
     normalized.includes('2800') ||
+    normalized.includes('2801') ||
     normalized.includes('comprobante modificado no existe') ||
     normalized.includes('ya fue anulado')
   ) {
@@ -161,6 +162,32 @@ export function parseSystemError(err: any, fallbackTitle: string = 'Atención de
         'Si ya fue anulado con anterioridad, la operación comercial ya está regularizada.',
       ],
       technicalDetails: technical || rawMessage,
+    };
+  }
+
+  // 5b. Error 3051: Nombre de tributo no corresponde al código de tributo de la línea (Catálogo 05)
+  if (
+    normalized.includes('3051') ||
+    normalized.includes('nombre de tributo no corresponde') ||
+    (normalized.includes('cat_05') && normalized.includes('9997')) ||
+    (normalized.includes('cat_05') && normalized.includes('9998'))
+  ) {
+    return {
+      code: 'SUNAT-3051',
+      category: 'SUNAT',
+      title: 'Discrepancia en Catálogo 05 UBL (Exonerado / Inafecto)',
+      message:
+        'SUNAT rechazó el comprobante porque la descripción del esquema tributario no coincide estrictamente con la convención UBL 2.1 del Catálogo 05.',
+      cause:
+        'SUNAT exige estrictamente los nombres abreviados oficiales "EXO" para el código 9997 (Exonerado) e "INA" para el código 9998 (Inafecto).',
+      actionPlan: [
+        'El motor UBL de CCOFACT ya cuenta con la corrección oficial a "EXO" / "INA".',
+        'Presiona el botón "Reintentar Envío" o "Regenerar XML" en el comprobante rechazado para enviarlo con la nomenclatura corregida.',
+        'SUNAT aceptará el comprobante de inmediato emitiendo el CDR de conformidad.',
+      ],
+      technicalDetails: technical || rawMessage,
+      actionUrl: '/business/billing',
+      actionText: 'Ir a Facturación',
     };
   }
 
