@@ -230,18 +230,21 @@ export class BillingService {
       if (dto.saleId) {
         try {
           const result = await this.ccofactService.sendInvoice(dto.saleId);
+          pdfUrl = result.pdfUrl || null;
+          xmlUrl = result.xmlUrl || null;
+          cdrUrl = result.cdrUrl || null;
+          serie = result.serie || serie;
+          correlative = result.number || correlative;
+          fullNumber = `${serie}-${String(correlative).padStart(8, '0')}`;
+          sunatResponseCode = (result as any).sunatResponseCode || (result.success ? '0' : 'ERROR');
+          sunatDescription = (result as any).sunatDescription || result.error || 'Procesado';
+
           if (result.success) {
-            pdfUrl = result.pdfUrl || null;
-            xmlUrl = result.xmlUrl || null;
-            cdrUrl = result.cdrUrl || null;
-            serie = result.serie || serie;
-            correlative = result.number || correlative;
-            fullNumber = `${serie}-${String(correlative).padStart(8, '0')}`;
             status = FiscalStatus.ACCEPTED;
+          } else if ((result as any).isQueued) {
+            status = FiscalStatus.QUEUED_OUTBOX;
           } else {
             status = FiscalStatus.REJECTED;
-            sunatResponseCode = 'ERROR';
-            sunatDescription = result.error || 'Error al transmitir a SUNAT';
           }
         } catch (err: any) {
           this.logger.error(`Error enviando factura: ${err.message}`);
@@ -301,7 +304,18 @@ export class BillingService {
 
           const respData: any = await resp.json();
           if (resp.ok && respData.exito !== false && !respData.errors) {
-            status = FiscalStatus.ACCEPTED;
+            const sunatData = respData.sunat || {};
+            const sunatStatusRaw = String(sunatData.estado || '').toUpperCase();
+            const isSunatAccepted =
+              sunatData.aceptada_por_sunat === true ||
+              sunatStatusRaw === 'ACCEPTED' ||
+              sunatStatusRaw === 'ACCEPTED_OBSERVED';
+            const isSunatQueued =
+              sunatStatusRaw === 'QUEUED' ||
+              sunatStatusRaw === 'SENDING' ||
+              sunatStatusRaw === 'PROCESSING' ||
+              sunatStatusRaw === '0140';
+
             pdfUrl =
               respData.recursos?.pdf_a4 ||
               respData.recursos?.ticket_pos_80mm ||
@@ -316,17 +330,32 @@ export class BillingService {
               respData.enlace_del_cdr ||
               null;
             hash =
-              respData.sunat?.codigo_hash ||
+              sunatData.codigo_hash ||
               respData.codigo_hash ||
               null;
-            sunatResponseCode = respData.sunat?.codigo_respuesta || '0';
+            sunatResponseCode = String(
+              sunatData.codigo_respuesta || (isSunatAccepted ? '0' : isSunatQueued ? '0140' : 'ERROR'),
+            );
             sunatDescription =
-              respData.sunat?.descripcion ||
-              'Aceptado por SUNAT exitosamente.';
+              sunatData.descripcion ||
+              (isSunatAccepted
+                ? 'Aceptado por SUNAT exitosamente.'
+                : isSunatQueued
+                ? 'Comprobante en proceso de validación en SUNAT.'
+                : 'Rechazado por SUNAT.');
+
             if (respData.comprobante?.numero) {
               correlative = respData.comprobante.numero;
               serie = respData.comprobante.serie || serie;
               fullNumber = `${serie}-${String(correlative).padStart(8, '0')}`;
+            }
+
+            if (isSunatAccepted) {
+              status = FiscalStatus.ACCEPTED;
+            } else if (isSunatQueued) {
+              status = FiscalStatus.QUEUED_OUTBOX;
+            } else {
+              status = FiscalStatus.REJECTED;
             }
           } else {
             status = FiscalStatus.REJECTED;
@@ -1110,23 +1139,43 @@ export class BillingService {
     }
 
     // Si NO estaba aceptado (DRAFT, ERROR, REJECTED)
+    // PRESERVACIÓN ESTRICTA: Los comprobantes fiscales nunca se borran físicamente (auditoría SUNAT)
     if (hasLiveBilling && owner?.ccofactUrl && owner?.ccofactApiKey) {
       const baseUrl = this.normalizeCcofactBaseUrl(owner.ccofactUrl);
       try {
-        await fetch(`${baseUrl}/api/v1/documents/by-series-number/${doc.serie}/${doc.correlative}`, {
-          method: 'DELETE',
+        await fetch(`${baseUrl}/api/v1/documents/by-series-number/${doc.serie}/${doc.correlative}/anular-fiscal`, {
+          method: 'POST',
           headers: {
+            'Content-Type': 'application/json',
             'x-api-key': owner.ccofactApiKey,
             'Authorization': `Bearer ${owner.ccofactApiKey}`,
           },
+          body: JSON.stringify({
+            motivo: options?.reasonText || 'Anulación formal solicitada desde Control Finanzas',
+          }),
         });
       } catch (e) { }
     }
 
-    await this.prisma.fiscalDocument.delete({ where: { id } });
+    const cancelledDoc = await this.prisma.fiscalDocument.update({
+      where: { id },
+      data: {
+        status: FiscalStatus.CANCELLED,
+        sunatDescription: `Comprobante anulado por el emisor: ${options?.reasonText || 'Anulado formalmente'}. Registro histórico preservado conforme a normativa SUNAT.`,
+      },
+    });
+
+    if (doc.saleId) {
+      await this.prisma.sale.update({
+        where: { id: doc.saleId },
+        data: { billingStatus: 'CANCELLED', billingError: 'Comprobante anulado formalmente' },
+      }).catch(() => {});
+    }
+
     return {
       success: true,
-      message: `Comprobante ${doc.fullNumber} eliminado exitosamente.`,
+      message: `Comprobante ${doc.fullNumber} anulado formalmente (registro histórico preservado conforme a normativa SUNAT).`,
+      document: cancelledDoc,
     };
   }
 
@@ -1738,6 +1787,40 @@ export class BillingService {
       initialNdBoletaNumber: body.initialNdBoletaNumber !== undefined ? Number(body.initialNdBoletaNumber) : (prevSeriesConfig.initialNdBoletaNumber ?? 0),
       initialNdFacturaNumber: body.initialNdFacturaNumber !== undefined ? Number(body.initialNdFacturaNumber) : (prevSeriesConfig.initialNdFacturaNumber ?? 0),
     };
+
+    // VALIDACIÓN ESTRICTA ANTI-COLISIÓN CONTRA REGISTROS EXISTENTES
+    const maxBoleta = await this.prisma.fiscalDocument.aggregate({
+      where: { userId: ownerId, docType: FiscalDocType.BOLETA, serie: updatedSeriesConfig.serieBoleta },
+      _max: { correlative: true },
+    });
+    const highestB = maxBoleta._max.correlative || 0;
+    if (body.initialBoletaNumber !== undefined && Number(body.initialBoletaNumber) < highestB) {
+      throw new BadRequestException(
+        `No se puede inicializar la serie ${updatedSeriesConfig.serieBoleta} en ${body.initialBoletaNumber}. Ya existen comprobantes emitidos hasta el número ${highestB}. Debe configurar un número igual o superior a ${highestB} para evitar duplicidad tributaria.`,
+      );
+    }
+
+    const maxFactura = await this.prisma.fiscalDocument.aggregate({
+      where: { userId: ownerId, docType: FiscalDocType.INVOICE, serie: updatedSeriesConfig.serieFactura },
+      _max: { correlative: true },
+    });
+    const highestF = maxFactura._max.correlative || 0;
+    if (body.initialFacturaNumber !== undefined && Number(body.initialFacturaNumber) < highestF) {
+      throw new BadRequestException(
+        `No se puede inicializar la serie ${updatedSeriesConfig.serieFactura} en ${body.initialFacturaNumber}. Ya existen facturas emitidas hasta el número ${highestF}. Debe configurar un número igual o superior a ${highestF} para evitar duplicidad tributaria.`,
+      );
+    }
+
+    const maxNc = await this.prisma.fiscalDocument.aggregate({
+      where: { userId: ownerId, docType: FiscalDocType.CREDIT_NOTE, serie: updatedSeriesConfig.serieNotaCreditoBoleta },
+      _max: { correlative: true },
+    });
+    const highestNc = maxNc._max.correlative || 0;
+    if (body.initialNcBoletaNumber !== undefined && Number(body.initialNcBoletaNumber) < highestNc) {
+      throw new BadRequestException(
+        `No se puede inicializar la serie ${updatedSeriesConfig.serieNotaCreditoBoleta} en ${body.initialNcBoletaNumber}. Ya existen notas de crédito emitidas hasta el número ${highestNc}.`,
+      );
+    }
 
     const updateData: any = {
       billingSerieBoleta: updatedSeriesConfig.serieBoleta,

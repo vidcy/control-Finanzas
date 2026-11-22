@@ -44,12 +44,15 @@ export class CcofactService {
    */
   async sendInvoice(saleId: string, options?: { igvAffectation?: string; igvRate?: number }): Promise<{
     success: boolean;
+    isQueued?: boolean;
     pdfUrl?: string;
     xmlUrl?: string;
     cdrUrl?: string;
     error?: string;
     number?: number;
     serie?: string;
+    sunatResponseCode?: string;
+    sunatDescription?: string;
   }> {
     try {
       const sale = await this.prisma.sale.findUnique({
@@ -234,7 +237,43 @@ export class CcofactService {
       const finalXml = responseData.recursos?.xml_firmado || '';
       const finalCdr = responseData.recursos?.cdr_sunat || '';
       const finalHash = responseData.sunat?.codigo_hash || null;
-      const sunatDesc = responseData.sunat?.descripcion || 'Comprobante emitido y aceptado por SUNAT satisfactoriamente';
+      
+      // EVALUACIÓN ESTRICTA DEL ESTADO VERDADERO DEVUELTO POR SUNAT
+      const sunatData = responseData.sunat || {};
+      const sunatStatusRaw = String(sunatData.estado || '').toUpperCase();
+      const isSunatAccepted =
+        sunatData.aceptada_por_sunat === true ||
+        sunatStatusRaw === 'ACCEPTED' ||
+        sunatStatusRaw === 'ACCEPTED_OBSERVED';
+      const isSunatQueued =
+        sunatStatusRaw === 'QUEUED' ||
+        sunatStatusRaw === 'SENDING' ||
+        sunatStatusRaw === 'PROCESSING' ||
+        sunatStatusRaw === '0140';
+      const isSunatRejected =
+        sunatStatusRaw === 'REJECTED' || (!isSunatAccepted && !isSunatQueued);
+
+      let targetFiscalStatus: FiscalStatus = FiscalStatus.ACCEPTED;
+      let targetBillingStatus: string = 'SUCCESS';
+
+      if (isSunatRejected) {
+        targetFiscalStatus = FiscalStatus.REJECTED;
+        targetBillingStatus = 'REJECTED';
+      } else if (isSunatQueued) {
+        targetFiscalStatus = FiscalStatus.QUEUED_OUTBOX;
+        targetBillingStatus = 'QUEUED';
+      }
+
+      const sunatResponseCode = String(
+        sunatData.codigo_respuesta || (isSunatAccepted ? '0' : isSunatQueued ? '0140' : 'ERROR'),
+      );
+      const sunatDesc =
+        sunatData.descripcion ||
+        (isSunatAccepted
+          ? 'Comprobante emitido y aceptado por SUNAT satisfactoriamente'
+          : isSunatQueued
+          ? 'Comprobante en proceso de validación en SUNAT (Cola de reintentos)'
+          : 'Comprobante rechazado por SUNAT');
 
       // Sincronización en modelo FiscalDocument
       try {
@@ -244,12 +283,12 @@ export class CcofactService {
             serie: finalSerie,
             correlative: finalNumber,
             fullNumber,
-            status: FiscalStatus.ACCEPTED,
+            status: targetFiscalStatus,
             pdfUrl: finalPdf,
             xmlUrl: finalXml,
             cdrUrl: finalCdr,
             hash: finalHash,
-            sunatResponseCode: '0',
+            sunatResponseCode,
             sunatDescription: sunatDesc,
             totalOpGravada: totalGravada,
             totalOpInafecta: totalInafecta,
@@ -262,7 +301,7 @@ export class CcofactService {
             serie: finalSerie,
             correlative: finalNumber,
             fullNumber,
-            status: FiscalStatus.ACCEPTED,
+            status: targetFiscalStatus,
             issuerRuc: owner.businessRuc || '20000000001',
             customerDocType: docType === '-' ? '0' : docType,
             customerDocNum: docNum,
@@ -278,7 +317,7 @@ export class CcofactService {
             xmlUrl: finalXml,
             pdfUrl: finalPdf,
             cdrUrl: finalCdr,
-            sunatResponseCode: '0',
+            sunatResponseCode,
             sunatDescription: sunatDesc,
             saleId: sale.id,
             userId: ownerId,
@@ -286,10 +325,17 @@ export class CcofactService {
           },
         });
 
-        // Asegurar que la venta almacene el desglose exacto
+        // Asegurar que la venta almacene el estado fiscal exacto y desglose
         await this.prisma.sale.update({
           where: { id: sale.id },
           data: {
+            billingStatus: targetBillingStatus,
+            billingSerie: finalSerie,
+            billingNumber: finalNumber,
+            billingPdfUrl: finalPdf,
+            billingXmlUrl: finalXml,
+            billingCdrUrl: finalCdr,
+            billingError: isSunatRejected ? sunatDesc : null,
             igvAffectation: affectation,
             igvRate: affectation === '10' ? effectiveIgvRate : 0,
             totalGravada,
@@ -302,15 +348,25 @@ export class CcofactService {
         this.logger.warn(`FiscalDocument upsert warn: ${syncErr.message}`);
       }
 
-      this.logger.log(`Comprobante ${fullNumber} emitido exitosamente con CCOFACT PRO.`);
+      if (isSunatAccepted) {
+        this.logger.log(`Comprobante ${fullNumber} emitido y aceptado por SUNAT exitosamente.`);
+      } else if (isSunatQueued) {
+        this.logger.warn(`Comprobante ${fullNumber} encolado para transmisión asíncrona a SUNAT.`);
+      } else {
+        this.logger.error(`Comprobante ${fullNumber} rechazado formalmente por SUNAT: ${sunatDesc}`);
+      }
 
       return {
-        success: true,
+        success: isSunatAccepted,
+        isQueued: isSunatQueued,
+        error: isSunatRejected ? sunatDesc : undefined,
+        number: finalNumber,
+        serie: finalSerie,
         pdfUrl: finalPdf,
         xmlUrl: finalXml,
         cdrUrl: finalCdr,
-        number: finalNumber,
-        serie: finalSerie,
+        sunatResponseCode,
+        sunatDescription: sunatDesc,
       };
     } catch (e: any) {
       this.logger.error(`Excepción en CcofactService.sendInvoice: ${e.message}`);

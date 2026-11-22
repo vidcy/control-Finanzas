@@ -185,6 +185,10 @@ export class DeleteBillingDto {
   motivo?: string;
 
   @IsOptional()
+  @IsString()
+  reasonText?: string;
+
+  @IsOptional()
   forceDelete?: boolean;
 
   @IsOptional()

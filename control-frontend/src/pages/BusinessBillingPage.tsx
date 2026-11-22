@@ -2715,7 +2715,7 @@ export default function BusinessBillingPage() {
               </div>
             ) : (
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
-                Este comprobante no cuenta con aceptación definitiva de SUNAT. Se eliminará del sistema y de las colas de transmisión.
+                Este comprobante será anulado formalmente. Se conservará su registro histórico en el archivo fiscal con estado Anulado conforme a la normativa tributaria.
               </div>
             )}
 
@@ -2778,7 +2778,7 @@ export default function BusinessBillingPage() {
                   ? "Procesando..."
                   : selectedDocForDelete?.status === "ACCEPTED"
                   ? "Confirmar Anulación en SUNAT"
-                  : "Eliminar Comprobante"}
+                  : "Confirmar Anulación Fiscal"}
               </button>
             </div>
           </div>
