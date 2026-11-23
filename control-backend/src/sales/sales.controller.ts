@@ -86,6 +86,20 @@ export class SalesController {
   }
 
   @UseGuards(AuthGuard('jwt'))
+  @Post(':id/smart-edit')
+  smartEditSale(@Req() req, @Param('id') id: string, @Body() body: any) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.salesService.smartEditSale(ownerId, id, body);
+  }
+
+  @UseGuards(AuthGuard('jwt'))
+  @Post(':id/manual-note')
+  emitManualNote(@Req() req, @Param('id') id: string, @Body() body: any) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.salesService.emitManualNoteForSale(ownerId, id, body);
+  }
+
+  @UseGuards(AuthGuard('jwt'))
   @Delete(':id')
   deleteSale(
     @Req() req,

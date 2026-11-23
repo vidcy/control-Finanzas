@@ -93,6 +93,16 @@ export default function BusinessBillingPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedType, setSelectedType] = useState<string>("ALL");
   const [selectedStatus, setSelectedStatus] = useState<string>("ALL");
+  const [filterStartDate, setFilterStartDate] = useState("");
+  const [filterEndDate, setFilterEndDate] = useState("");
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedType, selectedStatus, filterStartDate, filterEndDate, pageSize]);
 
   // Modals
   const [isEmitModalOpen, setIsEmitModalOpen] = useState(false);
@@ -958,6 +968,15 @@ export default function BusinessBillingPage() {
       if (selectedType !== "ALL" && doc.docType !== selectedType) return false;
       // status filter
       if (selectedStatus !== "ALL" && doc.status !== selectedStatus) return false;
+      // date filter
+      if (filterStartDate) {
+        const docDate = new Date(doc.createdAt).toISOString().substring(0, 10);
+        if (docDate < filterStartDate) return false;
+      }
+      if (filterEndDate) {
+        const docDate = new Date(doc.createdAt).toISOString().substring(0, 10);
+        if (docDate > filterEndDate) return false;
+      }
       // search term
       if (searchTerm.trim()) {
         const term = searchTerm.toLowerCase();
@@ -968,7 +987,13 @@ export default function BusinessBillingPage() {
       }
       return true;
     });
-  }, [documents, selectedType, selectedStatus, searchTerm]);
+  }, [documents, selectedType, selectedStatus, searchTerm, filterStartDate, filterEndDate]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredDocuments.length / pageSize));
+  const paginatedDocuments = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredDocuments.slice(start, start + pageSize);
+  }, [filteredDocuments, currentPage, pageSize]);
 
   return (
     <Appshell>
@@ -1180,8 +1205,38 @@ export default function BusinessBillingPage() {
               />
             </div>
 
-            {/* Type Filter */}
-            <div className="flex items-center gap-2 overflow-x-auto pb-1 lg:pb-0">
+            {/* Type & Status Filters and Dates */}
+            <div className="flex flex-wrap items-center gap-2 overflow-x-auto pb-1 lg:pb-0">
+              {/* Date Filters */}
+              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5">
+                <span className="text-[11px] font-bold text-slate-500">Desde:</span>
+                <input
+                  type="date"
+                  value={filterStartDate}
+                  onChange={(e) => setFilterStartDate(e.target.value)}
+                  className="text-xs bg-transparent border-0 outline-none font-bold text-slate-700"
+                />
+                <span className="text-[11px] font-bold text-slate-500">Hasta:</span>
+                <input
+                  type="date"
+                  value={filterEndDate}
+                  onChange={(e) => setFilterEndDate(e.target.value)}
+                  className="text-xs bg-transparent border-0 outline-none font-bold text-slate-700"
+                />
+                {(filterStartDate || filterEndDate) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFilterStartDate("");
+                      setFilterEndDate("");
+                    }}
+                    className="text-[10px] font-bold text-rose-600 hover:text-rose-800 ml-1 cursor-pointer"
+                  >
+                    ✕ Limpiar
+                  </button>
+                )}
+              </div>
+
               <select
                 value={selectedType}
                 onChange={(e) => setSelectedType(e.target.value)}
@@ -1206,13 +1261,13 @@ export default function BusinessBillingPage() {
                 <option value="LOCAL_DRAFT">Borrador Local</option>
                 <option value="QUEUED_OUTBOX">En Cola</option>
                 <option value="REJECTED">Observado / Rechazado</option>
-                <option value="CANCELLED">Anulado (Baja)</option>
+                <option value="CANCELLED">Anulado (Nota Crédito)</option>
               </select>
 
               {/* Export Button */}
               <button
                 onClick={handleExportExcel}
-                className="inline-flex items-center gap-2 px-3.5 py-2 text-sm font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl hover:bg-emerald-100 transition-all shrink-0 active:scale-95"
+                className="inline-flex items-center gap-2 px-3.5 py-2 text-sm font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl hover:bg-emerald-100 transition-all shrink-0 active:scale-95 cursor-pointer"
               >
                 <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
                 Exportar SIRE
@@ -1243,6 +1298,7 @@ export default function BusinessBillingPage() {
                   <th className="px-6 py-3.5 text-right">Base Gravada</th>
                   <th className="px-6 py-3.5 text-right">IGV (18%)</th>
                   <th className="px-6 py-3.5 text-right">Total</th>
+                  <th className="px-6 py-3.5 text-center">Estado Comercial</th>
                   <th className="px-6 py-3.5 text-center">Estado SUNAT</th>
                   <th className="px-6 py-3.5 text-right">Acciones</th>
                 </tr>
@@ -1250,20 +1306,20 @@ export default function BusinessBillingPage() {
               <tbody className="divide-y divide-slate-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={8} className="px-6 py-12 text-center text-slate-400">
+                    <td colSpan={9} className="px-6 py-12 text-center text-slate-400">
                       <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2 text-blue-600" />
                       Cargando comprobantes fiscales de la base de datos...
                     </td>
                   </tr>
                 ) : filteredDocuments.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-6 py-12 text-center text-slate-400">
+                    <td colSpan={9} className="px-6 py-12 text-center text-slate-400">
                       <FileText className="h-8 w-8 mx-auto mb-2 text-slate-300" />
                       No se encontraron comprobantes emitidos con los filtros actuales.
                     </td>
                   </tr>
                 ) : (
-                  filteredDocuments.map((doc) => {
+                  paginatedDocuments.map((doc) => {
                     const isInvoice = doc.docType === "INVOICE";
                     const isBoleta = doc.docType === "BOLETA";
                     const isCredit = doc.docType === "CREDIT_NOTE";
@@ -1326,6 +1382,20 @@ export default function BusinessBillingPage() {
                           {doc.totalAmount.toFixed(2)}
                         </td>
 
+                        {/* ESTADO COMERCIAL */}
+                        <td className="px-6 py-4 text-center">
+                          {doc.status === "CANCELLED" ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-rose-50 text-rose-700 border border-rose-200">
+                              Anulado
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              Vigente
+                            </span>
+                          )}
+                        </td>
+
+                        {/* ESTADO SUNAT */}
                         <td className="px-6 py-4 text-center">
                           {doc.status === "ACCEPTED" ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -1340,17 +1410,17 @@ export default function BusinessBillingPage() {
                               title="Hacer clic para ver diagnóstico detallado de SUNAT y solución sugerida"
                             >
                               <AlertCircle className="h-3.5 w-3.5 text-rose-600 group-hover:scale-110 transition-transform" />
-                              <span>Observado (Diagnóstico)</span>
+                              <span>Observado</span>
                             </button>
                           ) : doc.status === "CANCELLED" ? (
                             <button
                               type="button"
                               onClick={() => handleShowDiagnostic(doc)}
                               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 transition-all cursor-pointer shadow-xs group"
-                              title={doc.sunatDescription || "Comprobante dado de baja / anulado formalmente ante SUNAT. Clic para ver diagnóstico."}
+                              title={doc.sunatDescription || "Comprobante anulado formalmente ante SUNAT con Nota de Crédito."}
                             >
                               <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse"></span>
-                              <span>Anulado (Baja)</span>
+                              <span>Anulado (NC)</span>
                             </button>
                           ) : (
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200">
@@ -1453,6 +1523,58 @@ export default function BusinessBillingPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Controls */}
+          {filteredDocuments.length > 0 && (
+            <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600">
+              <div className="flex items-center gap-2">
+                <span>Mostrando</span>
+                <span className="font-bold text-slate-900">
+                  {Math.min(filteredDocuments.length, (currentPage - 1) * pageSize + 1)} -{" "}
+                  {Math.min(filteredDocuments.length, currentPage * pageSize)}
+                </span>
+                <span>de</span>
+                <span className="font-bold text-slate-900">{filteredDocuments.length}</span>
+                <span>comprobantes</span>
+                <span className="text-slate-300 mx-1">|</span>
+                <div className="flex items-center gap-1.5">
+                  <span>Filas por pág:</span>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => setPageSize(Number(e.target.value))}
+                    className="bg-white border border-slate-200 rounded-lg px-2 py-1 font-bold text-slate-800 outline-none cursor-pointer"
+                  >
+                    <option value={10}>10</option>
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage <= 1}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+                >
+                  &larr; Anterior
+                </button>
+                <span className="px-3 py-1.5 font-bold text-slate-900 bg-white border border-slate-200 rounded-lg">
+                  {currentPage} / {totalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage >= totalPages}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+                >
+                  Siguiente &rarr;
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* MODAL 1: EMISIÓN DE COMPROBANTE FISCAL */}

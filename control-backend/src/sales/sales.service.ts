@@ -329,56 +329,32 @@ export class SalesService {
       }
 
       // 2. Sincronización con Facturación Electrónica CCOFACT PRO:
-      // Dos caminos legales SUNAT: Comunicación de Baja (≤ 7 días y no entregada) vs Nota de Crédito (Tipo 01)
+      // Conforme a normativa SUNAT UBL 2.1 (CERO BAJAS): Todo comprobante aceptado se anula con Nota de Crédito (Tipo 01)
       if (sale.billingSerie && sale.billingNumber) {
         let anularResult: any = null;
         const owner = await tx.user.findUnique({
           where: { id: ownerId },
         });
 
-        const saleDateObj = new Date(sale.date);
-        const daysElapsed = Math.max(0, Math.floor((Date.now() - saleDateObj.getTime()) / (1000 * 60 * 60 * 24)));
-        const isWithin7Days = daysElapsed <= 7;
-        const delivered = Boolean(options?.deliveredToClient);
-        const chosenMethod = options?.method || (isWithin7Days && !delivered ? 'COMUNICACION_BAJA' : 'NOTA_CREDITO');
-        const reasonText = options?.motivo || 'ANULACION DE VENTA EN SISTEMA COMERCIAL';
+        const reasonText = options?.motivo || 'ANULACION DE OPERACION';
 
         if (owner?.ccofactUrl && owner?.ccofactApiKey) {
           try {
-            if (chosenMethod === 'COMUNICACION_BAJA') {
-              anularResult = await this.ccofactService.comunicacionBaja(
-                owner,
-                sale.billingSerie,
-                sale.billingNumber,
-                reasonText,
-                delivered,
-              );
-            } else {
-              anularResult = await this.ccofactService.anularFiscal(
-                owner,
-                sale.billingSerie,
-                sale.billingNumber,
-                reasonText,
-              );
-            }
+            anularResult = await this.ccofactService.anularFiscal(
+              owner,
+              sale.billingSerie,
+              sale.billingNumber,
+              reasonText,
+            );
           } catch (billingErr: any) {
             console.warn(`[Sincronización CCOFACT PRO] Error al anular comprobante ${sale.billingSerie}-${sale.billingNumber}:`, billingErr?.message);
           }
         }
 
         const ncFullNumber = anularResult?.nota_credito?.full_number;
-        const ticketBaja = anularResult?.ticket;
-
-        let annulDescription: string;
-        if (chosenMethod === 'COMUNICACION_BAJA') {
-          annulDescription = ticketBaja
-            ? `Comprobante dado de baja formalmente ante SUNAT mediante Comunicación de Baja (Ticket: ${ticketBaja}). Motivo: ${reasonText}`
-            : `Comprobante dado de baja formalmente ante SUNAT mediante Comunicación de Baja directa (≤ 7 días). Motivo: ${reasonText}`;
-        } else {
-          annulDescription = ncFullNumber
-            ? `Comprobante anulado formalmente ante SUNAT mediante Nota de Crédito ${ncFullNumber} (Catálogo 09 Motivo 01: Anulación de la operación). Motivo: ${reasonText}`
-            : `Comprobante anulado formalmente ante SUNAT conforme a Ley (Catálogo 09 Motivo 01). Motivo: ${reasonText}`;
-        }
+        const annulDescription = ncFullNumber
+          ? `Comprobante anulado formalmente ante SUNAT mediante Nota de Crédito ${ncFullNumber} (Catálogo 09 Motivo 01: Anulación de la operación). Motivo: ${reasonText}`
+          : `Comprobante anulado formalmente ante SUNAT conforme a Ley (Catálogo 09 Motivo 01). Motivo: ${reasonText}`;
 
         // Sincronizar comprobante fiscal centralizado (garantizar que permanezca como CANCELLED)
         await tx.fiscalDocument.updateMany({
@@ -650,5 +626,270 @@ export class SalesService {
       message: 'Venta actualizada exitosamente.',
       sale: await this.prisma.sale.findUnique({ where: { id }, include: { items: true } }),
     };
+  }
+
+  /**
+   * EDICIÓN INTELIGENTE DE VENTA CON MOTOR DIFF Y SINCRONIZACIÓN TRIBUTARIA
+   */
+  async smartEditSale(ownerId: string, id: string, dto: any) {
+    const sale = await this.prisma.sale.findFirst({
+      where: {
+        id,
+        user: { OR: [{ id: ownerId }, { parentId: ownerId }] },
+      },
+      include: { items: true },
+    });
+
+    if (!sale) {
+      throw new NotFoundException('Venta no encontrada');
+    }
+
+    if (sale.cashShiftId) {
+      const shift = await this.prisma.cashShift.findUnique({
+        where: { id: sale.cashShiftId },
+      });
+      if (shift && shift.status === 'CLOSED') {
+        throw new BadRequestException(
+          'No se puede modificar una venta perteneciente a un cierre de caja ya cerrado.',
+        );
+      }
+    }
+
+    const owner = await this.prisma.user.findUnique({ where: { id: ownerId } });
+    if (!owner) throw new NotFoundException('Usuario propietario no encontrado');
+
+    const isBilled = sale.billingStatus === 'SUCCESS' && sale.billingSerie && sale.billingNumber;
+
+    let diffResult: any = null;
+
+    if (isBilled && owner.ccofactUrl && owner.ccofactApiKey) {
+      diffResult = await this.ccofactService.smartEditDocument(
+        owner,
+        sale.billingSerie,
+        sale.billingNumber,
+        dto,
+      );
+    }
+
+    // Gestionar inventario y productos si se enviaron nuevos items
+    if (dto.items && Array.isArray(dto.items)) {
+      const oldMovements = await this.prisma.inventoryMovement.findMany({
+        where: { documentId: sale.id, type: 'OUT', reason: 'SALE' },
+      });
+      for (const mov of oldMovements) {
+        if (mov.branchId) {
+          const bStock = await this.prisma.branchStock.findUnique({
+            where: { productId_branchId: { productId: mov.productId, branchId: mov.branchId } },
+          });
+          if (bStock) {
+            await this.prisma.branchStock.update({
+              where: { id: bStock.id },
+              data: { stock: { increment: mov.quantity } },
+            });
+          }
+        }
+        await this.prisma.product.update({
+          where: { id: mov.productId },
+          data: { stock: { increment: mov.quantity } },
+        });
+      }
+
+      await this.prisma.inventoryMovement.deleteMany({
+        where: { documentId: sale.id, type: 'OUT', reason: 'SALE' },
+      });
+      await this.prisma.saleItem.deleteMany({
+        where: { saleId: sale.id },
+      });
+
+      let newTotal = 0;
+      for (const it of dto.items) {
+        const itemTotal = Number((it.quantity * it.price).toFixed(2));
+        newTotal += itemTotal;
+        await this.prisma.saleItem.create({
+          data: {
+            saleId: sale.id,
+            productId: it.productId,
+            name: it.name,
+            quantity: Number(it.quantity),
+            price: Number(it.price),
+          },
+        });
+
+        await this.prisma.inventoryMovement.create({
+          data: {
+            productId: it.productId,
+            quantity: Number(it.quantity),
+            type: 'OUT',
+            reason: 'SALE',
+            userId: sale.userId,
+            unitCost: Number(it.price),
+            totalCost: itemTotal,
+            stockResult: 0,
+            documentId: sale.id,
+            branchId: sale.branchId,
+          },
+        });
+
+        await this.prisma.product.update({
+          where: { id: it.productId },
+          data: { stock: { decrement: Number(it.quantity) } },
+        });
+        if (sale.branchId) {
+          const bStock = await this.prisma.branchStock.findUnique({
+            where: { productId_branchId: { productId: it.productId, branchId: sale.branchId } },
+          });
+          if (bStock) {
+            await this.prisma.branchStock.update({
+              where: { id: bStock.id },
+              data: { stock: { decrement: Number(it.quantity) } },
+            });
+          }
+        }
+      }
+      sale.amount = Number(newTotal.toFixed(2));
+    }
+
+    const updateData: any = {};
+    if (dto.client_doc_type !== undefined) updateData.clientDocumentType = dto.client_doc_type;
+    if (dto.client_doc_number !== undefined) updateData.clientDocumentNumber = dto.client_doc_number;
+    if (dto.client_name !== undefined) updateData.clientDenomination = dto.client_name;
+    if (dto.client_address !== undefined) updateData.clientAddress = dto.client_address;
+    if (dto.client_email !== undefined) updateData.clientEmail = dto.client_email;
+    if (dto.payment_method !== undefined) updateData.paymentMethod = dto.payment_method;
+    if (dto.issue_date) updateData.date = new Date(`${dto.issue_date}T12:00:00.000-05:00`);
+    if (dto.items) updateData.amount = sale.amount;
+
+    if (diffResult?.caso === 'CASE_A' && diffResult.nuevo_comprobante) {
+      const parts = (diffResult.nuevo_comprobante.full_number || '').split('-');
+      updateData.billingSerie = parts[0] || sale.billingSerie;
+      updateData.billingNumber = parseInt(parts[1], 10) || Number(diffResult.nuevo_comprobante.number) || sale.billingNumber;
+      updateData.billingStatus = 'SUCCESS';
+      updateData.billingPdfUrl = diffResult.recursos_nuevo?.pdf_url || sale.billingPdfUrl;
+      updateData.billingXmlUrl = diffResult.recursos_nuevo?.xml_url || sale.billingXmlUrl;
+      updateData.billingCdrUrl = diffResult.recursos_nuevo?.cdr_url || sale.billingCdrUrl;
+    }
+
+    const updatedSale = await this.prisma.sale.update({
+      where: { id },
+      data: updateData,
+      include: { items: true },
+    });
+
+    return {
+      success: true,
+      message: 'Venta y comprobante procesados exitosamente con el motor inteligente.',
+      sale: updatedSale,
+      diffResult,
+    };
+  }
+
+  /**
+   * EMISIÓN MANUAL DE NOTA DE CRÉDITO O DÉBITO PARA UNA VENTA
+   */
+  async emitManualNoteForSale(ownerId: string, id: string, dto: any) {
+    const sale = await this.prisma.sale.findFirst({
+      where: {
+        id,
+        user: { OR: [{ id: ownerId }, { parentId: ownerId }] },
+      },
+      include: { items: true },
+    });
+
+    if (!sale) throw new NotFoundException('Venta no encontrada');
+    if (!sale.billingSerie || !sale.billingNumber) {
+      throw new BadRequestException('Esta venta no cuenta con comprobante fiscal emitido.');
+    }
+
+    const owner = await this.prisma.user.findUnique({ where: { id: ownerId } });
+    if (!owner) throw new NotFoundException('Usuario propietario no encontrado');
+
+    const result = await this.ccofactService.emitManualNote(
+      owner,
+      sale.billingSerie,
+      sale.billingNumber,
+      dto,
+    );
+
+    // Si la nota es de Crédito y anula totalmente o devuelve mercadería, restaurar stock
+    if (dto.note_type === '07' && ['01', '02', '06', '07'].includes(dto.reason_code)) {
+      if (['01', '02', '06'].includes(dto.reason_code)) {
+        for (const item of sale.items) {
+          if (sale.branchId) {
+            const bStock = await this.prisma.branchStock.findUnique({
+              where: { productId_branchId: { productId: item.productId, branchId: sale.branchId } },
+            });
+            if (bStock) {
+              await this.prisma.branchStock.update({
+                where: { id: bStock.id },
+                data: { stock: { increment: item.quantity } },
+              });
+            }
+          }
+          await this.prisma.product.update({
+            where: { id: item.productId },
+            data: { stock: { increment: item.quantity } },
+          });
+
+          await this.prisma.inventoryMovement.create({
+            data: {
+              productId: item.productId,
+              quantity: item.quantity,
+              type: 'IN',
+              reason: 'SALE_RETURN',
+              userId: sale.userId,
+              unitCost: item.price,
+              totalCost: Number((item.quantity * item.price).toFixed(2)),
+              stockResult: 0,
+              documentId: sale.id,
+              branchId: sale.branchId,
+            },
+          });
+        }
+
+        await this.prisma.sale.update({
+          where: { id: sale.id },
+          data: { billingStatus: 'CANCELLED' },
+        });
+      } else if (dto.reason_code === '07' && Array.isArray(dto.items)) {
+        for (const it of dto.items) {
+          const matchingItem = sale.items.find(si => si.productId === it.product_id || si.name === it.name);
+          const returnQty = Number(it.quantity) || 0;
+          if (matchingItem && returnQty > 0) {
+            if (sale.branchId) {
+              const bStock = await this.prisma.branchStock.findUnique({
+                where: { productId_branchId: { productId: matchingItem.productId, branchId: sale.branchId } },
+              });
+              if (bStock) {
+                await this.prisma.branchStock.update({
+                  where: { id: bStock.id },
+                  data: { stock: { increment: returnQty } },
+                });
+              }
+            }
+            await this.prisma.product.update({
+              where: { id: matchingItem.productId },
+              data: { stock: { increment: returnQty } },
+            });
+
+            await this.prisma.inventoryMovement.create({
+              data: {
+                productId: matchingItem.productId,
+                quantity: returnQty,
+                type: 'IN',
+                reason: 'SALE_RETURN',
+                userId: sale.userId,
+                unitCost: matchingItem.price,
+                totalCost: Number((returnQty * matchingItem.price).toFixed(2)),
+                stockResult: 0,
+                documentId: sale.id,
+                branchId: sale.branchId,
+              },
+            });
+          }
+        }
+      }
+    }
+
+    return result;
   }
 }

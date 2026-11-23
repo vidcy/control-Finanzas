@@ -65,6 +65,20 @@ export class BillingController {
   }
 
   @UseGuards(AuthGuard('jwt'))
+  @Post(['documents/:id/smart-edit', ':id/smart-edit', 'smart-edit/:id'])
+  smartEditDocument(@Req() req, @Param('id') id: string, @Body() body: any) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.billingService.smartEditBillingDocument(ownerId, id, body);
+  }
+
+  @UseGuards(AuthGuard('jwt'))
+  @Post(['documents/:id/manual-note', ':id/manual-note', 'manual-note/:id'])
+  emitManualNote(@Req() req, @Param('id') id: string, @Body() body: any) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.billingService.emitManualNoteForDocument(ownerId, id, body);
+  }
+
+  @UseGuards(AuthGuard('jwt'))
   @Post('simulate-sandbox')
   simulateSandbox(@Req() req) {
     const ownerId = req.user.parentId || req.user.id;

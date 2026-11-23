@@ -1214,6 +1214,131 @@ export class BillingService {
   }
 
   /**
+   * EDICIÓN INTELIGENTE DE COMPROBANTE CON DIFF ENGINE (SUNAT)
+   */
+  async smartEditBillingDocument(ownerId: string, id: string, dto: any) {
+    const doc = await this.prisma.fiscalDocument.findFirst({
+      where: { id, userId: ownerId },
+    });
+    if (!doc) throw new NotFoundException('Comprobante fiscal no encontrado.');
+
+    if (doc.status !== FiscalStatus.ACCEPTED) {
+      throw new BadRequestException('Solo es posible editar comprobantes que cuenten con aceptación oficial (CDR = 0) de SUNAT.');
+    }
+
+    const owner = await this.prisma.user.findUnique({ where: { id: ownerId } });
+    if (!owner) throw new NotFoundException('Usuario propietario no encontrado.');
+
+    // 1. Delegar el análisis de diferencias y emisión al motor CCOFACT PRO
+    const result = await this.ccofactService.smartEditDocument(owner, doc.serie, doc.correlative, dto);
+
+    // 2. Si fue Caso A (Se emitió Nuevo Comprobante y se anuló el anterior):
+    if (result.caso === 'CASE_A' && result.nuevo_comprobante) {
+      await this.prisma.fiscalDocument.update({
+        where: { id: doc.id },
+        data: {
+          status: FiscalStatus.CANCELLED,
+          sunatDescription: `Anulado mediante Nota de Crédito ${result.nota_credito?.full_number || ''}`,
+        },
+      });
+
+      const newComp = result.nuevo_comprobante;
+      const parts = (newComp.full_number || newComp.numero_completo || '').split('-');
+      const newSerie = parts[0] || doc.serie;
+      const newNumber = parseInt(parts[1], 10) || Number(newComp.number || newComp.numero) || (doc.correlative + 1);
+
+      await this.prisma.fiscalDocument.create({
+        data: {
+          userId: ownerId,
+          saleId: doc.saleId,
+          branchId: doc.branchId,
+          docType: doc.docType,
+          serie: newSerie,
+          correlative: newNumber,
+          fullNumber: `${newSerie}-${String(newNumber).padStart(8, '0')}`,
+          issuerRuc: doc.issuerRuc || owner?.businessRuc || '20000000001',
+          customerDocType: dto.client_doc_type || doc.customerDocType,
+          customerDocNum: dto.client_doc_number || doc.customerDocNum,
+          customerName: dto.client_name || doc.customerName,
+          customerAddress: dto.client_address !== undefined ? dto.client_address : (doc.customerAddress || ''),
+          totalAmount: Number(newComp.total_amount || result.comprobante_original?.total_amount || doc.totalAmount),
+          status: FiscalStatus.ACCEPTED,
+          xmlUrl: result.recursos_nuevo?.xml_url,
+          pdfUrl: result.recursos_nuevo?.pdf_url,
+          cdrUrl: result.recursos_nuevo?.cdr_url,
+          hash: newComp.hash || null,
+        },
+      });
+
+      if (doc.saleId) {
+        await this.prisma.sale.update({
+          where: { id: doc.saleId },
+          data: {
+            billingSerie: newSerie,
+            billingNumber: newNumber,
+            billingStatus: 'SUCCESS',
+            billingPdfUrl: result.recursos_nuevo?.pdf_url || undefined,
+            billingXmlUrl: result.recursos_nuevo?.xml_url || undefined,
+            billingCdrUrl: result.recursos_nuevo?.cdr_url || undefined,
+            clientDocumentType: dto.client_doc_type,
+            clientDocumentNumber: dto.client_doc_number,
+            clientDenomination: dto.client_name,
+            clientAddress: dto.client_address,
+            clientEmail: dto.client_email,
+          },
+        });
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * EMISIÓN MANUAL DE NOTA DE CRÉDITO O DÉBITO (Catálogo 09 y 10)
+   */
+  async emitManualNoteForDocument(ownerId: string, id: string, dto: any) {
+    const doc = await this.prisma.fiscalDocument.findFirst({
+      where: { id, userId: ownerId },
+    });
+    if (!doc) throw new NotFoundException('Comprobante fiscal no encontrado.');
+
+    if (doc.status === FiscalStatus.CANCELLED) {
+      throw new BadRequestException(`El comprobante ${doc.fullNumber} ya se encuentra ANULADO formalmente mediante Nota de Crédito previa.`);
+    }
+
+    if (doc.status !== FiscalStatus.ACCEPTED) {
+      throw new BadRequestException('Solo se pueden emitir notas sobre comprobantes aceptados por SUNAT.');
+    }
+
+    const owner = await this.prisma.user.findUnique({ where: { id: ownerId } });
+    if (!owner) throw new NotFoundException('Usuario propietario no encontrado.');
+
+    const result = await this.ccofactService.emitManualNote(owner, doc.serie, doc.correlative, dto);
+
+    // Si fue anulación total (motivos 01, 02 o 06 de NC), marcar como CANCELLED
+    if (dto.note_type === '07' && ['01', '02', '06'].includes(dto.reason_code)) {
+      await this.prisma.fiscalDocument.update({
+        where: { id: doc.id },
+        data: {
+          status: FiscalStatus.CANCELLED,
+          sunatDescription: `Anulado mediante Nota de Crédito ${result.nota?.full_number || ''}`,
+        },
+      });
+
+      if (doc.saleId) {
+        await this.prisma.sale.update({
+          where: { id: doc.saleId },
+          data: {
+            billingStatus: 'CANCELLED',
+          },
+        });
+      }
+    }
+
+    return result;
+  }
+
+  /**
    * PROBAR CONEXIÓN EN VIVO CON CCOFACT PRO ENGINE
    */
   async testCcofactConnection(ownerId: string) {

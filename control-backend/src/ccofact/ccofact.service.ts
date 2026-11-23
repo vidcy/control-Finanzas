@@ -763,4 +763,66 @@ export class CcofactService {
       };
     }
   }
+
+  /**
+   * Ejecuta el Diff Engine inteligente en CCOFACT PRO para rectificar comprobante
+   */
+  async smartEditDocument(
+    owner: { ccofactUrl?: string | null; ccofactApiKey?: string | null },
+    serie: string,
+    number: number,
+    dto: any,
+  ) {
+    if (!owner.ccofactUrl || !owner.ccofactApiKey) {
+      throw new Error('Credenciales de CCOFACT PRO no configuradas en el perfil de empresa.');
+    }
+    const baseUrl = this.normalizeBaseUrl(owner.ccofactUrl);
+    const url = `${baseUrl}/api/v1/documents/by-series-number/${serie}/${number}/smart-edit`;
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': owner.ccofactApiKey,
+      },
+      body: JSON.stringify(dto),
+    });
+
+    const data: any = await res.json();
+    if (!res.ok || data.statusCode >= 400 || data.exito === false) {
+      throw new Error(data.message || data.mensaje || data.error || 'Error al ejecutar edición inteligente en CCOFACT');
+    }
+    return data;
+  }
+
+  /**
+   * Emite Nota de Crédito o Débito manual seleccionando motivo de Catálogo 09 o 10 en CCOFACT PRO
+   */
+  async emitManualNote(
+    owner: { ccofactUrl?: string | null; ccofactApiKey?: string | null },
+    serie: string,
+    number: number,
+    dto: any,
+  ) {
+    if (!owner.ccofactUrl || !owner.ccofactApiKey) {
+      throw new Error('Credenciales de CCOFACT PRO no configuradas en el perfil de empresa.');
+    }
+    const baseUrl = this.normalizeBaseUrl(owner.ccofactUrl);
+    const url = `${baseUrl}/api/v1/documents/by-series-number/${serie}/${number}/manual-note`;
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': owner.ccofactApiKey,
+      },
+      body: JSON.stringify(dto),
+    });
+
+    const data: any = await res.json();
+    if (!res.ok || data.statusCode >= 400 || data.exito === false) {
+      throw new Error(data.message || data.mensaje || data.error || 'Error al emitir nota manual en CCOFACT');
+    }
+    return data;
+  }
 }

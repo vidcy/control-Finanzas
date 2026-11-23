@@ -90,6 +90,7 @@ import {
   Trash2,
   Edit,
   Layers,
+  Barcode,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
@@ -190,13 +191,12 @@ const PosSizeScrollRail: React.FC<{
                 e.stopPropagation();
                 onSelectSize(s.size);
               }}
-              className={`min-w-[42px] h-[30px] px-2 py-0.5 rounded-lg border text-xs font-black transition-all flex items-center justify-center gap-1 shrink-0 shadow-2xs ${
-                hasStock
+              className={`min-w-[42px] h-[30px] px-2 py-0.5 rounded-lg border text-xs font-black transition-all flex items-center justify-center gap-1 shrink-0 shadow-2xs ${hasStock
                   ? s.isLimiting && completeSeries > 0
                     ? "bg-amber-100/90 hover:bg-amber-200 text-amber-950 border-amber-300 hover:scale-105 active:scale-95 cursor-pointer"
                     : "bg-white hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-400 text-slate-800 border-gray-200 hover:scale-105 active:scale-95 cursor-pointer"
                   : "bg-gray-100 text-gray-300 border-gray-200 cursor-not-allowed line-through"
-              }`}
+                }`}
               title={
                 hasStock
                   ? `Vender 1 par Talla ${s.size}${isMultiple ? ` (${s.ratio} pares por serie)` : ""} - Stock: ${s.stock}`
@@ -335,6 +335,39 @@ export default function BusinessPosPage() {
     return saved !== null ? Number(saved) : 40;
   });
   const [scanTestResult, setScanTestResult] = useState("");
+  const [detectedDevices, setDetectedDevices] = useState<string[]>([]);
+  const [isDetectingDevices, setIsDetectingDevices] = useState(false);
+
+  const handleDetectDevices = async () => {
+    setIsDetectingDevices(true);
+    try {
+      if ((navigator as any).hid) {
+        const devices = await (navigator as any).hid.getDevices();
+        if (devices && devices.length > 0) {
+          setDetectedDevices(
+            devices.map(
+              (d: any) =>
+                d.productName || `Lector HID USB (VID: ${d.vendorId}, PID: ${d.productId})`
+            )
+          );
+        } else {
+          setDetectedDevices(["Pistola / Teclado HID USB estándar listo"]);
+        }
+      } else {
+        setDetectedDevices(["Modo Emulación HID Global Activo (Escáner USB/Bluetooth listo)"]);
+      }
+    } catch {
+      setDetectedDevices(["Modo Emulación HID Global Activo"]);
+    } finally {
+      setIsDetectingDevices(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isScannerConfigOpen) {
+      handleDetectDevices();
+    }
+  }, [isScannerConfigOpen]);
 
   // Persist configurations
   useEffect(() => {
@@ -398,7 +431,7 @@ export default function BusinessPosPage() {
     isOpen: false,
     title: "",
     message: "",
-    onConfirm: () => {},
+    onConfirm: () => { },
   });
 
   // Modal oficial de Anulación SUNAT (Comunicación de Baja vs Nota de Crédito)
@@ -1011,8 +1044,8 @@ export default function BusinessPosPage() {
 
     const price =
       product.adjustedPrice &&
-      Number(product.adjustedPrice) > 0 &&
-      Number(product.adjustedPrice) < Number(product.salePrice)
+        Number(product.adjustedPrice) > 0 &&
+        Number(product.adjustedPrice) < Number(product.salePrice)
         ? Number(product.adjustedPrice)
         : Number(product.salePrice);
 
@@ -2705,11 +2738,24 @@ export default function BusinessPosPage() {
                 <button
                   type="button"
                   onClick={() => setIsScannerConfigOpen(true)}
-                  className="hidden sm:flex items-center gap-1.5 px-3 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200/80 rounded-xl text-xs font-bold shadow-xs hover:bg-emerald-100 transition-colors"
-                  title="Lector de código de barras USB/Bluetooth conectado y listo para recibir lecturas"
+                  className={`hidden sm:flex items-center gap-1.5 px-3 py-2 border rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer ${
+                    scannerEnabled
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-200/80 hover:bg-emerald-100"
+                      : "bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200"
+                  }`}
+                  title={
+                    scannerEnabled
+                      ? "Lector de código de barras USB/Bluetooth conectado y listo para recibir lecturas"
+                      : "Lector de código de barras desactivado"
+                  }
                 >
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
-                  <span className="font-black text-[11px]">Lector OK</span>
+                  <Barcode className="w-3.5 h-3.5 text-emerald-600" />
+                  {scannerEnabled && (
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                  )}
+                  <span className="font-black text-[11px]">
+                    {scannerEnabled ? "Pistola USB Activa" : "Lector Inactivo"}
+                  </span>
                 </button>
                 <button
                   onClick={() => setIsScannerOpen(true)}
@@ -3149,11 +3195,10 @@ export default function BusinessPosPage() {
                               e.stopPropagation();
                               addToCart(p);
                             }}
-                            className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all shrink-0 ${
-                              availableStock > 0
+                            className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all shrink-0 ${availableStock > 0
                                 ? "bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs hover:shadow-md active:scale-90"
                                 : "bg-slate-100 text-slate-300 cursor-not-allowed border border-slate-200"
-                            }`}
+                              }`}
                             title={availableStock > 0 ? "Agregar a la venta" : "Sin Stock"}
                           >
                             <Plus className="w-4 h-4 stroke-[2.5]" />
@@ -4105,28 +4150,26 @@ export default function BusinessPosPage() {
                           setClientDocumentType("1");
                         }
                       }}
-                      className={`py-2.5 px-2 rounded-xl border text-xs font-black transition-all flex flex-col items-center justify-center gap-0.5 ${
-                        isSelected
+                      className={`py-2.5 px-2 rounded-xl border text-xs font-black transition-all flex flex-col items-center justify-center gap-0.5 ${isSelected
                           ? opt.id === "TICKET_VENTA"
                             ? "bg-slate-800 text-white border-slate-800 shadow-md ring-2 ring-slate-400/30"
                             : "bg-emerald-600 text-white border-emerald-600 shadow-md ring-2 ring-emerald-400/30"
                           : isNrusBlocked
-                          ? "bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed"
-                          : "bg-white text-gray-600 border-gray-200 hover:border-emerald-300 cursor-pointer"
-                      }`}
+                            ? "bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed"
+                            : "bg-white text-gray-600 border-gray-200 hover:border-emerald-300 cursor-pointer"
+                        }`}
                       title={isNrusBlocked ? "En el Nuevo RUS no se emiten facturas" : opt.label}
                     >
                       <span className="leading-tight">{opt.label}</span>
                       <span
-                        className={`text-[8px] font-bold ${
-                          isSelected
+                        className={`text-[8px] font-bold ${isSelected
                             ? opt.id === "TICKET_VENTA"
                               ? "text-slate-300"
                               : "text-emerald-100"
                             : isNrusBlocked
-                            ? "text-rose-400"
-                            : "text-slate-400"
-                        }`}
+                              ? "text-rose-400"
+                              : "text-slate-400"
+                          }`}
                       >
                         {isNrusBlocked ? "No en RUS" : opt.sub}
                       </span>
@@ -4218,17 +4261,15 @@ export default function BusinessPosPage() {
                       <button
                         type="button"
                         onClick={() => setPosIgvAffectation("20")}
-                        className={`py-2.5 px-2 rounded-xl border text-xs font-black transition-all flex flex-col items-center justify-center gap-0.5 ${
-                          posIgvAffectation === "20"
+                        className={`py-2.5 px-2 rounded-xl border text-xs font-black transition-all flex flex-col items-center justify-center gap-0.5 ${posIgvAffectation === "20"
                             ? "bg-emerald-600 text-white border-emerald-600 shadow-md ring-2 ring-emerald-400/30"
                             : "bg-white text-slate-600 border-slate-200 hover:border-emerald-300"
-                        }`}
+                          }`}
                       >
                         <span>🌿 EXONERADO (0%)</span>
                         <span
-                          className={`text-[8px] font-bold ${
-                            posIgvAffectation === "20" ? "text-emerald-100" : "text-slate-400"
-                          }`}
+                          className={`text-[8px] font-bold ${posIgvAffectation === "20" ? "text-emerald-100" : "text-slate-400"
+                            }`}
                         >
                           Amazonía / Selva
                         </span>
@@ -4237,17 +4278,15 @@ export default function BusinessPosPage() {
                       <button
                         type="button"
                         onClick={() => setPosIgvAffectation("10")}
-                        className={`py-2.5 px-2 rounded-xl border text-xs font-black transition-all flex flex-col items-center justify-center gap-0.5 ${
-                          posIgvAffectation === "10"
+                        className={`py-2.5 px-2 rounded-xl border text-xs font-black transition-all flex flex-col items-center justify-center gap-0.5 ${posIgvAffectation === "10"
                             ? "bg-blue-600 text-white border-blue-600 shadow-md ring-2 ring-blue-400/30"
                             : "bg-white text-slate-600 border-slate-200 hover:border-blue-300"
-                        }`}
+                          }`}
                       >
                         <span>💼 GRAVADO (IGV)</span>
                         <span
-                          className={`text-[8px] font-bold ${
-                            posIgvAffectation === "10" ? "text-blue-100" : "text-slate-400"
-                          }`}
+                          className={`text-[8px] font-bold ${posIgvAffectation === "10" ? "text-blue-100" : "text-slate-400"
+                            }`}
                         >
                           {posIgvRate}% IGV Activo
                         </span>
@@ -4256,17 +4295,15 @@ export default function BusinessPosPage() {
                       <button
                         type="button"
                         onClick={() => setPosIgvAffectation("30")}
-                        className={`py-2.5 px-2 rounded-xl border text-xs font-black transition-all flex flex-col items-center justify-center gap-0.5 ${
-                          posIgvAffectation === "30"
+                        className={`py-2.5 px-2 rounded-xl border text-xs font-black transition-all flex flex-col items-center justify-center gap-0.5 ${posIgvAffectation === "30"
                             ? "bg-purple-600 text-white border-purple-600 shadow-md ring-2 ring-purple-400/30"
                             : "bg-white text-slate-600 border-slate-200 hover:border-purple-300"
-                        }`}
+                          }`}
                       >
                         <span>📄 INAFECTO (0%)</span>
                         <span
-                          className={`text-[8px] font-bold ${
-                            posIgvAffectation === "30" ? "text-purple-100" : "text-slate-400"
-                          }`}
+                          className={`text-[8px] font-bold ${posIgvAffectation === "30" ? "text-purple-100" : "text-slate-400"
+                            }`}
                         >
                           Fuera de Ámbito
                         </span>
@@ -4286,17 +4323,15 @@ export default function BusinessPosPage() {
                           <button
                             type="button"
                             onClick={() => setPosIgvRate(18.0)}
-                            className={`py-2 px-3 rounded-xl border text-xs font-black transition-all flex items-center justify-between ${
-                              posIgvRate === 18.0
+                            className={`py-2 px-3 rounded-xl border text-xs font-black transition-all flex items-center justify-between ${posIgvRate === 18.0
                                 ? "bg-blue-600 text-white border-blue-600 shadow-sm"
                                 : "bg-white text-slate-600 border-slate-200 hover:border-blue-300"
-                            }`}
+                              }`}
                           >
                             <span>18% IGV Estándar</span>
                             <span
-                              className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
-                                posIgvRate === 18.0 ? "bg-blue-700 text-white" : "bg-slate-100 text-slate-500"
-                              }`}
+                              className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${posIgvRate === 18.0 ? "bg-blue-700 text-white" : "bg-slate-100 text-slate-500"
+                                }`}
                             >
                               Por Defecto
                             </span>
@@ -4305,17 +4340,15 @@ export default function BusinessPosPage() {
                           <button
                             type="button"
                             onClick={() => setPosIgvRate(10.5)}
-                            className={`py-2 px-3 rounded-xl border text-xs font-black transition-all flex items-center justify-between ${
-                              posIgvRate === 10.5
+                            className={`py-2 px-3 rounded-xl border text-xs font-black transition-all flex items-center justify-between ${posIgvRate === 10.5
                                 ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
                                 : "bg-white text-slate-600 border-slate-200 hover:border-indigo-300"
-                            }`}
+                              }`}
                           >
                             <span>10.5% / 10% Tasa Especial</span>
                             <span
-                              className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
-                                posIgvRate === 10.5 ? "bg-indigo-700 text-white" : "bg-slate-100 text-slate-500"
-                              }`}
+                              className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${posIgvRate === 10.5 ? "bg-indigo-700 text-white" : "bg-slate-100 text-slate-500"
+                                }`}
                             >
                               Ley 31556 MYPE
                             </span>
@@ -4720,940 +4753,974 @@ export default function BusinessPosPage() {
                                           Aceptado
                                         </span>
                                         {sale.billingPdfUrl && (
-                                          <a href={sale.billingPdfUrl} target="_blank" rel="noreferrer" className="text-indigo-650 hover:text-indigo-850" title="Ver PDF">
-                                            <FileText className="w-3.5 h-3.5" />
-                                          </a>
+                                          <a href={sale.billingPdfUrl || `http://localhost:4001/api/v1/documents/by-series-number/${sale.billingSerie}/${sale.billingNumber}/html?format=A4`} target="_blank" rel="noreferrer" className="text-indigo-650 hover:text-indigo-850" title="Ver PDF">
+                                        <FileText className="w-3.5 h-3.5" />
+                                      </a>
                                         )}
-                                        {sale.billingXmlUrl && (
-                                          <a href={sale.billingXmlUrl} target="_blank" rel="noreferrer" className="text-amber-650 hover:text-amber-850" title="Ver XML">
-                                            <FileCode className="w-3.5 h-3.5" />
-                                          </a>
-                                        )}
-                                        {sale.billingCdrUrl && (
-                                          <a href={sale.billingCdrUrl} target="_blank" rel="noreferrer" className="text-teal-650 hover:text-teal-850" title="Ver CDR">
-                                            <FileCheck className="w-3.5 h-3.5" />
-                                          </a>
-                                        )}
-                                      </>
+                                    {sale.billingXmlUrl && (
+                                      <a href={sale.billingXmlUrl} target="_blank" rel="noreferrer" className="text-amber-650 hover:text-amber-850" title="Ver XML">
+                                        <FileCode className="w-3.5 h-3.5" />
+                                      </a>
                                     )}
-                                    {sale.billingStatus === "ERROR" && (
-                                      <div className="flex flex-col gap-1">
-                                        <div className="flex items-center gap-1">
-                                          <span className="text-[9px] bg-red-50 text-red-700 font-black border border-red-200 px-1.5 py-0.5 rounded uppercase" title={sale.billingError}>
-                                            Error SUNAT
-                                          </span>
-                                          <button
-                                            onClick={async () => {
-                                              const loading = toast.loading("Reintentando envío a SUNAT...");
-                                              try {
-                                                await retrySaleBillingRequest(sale.id);
-                                                toast.dismiss(loading);
-                                                toast.success("Envío completado");
-                                                loadData();
-                                              } catch (err: any) {
-                                                toast.dismiss(loading);
-                                                setSystemError(parseSystemError(err, "Diagnóstico de Reintento SUNAT"));
-                                              }
-                                            }}
-                                            className="p-0.5 bg-gray-50 hover:bg-gray-150 border border-gray-200 rounded text-gray-650 hover:text-gray-950 transition-colors animate-pulse"
-                                            title="Reintentar Facturación"
-                                          >
-                                            <RefreshCw className="w-3 h-3" />
-                                          </button>
-                                        </div>
-                                        <p className="text-[9px] text-red-500 font-medium max-w-[150px] truncate" title={sale.billingError}>
-                                          {sale.billingError}
-                                        </p>
+                                    {sale.billingCdrUrl && (
+                                      <a href={sale.billingCdrUrl} target="_blank" rel="noreferrer" className="text-teal-650 hover:text-teal-850" title="Ver CDR">
+                                        <FileCheck className="w-3.5 h-3.5" />
+                                      </a>
+                                    )}
+                                  </>
+                                    )}
+                                  {sale.billingStatus === "ERROR" && (
+                                    <div className="flex flex-col gap-1">
+                                      <div className="flex items-center gap-1">
+                                        <span className="text-[9px] bg-red-50 text-red-700 font-black border border-red-200 px-1.5 py-0.5 rounded uppercase" title={sale.billingError}>
+                                          Error SUNAT
+                                        </span>
+                                        <button
+                                          onClick={async () => {
+                                            const loading = toast.loading("Reintentando envío a SUNAT...");
+                                            try {
+                                              await retrySaleBillingRequest(sale.id);
+                                              toast.dismiss(loading);
+                                              toast.success("Envío completado");
+                                              loadData();
+                                            } catch (err: any) {
+                                              toast.dismiss(loading);
+                                              setSystemError(parseSystemError(err, "Diagnóstico de Reintento SUNAT"));
+                                            }
+                                          }}
+                                          className="p-0.5 bg-gray-50 hover:bg-gray-150 border border-gray-200 rounded text-gray-650 hover:text-gray-950 transition-colors animate-pulse"
+                                          title="Reintentar Facturación"
+                                        >
+                                          <RefreshCw className="w-3 h-3" />
+                                        </button>
                                       </div>
-                                    )}
-                                    {sale.billingStatus === "PENDING" && (
-                                      <span className="text-[9px] bg-amber-50 text-amber-700 font-black border border-amber-200 px-1.5 py-0.5 rounded uppercase">
-                                        Enviando...
-                                      </span>
-                                    )}
-                                  </div>
+                                      <p className="text-[9px] text-red-500 font-medium max-w-[150px] truncate" title={sale.billingError}>
+                                        {sale.billingError}
+                                      </p>
+                                    </div>
+                                  )}
+                                  {sale.billingStatus === "PENDING" && (
+                                    <span className="text-[9px] bg-amber-50 text-amber-700 font-black border border-amber-200 px-1.5 py-0.5 rounded uppercase">
+                                      Enviando...
+                                    </span>
+                                  )}
                                 </div>
-                              )}
-                            </td>
+                                </div>
                           )}
-                          <td className="px-4 py-3">
-                            <div className="flex items-center justify-center gap-1.5">
+                        </td>
+                      )}
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => handleDownloadPastTicket(sale)}
+                            className="p-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors"
+                            title="Reconstruir y Descargar Ticket"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                          </button>
+                          {user?.hasElectronicBilling && sale.billingStatus === "SUCCESS" && (sale.billingType === "BOLETA" || sale.billingType === "FACTURA") && (
+                            <>
                               <button
-                                onClick={() => handleDownloadPastTicket(sale)}
-                                className="p-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors"
-                                title="Reconstruir y Descargar Ticket"
+                                onClick={() => {
+                                  setSelectedSaleForNote(sale);
+                                  setNoteType("CREDIT");
+                                  setNoteReasonCode(1);
+                                  setNoteReasonText("");
+                                  setIsNoteModalOpen(true);
+                                }}
+                                className="p-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-lg transition-colors"
+                                title="Emitir Nota de Crédito (Anular/Descontar)"
                               >
-                                <Printer className="w-3.5 h-3.5" />
-                              </button>
-                              {user?.hasElectronicBilling && sale.billingStatus === "SUCCESS" && (sale.billingType === "BOLETA" || sale.billingType === "FACTURA") && (
-                                <>
-                                  <button
-                                    onClick={() => {
-                                      setSelectedSaleForNote(sale);
-                                      setNoteType("CREDIT");
-                                      setNoteReasonCode(1);
-                                      setNoteReasonText("");
-                                      setIsNoteModalOpen(true);
-                                    }}
-                                    className="p-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-lg transition-colors"
-                                    title="Emitir Nota de Crédito (Anular/Descontar)"
-                                  >
-                                    <MinusCircle className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setSelectedSaleForNote(sale);
-                                      setNoteType("DEBIT");
-                                      setNoteReasonCode(1);
-                                      setNoteReasonText("");
-                                      setIsNoteModalOpen(true);
-                                    }}
-                                    className="p-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg transition-colors"
-                                    title="Emitir Nota de Débito (Aumento de valor)"
-                                  >
-                                    <PlusCircle className="w-3.5 h-3.5" />
-                                  </button>
-                                </>
-                              )}
-                              {/* Botones de Edición y Anulación Universal (Restablece Stock y Emite Nota de Crédito si aplica) */}
-                              <button
-                                onClick={() => handleEditSale(sale)}
-                                className="p-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-lg transition-colors cursor-pointer"
-                                title="Editar Venta (Devuelve stock, anula comprobante anterior y recarga carrito)"
-                              >
-                                <Edit className="w-3.5 h-3.5" />
+                                <MinusCircle className="w-3.5 h-3.5" />
                               </button>
                               <button
-                                onClick={() => handleDeleteSale(sale)}
-                                className="p-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors cursor-pointer"
-                                title="Anular / Revertir Venta (Restablece stock en inventario y anula en SUNAT)"
+                                onClick={() => {
+                                  setSelectedSaleForNote(sale);
+                                  setNoteType("DEBIT");
+                                  setNoteReasonCode(1);
+                                  setNoteReasonText("");
+                                  setIsNoteModalOpen(true);
+                                }}
+                                className="p-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg transition-colors"
+                                title="Emitir Nota de Débito (Aumento de valor)"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                <PlusCircle className="w-3.5 h-3.5" />
                               </button>
-                            </div>
-                          </td>
-                        </tr>
+                            </>
+                          )}
+                          {/* Botones de Edición y Anulación Universal (Restablece Stock y Emite Nota de Crédito si aplica) */}
+                          <button
+                            onClick={() => handleEditSale(sale)}
+                            className="p-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-lg transition-colors cursor-pointer"
+                            title="Editar Venta (Devuelve stock, anula comprobante anterior y recarga carrito)"
+                          >
+                            <Edit className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteSale(sale)}
+                            className="p-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors cursor-pointer"
+                            title="Anular / Revertir Venta (Restablece stock en inventario y anula en SUNAT)"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
                       ))}
-                    </tbody>
-                  </table>
-                </div>
-                {sales.length > 0 && (
-                  <Pagination
-                    currentPage={salesPage}
-                    totalItems={sales.length}
-                    pageSize={6}
-                    onPageChange={(page) => setSalesPage(page)}
-                    className="border-t border-gray-100 bg-gray-50 px-4 py-3"
-                  />
-                )}
-              </>
+                  </tbody>
+                </table>
+              </div>
+            {sales.length > 0 && (
+              <Pagination
+                currentPage={salesPage}
+                totalItems={sales.length}
+                pageSize={6}
+                onPageChange={(page) => setSalesPage(page)}
+                className="border-t border-gray-100 bg-gray-50 px-4 py-3"
+              />
+            )}
+          </>
+            )}
+        </div>
+        <div className="flex justify-end pt-2">
+          <button
+            onClick={() => setIsSalesListOpen(false)}
+            className="px-5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs transition-colors"
+          >
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </Modal>
+
+
+
+      {/* MODAL: Vista Detallada de Imagen y Producto en POS (PRO & EXPANDIDO) */ }
+  <Modal
+    isOpen={Boolean(posLightboxProduct)}
+    onClose={() => setPosLightboxProduct(null)}
+    title="Detalle del Calzado / Producto"
+    maxWidth="max-w-3xl xl:max-w-4xl"
+  >
+    {posLightboxProduct && (
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
+        {/* FOTO GRANDE CON ZOOM VISUAL */}
+        <div className="md:col-span-5 w-full bg-gradient-to-b from-slate-50 via-gray-50 to-slate-100 rounded-3xl overflow-hidden border border-gray-200 flex flex-col items-center justify-between p-4 relative shadow-inner min-h-[300px] md:min-h-[380px]">
+          {/* Badges Flotantes sobre la Imagen */}
+          <div className="w-full flex flex-wrap gap-1.5 z-10 mb-2">
+            <span className="px-2.5 py-1 rounded-lg text-xs font-black uppercase tracking-wider bg-slate-900 text-amber-300 shadow-sm border border-amber-400/40">
+              SKU: {posLightboxProduct.sku || posLightboxProduct.primaryProduct?.sku || "Sin SKU"}
+            </span>
+            {posLightboxProduct.isSeries && (
+              <span className="px-2.5 py-1 rounded-lg text-xs font-black uppercase tracking-wider bg-amber-600 text-white shadow-sm flex items-center gap-1">
+                <Package className="w-3.5 h-3.5" />
+                Serie ({posLightboxProduct.unitsPerSeries} pares)
+              </span>
+            )}
+            {posLightboxProduct.taco && (
+              <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-pink-600 text-white shadow-sm flex items-center gap-1">
+                👠 {posLightboxProduct.taco}
+              </span>
             )}
           </div>
-          <div className="flex justify-end pt-2">
-            <button
-              onClick={() => setIsSalesListOpen(false)}
-              className="px-5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs transition-colors"
-            >
-              Cerrar
-            </button>
+
+          {/* Imagen Central Ampliada */}
+          <div className="w-full flex-1 flex items-center justify-center my-auto p-2">
+            {posLightboxProduct.imageUrl ? (
+              <img
+                src={getReceiptAbsoluteUrl(posLightboxProduct.imageUrl) || posLightboxProduct.imageUrl}
+                alt={posLightboxProduct.modelName || posLightboxProduct.name}
+                className="max-h-64 md:max-h-72 w-full object-contain drop-shadow-lg hover:scale-105 transition-transform duration-300"
+              />
+            ) : (
+              <div className="text-center text-gray-300 py-10">
+                <Package className="w-16 h-16 mx-auto mb-2 opacity-40" />
+                <p className="text-xs font-bold">Sin Imagen Registrada</p>
+              </div>
+            )}
           </div>
+
+          {/* Color al pie de la foto */}
+          {posLightboxProduct.color && (
+            <div className="w-full pt-2 border-t border-gray-200/60 flex items-center justify-between">
+              <span className="text-[11px] font-bold text-gray-500 uppercase">Tono / Acabado:</span>
+              <ProductColorBadge color={posLightboxProduct.color} size="sm" />
+            </div>
+          )}
         </div>
-      </Modal>
 
-
-
-      {/* MODAL: Vista Detallada de Imagen y Producto en POS (PRO & EXPANDIDO) */}
-      <Modal
-        isOpen={Boolean(posLightboxProduct)}
-        onClose={() => setPosLightboxProduct(null)}
-        title="Detalle del Calzado / Producto"
-        maxWidth="max-w-3xl xl:max-w-4xl"
-      >
-        {posLightboxProduct && (
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
-            {/* FOTO GRANDE CON ZOOM VISUAL */}
-            <div className="md:col-span-5 w-full bg-gradient-to-b from-slate-50 via-gray-50 to-slate-100 rounded-3xl overflow-hidden border border-gray-200 flex flex-col items-center justify-between p-4 relative shadow-inner min-h-[300px] md:min-h-[380px]">
-              {/* Badges Flotantes sobre la Imagen */}
-              <div className="w-full flex flex-wrap gap-1.5 z-10 mb-2">
-                <span className="px-2.5 py-1 rounded-lg text-xs font-black uppercase tracking-wider bg-slate-900 text-amber-300 shadow-sm border border-amber-400/40">
-                  SKU: {posLightboxProduct.sku || posLightboxProduct.primaryProduct?.sku || "Sin SKU"}
+        {/* FICHA TÉCNICA Y ACCIONES DE VENTA */}
+        <div className="md:col-span-7 flex flex-col justify-between space-y-4">
+          <div>
+            {/* Título & Categoría */}
+            <div className="flex flex-wrap items-center gap-2 mb-1.5">
+              {(posLightboxProduct.brandName || posLightboxProduct.brand?.name) && (
+                <span className="px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 text-xs font-black">
+                  {posLightboxProduct.brandName || posLightboxProduct.brand?.name}
                 </span>
-                {posLightboxProduct.isSeries && (
-                  <span className="px-2.5 py-1 rounded-lg text-xs font-black uppercase tracking-wider bg-amber-600 text-white shadow-sm flex items-center gap-1">
-                    <Package className="w-3.5 h-3.5" />
-                    Serie ({posLightboxProduct.unitsPerSeries} pares)
-                  </span>
-                )}
-                {posLightboxProduct.taco && (
-                  <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-pink-600 text-white shadow-sm flex items-center gap-1">
-                    👠 {posLightboxProduct.taco}
-                  </span>
-                )}
-              </div>
-
-              {/* Imagen Central Ampliada */}
-              <div className="w-full flex-1 flex items-center justify-center my-auto p-2">
-                {posLightboxProduct.imageUrl ? (
-                  <img
-                    src={getReceiptAbsoluteUrl(posLightboxProduct.imageUrl) || posLightboxProduct.imageUrl}
-                    alt={posLightboxProduct.modelName || posLightboxProduct.name}
-                    className="max-h-64 md:max-h-72 w-full object-contain drop-shadow-lg hover:scale-105 transition-transform duration-300"
-                  />
-                ) : (
-                  <div className="text-center text-gray-300 py-10">
-                    <Package className="w-16 h-16 mx-auto mb-2 opacity-40" />
-                    <p className="text-xs font-bold">Sin Imagen Registrada</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Color al pie de la foto */}
-              {posLightboxProduct.color && (
-                <div className="w-full pt-2 border-t border-gray-200/60 flex items-center justify-between">
-                  <span className="text-[11px] font-bold text-gray-500 uppercase">Tono / Acabado:</span>
-                  <ProductColorBadge color={posLightboxProduct.color} size="sm" />
-                </div>
+              )}
+              {(posLightboxProduct.familyName || posLightboxProduct.family?.name) && (
+                <span className="px-2.5 py-0.5 rounded-md bg-purple-50 text-purple-700 text-xs font-bold">
+                  {posLightboxProduct.familyName || posLightboxProduct.family?.name}
+                </span>
+              )}
+              {posLightboxProduct.customCode && (
+                <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-xs font-mono font-bold">
+                  #{String(posLightboxProduct.customCode).padStart(4, "0")}
+                </span>
               )}
             </div>
 
-            {/* FICHA TÉCNICA Y ACCIONES DE VENTA */}
-            <div className="md:col-span-7 flex flex-col justify-between space-y-4">
-              <div>
-                {/* Título & Categoría */}
-                <div className="flex flex-wrap items-center gap-2 mb-1.5">
-                  {(posLightboxProduct.brandName || posLightboxProduct.brand?.name) && (
-                    <span className="px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 text-xs font-black">
-                      {posLightboxProduct.brandName || posLightboxProduct.brand?.name}
-                    </span>
-                  )}
-                  {(posLightboxProduct.familyName || posLightboxProduct.family?.name) && (
-                    <span className="px-2.5 py-0.5 rounded-md bg-purple-50 text-purple-700 text-xs font-bold">
-                      {posLightboxProduct.familyName || posLightboxProduct.family?.name}
-                    </span>
-                  )}
-                  {posLightboxProduct.customCode && (
-                    <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-xs font-mono font-bold">
-                      #{String(posLightboxProduct.customCode).padStart(4, "0")}
-                    </span>
-                  )}
+            <h3 className="text-xl md:text-2xl font-black text-gray-900 tracking-tight">
+              {posLightboxProduct.modelName || posLightboxProduct.name}
+            </h3>
+
+            {/* Tarjetas de Precios: Par Suelto vs Serie Completa */}
+            <div className="grid grid-cols-2 gap-3 mt-3">
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3">
+                <span className="text-[10px] font-black uppercase text-gray-400 block tracking-wider">
+                  Precio Par Suelto
+                </span>
+                <div className="text-xl font-black text-slate-800">
+                  S/ {Number(posLightboxProduct.salePricePerUnit || posLightboxProduct.salePrice || 0).toFixed(2)}
+                </div>
+              </div>
+
+              <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase text-amber-700 block tracking-wider">
+                    Serie Completa ({posLightboxProduct.unitsPerSeries} pares)
+                  </span>
+                </div>
+                <div className="text-xl font-black text-amber-900">
+                  S/ {Number(posLightboxProduct.salePricePerSeries || 0).toFixed(2)}
+                </div>
+              </div>
+            </div>
+
+            {/* Si es serie, Curva de Serie y desglose exacto de pares */}
+            {posLightboxProduct.isSeries && (
+              <div className="mt-4 space-y-3 bg-amber-50/50 border border-amber-200/80 rounded-2xl p-3.5">
+                {/* Resumen Curva Oficial */}
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-black text-amber-950 flex items-center gap-1.5">
+                    <Layers className="w-3.5 h-3.5 text-amber-600" />
+                    Composición de 1 Serie ({posLightboxProduct.curve?.length || 5} tallas • {posLightboxProduct.unitsPerSeries} pares):
+                  </span>
+                  <span className="text-amber-800 text-[10px] font-black bg-amber-100 px-2 py-0.5 rounded-full">
+                    {posLightboxProduct.summary?.completeSeries || 0} {posLightboxProduct.summary?.completeSeries === 1 ? "serie disponible" : "series disponibles"}
+                  </span>
                 </div>
 
-                <h3 className="text-xl md:text-2xl font-black text-gray-900 tracking-tight">
-                  {posLightboxProduct.modelName || posLightboxProduct.name}
-                </h3>
-
-                {/* Tarjetas de Precios: Par Suelto vs Serie Completa */}
-                <div className="grid grid-cols-2 gap-3 mt-3">
-                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3">
-                    <span className="text-[10px] font-black uppercase text-gray-400 block tracking-wider">
-                      Precio Par Suelto
-                    </span>
-                    <div className="text-xl font-black text-slate-800">
-                      S/ {Number(posLightboxProduct.salePricePerUnit || posLightboxProduct.salePrice || 0).toFixed(2)}
-                    </div>
-                  </div>
-
-                  <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-black uppercase text-amber-700 block tracking-wider">
-                        Serie Completa ({posLightboxProduct.unitsPerSeries} pares)
+                {/* Desglose Curva (Ratios) */}
+                <div className="flex flex-wrap gap-1.5 text-xs">
+                  {posLightboxProduct.curve?.map((c: any) => (
+                    <div
+                      key={c.size}
+                      className="px-2.5 py-1 rounded-xl bg-white border border-amber-200 text-amber-950 font-bold flex items-center gap-1 shadow-2xs"
+                    >
+                      <span className="text-amber-700">T.{c.size}</span>
+                      <span className="text-[10px] font-black bg-amber-100 text-amber-800 px-1.5 py-0.2 rounded-md">
+                        {c.ratio} {c.ratio === 1 ? "par" : "pares"}
                       </span>
                     </div>
-                    <div className="text-xl font-black text-amber-900">
-                      S/ {Number(posLightboxProduct.salePricePerSeries || 0).toFixed(2)}
-                    </div>
-                  </div>
+                  ))}
                 </div>
 
-                {/* Si es serie, Curva de Serie y desglose exacto de pares */}
-                {posLightboxProduct.isSeries && (
-                  <div className="mt-4 space-y-3 bg-amber-50/50 border border-amber-200/80 rounded-2xl p-3.5">
-                    {/* Resumen Curva Oficial */}
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-black text-amber-950 flex items-center gap-1.5">
-                        <Layers className="w-3.5 h-3.5 text-amber-600" />
-                        Composición de 1 Serie ({posLightboxProduct.curve?.length || 5} tallas • {posLightboxProduct.unitsPerSeries} pares):
-                      </span>
-                      <span className="text-amber-800 text-[10px] font-black bg-amber-100 px-2 py-0.5 rounded-full">
-                        {posLightboxProduct.summary?.completeSeries || 0} {posLightboxProduct.summary?.completeSeries === 1 ? "serie disponible" : "series disponibles"}
-                      </span>
-                    </div>
-
-                    {/* Desglose Curva (Ratios) */}
-                    <div className="flex flex-wrap gap-1.5 text-xs">
-                      {posLightboxProduct.curve?.map((c: any) => (
-                        <div
-                          key={c.size}
-                          className="px-2.5 py-1 rounded-xl bg-white border border-amber-200 text-amber-950 font-bold flex items-center gap-1 shadow-2xs"
+                {/* Botones de Pares Físicos en Almacén */}
+                <div className="pt-2 border-t border-amber-200/60">
+                  <div className="text-[11px] font-bold text-gray-600 mb-2">
+                    Pares en Almacén (Clic para agregar par suelto al carrito):
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {posLightboxProduct.summary?.sizes.map((s: any) => {
+                      const hasStock = s.stock > 0;
+                      return (
+                        <button
+                          key={s.size}
+                          type="button"
+                          disabled={!hasStock}
+                          onClick={() => {
+                            const variantProd =
+                              posLightboxProduct.variants?.find(
+                                (v: any) => extractSizeFromProduct(v) === s.size
+                              ) || posLightboxProduct.primaryProduct;
+                            addToCart(variantProd);
+                          }}
+                          className={`px-3 py-2 rounded-xl text-xs font-black border transition-all flex items-center gap-1.5 cursor-pointer ${hasStock
+                            ? "bg-white hover:bg-indigo-600 hover:text-white border-gray-300 text-gray-800 shadow-sm active:scale-95"
+                            : "bg-gray-100 text-gray-300 border-gray-200 cursor-not-allowed line-through"
+                            }`}
+                          title={hasStock ? `Agregar 1 par Talla ${s.size}` : "Sin stock disponible"}
                         >
-                          <span className="text-amber-700">T.{c.size}</span>
-                          <span className="text-[10px] font-black bg-amber-100 text-amber-800 px-1.5 py-0.2 rounded-md">
-                            {c.ratio} {c.ratio === 1 ? "par" : "pares"}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Botones de Pares Físicos en Almacén */}
-                    <div className="pt-2 border-t border-amber-200/60">
-                      <div className="text-[11px] font-bold text-gray-600 mb-2">
-                        Pares en Almacén (Clic para agregar par suelto al carrito):
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {posLightboxProduct.summary?.sizes.map((s: any) => {
-                          const hasStock = s.stock > 0;
-                          return (
-                            <button
-                              key={s.size}
-                              type="button"
-                              disabled={!hasStock}
-                              onClick={() => {
-                                const variantProd =
-                                  posLightboxProduct.variants?.find(
-                                    (v: any) => extractSizeFromProduct(v) === s.size
-                                  ) || posLightboxProduct.primaryProduct;
-                                addToCart(variantProd);
-                              }}
-                              className={`px-3 py-2 rounded-xl text-xs font-black border transition-all flex items-center gap-1.5 cursor-pointer ${hasStock
-                                ? "bg-white hover:bg-indigo-600 hover:text-white border-gray-300 text-gray-800 shadow-sm active:scale-95"
-                                : "bg-gray-100 text-gray-300 border-gray-200 cursor-not-allowed line-through"
-                                }`}
-                              title={hasStock ? `Agregar 1 par Talla ${s.size}` : "Sin stock disponible"}
-                            >
-                              <span>T.{s.size}</span>
-                              <span className="text-[10px] opacity-75 font-mono">({s.stock} en stock)</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
+                          <span>T.{s.size}</span>
+                          <span className="text-[10px] opacity-75 font-mono">({s.stock} en stock)</span>
+                        </button>
+                      );
+                    })}
                   </div>
-                )}
-              </div>
-
-              {/* Botones de Acción al Pie del Modal */}
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-gray-100">
-                <button
-                  type="button"
-                  onClick={() => setPosLightboxProduct(null)}
-                  className="px-5 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl text-xs transition-colors cursor-pointer active:scale-95"
-                >
-                  Cerrar
-                </button>
-
-                <div className="flex items-center gap-2">
-                  {posLightboxProduct.isSeries ? (
-                    <button
-                      type="button"
-                      disabled={posLightboxProduct.summary?.completeSeries <= 0}
-                      onClick={() => {
-                        addSeriesCurveToCart(posLightboxProduct);
-                        setPosLightboxProduct(null);
-                      }}
-                      className="px-6 py-3 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-600 disabled:opacity-40 text-white font-black rounded-2xl text-xs flex items-center gap-2 shadow-md hover:shadow-lg transition-all cursor-pointer active:scale-95"
-                    >
-                      <Package className="w-4 h-4" />
-                      <span>Vender Serie Completa ({posLightboxProduct.unitsPerSeries} pares) - S/ {Number(posLightboxProduct.salePricePerSeries || 0).toFixed(2)}</span>
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        addToCart(posLightboxProduct);
-                        setPosLightboxProduct(null);
-                      }}
-                      className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-2xl text-xs flex items-center gap-2 shadow-md transition-all cursor-pointer active:scale-95"
-                    >
-                      <ShoppingCart className="w-4 h-4" />
-                      <span>Agregar al Carrito</span>
-                    </button>
-                  )}
                 </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </Modal>
-
-      {/* MODAL: Cámara Escáner */}
-      <Modal
-        isOpen={isScannerOpen}
-        onClose={() => setIsScannerOpen(false)}
-        title="Escanear Código de Barras / QR"
-      >
-        <div className="space-y-4">
-          <p className="text-xs text-gray-500 font-medium text-center">
-            Apunta la cámara de tu dispositivo hacia el código de barras o código QR.
-          </p>
-          <div
-            id="scanner-reader"
-            className="w-full max-w-sm mx-auto overflow-hidden rounded-2xl border border-gray-200 bg-black aspect-video flex items-center justify-center text-white text-xs font-bold"
-          >
-            Iniciando cámara...
-          </div>
-          <div className="flex justify-center">
-            <button
-              type="button"
-              onClick={() => setIsScannerOpen(false)}
-              className="px-5 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 font-bold text-xs"
-            >
-              Cancelar
-            </button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* MODAL: Emitir Nota de Crédito / Débito */}
-      <Modal
-        isOpen={isNoteModalOpen}
-        onClose={() => {
-          if (!isSubmittingNote) {
-            setIsNoteModalOpen(false);
-            setSelectedSaleForNote(null);
-          }
-        }}
-        title={`Emitir Nota de ${noteType === "CREDIT" ? "Crédito" : "Débito"}`}
-      >
-        {selectedSaleForNote && (
-          <div className="space-y-4">
-            <div className="p-4 bg-gray-50 rounded-2xl border border-gray-150 text-xs space-y-2">
-              <p className="font-extrabold text-gray-800">
-                Documento de Referencia:{" "}
-                <span className="font-mono bg-white px-2 py-0.5 border border-gray-200 rounded">
-                  {selectedSaleForNote.billingSerie}-{selectedSaleForNote.billingNumber}
-                </span>
-              </p>
-              <p className="font-semibold text-gray-600">
-                Cliente: <span className="text-gray-950 font-bold">{selectedSaleForNote.description?.split(" - ")[1] || "Cliente general"}</span>
-              </p>
-              <p className="font-semibold text-gray-655">
-                Monto Original: <span className="text-emerald-600 font-extrabold">S/ {Number(selectedSaleForNote.amount).toFixed(2)}</span>
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1.5">
-                Motivo / Código de Operación
-              </label>
-              <select
-                value={noteReasonCode}
-                onChange={(e) => setNoteReasonCode(Number(e.target.value))}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-xs font-bold bg-white outline-none focus:ring-2 focus:ring-indigo-400"
-              >
-                {noteType === "CREDIT" ? (
-                  <>
-                    <option value="1">1 - Anulación de la operación</option>
-                    <option value="2">2 - Anulación por error en el RUC</option>
-                    <option value="3">3 - Corrección por error en la descripción</option>
-                    <option value="4">4 - Descuento global</option>
-                    <option value="5">5 - Descuento por ítem</option>
-                    <option value="6">6 - Devolución total</option>
-                    <option value="7">7 - Devolución por ítem</option>
-                    <option value="8">8 - Bonificación</option>
-                    <option value="9">9 - Disminución en el valor</option>
-                    <option value="10">10 - Otros conceptos</option>
-                  </>
-                ) : (
-                  <>
-                    <option value="1">1 - Intereses por mora</option>
-                    <option value="2">2 - Aumento en el valor</option>
-                    <option value="3">3 - Penalidades / otros conceptos</option>
-                  </>
-                )}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1.5">
-                Sustento / Comentarios (Obligatorio)
-              </label>
-              <textarea
-                placeholder="Indique detalladamente la razón de emisión..."
-                rows={3}
-                value={noteReasonText}
-                onChange={(e) => setNoteReasonText(e.target.value)}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-xs font-bold bg-white outline-none focus:ring-2 focus:ring-indigo-400"
-              />
-            </div>
-
-            <div className="flex gap-2 justify-end pt-2">
-              <button
-                type="button"
-                disabled={isSubmittingNote}
-                onClick={() => {
-                  setIsNoteModalOpen(false);
-                  setSelectedSaleForNote(null);
-                }}
-                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 font-bold text-xs"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                disabled={isSubmittingNote || !noteReasonText.trim()}
-                onClick={handleSubmitNote}
-                className={`px-4 py-2 text-white rounded-xl font-black text-xs shadow-sm transition-all flex items-center gap-1.5 ${noteType === "CREDIT" ? "bg-rose-600 hover:bg-rose-700" : "bg-blue-600 hover:bg-blue-700"
-                  } disabled:opacity-50`}
-              >
-                {isSubmittingNote && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                <span>Emitir Nota</span>
-              </button>
-            </div>
-          </div>
-        )}
-      </Modal>
-      {/* MODAL: Ajustar Precio Ítem */}
-      <Modal
-        isOpen={adjustingCartIndex !== null}
-        onClose={() => setAdjustingCartIndex(null)}
-        title="💸 Ajustar Precio de Venta"
-      >
-        {adjustingCartIndex !== null && (
-          <div className="space-y-4">
-            <div>
-              <p className="text-sm font-bold text-gray-800">
-                {cart[adjustingCartIndex].name}
-              </p>
-              <p className="text-xs text-gray-500 font-medium">
-                {cart[adjustingCartIndex].presentationId
-                  ? `Presentación seleccionada: ${cart[adjustingCartIndex].presentations?.find(
-                    (p: any) => p.id === cart[adjustingCartIndex].presentationId
-                  )?.name || "N/A"
-                  }`
-                  : `Presentación por defecto: ${cart[adjustingCartIndex].unit}`}
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100 text-xs">
-              <div>
-                <span className="text-gray-500 block font-medium">Precio Venta Base:</span>
-                <span className="font-bold text-gray-800">
-                  S/ {(cart[adjustingCartIndex].presentationId
-                    ? (cart[adjustingCartIndex].presentations?.find(
-                      (p: any) => p.id === cart[adjustingCartIndex].presentationId
-                    )?.price || cart[adjustingCartIndex].originalSalePrice)
-                    : cart[adjustingCartIndex].originalSalePrice
-                  ).toFixed(2)}
-                </span>
-              </div>
-              <div>
-                <span className="text-gray-500 block font-medium">Precio Ajustado / Oferta:</span>
-                <span className="font-bold text-rose-600">
-                  {cart[adjustingCartIndex].adjustedPrice && cart[adjustingCartIndex].adjustedPrice > 0
-                    ? `S/ ${Number(cart[adjustingCartIndex].adjustedPrice).toFixed(2)}`
-                    : "No registrado"}
-                </span>
-              </div>
-            </div>
-
-            {/* Quick shortcuts */}
-            {cart[adjustingCartIndex].adjustedPrice && cart[adjustingCartIndex].adjustedPrice > 0 && (
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setCustomAdjustedPrice(Number(cart[adjustingCartIndex].adjustedPrice))}
-                  className="px-3 py-1.5 bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100 rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
-                >
-                  <span>🔥 Usar Precio de Oferta (S/ {Number(cart[adjustingCartIndex].adjustedPrice).toFixed(2)})</span>
-                </button>
               </div>
             )}
-
-            {/* Input field */}
-            <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
-                Precio de Venta Deseado (S/)
-              </label>
-              <div className="relative">
-                <input
-                  type="number"
-                  step="0.01"
-                  value={customAdjustedPrice || ""}
-                  onChange={(e) => setCustomAdjustedPrice(parseFloat(e.target.value) || 0)}
-                  className="w-full p-2.5 rounded-xl border border-gray-200 focus:border-indigo-500 outline-none text-sm font-bold bg-white"
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-2 justify-end pt-2">
-              <button
-                type="button"
-                onClick={() => setAdjustingCartIndex(null)}
-                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 font-bold text-xs"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (customAdjustedPrice <= 0) {
-                    toast.error("El precio debe ser mayor a 0");
-                    return;
-                  }
-                  setCart(
-                    cart.map((c, i) =>
-                      i === adjustingCartIndex ? { ...c, salePrice: customAdjustedPrice } : c
-                    )
-                  );
-                  setAdjustingCartIndex(null);
-                  toast.success("Precio del ítem ajustado");
-                }}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-xs shadow-sm transition-all"
-              >
-                Guardar Ajuste
-              </button>
-            </div>
-          </div>
-        )}
-      </Modal>
-
-      {/* MODAL: Vincular Código Escaneado con Pistola Symbol */}
-      <Modal
-        isOpen={isLinkBarcodeModalOpen}
-        onClose={() => setIsLinkBarcodeModalOpen(false)}
-        title="🔫 Vincular Código Escaneado con Producto"
-      >
-        <div className="space-y-4">
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3">
-            <span className="text-2xl">⚡</span>
-            <div>
-              <p className="text-xs font-black text-amber-900 uppercase tracking-wide">
-                Código No Reconocido Leído por la Pistola
-              </p>
-              <div className="mt-1 flex items-center gap-2">
-                <span className="font-mono text-base font-extrabold text-slate-800 bg-white px-3 py-1 rounded-xl border border-amber-200 shadow-xs">
-                  {unlinkedBarcode}
-                </span>
-                <span className="text-[11px] text-amber-700 font-medium">
-                  ¿A qué producto o calzado pertenece este código físico?
-                </span>
-              </div>
-            </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-black text-gray-600 uppercase mb-1">
-              Buscar Producto para Asignar
-            </label>
-            <div className="relative">
-              <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={linkSearchTerm}
-                onChange={(e) => setLinkSearchTerm(e.target.value)}
-                placeholder="Escribe el nombre o modelo para filtrar..."
-                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-indigo-500 focus:bg-white"
-                autoFocus
-              />
-            </div>
-          </div>
-
-          <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
-            {products
-              .filter((p) => {
-                if (!linkSearchTerm.trim()) return true;
-                const term = linkSearchTerm.trim().toLowerCase();
-                return (
-                  p.name.toLowerCase().includes(term) ||
-                  (p.sku && p.sku.toLowerCase().includes(term))
-                );
-              })
-              .slice(0, 15)
-              .map((p) => (
-                <div
-                  key={p.id}
-                  className="flex items-center justify-between p-2.5 bg-white border border-gray-150 rounded-xl hover:border-indigo-400 hover:shadow-xs transition-all gap-3"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    {p.imageUrl ? (
-                      <img
-                        src={typeof p.imageUrl === "string" ? p.imageUrl : ""}
-                        alt={p.name}
-                        className="w-10 h-10 rounded-lg object-cover border border-gray-100 flex-shrink-0"
-                      />
-                    ) : (
-                      <div className="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-xs flex-shrink-0">
-                        {p.name.slice(0, 2).toUpperCase()}
-                      </div>
-                    )}
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold text-gray-900 truncate">
-                        {p.name}
-                      </p>
-                      <div className="flex items-center gap-2 text-[10px] text-gray-500 font-mono">
-                        <span>SKU: {p.sku || `#${p.customCode || "---"}`}</span>
-                        <span>•</span>
-                        <span className="font-bold text-emerald-600">S/ {Number(p.salePrice || 0).toFixed(2)}</span>
-                        <span>•</span>
-                        <span>Stock: {p.stock ?? 0}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={isLinkingBarcode}
-                    onClick={() => handleLinkBarcodeToProduct(p)}
-                    className="flex-shrink-0 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-xs font-black transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-                  >
-                    {isLinkingBarcode ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <span>Vincular y Vender</span>
-                    )}
-                  </button>
-                </div>
-              ))}
-          </div>
-
-          <div className="flex justify-end pt-2 border-t border-gray-100">
+          {/* Botones de Acción al Pie del Modal */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-gray-100">
             <button
               type="button"
-              onClick={() => setIsLinkBarcodeModalOpen(false)}
-              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 font-bold text-xs cursor-pointer"
+              onClick={() => setPosLightboxProduct(null)}
+              className="px-5 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl text-xs transition-colors cursor-pointer active:scale-95"
             >
               Cerrar
             </button>
+
+            <div className="flex items-center gap-2">
+              {posLightboxProduct.isSeries ? (
+                <button
+                  type="button"
+                  disabled={posLightboxProduct.summary?.completeSeries <= 0}
+                  onClick={() => {
+                    addSeriesCurveToCart(posLightboxProduct);
+                    setPosLightboxProduct(null);
+                  }}
+                  className="px-6 py-3 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-600 disabled:opacity-40 text-white font-black rounded-2xl text-xs flex items-center gap-2 shadow-md hover:shadow-lg transition-all cursor-pointer active:scale-95"
+                >
+                  <Package className="w-4 h-4" />
+                  <span>Vender Serie Completa ({posLightboxProduct.unitsPerSeries} pares) - S/ {Number(posLightboxProduct.salePricePerSeries || 0).toFixed(2)}</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    addToCart(posLightboxProduct);
+                    setPosLightboxProduct(null);
+                  }}
+                  className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-2xl text-xs flex items-center gap-2 shadow-md transition-all cursor-pointer active:scale-95"
+                >
+                  <ShoppingCart className="w-4 h-4" />
+                  <span>Agregar al Carrito</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
-      </Modal>
+      </div>
+    )}
+  </Modal>
 
-      {/* FLOATING HOVER TOOLTIP POP OVER */}
-      {hoveredProduct && (
-        <div
-          className="fixed z-[1000] w-64 bg-slate-900/95 text-white rounded-2xl shadow-2xl p-4 border border-slate-700 pointer-events-none text-xs space-y-2 animate-in fade-in zoom-in-95 duration-100 backdrop-blur-sm"
-          style={{
-            left: `${tooltipCoords.x}px`,
-            top: `${tooltipCoords.y}px`,
-          }}
-        >
-          <div className="flex items-center justify-between border-b border-slate-700 pb-1.5">
-            <h4 className="font-extrabold text-sm text-indigo-400 truncate max-w-[65%]">
-              {hoveredProduct.name}
-            </h4>
-            {hoveredProduct.color && (
-              <ProductColorBadge color={hoveredProduct.color} size="xs" className="!bg-slate-800 !text-white !border-slate-600" />
-            )}
-          </div>
-
-          <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 text-[11px]">
-            <div>
-              <span className="block text-[9px] uppercase font-black text-slate-400">Código</span>
-              <span className="font-bold font-mono">
-                {hoveredProduct.sku || `Cód: #${String(hoveredProduct.customCode || 0).padStart(4, "0")}`}
-              </span>
-            </div>
-
-            <div>
-              <span className="block text-[9px] uppercase font-black text-slate-400">Unidad</span>
-              <span className="font-bold">{hoveredProduct.unit}</span>
-            </div>
-
-            {user?.profiles?.includes("BUSINESS_BRANCHES") ? (
-              <>
-                <div>
-                  <span className="block text-[9px] uppercase font-black text-slate-400">Stock Sede</span>
-                  <span className="font-bold text-emerald-400">
-                    {(() => {
-                      const bsStock = activeShift?.branchId
-                        ? (hoveredProduct.branchStocks?.find((bs: any) => bs.branchId === activeShift.branchId)?.stock || 0)
-                        : hoveredProduct.stock;
-                      return bsStock;
-                    })()}
-                  </span>
-                </div>
-
-                <div>
-                  <span className="block text-[9px] uppercase font-black text-slate-400">Stock Global</span>
-                  <span className="font-bold text-cyan-400">{hoveredProduct.stock}</span>
-                </div>
-              </>
-            ) : (
-              <div className="col-span-2">
-                <span className="block text-[9px] uppercase font-black text-slate-400">Stock Disponible</span>
-                <span className="font-bold text-emerald-400">{hoveredProduct.stock} {hoveredProduct.unit}</span>
-              </div>
-            )}
-
-            {/* PRECIO VENTA Y OFERTA (NUNCA PRECIO COSTO EN POS) */}
-            {hoveredProduct.adjustedPrice &&
-            Number(hoveredProduct.adjustedPrice) > 0 &&
-            Number(hoveredProduct.adjustedPrice) < Number(hoveredProduct.salePrice) ? (
-              <>
-                <div>
-                  <span className="block text-[9px] uppercase font-black text-slate-400">Precio Regular</span>
-                  <span className="font-bold text-slate-400 line-through">
-                    S/ {hoveredProduct.salePrice.toFixed(2)}
-                  </span>
-                </div>
-                <div>
-                  <span className="block text-[9px] uppercase font-black text-rose-400 flex items-center gap-1">
-                    🔥 Precio Oferta
-                  </span>
-                  <span className="font-black text-rose-400 font-extrabold text-sm">
-                    S/ {Number(hoveredProduct.adjustedPrice).toFixed(2)}
-                  </span>
-                </div>
-              </>
-            ) : (
-              <div className="col-span-2">
-                <span className="block text-[9px] uppercase font-black text-slate-400">Precio de Venta</span>
-                <span className="font-black text-emerald-300 font-extrabold text-sm">
-                  S/ {hoveredProduct.salePrice.toFixed(2)}
-                </span>
-              </div>
-            )}
-
-            <div className="col-span-2">
-              <span className="block text-[9px] uppercase font-black text-slate-400">Marca / Familia</span>
-              <span className="font-semibold text-slate-300">
-                {hoveredProduct.brand?.name || "Sin marca"} / {hoveredProduct.family?.name || "Sin familia"}
-              </span>
-            </div>
-
-            {hoveredProduct.description && (
-              <div className="col-span-2 border-t border-slate-800 pt-1.5 mt-0.5">
-                <span className="block text-[9px] uppercase font-black text-slate-400">Descripción</span>
-                <p className="text-slate-300 leading-snug line-clamp-2">{hoveredProduct.description}</p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* MODAL CONFIGURACIÓN LECTOR CÓDIGO DE BARRAS FÍSICO */}
-      <Modal
-        isOpen={isScannerConfigOpen}
-        onClose={() => setIsScannerConfigOpen(false)}
-        title="🔌 Configuración del Lector Físico (USB / Bluetooth)"
-        maxWidth="max-w-md"
+  {/* MODAL: Cámara Escáner */ }
+  <Modal
+    isOpen={isScannerOpen}
+    onClose={() => setIsScannerOpen(false)}
+    title="Escanear Código de Barras / QR"
+  >
+    <div className="space-y-4">
+      <p className="text-xs text-gray-500 font-medium text-center">
+        Apunta la cámara de tu dispositivo hacia el código de barras o código QR.
+      </p>
+      <div
+        id="scanner-reader"
+        className="w-full max-w-sm mx-auto overflow-hidden rounded-2xl border border-gray-200 bg-black aspect-video flex items-center justify-center text-white text-xs font-bold"
       >
-        <div className="space-y-4">
-          <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-            <span className="text-xs font-semibold text-gray-600">Estado de detección automática:</span>
-            <span className={`text-xs px-2.5 py-1 rounded-full font-black ${scannerEnabled ? "bg-emerald-50 text-emerald-600 border border-emerald-200" : "bg-red-50 text-red-600 border border-red-200"}`}>
-              {scannerEnabled ? "✓ ACTIVO Y CONECTADO" : "APAGADO"}
+        Iniciando cámara...
+      </div>
+      <div className="flex justify-center">
+        <button
+          type="button"
+          onClick={() => setIsScannerOpen(false)}
+          className="px-5 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 font-bold text-xs"
+        >
+          Cancelar
+        </button>
+      </div>
+    </div>
+  </Modal>
+
+  {/* MODAL: Emitir Nota de Crédito / Débito */ }
+  <Modal
+    isOpen={isNoteModalOpen}
+    onClose={() => {
+      if (!isSubmittingNote) {
+        setIsNoteModalOpen(false);
+        setSelectedSaleForNote(null);
+      }
+    }}
+    title={`Emitir Nota de ${noteType === "CREDIT" ? "Crédito" : "Débito"}`}
+  >
+    {selectedSaleForNote && (
+      <div className="space-y-4">
+        <div className="p-4 bg-gray-50 rounded-2xl border border-gray-150 text-xs space-y-2">
+          <p className="font-extrabold text-gray-800">
+            Documento de Referencia:{" "}
+            <span className="font-mono bg-white px-2 py-0.5 border border-gray-200 rounded">
+              {selectedSaleForNote.billingSerie}-{selectedSaleForNote.billingNumber}
+            </span>
+          </p>
+          <p className="font-semibold text-gray-600">
+            Cliente: <span className="text-gray-950 font-bold">{selectedSaleForNote.description?.split(" - ")[1] || "Cliente general"}</span>
+          </p>
+          <p className="font-semibold text-gray-655">
+            Monto Original: <span className="text-emerald-600 font-extrabold">S/ {Number(selectedSaleForNote.amount).toFixed(2)}</span>
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1.5">
+            Motivo / Código de Operación
+          </label>
+          <select
+            value={noteReasonCode}
+            onChange={(e) => setNoteReasonCode(Number(e.target.value))}
+            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-xs font-bold bg-white outline-none focus:ring-2 focus:ring-indigo-400"
+          >
+            {noteType === "CREDIT" ? (
+              <>
+                <option value="1">1 - Anulación de la operación</option>
+                <option value="2">2 - Anulación por error en el RUC</option>
+                <option value="3">3 - Corrección por error en la descripción</option>
+                <option value="4">4 - Descuento global</option>
+                <option value="5">5 - Descuento por ítem</option>
+                <option value="6">6 - Devolución total</option>
+                <option value="7">7 - Devolución por ítem</option>
+                <option value="8">8 - Bonificación</option>
+                <option value="9">9 - Disminución en el valor</option>
+                <option value="10">10 - Otros conceptos</option>
+              </>
+            ) : (
+              <>
+                <option value="1">1 - Intereses por mora</option>
+                <option value="2">2 - Aumento en el valor</option>
+                <option value="3">3 - Penalidades / otros conceptos</option>
+              </>
+            )}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1.5">
+            Sustento / Comentarios (Obligatorio)
+          </label>
+          <textarea
+            placeholder="Indique detalladamente la razón de emisión..."
+            rows={3}
+            value={noteReasonText}
+            onChange={(e) => setNoteReasonText(e.target.value)}
+            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-xs font-bold bg-white outline-none focus:ring-2 focus:ring-indigo-400"
+          />
+        </div>
+
+        <div className="flex gap-2 justify-end pt-2">
+          <button
+            type="button"
+            disabled={isSubmittingNote}
+            onClick={() => {
+              setIsNoteModalOpen(false);
+              setSelectedSaleForNote(null);
+            }}
+            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 font-bold text-xs"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            disabled={isSubmittingNote || !noteReasonText.trim()}
+            onClick={handleSubmitNote}
+            className={`px-4 py-2 text-white rounded-xl font-black text-xs shadow-sm transition-all flex items-center gap-1.5 ${noteType === "CREDIT" ? "bg-rose-600 hover:bg-rose-700" : "bg-blue-600 hover:bg-blue-700"
+              } disabled:opacity-50`}
+          >
+            {isSubmittingNote && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            <span>Emitir Nota</span>
+          </button>
+        </div>
+      </div>
+    )}
+  </Modal>
+  {/* MODAL: Ajustar Precio Ítem */ }
+  <Modal
+    isOpen={adjustingCartIndex !== null}
+    onClose={() => setAdjustingCartIndex(null)}
+    title="💸 Ajustar Precio de Venta"
+  >
+    {adjustingCartIndex !== null && (
+      <div className="space-y-4">
+        <div>
+          <p className="text-sm font-bold text-gray-800">
+            {cart[adjustingCartIndex].name}
+          </p>
+          <p className="text-xs text-gray-500 font-medium">
+            {cart[adjustingCartIndex].presentationId
+              ? `Presentación seleccionada: ${cart[adjustingCartIndex].presentations?.find(
+                (p: any) => p.id === cart[adjustingCartIndex].presentationId
+              )?.name || "N/A"
+              }`
+              : `Presentación por defecto: ${cart[adjustingCartIndex].unit}`}
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100 text-xs">
+          <div>
+            <span className="text-gray-500 block font-medium">Precio Venta Base:</span>
+            <span className="font-bold text-gray-800">
+              S/ {(cart[adjustingCartIndex].presentationId
+                ? (cart[adjustingCartIndex].presentations?.find(
+                  (p: any) => p.id === cart[adjustingCartIndex].presentationId
+                )?.price || cart[adjustingCartIndex].originalSalePrice)
+                : cart[adjustingCartIndex].originalSalePrice
+              ).toFixed(2)}
+            </span>
+          </div>
+          <div>
+            <span className="text-gray-500 block font-medium">Precio Ajustado / Oferta:</span>
+            <span className="font-bold text-rose-600">
+              {cart[adjustingCartIndex].adjustedPrice && cart[adjustingCartIndex].adjustedPrice > 0
+                ? `S/ ${Number(cart[adjustingCartIndex].adjustedPrice).toFixed(2)}`
+                : "No registrado"}
+            </span>
+          </div>
+        </div>
+
+        {/* Quick shortcuts */}
+        {cart[adjustingCartIndex].adjustedPrice && cart[adjustingCartIndex].adjustedPrice > 0 && (
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setCustomAdjustedPrice(Number(cart[adjustingCartIndex].adjustedPrice))}
+              className="px-3 py-1.5 bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100 rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
+            >
+              <span>🔥 Usar Precio de Oferta (S/ {Number(cart[adjustingCartIndex].adjustedPrice).toFixed(2)})</span>
+            </button>
+          </div>
+        )}
+
+        {/* Input field */}
+        <div>
+          <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
+            Precio de Venta Deseado (S/)
+          </label>
+          <div className="relative">
+            <input
+              type="number"
+              step="0.01"
+              value={customAdjustedPrice || ""}
+              onChange={(e) => setCustomAdjustedPrice(parseFloat(e.target.value) || 0)}
+              className="w-full p-2.5 rounded-xl border border-gray-200 focus:border-indigo-500 outline-none text-sm font-bold bg-white"
+            />
+          </div>
+        </div>
+
+        <div className="flex gap-2 justify-end pt-2">
+          <button
+            type="button"
+            onClick={() => setAdjustingCartIndex(null)}
+            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 font-bold text-xs"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (customAdjustedPrice <= 0) {
+                toast.error("El precio debe ser mayor a 0");
+                return;
+              }
+              setCart(
+                cart.map((c, i) =>
+                  i === adjustingCartIndex ? { ...c, salePrice: customAdjustedPrice } : c
+                )
+              );
+              setAdjustingCartIndex(null);
+              toast.success("Precio del ítem ajustado");
+            }}
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-xs shadow-sm transition-all"
+          >
+            Guardar Ajuste
+          </button>
+        </div>
+      </div>
+    )}
+  </Modal>
+
+  {/* MODAL: Vincular Código Escaneado con Pistola Symbol */ }
+  <Modal
+    isOpen={isLinkBarcodeModalOpen}
+    onClose={() => setIsLinkBarcodeModalOpen(false)}
+    title="🔫 Vincular Código Escaneado con Producto"
+  >
+    <div className="space-y-4">
+      <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3">
+        <span className="text-2xl">⚡</span>
+        <div>
+          <p className="text-xs font-black text-amber-900 uppercase tracking-wide">
+            Código No Reconocido Leído por la Pistola
+          </p>
+          <div className="mt-1 flex items-center gap-2">
+            <span className="font-mono text-base font-extrabold text-slate-800 bg-white px-3 py-1 rounded-xl border border-amber-200 shadow-xs">
+              {unlinkedBarcode}
+            </span>
+            <span className="text-[11px] text-amber-700 font-medium">
+              ¿A qué producto o calzado pertenece este código físico?
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-xs font-black text-gray-600 uppercase mb-1">
+          Buscar Producto para Asignar
+        </label>
+        <div className="relative">
+          <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={linkSearchTerm}
+            onChange={(e) => setLinkSearchTerm(e.target.value)}
+            placeholder="Escribe el nombre o modelo para filtrar..."
+            className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-indigo-500 focus:bg-white"
+            autoFocus
+          />
+        </div>
+      </div>
+
+      <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+        {products
+          .filter((p) => {
+            if (!linkSearchTerm.trim()) return true;
+            const term = linkSearchTerm.trim().toLowerCase();
+            return (
+              p.name.toLowerCase().includes(term) ||
+              (p.sku && p.sku.toLowerCase().includes(term))
+            );
+          })
+          .slice(0, 15)
+          .map((p) => (
+            <div
+              key={p.id}
+              className="flex items-center justify-between p-2.5 bg-white border border-gray-150 rounded-xl hover:border-indigo-400 hover:shadow-xs transition-all gap-3"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                {p.imageUrl ? (
+                  <img
+                    src={typeof p.imageUrl === "string" ? p.imageUrl : ""}
+                    alt={p.name}
+                    className="w-10 h-10 rounded-lg object-cover border border-gray-100 flex-shrink-0"
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-xs flex-shrink-0">
+                    {p.name.slice(0, 2).toUpperCase()}
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-gray-900 truncate">
+                    {p.name}
+                  </p>
+                  <div className="flex items-center gap-2 text-[10px] text-gray-500 font-mono">
+                    <span>SKU: {p.sku || `#${p.customCode || "---"}`}</span>
+                    <span>•</span>
+                    <span className="font-bold text-emerald-600">S/ {Number(p.salePrice || 0).toFixed(2)}</span>
+                    <span>•</span>
+                    <span>Stock: {p.stock ?? 0}</span>
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={isLinkingBarcode}
+                onClick={() => handleLinkBarcodeToProduct(p)}
+                className="flex-shrink-0 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-xs font-black transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                {isLinkingBarcode ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <span>Vincular y Vender</span>
+                )}
+              </button>
+            </div>
+          ))}
+      </div>
+
+      <div className="flex justify-end pt-2 border-t border-gray-100">
+        <button
+          type="button"
+          onClick={() => setIsLinkBarcodeModalOpen(false)}
+          className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 font-bold text-xs cursor-pointer"
+        >
+          Cerrar
+        </button>
+      </div>
+    </div>
+  </Modal>
+
+  {/* FLOATING HOVER TOOLTIP POP OVER */ }
+  {
+    hoveredProduct && (
+      <div
+        className="fixed z-[1000] w-64 bg-slate-900/95 text-white rounded-2xl shadow-2xl p-4 border border-slate-700 pointer-events-none text-xs space-y-2 animate-in fade-in zoom-in-95 duration-100 backdrop-blur-sm"
+        style={{
+          left: `${tooltipCoords.x}px`,
+          top: `${tooltipCoords.y}px`,
+        }}
+      >
+        <div className="flex items-center justify-between border-b border-slate-700 pb-1.5">
+          <h4 className="font-extrabold text-sm text-indigo-400 truncate max-w-[65%]">
+            {hoveredProduct.name}
+          </h4>
+          {hoveredProduct.color && (
+            <ProductColorBadge color={hoveredProduct.color} size="xs" className="!bg-slate-800 !text-white !border-slate-600" />
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 text-[11px]">
+          <div>
+            <span className="block text-[9px] uppercase font-black text-slate-400">Código</span>
+            <span className="font-bold font-mono">
+              {hoveredProduct.sku || `Cód: #${String(hoveredProduct.customCode || 0).padStart(4, "0")}`}
             </span>
           </div>
 
-          <div className="space-y-3.5">
-            {/* Toggle Enable */}
-            <label className="flex items-center justify-between cursor-pointer p-3 bg-slate-50 rounded-xl border border-slate-100 hover:bg-slate-100/80 transition-colors">
-              <div>
-                <span className="text-xs font-bold text-gray-800 block">Escuchar Lector Globalmente</span>
-                <span className="text-[10px] text-gray-500">Detecta disparos de pistola sin necesidad de hacer clic en ningún campo.</span>
-              </div>
-              <input
-                type="checkbox"
-                checked={scannerEnabled}
-                onChange={(e) => {
-                  setScannerEnabled(e.target.checked);
-                  playScannerSound(e.target.checked ? "success" : "error");
-                }}
-                className="w-4 h-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded cursor-pointer ml-3"
-              />
-            </label>
-
-            {/* Sensitivity Slider */}
-            <div className="space-y-1.5 p-3 bg-slate-50 rounded-xl border border-slate-100">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-gray-700">Sensibilidad entre caracteres</span>
-                <span className="text-xs font-black text-indigo-600">{scannerSensitivity} ms</span>
-              </div>
-              <input
-                type="range"
-                min="20"
-                max="150"
-                step="5"
-                value={scannerSensitivity}
-                onChange={(e) => {
-                  const val = Number(e.target.value);
-                  setScannerSensitivity(val);
-                  hardwareScanner.setSensitivity(val);
-                }}
-                className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
-              />
-              <p className="text-[10px] text-gray-400 leading-tight">
-                El valor óptimo es 70-85ms. Detecta pistolas industriales y Bluetooth sin confundir escritura manual.
-              </p>
-            </div>
-
-            {/* Scan Test Box */}
-            <div className="bg-slate-50 p-3.5 rounded-2xl border border-gray-100 text-center space-y-2">
-              <span className="block text-[10px] font-black uppercase text-gray-500 tracking-wider">Prueba de Lectura en Vivo</span>
-              {scanTestResult ? (
-                <div className="space-y-1.5">
-                  <span className="block text-sm font-black text-gray-900 break-all bg-white px-3 py-2 rounded-xl border border-gray-200 font-mono shadow-xs">
-                    {scanTestResult}
-                  </span>
-                  <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-full">
-                    ✓ Lectura Exitosa y Verificada
-                  </span>
-                </div>
-              ) : (
-                <span className="block text-[11px] text-gray-400 italic leading-snug">
-                  Apunta tu lector a cualquier código o QR y presiona el gatillo para comprobar la lectura.
-                </span>
-              )}
-            </div>
+          <div>
+            <span className="block text-[9px] uppercase font-black text-slate-400">Unidad</span>
+            <span className="font-bold">{hoveredProduct.unit}</span>
           </div>
 
-          <div className="pt-2 flex justify-end">
+          {user?.profiles?.includes("BUSINESS_BRANCHES") ? (
+            <>
+              <div>
+                <span className="block text-[9px] uppercase font-black text-slate-400">Stock Sede</span>
+                <span className="font-bold text-emerald-400">
+                  {(() => {
+                    const bsStock = activeShift?.branchId
+                      ? (hoveredProduct.branchStocks?.find((bs: any) => bs.branchId === activeShift.branchId)?.stock || 0)
+                      : hoveredProduct.stock;
+                    return bsStock;
+                  })()}
+                </span>
+              </div>
+
+              <div>
+                <span className="block text-[9px] uppercase font-black text-slate-400">Stock Global</span>
+                <span className="font-bold text-cyan-400">{hoveredProduct.stock}</span>
+              </div>
+            </>
+          ) : (
+            <div className="col-span-2">
+              <span className="block text-[9px] uppercase font-black text-slate-400">Stock Disponible</span>
+              <span className="font-bold text-emerald-400">{hoveredProduct.stock} {hoveredProduct.unit}</span>
+            </div>
+          )}
+
+          {/* PRECIO VENTA Y OFERTA (NUNCA PRECIO COSTO EN POS) */}
+          {hoveredProduct.adjustedPrice &&
+            Number(hoveredProduct.adjustedPrice) > 0 &&
+            Number(hoveredProduct.adjustedPrice) < Number(hoveredProduct.salePrice) ? (
+            <>
+              <div>
+                <span className="block text-[9px] uppercase font-black text-slate-400">Precio Regular</span>
+                <span className="font-bold text-slate-400 line-through">
+                  S/ {hoveredProduct.salePrice.toFixed(2)}
+                </span>
+              </div>
+              <div>
+                <span className="block text-[9px] uppercase font-black text-rose-400 flex items-center gap-1">
+                  🔥 Precio Oferta
+                </span>
+                <span className="font-black text-rose-400 font-extrabold text-sm">
+                  S/ {Number(hoveredProduct.adjustedPrice).toFixed(2)}
+                </span>
+              </div>
+            </>
+          ) : (
+            <div className="col-span-2">
+              <span className="block text-[9px] uppercase font-black text-slate-400">Precio de Venta</span>
+              <span className="font-black text-emerald-300 font-extrabold text-sm">
+                S/ {hoveredProduct.salePrice.toFixed(2)}
+              </span>
+            </div>
+          )}
+
+          <div className="col-span-2">
+            <span className="block text-[9px] uppercase font-black text-slate-400">Marca / Familia</span>
+            <span className="font-semibold text-slate-300">
+              {hoveredProduct.brand?.name || "Sin marca"} / {hoveredProduct.family?.name || "Sin familia"}
+            </span>
+          </div>
+
+          {hoveredProduct.description && (
+            <div className="col-span-2 border-t border-slate-800 pt-1.5 mt-0.5">
+              <span className="block text-[9px] uppercase font-black text-slate-400">Descripción</span>
+              <p className="text-slate-300 leading-snug line-clamp-2">{hoveredProduct.description}</p>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  {/* MODAL CONFIGURACIÓN LECTOR CÓDIGO DE BARRAS FÍSICO */ }
+  <Modal
+    isOpen={isScannerConfigOpen}
+    onClose={() => setIsScannerConfigOpen(false)}
+    title="🔌 Configuración del Lector Físico (USB / Bluetooth)"
+    maxWidth="max-w-md"
+  >
+    <div className="space-y-4">
+      <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+        <span className="text-xs font-semibold text-gray-600">Estado de detección automática:</span>
+        <span className={`text-xs px-2.5 py-1 rounded-full font-black ${scannerEnabled ? "bg-emerald-50 text-emerald-600 border border-emerald-200" : "bg-red-50 text-red-600 border border-red-200"}`}>
+          {scannerEnabled ? "✓ ACTIVO Y CONECTADO" : "APAGADO"}
+        </span>
+      </div>
+
+      <div className="space-y-3.5">
+        {/* Toggle Enable */}
+        <label className="flex items-center justify-between cursor-pointer p-3 bg-slate-50 rounded-xl border border-slate-100 hover:bg-slate-100/80 transition-colors">
+          <div>
+            <span className="text-xs font-bold text-gray-800 block">Escuchar Lector Globalmente</span>
+            <span className="text-[10px] text-gray-500">Detecta disparos de pistola sin necesidad de hacer clic en ningún campo.</span>
+          </div>
+          <input
+            type="checkbox"
+            checked={scannerEnabled}
+            onChange={(e) => {
+              setScannerEnabled(e.target.checked);
+              playScannerSound(e.target.checked ? "success" : "error");
+            }}
+            className="w-4 h-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded cursor-pointer ml-3"
+          />
+        </label>
+
+        {/* Sensitivity Slider */}
+        <div className="space-y-1.5 p-3 bg-slate-50 rounded-xl border border-slate-100">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-gray-700">Sensibilidad entre caracteres</span>
+            <span className="text-xs font-black text-indigo-600">{scannerSensitivity} ms</span>
+          </div>
+          <input
+            type="range"
+            min="20"
+            max="150"
+            step="5"
+            value={scannerSensitivity}
+            onChange={(e) => {
+              const val = Number(e.target.value);
+              setScannerSensitivity(val);
+              hardwareScanner.setSensitivity(val);
+            }}
+            className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+          />
+          <p className="text-[10px] text-gray-400 leading-tight">
+            El valor óptimo es 70-85ms. Detecta pistolas industriales y Bluetooth sin confundir escritura manual.
+          </p>
+        </div>
+
+        {/* Dispositivos Conectados Detectados */}
+        <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-gray-800">Dispositivos USB / HID</span>
             <button
               type="button"
-              onClick={() => setIsScannerConfigOpen(false)}
-              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition-colors shadow-sm"
+              disabled={isDetectingDevices}
+              onClick={handleDetectDevices}
+              className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 cursor-pointer disabled:opacity-50"
             >
-              Listo
+              {isDetectingDevices ? "Detectando..." : "↻ Re-detectar"}
             </button>
           </div>
+          <div className="space-y-1">
+            {detectedDevices.length > 0 ? (
+              detectedDevices.map((devName, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-700 bg-white px-2.5 py-1.5 rounded-lg border border-slate-200"
+                >
+                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                  <span className="truncate">{devName}</span>
+                </div>
+              ))
+            ) : (
+              <span className="text-[11px] text-slate-400 italic block">
+                Escucha activa por interrupciones de teclado HID. Conecte cualquier lector USB.
+              </span>
+            )}
+          </div>
         </div>
-      </Modal>
 
-      {/* Modal de Confirmación Estilizado Interno (Sin alert ni confirm del navegador) */}
-      <ConfirmModal
-        isOpen={posConfirmModal.isOpen}
-        onClose={() => setPosConfirmModal((prev) => ({ ...prev, isOpen: false }))}
-        onConfirm={posConfirmModal.onConfirm}
-        title={posConfirmModal.title}
-        message={posConfirmModal.message}
-        confirmText={posConfirmModal.confirmText}
-        cancelText={posConfirmModal.cancelText}
-        variant={posConfirmModal.variant || "danger"}
-      />
+        {/* Scan Test Box */}
+        <div className="bg-slate-50 p-3.5 rounded-2xl border border-gray-100 text-center space-y-2">
+          <span className="block text-[10px] font-black uppercase text-gray-500 tracking-wider">Prueba de Lectura en Vivo</span>
+          {scanTestResult ? (
+            <div className="space-y-1.5">
+              <span className="block text-sm font-black text-gray-900 break-all bg-white px-3 py-2 rounded-xl border border-gray-200 font-mono shadow-xs">
+                {scanTestResult}
+              </span>
+              <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-full">
+                ✓ Lectura Exitosa y Verificada
+              </span>
+            </div>
+          ) : (
+            <span className="block text-[11px] text-gray-400 italic leading-snug">
+              Apunta tu lector a cualquier código o QR y presiona el gatillo para comprobar la lectura.
+            </span>
+          )}
+        </div>
+      </div>
 
-      {/* Modal Oficial de Anulación SUNAT (Comunicación de Baja vs Nota de Crédito) */}
-      <SunatAnnulmentModal
-        isOpen={annulModalState.isOpen}
-        onClose={() => setAnnulModalState((prev) => ({ ...prev, isOpen: false, sale: null }))}
-        onConfirm={handleConfirmAnnulment}
-        isSubmitting={annulModalState.isSubmitting}
-        documentInfo={
-          annulModalState.sale
-            ? {
-                fullNumber:
-                  annulModalState.sale.billingSerie && annulModalState.sale.billingNumber
-                    ? `${annulModalState.sale.billingSerie}-${String(annulModalState.sale.billingNumber).padStart(8, "0")}`
-                    : (annulModalState.sale.id?.slice(0, 8) || "VENTA").toUpperCase(),
-                documentType: annulModalState.sale.billingType,
-                totalAmount: Number(annulModalState.sale.amount) || 0,
-                clientName: annulModalState.sale.clientDenomination || "CLIENTES VARIOS",
-                issueDate: annulModalState.sale.date,
-                isBilled: Boolean(
-                  annulModalState.sale.billingStatus === "SUCCESS" &&
-                    annulModalState.sale.billingSerie &&
-                    annulModalState.sale.billingNumber
-                ),
-              }
-            : null
+      <div className="pt-2 flex justify-end">
+        <button
+          type="button"
+          onClick={() => setIsScannerConfigOpen(false)}
+          className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition-colors shadow-sm"
+        >
+          Listo
+        </button>
+      </div>
+    </div>
+  </Modal>
+
+  {/* Modal de Confirmación Estilizado Interno (Sin alert ni confirm del navegador) */ }
+  <ConfirmModal
+    isOpen={posConfirmModal.isOpen}
+    onClose={() => setPosConfirmModal((prev) => ({ ...prev, isOpen: false }))}
+    onConfirm={posConfirmModal.onConfirm}
+    title={posConfirmModal.title}
+    message={posConfirmModal.message}
+    confirmText={posConfirmModal.confirmText}
+    cancelText={posConfirmModal.cancelText}
+    variant={posConfirmModal.variant || "danger"}
+  />
+
+  {/* Modal Oficial de Anulación SUNAT (Comunicación de Baja vs Nota de Crédito) */ }
+  <SunatAnnulmentModal
+    isOpen={annulModalState.isOpen}
+    onClose={() => setAnnulModalState((prev) => ({ ...prev, isOpen: false, sale: null }))}
+    onConfirm={handleConfirmAnnulment}
+    isSubmitting={annulModalState.isSubmitting}
+    documentInfo={
+      annulModalState.sale
+        ? {
+          fullNumber:
+            annulModalState.sale.billingSerie && annulModalState.sale.billingNumber
+              ? `${annulModalState.sale.billingSerie}-${String(annulModalState.sale.billingNumber).padStart(8, "0")}`
+              : (annulModalState.sale.id?.slice(0, 8) || "VENTA").toUpperCase(),
+          documentType: annulModalState.sale.billingType,
+          totalAmount: Number(annulModalState.sale.amount) || 0,
+          clientName: annulModalState.sale.clientDenomination || "CLIENTES VARIOS",
+          issueDate: annulModalState.sale.date,
+          isBilled: Boolean(
+            annulModalState.sale.billingStatus === "SUCCESS" &&
+            annulModalState.sale.billingSerie &&
+            annulModalState.sale.billingNumber
+          ),
         }
-      />
+        : null
+    }
+  />
 
-      {/* Modal de Diagnóstico y Asistencia Oficial de Errores del Sistema y SUNAT */}
-      <SystemErrorModal
-        isOpen={Boolean(systemError)}
-        onClose={() => setSystemError(null)}
-        error={systemError}
-      />
-    </Appshell>
+  {/* Modal de Diagnóstico y Asistencia Oficial de Errores del Sistema y SUNAT */ }
+  <SystemErrorModal
+    isOpen={Boolean(systemError)}
+    onClose={() => setSystemError(null)}
+    error={systemError}
+  />
+    </Appshell >
   );
 }
