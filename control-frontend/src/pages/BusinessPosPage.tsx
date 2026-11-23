@@ -52,6 +52,7 @@ import {
 } from "../services/sale.api";
 import { SunatManualNoteModal } from "../components/ui/SunatManualNoteModal";
 import { SunatSmartEditModal } from "../components/ui/SunatSmartEditModal";
+import { SunatNotesListModal } from "../components/ui/SunatNotesListModal";
 import { queryDocumentRequest } from "../services/user.api";
 import { shareSaleReceiptViaWhatsApp } from "../utils/whatsappUtils";
 import ReceiptUploader, {
@@ -99,6 +100,7 @@ import {
   Edit,
   Layers,
   Barcode,
+  Receipt,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
@@ -427,6 +429,7 @@ export default function BusinessPosPage() {
   // Estado para edición inteligente de venta en el carrito del POS
   const [editingSale, setEditingSale] = useState<any | null>(null);
   const [saleIssueDate, setSaleIssueDate] = useState<string>("");
+  const [selectedSaleForNotes, setSelectedSaleForNotes] = useState<any | null>(null);
 
   // Proteger contra recarga o cierre accidental de pestaña mientras edita un comprobante
   useEffect(() => {
@@ -1631,20 +1634,29 @@ export default function BusinessPosPage() {
           });
         }
 
+        const safeDocNumber = (clientDocumentNumber?.trim()) || (editingSale.clientDocumentNumber?.trim()) || "00000000";
+        const safeDocType =
+          clientDocumentType ||
+          editingSale.clientDocumentType ||
+          (safeDocNumber.length === 11 ? "6" : safeDocNumber.length === 8 ? "1" : "0");
+        const safeClientName = (clientDenomination?.trim()) || (editingSale.clientDenomination?.trim()) || "CLIENTES VARIOS";
+
         const editPayload = {
-          client_doc_type: (billingType === "BOLETA" || billingType === "FACTURA") ? clientDocumentType : undefined,
-          client_doc_number: (billingType === "BOLETA" || billingType === "FACTURA") ? clientDocumentNumber : undefined,
-          client_name: clientDenomination.trim() || "CLIENTES VARIOS",
-          client_address: (billingType === "BOLETA" || billingType === "FACTURA") ? clientAddress : undefined,
-          client_email: (billingType === "BOLETA" || billingType === "FACTURA") ? clientEmail : undefined,
-          payment_method: paymentMethod,
+          client_doc_type: safeDocType,
+          client_doc_number: safeDocNumber,
+          client_name: safeClientName,
+          client_address: clientAddress || editingSale.clientAddress || "",
+          client_email: clientEmail || editingSale.clientEmail || "",
+          payment_method: paymentMethod || editingSale.paymentMethod || "CASH",
           issue_date: saleIssueDate || undefined,
-          items: cart.map((c: any) => ({
+          items: cart.map((c: any, idx: number) => ({
             productId: c.isCustom ? undefined : c.id,
-            code: c.code || c.barcode || c.sku || "",
+            code: c.code || c.barcode || c.sku || `PROD-${idx + 1}`,
             name: c.name,
-            quantity: c.quantity,
-            price: c.salePrice,
+            description: c.name,
+            quantity: Number(c.quantity || 1),
+            price: Number(c.salePrice || 0),
+            unit_price: Number(c.salePrice || 0),
           })),
           diffResult,
         };
@@ -5131,7 +5143,14 @@ export default function BusinessPosPage() {
                             </span>
                           </td>
                           <td className="px-4 py-3 text-right font-black text-emerald-600 text-xs">
-                            S/ {Number(sale.amount).toFixed(2)}
+                            <div>
+                              S/ {Number(sale.netAmount !== undefined ? sale.netAmount : sale.amount).toFixed(2)}
+                            </div>
+                            {sale.netAmount !== undefined && Number(sale.netAmount) !== Number(sale.amount) && (
+                              <span className="block text-[10px] text-gray-400 font-semibold line-through">
+                                Orig: S/ {Number(sale.amount).toFixed(2)}
+                              </span>
+                            )}
                           </td>
                           {user?.hasElectronicBilling && (
                             <td className="px-4 py-3 text-xs">
@@ -5149,8 +5168,8 @@ export default function BusinessPosPage() {
                                       </span>
                                     )}
                                   </div>
-                                  <div className="flex items-center gap-2">
-                                    {sale.billingStatus === "SUCCESS" && (
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    {(sale.billingStatus === "SUCCESS" && !sale.isAnnulledByNote) && (
                                       <>
                                         <span className="text-[9px] bg-emerald-50 text-emerald-700 font-black border border-emerald-200 px-1.5 py-0.5 rounded uppercase">
                                           Aceptado
@@ -5236,7 +5255,7 @@ export default function BusinessPosPage() {
                                       Enviando...
                                     </span>
                                   )}
-                                  {sale.billingStatus === "CANCELLED" && (
+                                  {(sale.billingStatus === "CANCELLED" || sale.isAnnulledByNote) && (
                                     <div className="flex items-center gap-1.5">
                                       <span className="text-[9px] bg-rose-50 text-rose-700 font-black border border-rose-200 px-1.5 py-0.5 rounded uppercase">
                                         Anulado (N/C)
@@ -5255,6 +5274,19 @@ export default function BusinessPosPage() {
                                           <FileText className="w-3.5 h-3.5" />
                                         </a>
                                       )}
+                                    </div>
+                                  )}
+                                  {sale.billingNotes && sale.billingNotes.length > 0 && (
+                                    <div className="pt-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => setSelectedSaleForNotes(sale)}
+                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded text-[10px] font-bold cursor-pointer transition-all shadow-2xs"
+                                        title="Ver notas oficiales emitidas ante SUNAT"
+                                      >
+                                        <Receipt className="w-3 h-3 text-indigo-600" />
+                                        <span>{sale.billingNotes.length} Nota(s) ({sale.billingNotes[0].fullNumber})</span>
+                                      </button>
                                     </div>
                                   )}
                                 </div>
@@ -5658,6 +5690,23 @@ export default function BusinessPosPage() {
         }}
       />
 
+      {/* MODAL: Ver Notas Electrónicas Vinculadas SUNAT */}
+      {selectedSaleForNotes && (
+        <SunatNotesListModal
+          isOpen={Boolean(selectedSaleForNotes)}
+          onClose={() => setSelectedSaleForNotes(null)}
+          documentTitle={`${
+            selectedSaleForNotes.billingType === "FACTURA" ? "Factura" : "Boleta"
+          } ${selectedSaleForNotes.billingSerie}-${String(
+            selectedSaleForNotes.billingNumber
+          ).padStart(8, "0")}`}
+          originalAmount={Number(selectedSaleForNotes.amount || 0)}
+          currentBalance={selectedSaleForNotes.netAmount}
+          status={selectedSaleForNotes.billingStatus}
+          notes={selectedSaleForNotes.billingNotes || []}
+        />
+      )}
+
       {/* MODAL: Edición Inteligente SUNAT (Diff Engine) en POS */}
       <SunatSmartEditModal
         isOpen={isSmartEditModalOpen}
@@ -5707,6 +5756,23 @@ export default function BusinessPosPage() {
           }
         }}
       />
+
+      {/* MODAL: Ver Notas Electrónicas Vinculadas SUNAT */}
+      {selectedSaleForNotes && (
+        <SunatNotesListModal
+          isOpen={Boolean(selectedSaleForNotes)}
+          onClose={() => setSelectedSaleForNotes(null)}
+          documentTitle={`${
+            selectedSaleForNotes.billingType === "FACTURA" ? "Factura" : "Boleta"
+          } ${selectedSaleForNotes.billingSerie}-${String(
+            selectedSaleForNotes.billingNumber
+          ).padStart(8, "0")}`}
+          originalAmount={Number(selectedSaleForNotes.amount || 0)}
+          currentBalance={selectedSaleForNotes.netAmount}
+          status={selectedSaleForNotes.billingStatus}
+          notes={selectedSaleForNotes.billingNotes || []}
+        />
+      )}
   {/* MODAL: Ajustar Precio Ítem */ }
   <Modal
     isOpen={adjustingCartIndex !== null}

@@ -58,6 +58,7 @@ import { SunatAnnulmentModal, type SunatAnnulmentOptions } from "../components/u
 import { SunatSmartEditModal } from "../components/ui/SunatSmartEditModal";
 import { SunatManualNoteModal } from "../components/ui/SunatManualNoteModal";
 import { SunatSuccessResultModal } from "../components/ui/SunatSuccessResultModal";
+import { SunatNotesListModal } from "../components/ui/SunatNotesListModal";
 import SystemErrorModal from "../components/ui/SystemErrorModal";
 import { parseSystemError, type SystemErrorInfo } from "../utils/systemErrorHandler";
 import {
@@ -111,6 +112,7 @@ export default function BusinessBillingPage() {
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [selectedDocForPreview, setSelectedDocForPreview] = useState<FiscalDocument | null>(null);
   const [selectedDocForNote, setSelectedDocForNote] = useState<FiscalDocument | null>(null);
+  const [selectedDocForNotesList, setSelectedDocForNotesList] = useState<FiscalDocument | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
 
   // Amazonia detection
@@ -1345,6 +1347,19 @@ export default function BusinessBillingPage() {
                               {doc.fullNumber}
                             </span>
                           </div>
+                          {doc.notas && doc.notas.length > 0 && (
+                            <div className="pt-1">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedDocForNotesList(doc)}
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 cursor-pointer shadow-2xs transition-colors"
+                                title="Ver notas oficiales emitidas ante SUNAT"
+                              >
+                                <Receipt className="w-3 h-3 text-indigo-600" />
+                                <span>{doc.notas.length} Nota(s) ({doc.notas[0].fullNumber})</span>
+                              </button>
+                            </div>
+                          )}
                         </td>
 
                         <td className="px-6 py-4 text-xs text-slate-500 whitespace-nowrap">
@@ -1378,8 +1393,16 @@ export default function BusinessBillingPage() {
                         </td>
 
                         <td className="px-6 py-4 text-right font-mono font-bold text-slate-900">
-                          {doc.currency === "USD" ? "$ " : "S/ "}
-                          {doc.totalAmount.toFixed(2)}
+                          <div>
+                            {doc.currency === "USD" ? "$ " : "S/ "}
+                            {(doc.saldoDisponible !== undefined ? doc.saldoDisponible : doc.totalAmount).toFixed(2)}
+                          </div>
+                          {doc.saldoDisponible !== undefined && Number(doc.saldoDisponible) !== Number(doc.totalAmount) && (
+                            <span className="block text-[10px] text-slate-400 font-normal line-through">
+                              Orig: {doc.currency === "USD" ? "$ " : "S/ "}
+                              {doc.totalAmount.toFixed(2)}
+                            </span>
+                          )}
                         </td>
 
                         {/* ESTADO COMERCIAL */}
@@ -3048,6 +3071,25 @@ export default function BusinessBillingPage() {
           }}
           resultData={successModalData}
         />
+
+        {/* MODAL OFICIAL: HISTORIAL DE NOTAS DE CRÉDITO Y DÉBITO VINCULADAS */}
+        {selectedDocForNotesList && (
+          <SunatNotesListModal
+            isOpen={Boolean(selectedDocForNotesList)}
+            onClose={() => setSelectedDocForNotesList(null)}
+            documentTitle={`${
+              selectedDocForNotesList.docType === "INVOICE"
+                ? "Factura"
+                : selectedDocForNotesList.docType === "BOLETA"
+                ? "Boleta"
+                : "Comprobante"
+            } ${selectedDocForNotesList.fullNumber}`}
+            originalAmount={Number(selectedDocForNotesList.totalAmount || 0)}
+            currentBalance={selectedDocForNotesList.saldoDisponible}
+            status={selectedDocForNotesList.status}
+            notes={selectedDocForNotesList.notas || []}
+          />
+        )}
 
         {/* Modal de Diagnóstico y Asistencia Oficial de Errores del Sistema y SUNAT */}
         <SystemErrorModal

@@ -833,4 +833,33 @@ export class CcofactService {
     }
     return data;
   }
+
+  /**
+   * Obtiene lista de comprobantes o notas emitidas desde el motor CCOFACT PRO
+   */
+  async fetchDocumentsFromCcofact(
+    owner: { ccofactUrl?: string | null; ccofactApiKey?: string | null },
+    params?: { document_type?: string; series?: string; limit?: number },
+  ): Promise<any[]> {
+    if (!owner.ccofactUrl || !owner.ccofactApiKey) return [];
+    try {
+      const baseUrl = this.normalizeBaseUrl(owner.ccofactUrl);
+      const q = new URLSearchParams();
+      if (params?.document_type) q.append('document_type', params.document_type);
+      if (params?.series) q.append('series', params.series);
+      q.append('limit', String(params?.limit || 100));
+
+      const res = await fetch(`${baseUrl}/api/v1/documents?${q.toString()}`, {
+        headers: {
+          'x-api-key': owner.ccofactApiKey,
+        },
+      });
+      if (!res.ok) return [];
+      const data: any = await res.json();
+      return Array.isArray(data) ? data : (data.data || []);
+    } catch (e: any) {
+      this.logger.warn(`Error obteniendo comprobantes de CCOFACT PRO: ${e.message}`);
+      return [];
+    }
+  }
 }

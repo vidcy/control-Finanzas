@@ -76,6 +76,10 @@ export interface FiscalDocument {
   };
   createdAt: string;
   updatedAt: string;
+  notas?: any[];
+  saldoDisponible?: number;
+  totalNotasCredito?: number;
+  totalNotasDebito?: number;
 }
 
 export interface BillingStats {

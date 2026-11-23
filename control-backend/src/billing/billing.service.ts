@@ -560,6 +560,8 @@ export class BillingService {
       ];
     }
 
+    await this.syncNotesFromCcofact(ownerId).catch(() => {});
+
     const documents = await this.prisma.fiscalDocument.findMany({
       where,
       orderBy: { createdAt: 'desc' },
@@ -577,7 +579,69 @@ export class BillingService {
       },
     });
 
-    return documents;
+    const notes = await this.prisma.fiscalDocument.findMany({
+      where: {
+        userId: ownerId,
+        docType: { in: [FiscalDocType.CREDIT_NOTE, FiscalDocType.DEBIT_NOTE] },
+      },
+      orderBy: { correlative: 'desc' },
+    });
+
+    return documents.map((doc) => {
+      const fullTag = `[REF:${doc.serie}-${String(doc.correlative).padStart(8, '0')}]`;
+      const fallbackTag = `${doc.serie}-${String(doc.correlative).padStart(8, '0')}`;
+      const docNotes = notes.filter(
+        (n) =>
+          n.id !== doc.id &&
+          (n.sunatDescription?.includes(fullTag) || n.sunatDescription?.includes(fallbackTag)),
+      );
+
+      let sumCredits = 0;
+      let sumDebits = 0;
+      let hasAnnulNote = false;
+
+      for (const n of docNotes) {
+        if (n.docType === FiscalDocType.CREDIT_NOTE) {
+          sumCredits += Number(n.totalAmount || 0);
+          if (
+            n.sunatDescription?.toUpperCase().includes('ANULACION') ||
+            sumCredits >= Number(doc.totalAmount) - 0.01
+          ) {
+            hasAnnulNote = true;
+          }
+        } else if (n.docType === FiscalDocType.DEBIT_NOTE) {
+          sumDebits += Number(n.totalAmount || 0);
+        }
+      }
+
+      const status = hasAnnulNote ? FiscalStatus.CANCELLED : doc.status;
+      const saldoDisponible = Math.max(
+        0,
+        Number((Number(doc.totalAmount) - sumCredits + sumDebits).toFixed(2)),
+      );
+
+      return {
+        ...doc,
+        status,
+        notas: docNotes.map((n) => ({
+          id: n.id,
+          docType: n.docType,
+          serie: n.serie,
+          correlative: n.correlative,
+          fullNumber: n.fullNumber,
+          totalAmount: Number(n.totalAmount),
+          status: n.status,
+          description: n.sunatDescription,
+          pdfUrl: n.pdfUrl,
+          xmlUrl: n.xmlUrl,
+          cdrUrl: n.cdrUrl,
+          createdAt: n.createdAt,
+        })),
+        saldoDisponible,
+        totalNotasCredito: sumCredits,
+        totalNotasDebito: sumDebits,
+      };
+    });
   }
 
   async getDocument(ownerId: string, id: string) {
@@ -1224,6 +1288,193 @@ export class BillingService {
   }
 
   /**
+   * REGISTRO Y PERSISTENCIA DE NOTAS FISCALES EN CONTROL FINANZAS
+   */
+  async recordNoteInFiscalDocument(
+    ownerId: string,
+    noteData: any,
+    options: {
+      refSerie: string;
+      refCorrelative: number;
+      branchId?: string | null;
+      docType?: 'CREDIT_NOTE' | 'DEBIT_NOTE';
+      customerDocType?: string;
+      customerDocNum?: string;
+      customerName?: string;
+      customerAddress?: string | null;
+    },
+  ) {
+    if (!noteData) return null;
+    const fullNumber =
+      noteData.full_number ||
+      `${noteData.serie || noteData.series}-${String(noteData.number || 1).padStart(8, '0')}`;
+    const parts = fullNumber.split('-');
+    const serie = parts[0];
+    const correlative = parseInt(parts[1], 10) || Number(noteData.number) || 1;
+    const docType: FiscalDocType =
+      options.docType === 'DEBIT_NOTE' || serie.includes('D')
+        ? FiscalDocType.DEBIT_NOTE
+        : FiscalDocType.CREDIT_NOTE;
+
+    const totalAmount = Number(noteData.total_amount || noteData.amount || 0);
+    const totalExonerada = Number(noteData.total_exonerada || 0);
+    const totalGravada = Number(noteData.total_gravada || 0);
+    const totalIgv = Number(noteData.total_igv || 0);
+    const totalInafecta = Number(noteData.total_inafecta || 0);
+
+    const owner = await this.prisma.user.findUnique({ where: { id: ownerId } });
+    const refTag = options.refSerie && options.refCorrelative > 0
+      ? `[REF:${options.refSerie}-${String(options.refCorrelative).padStart(8, '0')}]`
+      : '';
+    const noteReason =
+      noteData.ref_reason_desc ||
+      noteData.sunat_description ||
+      noteData.motivo ||
+      'Nota oficial SUNAT';
+    const desc = `${refTag} ${noteReason}`.trim();
+
+    const pdfUrl =
+      noteData.recursos?.pdf_url ||
+      noteData.recursos?.pdf_a4 ||
+      noteData.enlaces?.pdf ||
+      noteData.pdfUrl ||
+      null;
+    const xmlUrl =
+      noteData.recursos?.xml_url ||
+      noteData.recursos?.xml_firmado ||
+      noteData.enlaces?.xml ||
+      noteData.xmlUrl ||
+      null;
+    const cdrUrl =
+      noteData.recursos?.cdr_url ||
+      noteData.recursos?.cdr_sunat ||
+      noteData.enlaces?.cdr ||
+      noteData.cdrUrl ||
+      null;
+
+    try {
+      return await this.prisma.fiscalDocument.upsert({
+        where: {
+          userId_docType_serie_correlative: {
+            userId: ownerId,
+            docType,
+            serie,
+            correlative,
+          },
+        },
+        update: {
+          status: FiscalStatus.ACCEPTED,
+          totalAmount,
+          totalOpGravada: totalGravada,
+          totalOpExonerada: totalExonerada,
+          totalOpInafecta: totalInafecta,
+          totalIgv,
+          pdfUrl: pdfUrl || undefined,
+          xmlUrl: xmlUrl || undefined,
+          cdrUrl: cdrUrl || undefined,
+          sunatDescription: desc,
+        },
+        create: {
+          userId: ownerId,
+          docType,
+          serie,
+          correlative,
+          fullNumber,
+          status: FiscalStatus.ACCEPTED,
+          issuerRuc: owner?.businessRuc || '20000000001',
+          customerDocType: options.customerDocType || noteData.client_doc_type || '0',
+          customerDocNum: options.customerDocNum || noteData.client_doc_number || '00000000',
+          customerName: options.customerName || noteData.client_name || 'CLIENTES VARIOS',
+          customerAddress: options.customerAddress || noteData.client_address || null,
+          totalAmount,
+          totalOpGravada: totalGravada,
+          totalOpExonerada: totalExonerada,
+          totalOpInafecta: totalInafecta,
+          totalIgv,
+          currency: (noteData.currency || 'PEN') as any,
+          sunatResponseCode: '0',
+          sunatDescription: desc,
+          branchId: options.branchId || null,
+          saleId: null,
+          pdfUrl,
+          xmlUrl,
+          cdrUrl,
+          hash: noteData.hash || null,
+        },
+      });
+    } catch (err: any) {
+      this.logger.warn(`[recordNoteInFiscalDocument] Upsert error: ${err.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * SINCRONIZACIÓN AUTOMÁTICA DE NOTAS DESDE CCOFACT PRO HACIA CONTROL FINANZAS
+   */
+  async syncNotesFromCcofact(ownerId: string) {
+    const owner = await this.prisma.user.findUnique({
+      where: { id: ownerId },
+      select: { ccofactUrl: true, ccofactApiKey: true, businessRuc: true },
+    });
+    if (!owner?.ccofactUrl || !owner?.ccofactApiKey) return;
+
+    try {
+      const [creditNotes, debitNotes] = await Promise.all([
+        this.ccofactService.fetchDocumentsFromCcofact(owner, { document_type: '07' }),
+        this.ccofactService.fetchDocumentsFromCcofact(owner, { document_type: '08' }),
+      ]);
+
+      const allNotes = [...creditNotes, ...debitNotes];
+      for (const note of allNotes) {
+        if (!note.series || !note.number) continue;
+        const refSerie = note.ref_series || '';
+        const refNumber = Number(note.ref_number || 0);
+
+        await this.recordNoteInFiscalDocument(ownerId, note, {
+          refSerie,
+          refCorrelative: refNumber,
+          docType: note.document_type === '08' ? 'DEBIT_NOTE' : 'CREDIT_NOTE',
+          customerDocType: note.client_doc_type,
+          customerDocNum: note.client_doc_number,
+          customerName: note.client_name,
+          customerAddress: note.client_address,
+        });
+
+        // Si la nota de crédito anula totalmente el comprobante referenciado
+        if (note.document_type === '07' && refSerie && refNumber > 0) {
+          const reasonCode = String(note.ref_reason_code || '');
+          if (['01', '02', '06'].includes(reasonCode)) {
+            await this.prisma.fiscalDocument.updateMany({
+              where: {
+                userId: ownerId,
+                serie: refSerie,
+                correlative: refNumber,
+              },
+              data: {
+                status: FiscalStatus.CANCELLED,
+                sunatDescription: `Comprobante anulado formalmente ante SUNAT mediante Nota de Crédito ${note.full_number || ''}`,
+              },
+            }).catch(() => {});
+
+            await this.prisma.sale.updateMany({
+              where: {
+                user: { OR: [{ id: ownerId }, { parentId: ownerId }] },
+                billingSerie: refSerie,
+                billingNumber: refNumber,
+              },
+              data: {
+                billingStatus: 'CANCELLED',
+              },
+            }).catch(() => {});
+          }
+        }
+      }
+    } catch (e: any) {
+      this.logger.warn(`[syncNotesFromCcofact] Sync error: ${e.message}`);
+    }
+  }
+
+  /**
    * EDICIÓN INTELIGENTE DE COMPROBANTE CON DIFF ENGINE (SUNAT)
    */
   async smartEditBillingDocument(ownerId: string, id: string, dto: any) {
@@ -1245,13 +1496,28 @@ export class BillingService {
 
     // 2. Si fue Caso A (Se emitió Nuevo Comprobante y se anuló el anterior):
     if (result.caso === 'CASE_A' && result.nuevo_comprobante) {
+      // Liberar saleId del documento anterior para evitar conflicto con la restricción @unique
       await this.prisma.fiscalDocument.update({
         where: { id: doc.id },
         data: {
+          saleId: null,
           status: FiscalStatus.CANCELLED,
           sunatDescription: `Anulado mediante Nota de Crédito ${result.nota_credito?.full_number || ''}`,
         },
       });
+
+      if (result.nota_credito) {
+        await this.recordNoteInFiscalDocument(ownerId, result.nota_credito, {
+          refSerie: doc.serie,
+          refCorrelative: doc.correlative,
+          branchId: doc.branchId,
+          docType: 'CREDIT_NOTE',
+          customerDocType: doc.customerDocType,
+          customerDocNum: doc.customerDocNum,
+          customerName: doc.customerName,
+          customerAddress: doc.customerAddress,
+        });
+      }
 
       const newComp = result.nuevo_comprobante;
       const parts = (newComp.full_number || newComp.numero_completo || '').split('-');
@@ -1299,6 +1565,39 @@ export class BillingService {
           },
         });
       }
+    } else if (result.caso === 'CASE_B' && result.nota_credito) {
+      await this.recordNoteInFiscalDocument(ownerId, result.nota_credito, {
+        refSerie: doc.serie,
+        refCorrelative: doc.correlative,
+        branchId: doc.branchId,
+        docType: 'CREDIT_NOTE',
+        customerDocType: doc.customerDocType,
+        customerDocNum: doc.customerDocNum,
+        customerName: doc.customerName,
+        customerAddress: doc.customerAddress,
+      });
+    } else if (result.caso === 'CASE_C' && result.nota_debito) {
+      await this.recordNoteInFiscalDocument(ownerId, result.nota_debito, {
+        refSerie: doc.serie,
+        refCorrelative: doc.correlative,
+        branchId: doc.branchId,
+        docType: 'DEBIT_NOTE',
+        customerDocType: doc.customerDocType,
+        customerDocNum: doc.customerDocNum,
+        customerName: doc.customerName,
+        customerAddress: doc.customerAddress,
+      });
+    } else if (result.caso === 'CASE_D' && result.nota_credito) {
+      await this.recordNoteInFiscalDocument(ownerId, result.nota_credito, {
+        refSerie: doc.serie,
+        refCorrelative: doc.correlative,
+        branchId: doc.branchId,
+        docType: 'CREDIT_NOTE',
+        customerDocType: doc.customerDocType,
+        customerDocNum: doc.customerDocNum,
+        customerName: doc.customerName,
+        customerAddress: doc.customerAddress,
+      });
     }
 
     return result;
@@ -1359,6 +1658,19 @@ export class BillingService {
     };
 
     const result = await this.ccofactService.emitManualNote(owner, doc.serie, doc.correlative, normalizedDto);
+
+    if (result.nota) {
+      await this.recordNoteInFiscalDocument(ownerId, result.nota, {
+        refSerie: doc.serie,
+        refCorrelative: doc.correlative,
+        branchId: doc.branchId,
+        docType: noteType === '08' ? 'DEBIT_NOTE' : 'CREDIT_NOTE',
+        customerDocType: doc.customerDocType,
+        customerDocNum: doc.customerDocNum,
+        customerName: doc.customerName,
+        customerAddress: doc.customerAddress,
+      });
+    }
 
     // Si fue anulación total (motivos 01, 02 o 06 de NC) o el monto anula el saldo
     const isTotalAnnulment =
