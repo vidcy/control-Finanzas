@@ -1015,9 +1015,10 @@ export default function BusinessPosPage() {
 
   const handleEditSale = (sale: any) => {
     // Regla de Turno: Si el turno cerró, advertir al usuario para no descuadrar el arqueo
-    if (activeShift && sale.shiftId && sale.shiftId !== activeShift.id) {
+    const saleShift = sale.cashShiftId || sale.shiftId;
+    if (activeShift && saleShift && saleShift !== activeShift.id) {
       toast.error(
-        `Esta venta pertenece al turno cerrado #${sale.shiftId}. Para no alterar el balance del turno actual, cualquier nota o ajuste debe realizarse desde el módulo de Facturación.`
+        `Esta venta pertenece al turno cerrado #${saleShift}. Para no alterar el balance del turno actual, cualquier nota o ajuste debe realizarse desde el módulo de Facturación.`
       );
       return;
     }
@@ -5274,8 +5275,9 @@ export default function BusinessPosPage() {
                             <>
                               <button
                                 onClick={() => {
-                                  if (activeShift && sale.shiftId && sale.shiftId !== activeShift.id) {
-                                    toast.error("Esta venta pertenece a un turno cerrado. Para emitir notas sobre turnos anteriores, ingrese al módulo de Facturación.");
+                                  const saleShift = sale.cashShiftId || sale.shiftId;
+                                  if (activeShift && saleShift && saleShift !== activeShift.id) {
+                                    toast.error("Esta venta pertenece a un turno cerrado. Para emitir notas sobre turnos anteriores sin alterar el balance de caja actual, ingrese al módulo de Facturación.");
                                     return;
                                   }
                                   setSelectedSaleForNote(sale);
@@ -5289,8 +5291,9 @@ export default function BusinessPosPage() {
                               </button>
                               <button
                                 onClick={() => {
-                                  if (activeShift && sale.shiftId && sale.shiftId !== activeShift.id) {
-                                    toast.error("Esta venta pertenece a un turno cerrado. Para emitir notas sobre turnos anteriores, ingrese al módulo de Facturación.");
+                                  const saleShift = sale.cashShiftId || sale.shiftId;
+                                  if (activeShift && saleShift && saleShift !== activeShift.id) {
+                                    toast.error("Esta venta pertenece a un turno cerrado. Para emitir notas sobre turnos anteriores sin alterar el balance de caja actual, ingrese al módulo de Facturación.");
                                     return;
                                   }
                                   setSelectedSaleForNote(sale);
@@ -5643,11 +5646,15 @@ export default function BusinessPosPage() {
         }
         onConfirm={async (payload: any) => {
           if (!selectedSaleForNote) return;
-          await manualNoteSaleRequest(selectedSaleForNote.id, payload);
-          toast.success("Nota emitida y transmitida a SUNAT exitosamente.");
-          setIsManualNoteModalOpen(false);
-          setSelectedSaleForNote(null);
-          loadData();
+          try {
+            await manualNoteSaleRequest(selectedSaleForNote.id, payload);
+            toast.success("Nota emitida y transmitida a SUNAT exitosamente.");
+            setIsManualNoteModalOpen(false);
+            setSelectedSaleForNote(null);
+            loadData();
+          } catch (err: any) {
+            toast.error(err.response?.data?.message || err.message || "Error al emitir nota");
+          }
         }}
       />
 

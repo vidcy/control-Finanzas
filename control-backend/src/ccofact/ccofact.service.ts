@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FiscalDocType, FiscalStatus, Currency } from '@prisma/client';
 
@@ -790,7 +790,11 @@ export class CcofactService {
 
     const data: any = await res.json();
     if (!res.ok || data.statusCode >= 400 || data.exito === false) {
-      throw new Error(data.message || data.mensaje || data.error || 'Error al ejecutar edición inteligente en CCOFACT');
+      let detailedMsg = data.message || data.mensaje || data.error || 'Error al ejecutar edición inteligente en CCOFACT';
+      if (Array.isArray(data.errors) && data.errors.length > 0) {
+        detailedMsg += `: ${data.errors.join(' | ')}`;
+      }
+      throw new BadRequestException(detailedMsg);
     }
     return data;
   }
@@ -805,7 +809,7 @@ export class CcofactService {
     dto: any,
   ) {
     if (!owner.ccofactUrl || !owner.ccofactApiKey) {
-      throw new Error('Credenciales de CCOFACT PRO no configuradas en el perfil de empresa.');
+      throw new BadRequestException('Credenciales de CCOFACT PRO no configuradas en el perfil de empresa.');
     }
     const baseUrl = this.normalizeBaseUrl(owner.ccofactUrl);
     const url = `${baseUrl}/api/v1/documents/by-series-number/${serie}/${number}/manual-note`;
@@ -821,7 +825,11 @@ export class CcofactService {
 
     const data: any = await res.json();
     if (!res.ok || data.statusCode >= 400 || data.exito === false) {
-      throw new Error(data.message || data.mensaje || data.error || 'Error al emitir nota manual en CCOFACT');
+      let detailedMsg = data.message || data.mensaje || data.error || 'Error al emitir nota manual en CCOFACT';
+      if (Array.isArray(data.errors) && data.errors.length > 0) {
+        detailedMsg += `: ${data.errors.join(' | ')}`;
+      }
+      throw new BadRequestException(detailedMsg);
     }
     return data;
   }

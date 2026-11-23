@@ -3026,11 +3026,11 @@ export default function BusinessBillingPage() {
                   customerDocNum: selectedDocForManualNote.customerDocNum,
                   totalAmount: Number(selectedDocForManualNote.totalAmount),
                   issueDate: selectedDocForManualNote.createdAt,
-                  items: selectedDocForManualNote.sale?.items?.map((it: any) => ({
+                  items: (selectedDocForManualNote.sale?.items || (selectedDocForManualNote as any).items || []).map((it: any) => ({
                     productId: it.productId,
-                    name: it.name,
+                    name: it.name || it.description || "Ítem",
                     quantity: Number(it.quantity) || 1,
-                    price: Number(it.price) || 0,
+                    price: Number(it.price || it.unitPrice || it.unit_price) || 0,
                   })),
                 }
               : null

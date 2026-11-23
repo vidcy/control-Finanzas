@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CcofactService } from '../ccofact/ccofact.service';
+import { FiscalStatus } from '@prisma/client';
 
 function parseStartDateFilter(val?: string): Date | undefined {
   if (!val) return undefined;
@@ -832,16 +833,17 @@ export class SalesService {
       reason_description: String(dto.reason_description || dto.reasonText || dto.reason_text || 'Anulación de la operación').trim(),
       amount: dto.amount !== undefined ? Number(dto.amount) : undefined,
       issue_date: dto.issue_date || dto.issueDate,
-      items: Array.isArray(dto.items)
+      items: (Array.isArray(dto.items) && dto.items.length > 0)
         ? dto.items
             .map((it: any) => ({
-              code: it.code || it.productId || '',
+              code: it.code || it.productId || 'PROD',
               description: it.description || it.name || 'Ítem',
-              quantity: Number(it.quantity) || 1,
+              quantity: Number(it.quantity || it.returnQty) || 1,
               unit_price: Number(it.unit_price ?? it.price ?? 0),
-              total: Number(it.total ?? (Number(it.quantity || 1) * Number(it.unit_price ?? it.price ?? 0))),
+              unit_measure: it.unit_measure || it.unit || 'NIU',
+              igv_affectation_type: it.igv_affectation_type || it.igvAffectation || sale.igvAffectation || '20',
             }))
-            .filter((it: any) => it.description && it.unit_price > 0)
+            .filter((it: any) => it.description && it.unit_price >= 0)
         : undefined,
     };
 
@@ -856,47 +858,57 @@ export class SalesService {
     if (normalizedDto.note_type === '07' && ['01', '02', '06', '07'].includes(normalizedDto.reason_code)) {
       if (['01', '02', '06'].includes(normalizedDto.reason_code)) {
         for (const item of sale.items) {
-          if (sale.branchId) {
-            const bStock = await this.prisma.branchStock.findUnique({
-              where: { productId_branchId: { productId: item.productId, branchId: sale.branchId } },
-            });
-            if (bStock) {
-              await this.prisma.branchStock.update({
-                where: { id: bStock.id },
-                data: { stock: { increment: item.quantity } },
+          if (item.productId) {
+            if (sale.branchId) {
+              const bStock = await this.prisma.branchStock.findUnique({
+                where: { productId_branchId: { productId: item.productId, branchId: sale.branchId } },
               });
+              if (bStock) {
+                await this.prisma.branchStock.update({
+                  where: { id: bStock.id },
+                  data: { stock: { increment: item.quantity } },
+                });
+              }
             }
-          }
-          await this.prisma.product.update({
-            where: { id: item.productId },
-            data: { stock: { increment: item.quantity } },
-          });
+            await this.prisma.product.update({
+              where: { id: item.productId },
+              data: { stock: { increment: item.quantity } },
+            });
 
-          await this.prisma.inventoryMovement.create({
-            data: {
-              productId: item.productId,
-              quantity: item.quantity,
-              type: 'IN',
-              reason: 'SALE_RETURN',
-              userId: sale.userId,
-              unitCost: item.price,
-              totalCost: Number((item.quantity * item.price).toFixed(2)),
-              stockResult: 0,
-              documentId: sale.id,
-              branchId: sale.branchId,
-            },
-          });
+            await this.prisma.inventoryMovement.create({
+              data: {
+                productId: item.productId,
+                quantity: item.quantity,
+                type: 'IN',
+                reason: 'SALE_RETURN',
+                userId: sale.userId,
+                unitCost: item.price,
+                totalCost: Number((item.quantity * item.price).toFixed(2)),
+                stockResult: 0,
+                documentId: sale.id,
+                branchId: sale.branchId,
+              },
+            });
+          }
         }
 
         await this.prisma.sale.update({
           where: { id: sale.id },
           data: { billingStatus: 'CANCELLED' },
         });
+
+        await this.prisma.fiscalDocument.updateMany({
+          where: { serie: sale.billingSerie, correlative: sale.billingNumber },
+          data: {
+            status: FiscalStatus.CANCELLED,
+            sunatDescription: `Anulado mediante Nota de Crédito ${result.nota?.full_number || ''}`,
+          },
+        });
       } else if (normalizedDto.reason_code === '07' && Array.isArray(normalizedDto.items)) {
         for (const it of normalizedDto.items) {
           const matchingItem = sale.items.find(si => si.productId === it.code || si.name === it.description);
           const returnQty = Number(it.quantity) || 0;
-          if (matchingItem && returnQty > 0) {
+          if (matchingItem && matchingItem.productId && returnQty > 0) {
             if (sale.branchId) {
               const bStock = await this.prisma.branchStock.findUnique({
                 where: { productId_branchId: { productId: matchingItem.productId, branchId: sale.branchId } },

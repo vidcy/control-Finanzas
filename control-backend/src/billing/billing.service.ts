@@ -595,6 +595,7 @@ export class BillingService {
   async retryDocument(ownerId: string, id: string) {
     const doc = await this.prisma.fiscalDocument.findFirst({
       where: { id, userId: ownerId },
+      include: { sale: true },
     });
     if (!doc) throw new NotFoundException('Documento no encontrado');
 
@@ -896,6 +897,7 @@ export class BillingService {
   async updateDocument(ownerId: string, id: string, dto: UpdateBillingDto) {
     const doc = await this.prisma.fiscalDocument.findFirst({
       where: { id, userId: ownerId },
+      include: { sale: true },
     });
     if (!doc) throw new NotFoundException('Documento fiscal no encontrado');
 
@@ -997,6 +999,7 @@ export class BillingService {
   async deleteDocument(ownerId: string, id: string, options?: DeleteBillingDto) {
     const doc = await this.prisma.fiscalDocument.findFirst({
       where: { id, userId: ownerId },
+      include: { sale: true },
     });
     if (!doc) throw new NotFoundException('Comprobante fiscal no encontrado');
 
@@ -1226,6 +1229,7 @@ export class BillingService {
   async smartEditBillingDocument(ownerId: string, id: string, dto: any) {
     const doc = await this.prisma.fiscalDocument.findFirst({
       where: { id, userId: ownerId },
+      include: { sale: true },
     });
     if (!doc) throw new NotFoundException('Comprobante fiscal no encontrado.');
 
@@ -1306,6 +1310,7 @@ export class BillingService {
   async emitManualNoteForDocument(ownerId: string, id: string, dto: any) {
     const doc = await this.prisma.fiscalDocument.findFirst({
       where: { id, userId: ownerId },
+      include: { sale: true },
     });
     if (!doc) throw new NotFoundException('Comprobante fiscal no encontrado.');
 
@@ -1321,21 +1326,26 @@ export class BillingService {
     if (!owner) throw new NotFoundException('Usuario propietario no encontrado.');
 
     const noteType = dto.note_type || dto.noteType || '07';
-    const reasonCode = String(dto.reason_code || dto.reasonCode || '01');
+    const reasonCode = String(dto.reason_code || dto.reasonCode || '01').padStart(2, '0');
     const reasonDescription = String(
       dto.reason_description || dto.reason_text || dto.reasonText || 'ANULACION DE LA OPERACION'
     ).trim();
 
+    // Determinar tipo de afectación oficial del comprobante original (Gravado 10, Exonerado 20, Inafecto 30)
+    const originalAffectation =
+      doc.sale?.igvAffectation ||
+      (Number(doc.totalOpExonerada || 0) > 0 ? '20' : Number(doc.totalOpInafecta || 0) > 0 ? '30' : '10');
+
     const normalizedItems = (dto.items && Array.isArray(dto.items) && dto.items.length > 0)
       ? dto.items
-          .filter((it: any) => (Number(it.quantity || it.returnQty || 0) > 0) && (Number(it.unit_price || it.price || 0) > 0))
+          .filter((it: any) => (Number(it.quantity || it.returnQty || 0) > 0) && (Number(it.unit_price || it.price || 0) >= 0))
           .map((it: any) => ({
             code: it.code || 'PROD',
             description: String(it.description || it.name || 'Detalle del producto').trim(),
             quantity: Number(it.quantity || it.returnQty || 1),
             unit_price: Number(it.unit_price || it.price || 0),
             unit_measure: it.unit_measure || it.unit || 'NIU',
-            igv_affectation_type: it.igv_affectation_type || it.igvAffectation || '10',
+            igv_affectation_type: it.igv_affectation_type || it.igvAffectation || originalAffectation,
           }))
       : undefined;
 
@@ -1366,12 +1376,54 @@ export class BillingService {
       });
 
       if (doc.saleId) {
-        await this.prisma.sale.update({
+        const sale = await this.prisma.sale.findUnique({
           where: { id: doc.saleId },
-          data: {
-            billingStatus: 'CANCELLED',
-          },
+          include: { items: true },
         });
+
+        if (sale) {
+          await this.prisma.sale.update({
+            where: { id: doc.saleId },
+            data: {
+              billingStatus: 'CANCELLED',
+            },
+          });
+
+          // Restaurar inventario si la venta tenía productos con control de stock
+          for (const item of sale.items) {
+            if (item.productId) {
+              if (sale.branchId) {
+                const bStock = await this.prisma.branchStock.findUnique({
+                  where: { productId_branchId: { productId: item.productId, branchId: sale.branchId } },
+                });
+                if (bStock) {
+                  await this.prisma.branchStock.update({
+                    where: { id: bStock.id },
+                    data: { stock: { increment: item.quantity } },
+                  });
+                }
+              }
+              await this.prisma.product.update({
+                where: { id: item.productId },
+                data: { stock: { increment: item.quantity } },
+              });
+              await this.prisma.inventoryMovement.create({
+                data: {
+                  productId: item.productId,
+                  quantity: item.quantity,
+                  type: 'IN',
+                  reason: 'SALE_RETURN',
+                  userId: sale.userId,
+                  unitCost: item.price,
+                  totalCost: Number((item.quantity * item.price).toFixed(2)),
+                  stockResult: 0,
+                  documentId: sale.id,
+                  branchId: sale.branchId,
+                },
+              });
+            }
+          }
+        }
       }
     }
 
