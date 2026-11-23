@@ -52,7 +52,7 @@ export function FloatingSaveButton({
   const [destinationAccount, setDestinationAccount] = useState("Chanchito");
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
   const [selectedSubCategoryId, setSelectedSubCategoryId] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+  const [date, setDate] = useState(() => getPeruTodayInputStr());
   const [description, setDescription] = useState("");
 
   const [showLiquidityWarning, setShowLiquidityWarning] = useState(false);
@@ -158,7 +158,7 @@ export function FloatingSaveButton({
         setShowSaveModal(false);
         setSaveAmount("");
         setDescription("");
-        setDate(new Date().toISOString().split("T")[0]);
+        setDate(getPeruTodayInputStr());
         onSaveSuccess?.();
         window.dispatchEvent(new CustomEvent("transactionCreated"));
       } catch (error: any) {

@@ -137,7 +137,7 @@ export default function ExpensesPage() {
       // Formatos con guiones y barras
       formatPeruDate(paidAt), // "22-05-2026" (USANDO TU FUNCIÓN)
       formatPeruDate(paidAt).replace(/-/g, "/"), // "22/05/2026"
-      new Date(paidAt).toISOString().split("T")[0], // "2026-05-22"
+      utcToPeruInputDate(paidAt), // "2026-05-22"
 
       // Componentes individuales (día, mes, año)
       new Date(paidAt).getDate().toString(), // "22"

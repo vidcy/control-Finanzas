@@ -162,11 +162,27 @@ export class CcofactService {
         totalIgv = parseFloat((totalAmount - totalGravada).toFixed(2));
       }
 
+      const peruDate = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Lima',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(sale.date ? new Date(sale.date) : new Date());
+      const peruTime = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'America/Lima',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+      }).format(sale.date ? new Date(sale.date) : new Date());
+
       // PAYLOAD OFICIAL CCOFACT PRO UBL 2.1
       const payload = {
         idempotency_key: `sale_${sale.id}`,
         tipo_comprobante: isFactura ? '01' : '03',
         serie: serie,
+        fecha_emision: peruDate,
+        hora_emision: peruTime,
         moneda: sale.currency === 'USD' ? 'USD' : 'PEN',
         forma_pago: 'Contado',
         cliente: {
@@ -472,10 +488,26 @@ export class CcofactService {
       const docNum = isOriginalFactura ? (originalSale.clientDocumentNumber || '20000000001') : (originalSale.clientDocumentNumber && originalSale.clientDocumentNumber !== '-' ? originalSale.clientDocumentNumber : '00000000');
       const docDenom = originalSale.clientDenomination || (isOriginalFactura ? 'CLIENTE CON RUC' : 'CLIENTES VARIOS');
 
+      const peruDate = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Lima',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(sale.date ? new Date(sale.date) : new Date());
+      const peruTime = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'America/Lima',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+      }).format(sale.date ? new Date(sale.date) : new Date());
+
       const payload = {
         idempotency_key: `note_${sale.id}_${Date.now()}`,
         tipo_comprobante: isCredit ? '07' : '08',
         serie: serie,
+        fecha_emision: peruDate,
+        hora_emision: peruTime,
         moneda: sale.currency === 'USD' ? 'USD' : 'PEN',
         forma_pago: 'Contado',
         cliente: {

@@ -15,6 +15,7 @@ import ConfirmModal from "../components/ui/ConfirmModal";
 import Pagination from "../components/ui/Pagination";
 import { format, isPast, isToday } from "date-fns";
 import { es } from "date-fns/locale";
+import { peruInputDateToUtcISO } from "../utils/date.utils";
 
 export default function BusinessPendingPage() {
   const [pending, setPending] = useState<any[]>([]);
@@ -95,7 +96,7 @@ export default function BusinessPendingPage() {
         amount: formData.amount,
         categoryId: formData.categoryId,
         description: formData.description,
-        dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : undefined,
+        dueDate: formData.dueDate ? peruInputDateToUtcISO(formData.dueDate) : undefined,
         currency: formData.currency,
         exchangeRate: formData.currency === "USD" ? formData.exchangeRate : 1,
       };

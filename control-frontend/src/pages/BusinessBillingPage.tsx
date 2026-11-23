@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import Appshell from "../components/layout/Appshell";
 import { useAuth } from "../auth/AuthContext";
+import { getPeruTodayInputStr } from "../utils/date.utils";
 import {
   TAX_REGIMES,
   isAmazoniaDepartment,
@@ -118,8 +119,8 @@ export default function BusinessBillingPage() {
   const [emitCurrency, setEmitCurrency] = useState<"PEN" | "USD">("PEN");
   const [emitPaymentMethod, setEmitPaymentMethod] = useState("CASH");
   const [emitPaymentType, setEmitPaymentType] = useState<"CONTADO" | "CREDITO">("CONTADO");
-  const [emitIssueDate, setEmitIssueDate] = useState(() => new Date().toISOString().split("T")[0]);
-  const [emitDueDate, setEmitDueDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [emitIssueDate, setEmitIssueDate] = useState(() => getPeruTodayInputStr());
+  const [emitDueDate, setEmitDueDate] = useState(() => getPeruTodayInputStr());
   const [emitNotes, setEmitNotes] = useState(() => (isAmazoniaDepartment(user?.department) ? AMAZONIA_DEFAULT_LEGEND : ""));
   const [emitItems, setEmitItems] = useState<BillingItem[]>(() => [
     {

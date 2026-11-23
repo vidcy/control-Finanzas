@@ -200,7 +200,7 @@ export default function PendingPage() {
       // Formatos con guiones y barras
       formatPeruDate(dueDate), // "22-05-2026" (USANDO TU FUNCIÓN)
       formatPeruDate(dueDate).replace(/-/g, "/"), // "22/05/2026"
-      new Date(dueDate).toISOString().split("T")[0], // "2026-05-22"
+      utcToPeruInputDate(dueDate), // "2026-05-22"
 
       // Componentes individuales (día, mes, año)
       new Date(dueDate).getDate().toString(), // "22"

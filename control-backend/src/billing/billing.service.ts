@@ -87,12 +87,21 @@ export class BillingService {
 
   validateIssueDate(issueDateStr?: string) {
     if (!issueDateStr) return;
-    const today = new Date();
-    const maxDate = today.toISOString().split('T')[0];
+    const now = new Date();
+    const maxDate = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Lima',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(now);
 
-    const minDateObj = new Date(today);
-    minDateObj.setDate(minDateObj.getDate() - 3);
-    const minDate = minDateObj.toISOString().split('T')[0];
+    const minDateObj = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+    const minDate = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Lima',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(minDateObj);
 
     const selected = issueDateStr.split('T')[0];
     if (selected > maxDate) {

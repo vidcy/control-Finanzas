@@ -1,4 +1,9 @@
 import { Calendar, X } from "lucide-react";
+import {
+  getPeruTodayInputStr,
+  getPeruDaysAgoInputStr,
+  getPeruStartOfMonthInputStr,
+} from "../../utils/date.utils";
 
 interface DateRangePickerProps {
   dateFrom: string;
@@ -8,16 +13,9 @@ interface DateRangePickerProps {
   onClear: () => void;
 }
 
-const today = () => new Date().toISOString().slice(0, 10);
-const daysAgo = (n: number) => {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
-};
-const startOfMonth = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
-};
+const today = () => getPeruTodayInputStr();
+const daysAgo = (n: number) => getPeruDaysAgoInputStr(n);
+const startOfMonth = () => getPeruStartOfMonthInputStr();
 
 export default function DateRangePicker({
   dateFrom,

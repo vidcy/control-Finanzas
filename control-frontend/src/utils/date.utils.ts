@@ -59,6 +59,18 @@ export function formatPeruDateTime(utcISO: string | Date): string {
 }
 
 /**
+ * Formatea una fecha UTC al formato estándar 24h peruano (dd/MM/yyyy HH:mm).
+ * Ejemplo: "22/11/2026 21:30"
+ */
+export function formatPeruDateTime24(utcISO: string | Date): string {
+  if (!utcISO) return "-";
+  const date = new Date(utcISO);
+  if (isNaN(date.getTime())) return "-";
+  const zoned = toZonedTime(date, PERU_TZ);
+  return format(zoned, "dd/MM/yyyy HH:mm");
+}
+
+/**
  * Formatea una fecha UTC (ISO String o Date) a solo hora en formato peruano (hh:mm:ss a).
  * Ejemplo: "04:33:00 PM"
  */
@@ -92,8 +104,58 @@ export function utcToPeruInputDate(utcISO: string | Date): string {
  * Ejemplo: "2025-05-19"
  */
 export function getPeruTodayInputStr(): string {
-  const zoned = toZonedTime(new Date(), PERU_TZ);
-  return format(zoned, "yyyy-MM-dd");
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: PERU_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+/**
+ * Obtiene la fecha de hace N días en Perú en formato YYYY-MM-DD.
+ * Ejemplo: getPeruDaysAgoInputStr(7)
+ */
+export function getPeruDaysAgoInputStr(days: number): string {
+  const d = new Date();
+  d.setTime(d.getTime() - days * 24 * 60 * 60 * 1000);
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: PERU_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
+/**
+ * Obtiene el primer día del mes actual en Perú en formato YYYY-MM-01.
+ */
+export function getPeruStartOfMonthInputStr(): string {
+  const today = getPeruTodayInputStr();
+  const [year, month] = today.split("-");
+  return `${year}-${month}-01`;
+}
+
+/**
+ * Convierte una fecha YYYY-MM-DD (hora de Perú) al inicio del día en UTC (ISO string).
+ * Ejemplo: "2026-11-22" -> "2026-11-22T05:00:00.000Z"
+ */
+export function getPeruDayStartUtcISO(peruDateStr: string): string {
+  if (!peruDateStr) return "";
+  const localDateTimeStr = `${peruDateStr} 00:00:00.000`;
+  const utcDate = fromZonedTime(localDateTimeStr, PERU_TZ);
+  return utcDate.toISOString();
+}
+
+/**
+ * Convierte una fecha YYYY-MM-DD (hora de Perú) al final del día en UTC (ISO string).
+ * Ejemplo: "2026-11-22" -> "2026-11-23T04:59:59.999Z"
+ */
+export function getPeruDayEndUtcISO(peruDateStr: string): string {
+  if (!peruDateStr) return "";
+  const localDateTimeStr = `${peruDateStr} 23:59:59.999`;
+  const utcDate = fromZonedTime(localDateTimeStr, PERU_TZ);
+  return utcDate.toISOString();
 }
 
 // ======================================================

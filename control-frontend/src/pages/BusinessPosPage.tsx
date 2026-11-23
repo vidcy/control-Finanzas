@@ -13,6 +13,12 @@ import {
 } from "../utils/fiscalUtils";
 import { useAuth } from "../auth/AuthContext";
 import {
+  getPeruTodayInputStr,
+  getPeruDayStartUtcISO,
+  getPeruDayEndUtcISO,
+  formatPeruDateTime24,
+} from "../utils/date.utils";
+import {
   getProductsRequest,
   checkoutCartRequest,
   updateProductRequest,
@@ -592,12 +598,10 @@ export default function BusinessPosPage() {
 
   // Date filters for sales history
   const [salesStartDate, setSalesStartDate] = useState(() => {
-    const today = new Date().toISOString().split("T")[0];
-    return today;
+    return getPeruTodayInputStr();
   });
   const [salesEndDate, setSalesEndDate] = useState(() => {
-    const today = new Date().toISOString().split("T")[0];
-    return today;
+    return getPeruTodayInputStr();
   });
 
 
@@ -607,8 +611,8 @@ export default function BusinessPosPage() {
     try {
       const data = await getSalesRequest({
         workspace: "BUSINESS",
-        startDate: salesStartDate ? `${salesStartDate}T00:00:00.000Z` : undefined,
-        endDate: salesEndDate ? `${salesEndDate}T23:59:59.999Z` : undefined,
+        startDate: salesStartDate ? getPeruDayStartUtcISO(salesStartDate) : undefined,
+        endDate: salesEndDate ? getPeruDayEndUtcISO(salesEndDate) : undefined,
         userId: user?.role === "USER" ? user.id : undefined,
       });
       setSales(
@@ -641,7 +645,7 @@ export default function BusinessPosPage() {
     }
     const XLSX = await import("xlsx");
     const dataToExport = sales.map(sale => ({
-      "Fecha/Hora": format(new Date(sale.date), "yyyy-MM-dd HH:mm"),
+      "Fecha/Hora": formatPeruDateTime24(sale.date),
       "Vendedor": sale.user ? `${sale.user.name} ${sale.user.lastName || ""}`.trim() : "N/A",
       "Detalle": (sale.items && sale.items.length > 0)
         ? sale.items.map((i: any) => `${i.quantity}x ${i.name}`).join(", ")
@@ -721,7 +725,7 @@ export default function BusinessPosPage() {
       doc.setDrawColor(230, 230, 230);
       doc.line(14, y + rowHeight, 196, y + rowHeight);
 
-      const fecha = format(new Date(sale.date), "dd/MM/yy HH:mm");
+      const fecha = formatPeruDateTime24(sale.date);
       const vendedor = sale.user ? `${sale.user.name} ${sale.user.lastName || ""}`.trim() : "N/A";
       const total = sale.amountSoles || sale.amount || 0;
 
@@ -1572,7 +1576,7 @@ export default function BusinessPosPage() {
             : lastSale.billingType === "NOTA_DEBITO"
               ? "NOTA DE DÉBITO ELECTRÓNICA"
               : "NOTA DE VENTA";
-    const dateStr = format(lastSale.date, "dd/MM/yyyy HH:mm");
+    const dateStr = formatPeruDateTime24(lastSale.date);
     const payStr = paymentLabel[lastSale.paymentMethod] || lastSale.paymentMethod;
 
     // Generate SUNAT QR code
@@ -1945,7 +1949,7 @@ export default function BusinessPosPage() {
       y += 4;
       doc.setFont("courier", "normal");
       doc.setFontSize(7.5);
-      doc.text(`Fecha: ${format(lastSale.date, "dd/MM/yyyy HH:mm")}`, m, y);
+      doc.text(`Fecha: ${formatPeruDateTime24(lastSale.date)}`, m, y);
       y += 3.5;
       const numComp =
         lastSale.billingSerie && lastSale.billingNumber
@@ -2386,7 +2390,7 @@ export default function BusinessPosPage() {
                 }}
               >
                 <span>Fecha:</span>
-                <span>{format(new Date(lastSale.date), "dd/MM/yyyy HH:mm")}</span>
+                <span>{formatPeruDateTime24(lastSale.date)}</span>
               </div>
               <div
                 style={{
@@ -3536,7 +3540,7 @@ export default function BusinessPosPage() {
                 <div className="border-b border-dashed border-gray-300 my-3"></div>
                 <div className="flex justify-between text-[10px] mb-1">
                   <span>Fecha:</span>
-                  <span>{format(new Date(lastSale.date), "dd/MM/yyyy HH:mm")}</span>
+                  <span>{formatPeruDateTime24(lastSale.date)}</span>
                 </div>
                 <div className="flex justify-between text-[10px] mb-1">
                   <span>{lastSale.billingType && lastSale.billingType !== "TICKET_VENTA" ? "Comprobante:" : "Nota de Venta #:"}</span>
@@ -4653,7 +4657,7 @@ export default function BusinessPosPage() {
                           className="hover:bg-gray-50 transition-colors"
                         >
                           <td className="px-4 py-3 text-gray-500 whitespace-nowrap text-xs font-medium">
-                            {format(new Date(sale.date), "dd/MM/yyyy HH:mm")}
+                            {formatPeruDateTime24(sale.date)}
                           </td>
                           {user?.role === "ADMIN" && (
                             <td className="px-4 py-3 text-gray-600 whitespace-nowrap text-xs font-bold">

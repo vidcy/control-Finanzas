@@ -3,6 +3,12 @@ import FinanceAppShell from "../components/layout/Appshell";
 import Pagination from "../components/ui/Pagination";
 import { format } from "date-fns";
 import {
+  getPeruTodayInputStr,
+  getPeruStartOfMonthInputStr,
+  getPeruDayStartUtcISO,
+  getPeruDayEndUtcISO,
+} from "../utils/date.utils";
+import {
   DollarSign,
   Calendar,
   TrendingUp,
@@ -86,23 +92,25 @@ export default function BusinessCommissionsPage() {
     let end = "";
 
     if (dateRange === "today") {
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      start = today.toISOString();
-      end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).toISOString();
+      const today = getPeruTodayInputStr();
+      start = getPeruDayStartUtcISO(today);
+      end = getPeruDayEndUtcISO(today);
     } else if (dateRange === "month") {
-      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-      start = firstDay.toISOString();
-      end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999).toISOString();
+      const today = getPeruTodayInputStr();
+      const firstDay = getPeruStartOfMonthInputStr();
+      start = getPeruDayStartUtcISO(firstDay);
+      end = getPeruDayEndUtcISO(today);
     } else if (dateRange === "year") {
-      const firstDay = new Date(now.getFullYear(), 0, 1);
-      start = firstDay.toISOString();
-      end = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999).toISOString();
+      const today = getPeruTodayInputStr();
+      const year = today.split("-")[0];
+      start = getPeruDayStartUtcISO(`${year}-01-01`);
+      end = getPeruDayEndUtcISO(`${year}-12-31`);
     } else if (dateRange === "custom") {
       if (startDate) {
-        start = new Date(startDate).toISOString();
+        start = getPeruDayStartUtcISO(startDate);
       }
       if (endDate) {
-        end = new Date(endDate + "T23:59:59.999Z").toISOString();
+        end = getPeruDayEndUtcISO(endDate);
       }
     }
 

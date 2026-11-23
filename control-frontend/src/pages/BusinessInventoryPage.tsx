@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import Appshell from "../components/layout/Appshell";
+import { getPeruDayStartUtcISO, getPeruDayEndUtcISO } from "../utils/date.utils";
 import { motion, AnimatePresence } from "framer-motion";
 import JsBarcode from "jsbarcode";
 import {
@@ -886,8 +887,9 @@ export default function BusinessInventoryPage() {
     try {
       setPlannerLoading(true);
       const [year, month] = plannerMonth.split("-").map(Number);
-      const start = new Date(year, month - 1, 1).toISOString();
-      const end = new Date(year, month, 0, 23, 59, 59, 999).toISOString();
+      const lastDay = new Date(year, month, 0).getDate();
+      const start = getPeruDayStartUtcISO(`${plannerMonth}-01`);
+      const end = getPeruDayEndUtcISO(`${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`);
 
       const [data, orders] = await Promise.all([
         getLowStockAnalysisRequest(start, end),

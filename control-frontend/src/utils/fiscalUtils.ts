@@ -8,6 +8,8 @@
  * Además de regímenes especiales: Ley de Amazonía N° 27037 (0% IGV), Restaurantes MYPE Ley N° 31556 (10% IGV), etc.
  */
 
+import { getPeruTodayInputStr, getPeruDaysAgoInputStr } from "./date.utils";
+
 export interface TaxRegimeOption {
   code: string;
   name: string;
@@ -667,15 +669,11 @@ export function checkBancarizacionRequirement(
 // VALIDACIÓN LEGAL DE FECHA DE EMISIÓN (R.S. N° 193-2020 / MÁXIMO 3 DÍAS CALENDARIO)
 // ============================================================================
 export function getValidEmissionDateRange(): {
-  minDate: string; // YYYY-MM-DD (hace 3 días calendario)
-  maxDate: string; // YYYY-MM-DD (hoy)
+  minDate: string; // YYYY-MM-DD (hace 3 días calendario en hora Perú)
+  maxDate: string; // YYYY-MM-DD (hoy en hora Perú)
 } {
-  const today = new Date();
-  const maxDate = today.toISOString().split("T")[0];
-
-  const minDateObj = new Date(today);
-  minDateObj.setDate(minDateObj.getDate() - 3);
-  const minDate = minDateObj.toISOString().split("T")[0];
+  const maxDate = getPeruTodayInputStr();
+  const minDate = getPeruDaysAgoInputStr(3);
 
   return { minDate, maxDate };
 }
