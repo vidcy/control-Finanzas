@@ -24,7 +24,7 @@ import { TAX_REGIMES, isAmazoniaDepartment } from "../utils/fiscalUtils";
 export default function BusinessBranchesPage() {
   // Pagination states
   const [branchPage, setBranchPage] = useState(1);
-  const branchPageSize = 6;
+  const branchPageSize = 10;
 
   // States for branches CRUD
   const [branches, setBranches] = useState<Branch[]>([]);

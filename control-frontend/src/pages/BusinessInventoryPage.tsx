@@ -288,7 +288,7 @@ export default function BusinessInventoryPage() {
   const [productPage, setProductPage] = useState(1);
   const [productPageSize, setProductPageSize] = useState(8);
   const [orderPage, setOrderPage] = useState(1);
-  const orderPageSize = 6;
+  const orderPageSize = 10;
 
   useEffect(() => {
     setProductPage(1);

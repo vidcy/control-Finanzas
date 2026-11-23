@@ -235,9 +235,9 @@ export class HardwareScannerEngine {
   private timestamps: number[] = [];
   private isListening: boolean = false;
   private flushTimer: any = null;
-  public sensitivityMs: number = 85;
-  public idleAutoFlushMs: number = 190;
-  public burstResetDiffMs: number = 350;
+  public sensitivityMs: number = 40;
+  public idleAutoFlushMs: number = 180;
+  public burstResetDiffMs: number = 60;
   public lastScannedCode: string = "";
   public lastScanTimestamp: number = 0;
 
@@ -292,9 +292,46 @@ export class HardwareScannerEngine {
     this.dispatchScan(clean);
   }
 
+  private resetBuffer() {
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
+    this.buffer = "";
+    this.timestamps = [];
+  }
+
   private handleKeyDown(e: KeyboardEvent) {
-    // Ignorar teclas modificadoras solas
-    if (["Shift", "Control", "Alt", "Meta", "CapsLock"].includes(e.key)) {
+    // 1. Descartar combinaciones con modificadores (Ctrl, Alt, Meta/Windows/Cmd)
+    if (e.ctrlKey || e.altKey || e.metaKey) {
+      this.resetBuffer();
+      return;
+    }
+
+    // 2. Descartar teclas modificadoras solas y teclas de navegación/edición manual
+    if (
+      [
+        "Shift",
+        "Control",
+        "Alt",
+        "Meta",
+        "CapsLock",
+        "Escape",
+        "ArrowUp",
+        "ArrowDown",
+        "ArrowLeft",
+        "ArrowRight",
+        "Backspace",
+        "Delete",
+        "Home",
+        "End",
+        "PageUp",
+        "PageDown",
+        "Insert",
+      ].includes(e.key) ||
+      /^F\d{1,2}$/.test(e.key)
+    ) {
+      this.resetBuffer();
       return;
     }
 
@@ -302,26 +339,27 @@ export class HardwareScannerEngine {
     const lastTime = this.timestamps[this.timestamps.length - 1] || 0;
     const diff = lastTime === 0 ? 0 : now - lastTime;
 
-    // Si ha pasado más de 350ms desde la tecla anterior, es una interacción distinta -> reiniciar buffer
+    // Si la pausa entre caracteres es > 60ms, NO es una ráfaga continua de escáner HID
     if (diff > this.burstResetDiffMs && this.buffer.length > 0) {
-      if (this.flushTimer) {
-        clearTimeout(this.flushTimer);
-        this.flushTimer = null;
-      }
-      this.buffer = "";
-      this.timestamps = [];
+      this.resetBuffer();
     }
 
     // ── CASO A: Sufijo explícito recibido (ENTER o TAB) ──
     if (e.key === "Enter" || e.key === "Tab") {
-      if (this.buffer.length >= 2) {
-        e.preventDefault();
-        e.stopPropagation();
-        this.triggerScan();
-        return;
+      // Para confirmar que fue un escáner y no un humano presionando Enter:
+      // Debe tener al menos 3 caracteres y una velocidad media entre caracteres <= 45ms
+      if (this.buffer.length >= 3 && this.timestamps.length >= 2) {
+        const totalDuration = now - this.timestamps[0];
+        const avgDelay = totalDuration / (this.timestamps.length - 1);
+
+        if (avgDelay <= 45) {
+          e.preventDefault();
+          e.stopPropagation();
+          this.triggerScan();
+          return;
+        }
       }
-      this.buffer = "";
-      this.timestamps = [];
+      this.resetBuffer();
       return;
     }
 
@@ -336,13 +374,12 @@ export class HardwareScannerEngine {
       }
 
       // CASO C: AUTO-FLUSH PARA LECTORES SIN SUFIJO ENTER
-      // Si hay al menos 3 caracteres y la velocidad media es alta (< sensitivityMs)
-      if (this.buffer.length >= 3) {
+      // Solo si hay al menos 4 caracteres y la velocidad media es estrictamente de escáner (<= 35ms)
+      if (this.buffer.length >= 4 && this.timestamps.length >= 2) {
         const totalDuration = now - this.timestamps[0];
-        const avgSpeed = totalDuration / this.buffer.length;
+        const avgSpeed = totalDuration / (this.timestamps.length - 1);
 
-        if (avgSpeed <= this.sensitivityMs) {
-          // Esperar un silencio prudente de 190ms antes de disparar
+        if (avgSpeed <= 35) {
           this.flushTimer = setTimeout(() => {
             this.triggerScan();
           }, this.idleAutoFlushMs);
@@ -362,7 +399,7 @@ export class HardwareScannerEngine {
     this.timestamps = [];
 
     const cleanCode = sanitizeBarcode(rawCode);
-    if (!cleanCode || cleanCode.length < 2) return;
+    if (!cleanCode || cleanCode.length < 3) return;
 
     // Limpiar input si estaba enfocado
     const activeEl = document.activeElement;

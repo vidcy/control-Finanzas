@@ -25,7 +25,7 @@ export default function BusinessPendingPage() {
   const [type, setType] = useState<"INCOME" | "EXPENSE">("INCOME");
   const [editingPending, setEditingPending] = useState<any>(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 6;
+  const pageSize = 10;
 
   // Modal confirm delete states
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);

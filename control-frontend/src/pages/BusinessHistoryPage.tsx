@@ -30,7 +30,7 @@ export default function BusinessHistoryPage() {
   const [auditDateFrom, setAuditDateFrom] = useState("");
   const [auditDateTo, setAuditDateTo] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 6;
+  const pageSize = 10;
 
   // Detail Modal
   const [viewLogDetail, setViewLogDetail] = useState<any>(null);

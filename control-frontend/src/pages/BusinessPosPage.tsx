@@ -11,6 +11,9 @@ import {
   checkBancarizacionRequirement,
   validateRuc,
   validateDni,
+  analyzeDocumentDiff,
+  getValidEmissionDateRangeForDoc,
+  validateIssueDateForDoc,
 } from "../utils/fiscalUtils";
 import { useAuth } from "../auth/AuthContext";
 import {
@@ -356,13 +359,13 @@ export default function BusinessPosPage() {
             )
           );
         } else {
-          setDetectedDevices(["Pistola / Teclado HID USB estándar listo"]);
+          setDetectedDevices([]);
         }
       } else {
-        setDetectedDevices(["Modo Emulación HID Global Activo (Escáner USB/Bluetooth listo)"]);
+        setDetectedDevices([]);
       }
     } catch {
-      setDetectedDevices(["Modo Emulación HID Global Activo"]);
+      setDetectedDevices([]);
     } finally {
       setIsDetectingDevices(false);
     }
@@ -421,6 +424,9 @@ export default function BusinessPosPage() {
   const [isManualNoteModalOpen, setIsManualNoteModalOpen] = useState(false);
   const [isSmartEditModalOpen, setIsSmartEditModalOpen] = useState(false);
   const [selectedSaleForSmartEdit, setSelectedSaleForSmartEdit] = useState<any>(null);
+  // Estado para edición inteligente de venta en el carrito del POS
+  const [editingSale, setEditingSale] = useState<any | null>(null);
+  const [saleIssueDate, setSaleIssueDate] = useState<string>("");
   const [posSalesPageSize, setPosSalesPageSize] = useState<number>(10);
   const [noteReasonCode, setNoteReasonCode] = useState<number>(1);
   const [noteReasonText, setNoteReasonText] = useState<string>("");
@@ -964,9 +970,34 @@ export default function BusinessPosPage() {
     });
   };
 
-  const handleEditSale = (sale: any) => {
-    const isBilled = (sale.billingType === "BOLETA" || sale.billingType === "FACTURA") && sale.billingSerie && sale.billingNumber;
+  const handleCancelEditingSale = () => {
+    if (!editingSale) return;
+    const docLabel = editingSale.billingSerie
+      ? `${editingSale.billingSerie}-${String(editingSale.billingNumber).padStart(8, "0")}`
+      : `#${editingSale.id.slice(0, 8)}`;
 
+    setPosConfirmModal({
+      isOpen: true,
+      title: "Cancelar Modo de Edición",
+      message: `¿Estás seguro de cancelar la edición? El comprobante original ${docLabel} permanecerá completamente intacto en el sistema sin ninguna anulación ni emisión de nota de crédito.`,
+      confirmText: "Sí, Cancelar Edición",
+      cancelText: "Continuar Editando",
+      variant: "info",
+      onConfirm: () => {
+        setEditingSale(null);
+        setCart([]);
+        setClientDenomination("CLIENTES VARIOS");
+        setClientDocumentNumber("");
+        setClientAddress("");
+        setClientEmail("");
+        setBillingType("TICKET_VENTA");
+        setSaleIssueDate("");
+        toast("Modo de edición cancelado. El comprobante original no sufrió modificaciones.", { icon: "ℹ️" });
+      },
+    });
+  };
+
+  const handleEditSale = (sale: any) => {
     // Regla de Turno: Si el turno cerró, advertir al usuario para no descuadrar el arqueo
     if (activeShift && sale.shiftId && sale.shiftId !== activeShift.id) {
       toast.error(
@@ -982,82 +1013,90 @@ export default function BusinessPosPage() {
       return;
     }
 
-    // Si cuenta con comprobante electrónico aceptado, abrir Edición Inteligente SUNAT (Diff Engine)
-    if (isBilled && sale.billingStatus === "SUCCESS") {
-      setSelectedSaleForSmartEdit(sale);
-      setIsSmartEditModalOpen(true);
+    const startEditing = () => {
+      const newCartItems: CartItem[] = [];
+      for (const item of sale.items || []) {
+        if (item.productId) {
+          const prod = products.find((p) => p.id === item.productId);
+          if (prod) {
+            const matchingPres = prod.presentations?.find((p) => p.price === item.price);
+            newCartItems.push({
+              ...prod,
+              quantity: item.quantity,
+              salePrice: item.price,
+              originalSalePrice: prod.salePrice,
+              presentationId: matchingPres?.id || undefined,
+              isCustom: false,
+            });
+            continue;
+          }
+        }
+        newCartItems.push({
+          id: item.productId || `custom-${Date.now()}-${Math.random()}`,
+          name: item.name,
+          salePrice: item.price,
+          originalSalePrice: item.price,
+          quantity: item.quantity,
+          isCustom: true,
+          code: "",
+          stock: 99999,
+          unit: "UNIDAD",
+          presentations: [],
+        } as any);
+      }
+
+      setCart(newCartItems);
+      setEditingSale(sale);
+      setPaymentMethod(sale.paymentMethod || "CASH");
+      setSelectedAdvisorId(sale.advisorId || "");
+
+      if (sale.billingType === "BOLETA" || sale.billingType === "FACTURA") {
+        setBillingType(sale.billingType);
+        setClientDocumentType(sale.clientDocumentType || (sale.billingType === "FACTURA" ? "6" : "1"));
+        setClientDocumentNumber(sale.clientDocumentNumber || "");
+        setClientDenomination(sale.clientDenomination || "CLIENTES VARIOS");
+        setClientAddress(sale.clientAddress || "");
+        setClientEmail(sale.clientEmail || "");
+      } else {
+        setBillingType("TICKET_VENTA");
+        setClientDenomination(sale.clientDenomination || "CLIENTES VARIOS");
+      }
+
+      setPosIgvAffectation(sale.igvAffectation || "20");
+      setPosIgvRate(Number(sale.igvRate) === 10.5 ? 10.5 : 18.0);
+
+      // Formatear fecha de emisión para edición en el POS
+      let issueDateStr = "";
+      if (sale.date) {
+        const d = new Date(sale.date);
+        if (!isNaN(d.getTime())) {
+          issueDateStr = d.toISOString().split("T")[0];
+        }
+      }
+      setSaleIssueDate(issueDateStr || getPeruTodayInputStr());
+
+      setIsSalesListOpen(false);
+      const docLabel = sale.billingSerie ? `${sale.billingSerie}-${String(sale.billingNumber).padStart(8, "0")}` : `#${sale.id.slice(0, 8)}`;
+      toast.success(
+        `✏️ Venta ${docLabel} cargada en el carrito en Modo Edición. Modifica productos o cantidades y pulsa 'Cobrar' para formalizar.`,
+        { duration: 5500 }
+      );
+    };
+
+    if (cart.length > 0) {
+      setPosConfirmModal({
+        isOpen: true,
+        title: "Reemplazar Carrito Actual",
+        message: "Tienes productos en el carrito actual. ¿Deseas descartarlos para cargar y editar esta venta?",
+        confirmText: "Sí, Cargar Venta",
+        cancelText: "Mantener Carrito",
+        variant: "warning",
+        onConfirm: startEditing,
+      });
       return;
     }
 
-    setPosConfirmModal({
-      isOpen: true,
-      title: "Modificar Venta",
-      message: "¿Deseas editar esta venta? Los productos se cargarán en el carrito actual para que puedas modificarlos, y se devolverá el stock de la venta anterior.",
-      confirmText: "Cargar al Carrito y Modificar",
-      cancelText: "Cancelar",
-      variant: "warning",
-      onConfirm: async () => {
-        try {
-          await deleteSaleRequest(sale.id);
-          setCart([]);
-          setClientDenomination("CLIENTES VARIOS");
-
-          const newCartItems: CartItem[] = [];
-          for (const item of sale.items || []) {
-            if (item.productId) {
-              const prod = products.find((p) => p.id === item.productId);
-              if (prod) {
-                const matchingPres = prod.presentations?.find((p) => p.price === item.price);
-                newCartItems.push({
-                  ...prod,
-                  quantity: item.quantity,
-                  salePrice: item.price,
-                  originalSalePrice: prod.salePrice,
-                  presentationId: matchingPres?.id || undefined,
-                  isCustom: false,
-                });
-                continue;
-              }
-            }
-            newCartItems.push({
-              id: item.productId || `custom-${Date.now()}-${Math.random()}`,
-              name: item.name,
-              salePrice: item.price,
-              originalSalePrice: item.price,
-              quantity: item.quantity,
-              isCustom: true,
-              code: "",
-              stock: 99999,
-              unit: "UNIDAD",
-              presentations: [],
-            } as any);
-          }
-
-          setCart(newCartItems);
-          setPaymentMethod(sale.paymentMethod || "CASH");
-          setSelectedAdvisorId(sale.advisorId || "");
-
-          if (sale.billingType === "BOLETA" || sale.billingType === "FACTURA") {
-            setBillingType(sale.billingType);
-            setClientDocumentType(sale.clientDocumentType || "DNI");
-            setClientDocumentNumber(sale.clientDocumentNumber || "");
-            setClientDenomination(sale.clientDenomination || "");
-            setClientAddress(sale.clientAddress || "");
-            setClientEmail(sale.clientEmail || "");
-          } else {
-            setBillingType("TICKET_VENTA");
-          }
-
-          setIsSalesListOpen(false);
-          toast.success("Venta cargada en el carrito. Modifica lo que necesites y procesa el pago.");
-          loadData();
-          loadSales();
-        } catch (error: any) {
-          const parsed = parseSystemError(error, "Error al Modificar Venta");
-          setSystemError(parsed);
-        }
-      },
-    });
+    startEditing();
   };
 
   const loadData = async () => {
@@ -1508,9 +1547,125 @@ export default function BusinessPosPage() {
       }
     }
 
+    if (saleIssueDate) {
+      const dateCheck = validateIssueDateForDoc(saleIssueDate, billingType === "FACTURA" ? "01" : "03");
+      if (!dateCheck.isValid) {
+        toast.error(`Fecha de emisión no válida: ${dateCheck.error}`);
+        return;
+      }
+    }
+
     setIsProcessing(true);
 
     try {
+      // SI ESTAMOS EN MODO EDICIÓN DE VENTA PREVIA
+      if (editingSale) {
+        const isBilled = (editingSale.billingType === "BOLETA" || editingSale.billingType === "FACTURA") && editingSale.billingSerie && editingSale.billingNumber && editingSale.billingStatus === "SUCCESS";
+        let diffResult: any = null;
+
+        if (isBilled) {
+          const origDocType = editingSale.billingType === "FACTURA" ? "01" : "03";
+          const newDocType = billingType === "FACTURA" ? "01" : "03";
+
+          let origDateStr = "";
+          if (editingSale.date) {
+            const d = new Date(editingSale.date);
+            if (!isNaN(d.getTime())) origDateStr = d.toISOString().split("T")[0];
+          }
+
+          diffResult = analyzeDocumentDiff({
+            original: {
+              docType: origDocType,
+              series: editingSale.billingSerie,
+              number: editingSale.billingNumber,
+              fullNumber: `${editingSale.billingSerie}-${String(editingSale.billingNumber).padStart(8, "0")}`,
+              issueDate: origDateStr || getPeruTodayInputStr(),
+              clientDocType: editingSale.clientDocumentType || (origDocType === "01" ? "6" : "1"),
+              clientDocNumber: editingSale.clientDocumentNumber || "",
+              clientName: editingSale.clientDenomination || "",
+              clientAddress: editingSale.clientAddress || "",
+              clientEmail: editingSale.clientEmail || "",
+              currency: "PEN",
+              paymentType: editingSale.paymentMethod || "Contado",
+              totalAmount: Number(editingSale.amount || editingSale.total || 0),
+              items: (editingSale.items || []).map((it: any) => ({
+                code: it.code || it.productId || "",
+                description: it.name,
+                quantity: Number(it.quantity) || 1,
+                unitPrice: Number(it.price) || 0,
+              })),
+            },
+            edited: {
+              issueDate: saleIssueDate || origDateStr || getPeruTodayInputStr(),
+              clientDocType: clientDocumentType,
+              clientDocNumber: clientDocumentNumber,
+              clientName: clientDenomination,
+              clientAddress: clientAddress,
+              clientEmail: clientEmail,
+              currency: "PEN",
+              paymentType: paymentMethod,
+              items: cart.map((c: any) => ({
+                code: c.code || c.barcode || c.sku || c.id || "",
+                description: c.name,
+                quantity: c.quantity,
+                unitPrice: c.salePrice,
+              })),
+            },
+          });
+        }
+
+        const editPayload = {
+          client_doc_type: (billingType === "BOLETA" || billingType === "FACTURA") ? clientDocumentType : undefined,
+          client_doc_number: (billingType === "BOLETA" || billingType === "FACTURA") ? clientDocumentNumber : undefined,
+          client_name: clientDenomination.trim() || "CLIENTES VARIOS",
+          client_address: (billingType === "BOLETA" || billingType === "FACTURA") ? clientAddress : undefined,
+          client_email: (billingType === "BOLETA" || billingType === "FACTURA") ? clientEmail : undefined,
+          payment_method: paymentMethod,
+          issue_date: saleIssueDate || undefined,
+          items: cart.map((c: any) => ({
+            productId: c.isCustom ? undefined : c.id,
+            code: c.code || c.barcode || c.sku || "",
+            name: c.name,
+            quantity: c.quantity,
+            price: c.salePrice,
+          })),
+          diffResult,
+        };
+
+        const editRes = await smartEditSaleRequest(editingSale.id, editPayload);
+
+        if (editRes.diffResult?.nota_credito) {
+          toast.success(
+            `✅ Nota de Crédito ${editRes.diffResult.nota_credito.full_number || ""} emitida con éxito (${editRes.diffResult.motivo_descripcion || "Ajuste formal"})`,
+            { duration: 6000 }
+          );
+        } else if (editRes.diffResult?.nota_debito) {
+          toast.success(
+            `✅ Nota de Débito ${editRes.diffResult.nota_debito.full_number || ""} emitida con éxito ante SUNAT`,
+            { duration: 6000 }
+          );
+        } else {
+          toast.success("Venta y comprobante modificados formalmente ante SUNAT.");
+        }
+
+        if (editRes.diffResult?.nuevo_comprobante) {
+          toast.success(
+            `📄 Nuevo Comprobante emitido: ${editRes.diffResult.nuevo_comprobante.full_number || ""}`,
+            { duration: 6000 }
+          );
+        }
+
+        setEditingSale(null);
+        setCart([]);
+        setReceiptUrl(null);
+        setIsCheckoutOpen(false);
+        setSaleIssueDate("");
+        await loadData();
+        await loadSales();
+        setIsProcessing(false);
+        return;
+      }
+
       // 2. Normalización de la URL del comprobante
       // finalReceiptUrl siempre será un string (URL) o undefined (si no hay nada)
       let finalReceiptUrl: string | undefined = undefined;
@@ -2800,6 +2955,53 @@ export default function BusinessPosPage() {
         </div>
       )}
 
+      {/* BANNER PROMINENTE: MODO EDICIÓN ACTIVO */}
+      {editingSale && (
+        <div className="mb-3 p-3.5 bg-gradient-to-r from-amber-500/10 via-indigo-500/10 to-violet-500/10 border-2 border-indigo-400/30 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-3 shadow-sm animate-in fade-in duration-200">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-indigo-600 text-white rounded-xl shadow-md shadow-indigo-600/20">
+              <Edit className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-black uppercase tracking-wider text-indigo-700 bg-indigo-100/90 px-2.5 py-0.5 rounded-full border border-indigo-200">
+                  Modo Edición de Venta / Comprobante
+                </span>
+                <span className="text-xs font-mono font-bold text-gray-900 bg-white px-2 py-0.5 rounded-lg border border-gray-200">
+                  {editingSale.billingSerie
+                    ? `${editingSale.billingSerie}-${String(editingSale.billingNumber).padStart(8, "0")}`
+                    : `#${editingSale.id.slice(0, 8)}`}
+                </span>
+                <span className="text-[11px] font-bold text-gray-600">
+                  Total original: S/ {Number(editingSale.amount || editingSale.total || 0).toFixed(2)}
+                </span>
+              </div>
+              <p className="text-[11px] text-gray-600 mt-1">
+                La venta original permanece protegida e intacta en la base de datos. Al cobrar, el sistema procesará formalmente la Nota SUNAT correspondiente.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 w-full md:w-auto justify-end flex-wrap">
+            <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-xl border border-gray-200 shadow-xs">
+              <span className="text-[11px] font-bold text-gray-500 whitespace-nowrap">Fecha Emisión:</span>
+              <input
+                type="date"
+                value={saleIssueDate}
+                onChange={(e) => setSaleIssueDate(e.target.value)}
+                className="text-xs font-bold text-indigo-900 outline-none bg-transparent cursor-pointer font-mono"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={handleCancelEditingSale}
+              className="px-3.5 py-1.5 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+            >
+              <X className="w-3.5 h-3.5" /> Cancelar Edición
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Mobile view selector */}
       <div className="lg:hidden flex bg-white/85 backdrop-blur-md p-1.5 rounded-2xl border border-gray-200 shadow-sm mb-3">
         <button
@@ -2875,8 +3077,8 @@ export default function BusinessPosPage() {
                   }`}
                   title={
                     scannerEnabled
-                      ? "Lector de código de barras USB/Bluetooth conectado y listo para recibir lecturas"
-                      : "Lector de código de barras desactivado"
+                      ? "Escucha de código de barras activa para pistolas USB/Bluetooth"
+                      : "Escucha de lector desactivada"
                   }
                 >
                   <Barcode className="w-3.5 h-3.5 text-emerald-600" />
@@ -2884,7 +3086,7 @@ export default function BusinessPosPage() {
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
                   )}
                   <span className="font-black text-[11px]">
-                    {scannerEnabled ? "Pistola USB Activa" : "Lector Inactivo"}
+                    {scannerEnabled ? "Modo Escáner: Activo" : "Lector Inactivo"}
                   </span>
                 </button>
                 <button
@@ -3539,8 +3741,17 @@ export default function BusinessPosPage() {
                 : "bg-indigo-600 hover:bg-indigo-700 text-white shadow-xl shadow-indigo-200 hover:-translate-y-0.5 active:scale-95 cursor-pointer"
                 }`}
             >
-              <ShoppingCart className="w-5 h-5" />
-              Cobrar Venta ({cart.reduce((sum, item) => sum + item.quantity, 0)} items)
+              {editingSale ? (
+                <>
+                  <Edit className="w-5 h-5" />
+                  Confirmar Modificación (Cobrar)
+                </>
+              ) : (
+                <>
+                  <ShoppingCart className="w-5 h-5" />
+                  Cobrar Venta ({cart.reduce((sum, item) => sum + item.quantity, 0)} items)
+                </>
+              )}
             </button>
 
             <button
@@ -4743,7 +4954,8 @@ export default function BusinessPosPage() {
                 </>
               ) : (
                 <>
-                  <ShoppingCart className="w-4 h-4" /> Finalizar Venta
+                  <ShoppingCart className="w-4 h-4" />{" "}
+                  {editingSale ? "Confirmar Modificación / Emitir Nota SUNAT" : "Finalizar Venta"}
                 </>
               )}
             </button>
@@ -5779,9 +5991,9 @@ export default function BusinessPosPage() {
   >
     <div className="space-y-4">
       <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-        <span className="text-xs font-semibold text-gray-600">Estado de detección automática:</span>
+        <span className="text-xs font-semibold text-gray-600">Estado de detección:</span>
         <span className={`text-xs px-2.5 py-1 rounded-full font-black ${scannerEnabled ? "bg-emerald-50 text-emerald-600 border border-emerald-200" : "bg-red-50 text-red-600 border border-red-200"}`}>
-          {scannerEnabled ? "✓ ACTIVO Y CONECTADO" : "APAGADO"}
+          {scannerEnabled ? "✓ ESCUCHA HID ACTIVA" : "APAGADO"}
         </span>
       </div>
 
@@ -5812,7 +6024,7 @@ export default function BusinessPosPage() {
           <input
             type="range"
             min="20"
-            max="150"
+            max="120"
             step="5"
             value={scannerSensitivity}
             onChange={(e) => {
@@ -5823,7 +6035,7 @@ export default function BusinessPosPage() {
             className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
           />
           <p className="text-[10px] text-gray-400 leading-tight">
-            El valor óptimo es 70-85ms. Detecta pistolas industriales y Bluetooth sin confundir escritura manual.
+            El valor óptimo es 35-50ms. Detecta pistolas industriales y Bluetooth sin confundir escritura manual del teclado.
           </p>
         </div>
 
@@ -5853,7 +6065,7 @@ export default function BusinessPosPage() {
               ))
             ) : (
               <span className="text-[11px] text-slate-400 italic block">
-                Escucha activa por interrupciones de teclado HID. Conecte cualquier lector USB.
+                Modo Universal Activo. La pistola actúa como teclado emulado de alta velocidad sin necesidad de vincular dispositivos específicos.
               </span>
             )}
           </div>

@@ -58,7 +58,7 @@ export default function BusinessWorkersPage() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 6;
+  const pageSize = 10;
   const paginatedWorkers = workers.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   
   // Modal states
