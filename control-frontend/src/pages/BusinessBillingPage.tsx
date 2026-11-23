@@ -3047,7 +3047,7 @@ export default function BusinessBillingPage() {
                   customerName: selectedDocForManualNote.customerName,
                   customerDocType: selectedDocForManualNote.customerDocType,
                   customerDocNum: selectedDocForManualNote.customerDocNum,
-                  totalAmount: Number(selectedDocForManualNote.totalAmount),
+                  totalAmount: Number(selectedDocForManualNote.saldoDisponible !== undefined ? selectedDocForManualNote.saldoDisponible : selectedDocForManualNote.totalAmount),
                   issueDate: selectedDocForManualNote.createdAt,
                   items: (selectedDocForManualNote.sale?.items || (selectedDocForManualNote as any).items || []).map((it: any) => ({
                     productId: it.productId,
@@ -3085,9 +3085,17 @@ export default function BusinessBillingPage() {
                 : "Comprobante"
             } ${selectedDocForNotesList.fullNumber}`}
             originalAmount={Number(selectedDocForNotesList.totalAmount || 0)}
+            originalDate={selectedDocForNotesList.createdAt}
             currentBalance={selectedDocForNotesList.saldoDisponible}
             status={selectedDocForNotesList.status}
             notes={selectedDocForNotesList.notas || []}
+            user={user}
+            onEmitSubsequentNote={(_type, _availableBalance) => {
+              const doc = selectedDocForNotesList;
+              setSelectedDocForNotesList(null);
+              setSelectedDocForManualNote(doc);
+              setIsManualNoteModalOpen(true);
+            }}
           />
         )}
 

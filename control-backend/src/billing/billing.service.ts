@@ -2140,18 +2140,6 @@ export class BillingService {
           estado: 'ACTIVO',
           condicion: 'HABIDO',
         };
-      } else if (ruc === '10475675946') {
-        sunatData = {
-          razon_social: 'QUISPE AYCA DAVID',
-          nombre_comercial: 'ELECTRODOMESTICOS AYCA',
-          direccion: 'Av. Las Américas 1240, Juliaca',
-          departamento: 'PUNO',
-          provincia: 'SAN ROMAN',
-          distrito: 'JULIACA',
-          ubigeo: '211101',
-          estado: 'ACTIVO',
-          condicion: 'HABIDO',
-        };
       }
     }
 

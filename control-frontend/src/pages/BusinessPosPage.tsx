@@ -5665,7 +5665,7 @@ export default function BusinessPosPage() {
                 customerName: selectedSaleForNote.clientDenomination || "CLIENTES VARIOS",
                 customerDocType: selectedSaleForNote.clientDocumentType || "1",
                 customerDocNum: selectedSaleForNote.clientDocumentNumber || "00000000",
-                totalAmount: Number(selectedSaleForNote.amount || selectedSaleForNote.total || 0),
+                totalAmount: Number(selectedSaleForNote.netAmount !== undefined ? selectedSaleForNote.netAmount : (selectedSaleForNote.amount || selectedSaleForNote.total || 0)),
                 issueDate: selectedSaleForNote.date,
                 items: (selectedSaleForNote.items || []).map((it: any) => ({
                   productId: it.productId,
@@ -5701,9 +5701,24 @@ export default function BusinessPosPage() {
             selectedSaleForNotes.billingNumber
           ).padStart(8, "0")}`}
           originalAmount={Number(selectedSaleForNotes.amount || 0)}
+          originalDate={selectedSaleForNotes.date}
           currentBalance={selectedSaleForNotes.netAmount}
           status={selectedSaleForNotes.billingStatus}
           notes={selectedSaleForNotes.billingNotes || []}
+          user={user}
+          branch={branches.find((b: any) => b.id === (selectedSaleForNotes.branchId || activeShift?.branchId))}
+          onEmitSubsequentNote={(type, availableBalance) => {
+            const sale = selectedSaleForNotes;
+            setSelectedSaleForNotes(null);
+            const saleShift = sale.cashShiftId || sale.shiftId;
+            if (activeShift && saleShift && saleShift !== activeShift.id) {
+              toast.error("Esta venta pertenece a un turno cerrado. Para emitir notas sobre turnos anteriores sin alterar el balance de caja actual, ingrese al módulo de Facturación.");
+              return;
+            }
+            setSelectedSaleForNote({ ...sale, netAmount: availableBalance });
+            setNoteType(type);
+            setIsManualNoteModalOpen(true);
+          }}
         />
       )}
 
@@ -5756,23 +5771,6 @@ export default function BusinessPosPage() {
           }
         }}
       />
-
-      {/* MODAL: Ver Notas Electrónicas Vinculadas SUNAT */}
-      {selectedSaleForNotes && (
-        <SunatNotesListModal
-          isOpen={Boolean(selectedSaleForNotes)}
-          onClose={() => setSelectedSaleForNotes(null)}
-          documentTitle={`${
-            selectedSaleForNotes.billingType === "FACTURA" ? "Factura" : "Boleta"
-          } ${selectedSaleForNotes.billingSerie}-${String(
-            selectedSaleForNotes.billingNumber
-          ).padStart(8, "0")}`}
-          originalAmount={Number(selectedSaleForNotes.amount || 0)}
-          currentBalance={selectedSaleForNotes.netAmount}
-          status={selectedSaleForNotes.billingStatus}
-          notes={selectedSaleForNotes.billingNotes || []}
-        />
-      )}
   {/* MODAL: Ajustar Precio Ítem */ }
   <Modal
     isOpen={adjustingCartIndex !== null}
