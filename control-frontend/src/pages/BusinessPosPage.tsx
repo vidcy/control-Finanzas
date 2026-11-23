@@ -857,9 +857,7 @@ export default function BusinessPosPage() {
       });
       toast.success(
         isBilled
-          ? options.method === "COMUNICACION_BAJA"
-            ? "Venta y comprobante anulados mediante Comunicación de Baja (stock restablecido sin gastar Nota de Crédito)"
-            : "Venta anulada formalmente con Nota de Crédito oficial ante SUNAT (stock restablecido)"
+          ? "Venta anulada formalmente con Nota de Crédito oficial ante SUNAT (stock restablecido)"
           : "Venta eliminada con éxito y stock restablecido"
       );
       setAnnulModalState({ isOpen: false, sale: null, isSubmitting: false });

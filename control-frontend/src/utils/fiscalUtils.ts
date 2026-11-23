@@ -937,3 +937,415 @@ export function resolveLocationFromUbigeoOrAddress(
     cleanAddress,
   };
 }
+
+
+// ============================================================================
+// CATÁLOGO N° 09 SUNAT: TIPOS DE NOTA DE CRÉDITO ELECTRÓNICA
+// ============================================================================
+export interface SunatCatalogOption {
+  code: string;
+  name: string;
+  description: string;
+  requiresBalanceCheck?: boolean;
+}
+
+export const SUNAT_CATALOGO_09: SunatCatalogOption[] = [
+  {
+    code: "01",
+    name: "Anulación de la operación",
+    description: "Anula el 100% del comprobante original (deja sin efecto la transacción comercial).",
+  },
+  {
+    code: "02",
+    name: "Anulación por error en el RUC",
+    description: "Anula la factura/boleta emitida por haber consignado erróneamente el RUC/DNI del cliente.",
+  },
+  {
+    code: "03",
+    name: "Corrección por error en la descripción",
+    description: "Corrige textos o descripciones sin alterar montos ni cantidades (máximo 10 días hábiles).",
+  },
+  {
+    code: "04",
+    name: "Descuento global",
+    description: "Aplica un descuento general sobre el monto total del comprobante.",
+    requiresBalanceCheck: true,
+  },
+  {
+    code: "05",
+    name: "Descuento por ítem",
+    description: "Aplica una rebaja de precio sobre un producto o servicio específico.",
+    requiresBalanceCheck: true,
+  },
+  {
+    code: "06",
+    name: "Devolución total",
+    description: "Devolución íntegra de la mercadería o desistimiento total del servicio.",
+  },
+  {
+    code: "07",
+    name: "Devolución por ítem",
+    description: "Devolución parcial de productos específicos o reducción de cantidades vendidas.",
+    requiresBalanceCheck: true,
+  },
+  {
+    code: "08",
+    name: "Bonificación",
+    description: "Entrega de bienes a título gratuito vinculados a una operación de venta.",
+  },
+  {
+    code: "09",
+    name: "Disminución en el valor",
+    description: "Ajuste a la baja en el precio pactado de la operación.",
+    requiresBalanceCheck: true,
+  },
+  {
+    code: "10",
+    name: "Otros conceptos",
+    description: "Ajustes tributarios no contemplados en los códigos anteriores.",
+  },
+  {
+    code: "11",
+    name: "Ajustes de operaciones de exportación",
+    description: "Modificación de valor FOB o conceptos en exportaciones de bienes o servicios.",
+  },
+  {
+    code: "12",
+    name: "Ajustes afectos al IVAP",
+    description: "Ajustes de operaciones afectas al Impuesto a la Venta de Arroz Pilado.",
+  },
+  {
+    code: "13",
+    name: "Corrección del monto neto pendiente de pago y/o fechas de vencimiento (Crédito)",
+    description: "Modificación de cuotas, fechas de pago o monto pendiente en facturas emitidas al crédito.",
+  },
+];
+
+// ============================================================================
+// CATÁLOGO N° 10 SUNAT: TIPOS DE NOTA DE DÉBITO ELECTRÓNICA
+// ============================================================================
+export const SUNAT_CATALOGO_10: SunatCatalogOption[] = [
+  {
+    code: "01",
+    name: "Intereses por mora",
+    description: "Cobro adicional por retraso o mora en el pago acordado.",
+  },
+  {
+    code: "02",
+    name: "Aumento en el valor",
+    description: "Ajuste al alza en el precio pactado o cobro de monto adicional de productos/servicios.",
+  },
+  {
+    code: "03",
+    name: "Penalidades / otros conceptos",
+    description: "Cobro de penalidades contractuales u otros conceptos adicionales.",
+  },
+  {
+    code: "11",
+    name: "Ajustes de operaciones de exportación",
+    description: "Incremento de valor FOB o conceptos en exportaciones.",
+  },
+  {
+    code: "12",
+    name: "Ajustes afectos al IVAP",
+    description: "Incrementos aplicables al Impuesto de Venta de Arroz Pilado.",
+  },
+];
+
+// ============================================================================
+// BLINDAJE DE FECHAS SEGÚN NORMATIVA SUNAT (FACTURA 2 DÍAS / BOLETA 5 DÍAS)
+// ============================================================================
+export function getValidEmissionDateRangeForDoc(docType: "01" | "03" | "FACTURA" | "BOLETA" = "01"): {
+  minDate: string;
+  maxDate: string;
+  maxCalendarDaysBack: number;
+  docTypeName: string;
+} {
+  const isFactura = docType === "01" || docType === "FACTURA";
+  const maxDate = getPeruTodayInputStr();
+  // Factura: HOY o hasta 2 días calendario hacia atrás (plazo de envío: 3 días calendario contados desde el día siguiente a la emisión)
+  // Boleta: HOY o hasta 5 días calendario hacia atrás (plazo de envío: 7 días calendario contados desde el día siguiente a la emisión)
+  const maxCalendarDaysBack = isFactura ? 2 : 5;
+  const minDate = getPeruDaysAgoInputStr(maxCalendarDaysBack);
+
+  return {
+    minDate,
+    maxDate,
+    maxCalendarDaysBack,
+    docTypeName: isFactura ? "Factura Electrónica" : "Boleta de Venta Electrónica",
+  };
+}
+
+export function validateIssueDateForDoc(
+  dateString: string | undefined,
+  docType: "01" | "03" | "FACTURA" | "BOLETA" = "01"
+): {
+  isValid: boolean;
+  minDate: string;
+  maxDate: string;
+  error?: string;
+} {
+  const { minDate, maxDate, docTypeName, maxCalendarDaysBack } = getValidEmissionDateRangeForDoc(docType);
+  if (!dateString) return { isValid: true, minDate, maxDate };
+
+  const selected = dateString.split("T")[0];
+  if (selected > maxDate) {
+    return {
+      isValid: false,
+      minDate,
+      maxDate,
+      error: `SUNAT rechaza fechas futuras. La fecha de emisión no puede ser posterior a hoy (${maxDate}).`,
+    };
+  }
+
+  if (selected < minDate) {
+    return {
+      isValid: false,
+      minDate,
+      maxDate,
+      error: `Para ${docTypeName}, SUNAT permite como fecha máxima de retroceso hasta ${maxCalendarDaysBack} días calendario (${minDate}). La fecha seleccionada (${selected}) excede el plazo legal de envío.`,
+    };
+  }
+
+  return { isValid: true, minDate, maxDate };
+}
+
+/**
+ * Calcula si entre una fecha original y hoy han transcurrido <= maxWorkingDays hábiles (lunes a viernes).
+ */
+export function isWorkingDaysWithin(originalDateStr: string, maxWorkingDays: number = 10): boolean {
+  if (!originalDateStr) return false;
+  const [y, m, d] = originalDateStr.split("T")[0].split("-").map(Number);
+  const cur = new Date(y, m - 1, d);
+  const now = new Date();
+
+  let workingDays = 0;
+  while (cur < now) {
+    cur.setDate(cur.getDate() + 1);
+    const dayOfWeek = cur.getDay(); // 0 = Domingo, 6 = Sábado
+    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+      workingDays++;
+    }
+  }
+
+  return workingDays <= maxWorkingDays;
+}
+
+// ============================================================================
+// MOTOR DE ANÁLISIS DE DIFERENCIAS (DIFF ENGINE)
+// ============================================================================
+export interface DiffItem {
+  code?: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  igvAffectationType?: string;
+}
+
+export interface DiffEngineInput {
+  original: {
+    docType: string; // "01" o "03"
+    series: string;
+    number: number | string;
+    fullNumber?: string;
+    issueDate: string; // YYYY-MM-DD
+    clientDocType: string;
+    clientDocNumber: string;
+    clientName: string;
+    clientAddress?: string;
+    clientEmail?: string;
+    currency: string;
+    paymentType?: string;
+    totalAmount: number;
+    items: DiffItem[];
+  };
+  edited: {
+    issueDate: string; // YYYY-MM-DD
+    clientDocType: string;
+    clientDocNumber: string;
+    clientName: string;
+    clientAddress?: string;
+    clientEmail?: string;
+    currency: string;
+    paymentType?: string;
+    items: DiffItem[];
+  };
+}
+
+export interface DiffEngineResult {
+  caseType: "CASE_A" | "CASE_B" | "CASE_C" | "CASE_D" | "NO_CHANGES";
+  actionTitle: string;
+  actionExplanation: string;
+  reasonCode: string; // Código de Catálogo 09 o 10
+  reasonDescription: string;
+  diffAmount: number; // Positivo si subió, negativo si bajó
+  originalTotal: number;
+  newTotal: number;
+  noteDocType: "07" | "08" | null; // 07 NC, 08 ND
+  generatesNewInvoice: boolean; // True si Caso A
+  isWithin10WorkingDays: boolean;
+  warnings?: string[];
+}
+
+export function analyzeDocumentDiff(input: DiffEngineInput): DiffEngineResult {
+  const { original, edited } = input;
+
+  const originalTotal = Number(original.totalAmount || 0);
+  const newTotal = Number(
+    edited.items.reduce((acc, it) => acc + (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0), 0).toFixed(2)
+  );
+  const diffAmount = Number((newTotal - originalTotal).toFixed(2));
+
+  // 1. Detectar Cambios en Cabecera
+  const dateChanged = original.issueDate.split("T")[0] !== edited.issueDate.split("T")[0];
+  const clientDocChanged =
+    (original.clientDocNumber || "").trim() !== (edited.clientDocNumber || "").trim() ||
+    (original.clientDocType || "").trim() !== (edited.clientDocType || "").trim();
+  const clientNameChanged = (original.clientName || "").trim().toUpperCase() !== (edited.clientName || "").trim().toUpperCase();
+  const currencyChanged = (original.currency || "PEN") !== (edited.currency || "PEN");
+  const paymentTypeChanged = (original.paymentType || "Contado") !== (edited.paymentType || "Contado");
+
+  const headerChanged = dateChanged || clientDocChanged || clientNameChanged || currencyChanged || paymentTypeChanged;
+
+  // 2. Comprobar días hábiles para descripciones
+  const isWithin10Days = isWorkingDaysWithin(original.issueDate, 10);
+
+  // 3. Detectar si SOLO cambió la descripción de texto
+  const sameItemCount = original.items.length === edited.items.length;
+  const sameQuantitiesAndPrices =
+    sameItemCount &&
+    original.items.every((it, i) => {
+      const ed = edited.items[i];
+      return (
+        ed &&
+        Number(it.quantity) === Number(ed.quantity) &&
+        Number(it.unitPrice) === Number(ed.unitPrice)
+      );
+    });
+  const descriptionChanged =
+    sameItemCount &&
+    original.items.some((it, i) => {
+      const ed = edited.items[i];
+      return ed && (it.description || "").trim() !== (ed.description || "").trim();
+    });
+
+  const onlyDescriptionChanged =
+    !headerChanged && diffAmount === 0 && sameQuantitiesAndPrices && descriptionChanged;
+
+  // 4. Caso D: Solo descripción (mismos montos/cantidades/cliente)
+  if (onlyDescriptionChanged) {
+    if (isWithin10Days) {
+      return {
+        caseType: "CASE_D",
+        actionTitle: "Caso D: Corrección por Error en la Descripción",
+        actionExplanation:
+          "Se detectó únicamente corrección de texto en ítems dentro del plazo legal de 10 días hábiles. Se emitirá una Nota de Crédito rectificativa (Motivo 03) con importe 0.00. El comprobante original se mantiene vigente.",
+        reasonCode: "03",
+        reasonDescription: "CORRECCION POR ERROR EN LA DESCRIPCION",
+        diffAmount: 0,
+        originalTotal,
+        newTotal,
+        noteDocType: "07",
+        generatesNewInvoice: false,
+        isWithin10WorkingDays: true,
+      };
+    } else {
+      // Si superó los 10 días hábiles, SUNAT no admite motivo 03: escala a Caso A
+      return {
+        caseType: "CASE_A",
+        actionTitle: "Caso A (Escalado): Anulación Total + Nuevo Comprobante",
+        actionExplanation:
+          "Han transcurrido más de 10 días hábiles desde la emisión original, por lo que SUNAT no permite corrección simple con motivo 03. Se emitirá una Nota de Crédito (Motivo 01) anulando el 100% y se emitirá una Nueva Factura/Boleta con los textos corregidos.",
+        reasonCode: "01",
+        reasonDescription: "ANULACION DE LA OPERACION",
+        diffAmount,
+        originalTotal,
+        newTotal,
+        noteDocType: "07",
+        generatesNewInvoice: true,
+        isWithin10WorkingDays: false,
+        warnings: ["Han pasado más de 10 días hábiles: SUNAT exige anulación total y reemisión."],
+      };
+    }
+  }
+
+  // 5. Caso A: Prevalencia si cambió cabecera (Fecha, RUC/DNI, Razón Social, Moneda, Pago)
+  if (headerChanged) {
+    const reasonCode = clientDocChanged ? "02" : "01";
+    const reasonDesc = clientDocChanged ? "ANULACION POR ERROR EN EL RUC" : "ANULACION DE LA OPERACION";
+    return {
+      caseType: "CASE_A",
+      actionTitle: "Caso A: Cambio de Cabecera (Anulación + Nuevo Comprobante)",
+      actionExplanation: clientDocChanged
+        ? "Se modificó el RUC o documento del cliente. Según la normativa SUNAT se emitirá una Nota de Crédito (Motivo 02: Anulación por error en el RUC) al 100% y de inmediato una Nueva Factura/Boleta con el documento correcto."
+        : "Se modificaron datos de cabecera (fecha, razón social, moneda o forma de pago). Se emitirá una Nota de Crédito (Motivo 01: Anulación de la operación) al 100% y de inmediato una Nueva Factura/Boleta con los datos corregidos.",
+      reasonCode,
+      reasonDescription: reasonDesc,
+      diffAmount,
+      originalTotal,
+      newTotal,
+      noteDocType: "07",
+      generatesNewInvoice: true,
+      isWithin10WorkingDays: isWithin10Days,
+    };
+  }
+
+  // 6. Caso B: Bajó el precio o cantidad (o quitó ítem) -> Descuento o Devolución
+  if (diffAmount < 0) {
+    const hasFewerItems = edited.items.length < original.items.length;
+    const hasReducedQuantity = original.items.some((it) => {
+      const match = edited.items.find((e) => (e.code && e.code === it.code) || e.description === it.description);
+      return match && Number(match.quantity) < Number(it.quantity);
+    });
+
+    const isDevolucion = hasFewerItems || hasReducedQuantity;
+    const reasonCode = isDevolucion ? "07" : "05";
+    const reasonDesc = isDevolucion ? "DEVOLUCION POR ITEM" : "DESCUENTO POR ITEM";
+
+    return {
+      caseType: "CASE_B",
+      actionTitle: `Caso B: Disminución de Valor (-S/ ${Math.abs(diffAmount).toFixed(2)})`,
+      actionExplanation: `Se detectó una disminución en el importe por ${isDevolucion ? "devolución de cantidades/ítems" : "descuento de precio"}. Se emitirá una Nota de Crédito (Motivo ${reasonCode}) únicamente por la diferencia restada (-S/ ${Math.abs(diffAmount).toFixed(2)}). El comprobante original se mantiene válido por el nuevo saldo.`,
+      reasonCode,
+      reasonDescription: reasonDesc,
+      diffAmount,
+      originalTotal,
+      newTotal,
+      noteDocType: "07",
+      generatesNewInvoice: false,
+      isWithin10WorkingDays: isWithin10Days,
+    };
+  }
+
+  // 7. Caso C: Subió el precio o agregó ítems -> Aumento en el valor (Nota de Débito)
+  if (diffAmount > 0) {
+    return {
+      caseType: "CASE_C",
+      actionTitle: `Caso C: Aumento de Valor (+S/ ${diffAmount.toFixed(2)})`,
+      actionExplanation: `Se detectó un aumento en el importe (+S/ ${diffAmount.toFixed(2)}). Se emitirá una Nota de Débito oficial (Catálogo 10 Motivo 02: Aumento en el valor) únicamente por el valor adicional sumado. El comprobante original se mantiene válido sumado a la Nota de Débito.`,
+      reasonCode: "02",
+      reasonDescription: "AUMENTO EN EL VALOR",
+      diffAmount,
+      originalTotal,
+      newTotal,
+      noteDocType: "08",
+      generatesNewInvoice: false,
+      isWithin10WorkingDays: isWithin10Days,
+    };
+  }
+
+  // Sin cambios
+  return {
+    caseType: "NO_CHANGES",
+    actionTitle: "Sin Cambios Detectados",
+    actionExplanation: "Los datos editados son idénticos al comprobante original. No se requiere emitir Notas ni Comprobantes.",
+    reasonCode: "00",
+    reasonDescription: "SIN CAMBIOS",
+    diffAmount: 0,
+    originalTotal,
+    newTotal,
+    noteDocType: null,
+    generatesNewInvoice: false,
+    isWithin10WorkingDays: isWithin10Days,
+  };
+}

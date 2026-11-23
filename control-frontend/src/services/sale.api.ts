@@ -34,11 +34,21 @@ export const issueSaleDebitNoteRequest = async (
 export const deleteSaleRequest = async (
   id: string,
   options?: {
-    method?: 'COMUNICACION_BAJA' | 'NOTA_CREDITO';
+    method?: 'NOTA_CREDITO';
     motivo?: string;
     deliveredToClient?: boolean;
   },
 ) => {
   const { data } = await axios.delete(`/sales/${id}`, { data: options });
+  return data;
+};
+
+export const smartEditSaleRequest = async (id: string, payload: any) => {
+  const { data } = await axios.post(`/sales/${id}/smart-edit`, payload);
+  return data;
+};
+
+export const manualNoteSaleRequest = async (id: string, payload: any) => {
+  const { data } = await axios.post(`/sales/${id}/manual-note`, payload);
   return data;
 };

@@ -46,6 +46,7 @@ import {
   Check,
   HelpCircle,
   Edit3,
+  Wand2,
   AlertTriangle,
   Calendar,
   CreditCard,
@@ -54,6 +55,9 @@ import {
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
 import { SunatAnnulmentModal, type SunatAnnulmentOptions } from "../components/ui/SunatAnnulmentModal";
+import { SunatSmartEditModal } from "../components/ui/SunatSmartEditModal";
+import { SunatManualNoteModal } from "../components/ui/SunatManualNoteModal";
+import { SunatSuccessResultModal } from "../components/ui/SunatSuccessResultModal";
 import SystemErrorModal from "../components/ui/SystemErrorModal";
 import { parseSystemError, type SystemErrorInfo } from "../utils/systemErrorHandler";
 import {
@@ -69,6 +73,8 @@ import {
   consultarRucRequest,
   updateBillingDocumentRequest,
   deleteBillingDocumentRequest,
+  smartEditBillingDocumentRequest,
+  manualNoteBillingDocumentRequest,
   testCcofactConnectionRequest,
   type FiscalDocument,
   type BillingStats,
@@ -178,6 +184,20 @@ export default function BusinessBillingPage() {
   const [editRectifyAccepted, setEditRectifyAccepted] = useState(false);
   const [editRectifyReason, setEditRectifyReason] = useState("ANULACION POR MODIFICACION Y RECTIFICACION DE COMPROBANTE");
   const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
+
+  // Smart Edit (Diff Engine) State
+  const [isSmartEditModalOpen, setIsSmartEditModalOpen] = useState(false);
+  const [selectedDocForSmartEdit, setSelectedDocForSmartEdit] = useState<FiscalDocument | null>(null);
+  const [isSubmittingSmartEdit, setIsSubmittingSmartEdit] = useState(false);
+
+  // Manual Note (Catálogo 09 / 10) State
+  const [isManualNoteModalOpen, setIsManualNoteModalOpen] = useState(false);
+  const [selectedDocForManualNote, setSelectedDocForManualNote] = useState<FiscalDocument | null>(null);
+  const [isSubmittingManualNote, setIsSubmittingManualNote] = useState(false);
+
+  // Success Result Smart Modal State
+  const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
+  const [successModalData, setSuccessModalData] = useState<any>(null);
 
   // Delete / Annul State
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -425,6 +445,115 @@ export default function BusinessBillingPage() {
     setNoteReasonCode(1);
     setNoteReasonText("Anulación de la operación");
     setIsNoteModalOpen(true);
+  };
+
+  // Smart Edit (Diff Engine SUNAT)
+  const handleOpenSmartEditModal = (doc: FiscalDocument) => {
+    setSelectedDocForSmartEdit(doc);
+    setIsSmartEditModalOpen(true);
+  };
+
+  const handleConfirmSmartEdit = async (payload: any) => {
+    if (!selectedDocForSmartEdit) return;
+    try {
+      setIsSubmittingSmartEdit(true);
+      const res = await smartEditBillingDocumentRequest(selectedDocForSmartEdit.id, payload);
+      toast.success("Edición Inteligente procesada con éxito ante SUNAT");
+      setIsSmartEditModalOpen(false);
+      loadData();
+
+      setSuccessModalData({
+        caso: res.caso,
+        message: res.mensaje || res.message,
+        originalDoc: {
+          fullNumber: selectedDocForSmartEdit.fullNumber,
+          totalAmount: Number(selectedDocForSmartEdit.totalAmount),
+        },
+        creditNote: res.nota_credito
+          ? {
+              fullNumber: res.nota_credito.full_number || res.nota_credito.numero_completo,
+              amount: Number(res.nota_credito.total_amount || res.nota_credito.amount || selectedDocForSmartEdit.totalAmount),
+              pdfUrl: res.recursos_nota?.pdf_url,
+              xmlUrl: res.recursos_nota?.xml_url,
+              cdrUrl: res.recursos_nota?.cdr_url,
+            }
+          : undefined,
+        debitNote: res.nota_debito
+          ? {
+              fullNumber: res.nota_debito.full_number,
+              amount: Number(res.nota_debito.total_amount || res.nota_debito.amount || 0),
+              pdfUrl: res.recursos_nota?.pdf_url,
+              xmlUrl: res.recursos_nota?.xml_url,
+              cdrUrl: res.recursos_nota?.cdr_url,
+            }
+          : undefined,
+        newDoc: res.nuevo_comprobante
+          ? {
+              fullNumber: res.nuevo_comprobante.full_number || res.nuevo_comprobante.numero_completo,
+              totalAmount: Number(res.nuevo_comprobante.total_amount || res.nuevo_comprobante.total || 0),
+              pdfUrl: res.recursos_nuevo?.pdf_url,
+              xmlUrl: res.recursos_nuevo?.xml_url,
+              cdrUrl: res.recursos_nuevo?.cdr_url,
+            }
+          : undefined,
+      });
+      setIsSuccessModalOpen(true);
+    } catch (err: any) {
+      const parsed = parseSystemError(err, "Error al procesar Edición Inteligente SUNAT");
+      setSystemError(parsed);
+    } finally {
+      setIsSubmittingSmartEdit(false);
+    }
+  };
+
+  // Manual Note (Catálogo 09 / 10 SUNAT)
+  const handleOpenManualNoteModal = (doc: FiscalDocument) => {
+    setSelectedDocForManualNote(doc);
+    setIsManualNoteModalOpen(true);
+  };
+
+  const handleConfirmManualNote = async (payload: any) => {
+    if (!selectedDocForManualNote) return;
+    try {
+      setIsSubmittingManualNote(true);
+      const res = await manualNoteBillingDocumentRequest(selectedDocForManualNote.id, payload);
+      toast.success("Nota oficial emitida con éxito ante SUNAT");
+      setIsManualNoteModalOpen(false);
+      loadData();
+
+      setSuccessModalData({
+        caso: "MANUAL_NOTE",
+        message: res.mensaje || res.message || "Nota emitida correctamente ante SUNAT.",
+        originalDoc: {
+          fullNumber: selectedDocForManualNote.fullNumber,
+          totalAmount: Number(selectedDocForManualNote.totalAmount),
+        },
+        creditNote: payload.note_type === "07" && res.nota
+          ? {
+              fullNumber: res.nota.full_number,
+              amount: Number(res.nota.total_amount || payload.amount || 0),
+              pdfUrl: res.recursos?.pdf_url,
+              xmlUrl: res.recursos?.xml_url,
+              cdrUrl: res.recursos?.cdr_url,
+            }
+          : undefined,
+        debitNote: payload.note_type === "08" && res.nota
+          ? {
+              fullNumber: res.nota.full_number,
+              amount: Number(res.nota.total_amount || payload.amount || 0),
+              pdfUrl: res.recursos?.pdf_url,
+              xmlUrl: res.recursos?.xml_url,
+              cdrUrl: res.recursos?.cdr_url,
+            }
+          : undefined,
+      });
+      setIsSuccessModalOpen(true);
+    } catch (err: any) {
+      const parsed = parseSystemError(err, "Error al Emitir Nota Oficial SUNAT");
+      setSystemError(parsed);
+    } finally {
+      setIsSubmittingManualNote(false);
+    }
   };
 
   // Open Edit Modal
@@ -1268,33 +1397,29 @@ export default function BusinessBillingPage() {
                               </a>
                             )}
 
-                            {/* Emitir Nota de Crédito */}
+                            {/* Botón Inteligente: Edición con Diff Engine */}
+                            {doc.status === "ACCEPTED" && (
+                              <button
+                                onClick={() => handleOpenSmartEditModal(doc)}
+                                className="p-1.5 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-lg transition-colors font-bold"
+                                title="Edición Inteligente con Diff Engine (SUNAT UBL 2.1) - Detección automática de Casos A, B, C y D"
+                              >
+                                <Wand2 className="h-4 w-4" />
+                              </button>
+                            )}
+
+                            {/* Emisión Manual de Nota de Crédito / Débito */}
                             {doc.status === "ACCEPTED" && doc.docType !== "CREDIT_NOTE" && (
                               <button
-                                onClick={() => handleOpenNoteModal(doc)}
-                                className="p-1.5 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
-                                title="Emitir Nota de Crédito para este comprobante"
+                                onClick={() => handleOpenManualNoteModal(doc)}
+                                className="p-1.5 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded-lg transition-colors"
+                                title="Emisión Manual de Nota de Crédito o Débito (Catálogo 09 y 10 Oficial)"
                               >
-                                <RotateCcw className="h-4 w-4" />
+                                <FileSpreadsheet className="h-4 w-4" />
                               </button>
                             )}
 
-                            {/* Modificar / Rectificar Comprobante */}
-                            {doc.status !== "CANCELLED" && (
-                              <button
-                                onClick={() => handleOpenEditModal(doc)}
-                                className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                                title={
-                                  doc.status === "ACCEPTED"
-                                    ? "Modificar / Rectificar ante SUNAT con Nota de Crédito"
-                                    : "Editar datos del comprobante"
-                                }
-                              >
-                                <Edit3 className="h-4 w-4" />
-                              </button>
-                            )}
-
-                            {/* Anular ante SUNAT o Eliminar */}
+                            {/* Anular ante SUNAT con Nota de Crédito o Eliminar */}
                             {doc.status !== "CANCELLED" && (
                               <button
                                 onClick={() => handleOpenDeleteModal(doc)}
@@ -2717,6 +2842,89 @@ export default function BusinessBillingPage() {
                 }
               : null
           }
+        />
+
+        {/* MODAL INTELIGENTE: EDICIÓN CON DIFF ENGINE (SUNAT UBL 2.1) */}
+        <SunatSmartEditModal
+          isOpen={isSmartEditModalOpen}
+          onClose={() => {
+            setIsSmartEditModalOpen(false);
+            setSelectedDocForSmartEdit(null);
+          }}
+          document={
+            selectedDocForSmartEdit
+              ? {
+                  id: selectedDocForSmartEdit.id,
+                  fullNumber: selectedDocForSmartEdit.fullNumber,
+                  docType: selectedDocForSmartEdit.docType,
+                  serie: selectedDocForSmartEdit.serie,
+                  correlative: selectedDocForSmartEdit.correlative,
+                  customerName: selectedDocForSmartEdit.customerName,
+                  customerDocType: selectedDocForSmartEdit.customerDocType,
+                  customerDocNum: selectedDocForSmartEdit.customerDocNum,
+                  customerAddress: selectedDocForSmartEdit.customerAddress,
+                  totalAmount: Number(selectedDocForSmartEdit.totalAmount),
+                  issueDate: selectedDocForSmartEdit.createdAt,
+                  items: selectedDocForSmartEdit.sale?.items?.map((it: any) => ({
+                    productId: it.productId,
+                    name: it.name,
+                    quantity: Number(it.quantity) || 1,
+                    price: Number(it.price) || 0,
+                  })) || [
+                    {
+                      name: `Servicio / Venta ${selectedDocForSmartEdit.fullNumber}`,
+                      quantity: 1,
+                      price: Number(selectedDocForSmartEdit.totalAmount),
+                    },
+                  ],
+                }
+              : null
+          }
+          onConfirm={handleConfirmSmartEdit}
+          isSubmitting={isSubmittingSmartEdit}
+        />
+
+        {/* MODAL AVANZADO: EMISIÓN MANUAL DE NOTAS (CATÁLOGO 09 Y 10 SUNAT) */}
+        <SunatManualNoteModal
+          isOpen={isManualNoteModalOpen}
+          onClose={() => {
+            setIsManualNoteModalOpen(false);
+            setSelectedDocForManualNote(null);
+          }}
+          document={
+            selectedDocForManualNote
+              ? {
+                  id: selectedDocForManualNote.id,
+                  fullNumber: selectedDocForManualNote.fullNumber,
+                  docType: selectedDocForManualNote.docType,
+                  serie: selectedDocForManualNote.serie,
+                  correlative: selectedDocForManualNote.correlative,
+                  customerName: selectedDocForManualNote.customerName,
+                  customerDocType: selectedDocForManualNote.customerDocType,
+                  customerDocNum: selectedDocForManualNote.customerDocNum,
+                  totalAmount: Number(selectedDocForManualNote.totalAmount),
+                  issueDate: selectedDocForManualNote.createdAt,
+                  items: selectedDocForManualNote.sale?.items?.map((it: any) => ({
+                    productId: it.productId,
+                    name: it.name,
+                    quantity: Number(it.quantity) || 1,
+                    price: Number(it.price) || 0,
+                  })),
+                }
+              : null
+          }
+          onConfirm={handleConfirmManualNote}
+          isSubmitting={isSubmittingManualNote}
+        />
+
+        {/* MODAL DE RESULTADO INTELIGENTE (DOCUMENT CARDS CON PDF/XML/CDR) */}
+        <SunatSuccessResultModal
+          isOpen={isSuccessModalOpen}
+          onClose={() => {
+            setIsSuccessModalOpen(false);
+            setSuccessModalData(null);
+          }}
+          resultData={successModalData}
         />
 
         {/* Modal de Diagnóstico y Asistencia Oficial de Errores del Sistema y SUNAT */}

@@ -169,6 +169,16 @@ export const updateBillingDocumentRequest = async (id: string, payload: any) => 
   return data;
 };
 
+export const smartEditBillingDocumentRequest = async (id: string, payload: any) => {
+  const { data } = await axios.post(`/billing/documents/${id}/smart-edit`, payload);
+  return data;
+};
+
+export const manualNoteBillingDocumentRequest = async (id: string, payload: any) => {
+  const { data } = await axios.post(`/billing/documents/${id}/manual-note`, payload);
+  return data;
+};
+
 export const deleteBillingDocumentRequest = async (
   id: string,
   options?: {
