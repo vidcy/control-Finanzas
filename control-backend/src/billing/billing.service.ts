@@ -421,6 +421,7 @@ export class BillingService {
     });
 
     if (dto.saleId) {
+      const saleAffectation = taxes.totalOpGravada > 0 ? '10' : taxes.totalOpInafecta > 0 ? '30' : '20';
       await this.prisma.sale.update({
         where: { id: dto.saleId },
         data: {
@@ -436,6 +437,12 @@ export class BillingService {
           clientDenomination: dto.customerName,
           clientAddress: dto.customerAddress,
           clientEmail: dto.customerEmail,
+          igvAffectation: saleAffectation,
+          igvRate: saleAffectation === '10' ? 18.0 : 0.0,
+          totalGravada: taxes.totalOpGravada,
+          totalExonerada: taxes.totalOpExonerada,
+          totalInafecta: taxes.totalOpInafecta,
+          totalIgv: taxes.totalIgv,
         },
       }).catch((e) => this.logger.warn(`Could not update Sale: ${e.message}`));
     }

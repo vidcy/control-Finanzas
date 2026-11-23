@@ -276,7 +276,8 @@ export function calculateFiscalBreakdown(
   const autoAmazonia = isAmazoniaDepartment(dept);
 
   // Si se pasa una afectación explícita (ej. desde el modal POS o Facturación)
-  if (config?.igvAffectation === "20") {
+  const explicitAff = String(config?.igvAffectation || "").trim().toUpperCase();
+  if (explicitAff === "20" || explicitAff === "EXONERADO") {
     return {
       regimeCode: "AMAZONIA_EXONERADO",
       regimeName: "Régimen Amazonía — Exonerado de IGV 0% (Ley N° 27037)",
@@ -300,7 +301,7 @@ export function calculateFiscalBreakdown(
     };
   }
 
-  if (config?.igvAffectation === "30") {
+  if (explicitAff === "30" || explicitAff === "INAFECTO") {
     return {
       regimeCode: "INAFECTO_0",
       regimeName: "Operaciones Inafectas (0% IGV)",
@@ -324,8 +325,8 @@ export function calculateFiscalBreakdown(
     };
   }
 
-  if (config?.igvAffectation === "10" || config?.igvAffectation === "10_MYPE") {
-    const rate = config.igvAffectation === "10_MYPE" ? 10.0 : (config.igvRate ? Number(config.igvRate) : 18.0);
+  if (explicitAff === "10" || explicitAff === "10_MYPE" || explicitAff === "GRAVADO") {
+    const rate = explicitAff === "10_MYPE" ? 10.0 : (config?.igvRate ? Number(config.igvRate) : 18.0);
     const isSpecialMype = rate <= 10.5;
     const divisor = 1 + rate / 100;
     const base = Number((total / divisor).toFixed(2));
@@ -443,7 +444,8 @@ export function calculateFiscalBreakdown(
       regimeName: regime.name,
       shortName: regime.shortName,
       category: "ESPECIAL",
-      isExonerated: true,
+      isExonerated: false,
+      isInafecta: true,
       isAmazonia: false,
       isRestaurantes: false,
       isNrus: false,
@@ -512,6 +514,40 @@ export function calculateFiscalBreakdown(
     legend: "",
     allowedDocs: regime.allowedDocs,
   };
+}
+
+/**
+ * Resuelve de forma infalible la afectación tributaria real ("10" | "20" | "30") de una venta o comprobante
+ * analizando totales guardados (totalGravada, totalExonerada, totalInafecta, totalIgv), códigos de afectación,
+ * régimen y tasas de IGV.
+ */
+export function resolveSaleAffectation(sale: any, fallbackAffectation: string = "20"): "10" | "20" | "30" {
+  if (!sale) return (fallbackAffectation as any) || "20";
+
+  // 1. Verificación numérica directa de montos guardados
+  if (Number(sale.totalGravada) > 0 || Number(sale.totalIgv) > 0) return "10";
+  if (Number(sale.totalInafecta) > 0) return "30";
+  if (Number(sale.totalExonerada) > 0) return "20";
+
+  // 2. Si la propiedad igvAffectation es explícita
+  const aff = String(sale.igvAffectation || "").trim().toUpperCase();
+  if (aff === "10" || aff === "10_MYPE" || aff === "GRAVADO") return "10";
+  if (aff === "30" || aff === "INAFECTO") return "30";
+  if (aff === "20" || aff === "EXONERADO") return "20";
+
+  // 3. Si el régimen fiscal del documento es explícito
+  const regime = String(sale.taxRegime || "").toUpperCase();
+  if (regime.includes("GENERAL") || regime.includes("RER") || regime.includes("MYPE") || regime.includes("18")) {
+    if (sale.igvRate !== undefined && Number(sale.igvRate) === 0) return "20";
+    return "10";
+  }
+  if (regime.includes("INAFECTO")) return "30";
+  if (regime.includes("AMAZONIA") || regime.includes("EXONERAD")) return "20";
+
+  // 4. Si la tasa de IGV es mayor a 0
+  if (Number(sale.igvRate) > 0) return "10";
+
+  return (fallbackAffectation as any) || "20";
 }
 
 // ============================================================================
