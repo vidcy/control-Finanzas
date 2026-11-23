@@ -351,7 +351,7 @@ export default function ExpensesPage() {
   // 🔥 Separa por tipo (INCOME/EXPENSE) si es necesario
   const expense = filtered;
 
-  const ITEMS_PER_PAGE = 6;
+  const ITEMS_PER_PAGE = 10;
 
   // Paginación (para desktop y mobile)
   const paginatedExpenses = expense.slice(

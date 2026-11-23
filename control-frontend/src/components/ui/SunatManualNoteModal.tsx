@@ -68,6 +68,7 @@ export interface SunatManualNoteModalProps {
     }>;
     metadata?: any;
   } | null;
+  initialType?: "CREDIT" | "DEBIT";
   onConfirm: (payload: any) => Promise<any> | void;
   isSubmitting?: boolean;
 }
@@ -76,10 +77,17 @@ export const SunatManualNoteModal: React.FC<SunatManualNoteModalProps> = ({
   isOpen,
   onClose,
   document,
+  initialType = "CREDIT",
   onConfirm,
   isSubmitting = false,
 }) => {
-  const [noteType, setNoteType] = useState<"07" | "08">("07");
+  const [noteType, setNoteType] = useState<"07" | "08">(initialType === "DEBIT" ? "08" : "07");
+
+  useEffect(() => {
+    if (isOpen) {
+      setNoteType(initialType === "DEBIT" ? "08" : "07");
+    }
+  }, [isOpen, initialType]);
   const [reasonCode, setReasonCode] = useState<string>("01");
   const [reasonText, setReasonText] = useState<string>("");
   const [amount, setAmount] = useState<number>(0);

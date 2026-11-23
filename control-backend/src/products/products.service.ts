@@ -1296,22 +1296,34 @@ export class ProductsService {
             igvAffectation: checkoutDto.igvAffectation,
             igvRate: checkoutDto.igvRate,
           });
-          if (billingResult.success) {
+          const targetBillingStatus =
+            (billingResult as any).status ||
+            ((billingResult as any).isRejected
+              ? 'REJECTED'
+              : (billingResult as any).isQueued
+              ? 'QUEUED'
+              : billingResult.success
+              ? 'SUCCESS'
+              : 'ERROR');
+
+          if (billingResult.success || (billingResult as any).isQueued) {
             await this.prisma.sale.update({
               where: { id: result.saleId },
               data: {
-                billingStatus: 'SUCCESS',
+                billingStatus: targetBillingStatus,
                 billingNumber: billingResult.number,
                 billingSerie: billingResult.serie,
                 billingPdfUrl: billingResult.pdfUrl,
                 billingXmlUrl: billingResult.xmlUrl,
                 billingCdrUrl: billingResult.cdrUrl,
+                billingError: billingResult.error || null,
               },
             });
             return {
               ...result,
               billing: {
                 success: true,
+                status: targetBillingStatus,
                 pdfUrl: billingResult.pdfUrl,
                 xmlUrl: billingResult.xmlUrl,
                 cdrUrl: billingResult.cdrUrl,
@@ -1330,11 +1342,16 @@ export class ProductsService {
             await this.prisma.sale.update({
               where: { id: result.saleId },
               data: {
-                billingStatus: 'ERROR',
-                billingError: billingResult.error || 'Error desconocido en CCOFACT PRO',
+                billingStatus: targetBillingStatus,
+                billingSerie: billingResult.serie || null,
+                billingNumber: billingResult.number || null,
+                billingPdfUrl: billingResult.pdfUrl || null,
+                billingXmlUrl: billingResult.xmlUrl || null,
+                billingCdrUrl: billingResult.cdrUrl || null,
+                billingError: billingResult.error || 'Error desconocido devuelto por SUNAT/CCOFACT',
               },
             });
-            return { ...result, billing: { success: false, error: billingResult.error } };
+            return { ...result, billing: { success: false, status: targetBillingStatus, error: billingResult.error } };
           }
         } catch (error: any) {
           await this.prisma.sale.update({

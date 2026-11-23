@@ -42,8 +42,12 @@ import {
   retrySaleBillingRequest,
   issueSaleCreditNoteRequest,
   issueSaleDebitNoteRequest,
+  manualNoteSaleRequest,
+  smartEditSaleRequest,
   deleteSaleRequest,
 } from "../services/sale.api";
+import { SunatManualNoteModal } from "../components/ui/SunatManualNoteModal";
+import { SunatSmartEditModal } from "../components/ui/SunatSmartEditModal";
 import { queryDocumentRequest } from "../services/user.api";
 import { shareSaleReceiptViaWhatsApp } from "../utils/whatsappUtils";
 import ReceiptUploader, {
@@ -412,7 +416,11 @@ export default function BusinessPosPage() {
 
   // Notes Modal state
   const [selectedSaleForNote, setSelectedSaleForNote] = useState<any>(null);
-  const [noteType, setNoteType] = useState<"CREDIT" | "DEBIT" | null>(null);
+  const [noteType, setNoteType] = useState<"CREDIT" | "DEBIT">("CREDIT");
+  const [isManualNoteModalOpen, setIsManualNoteModalOpen] = useState(false);
+  const [isSmartEditModalOpen, setIsSmartEditModalOpen] = useState(false);
+  const [selectedSaleForSmartEdit, setSelectedSaleForSmartEdit] = useState<any>(null);
+  const [posSalesPageSize, setPosSalesPageSize] = useState<number>(10);
   const [noteReasonCode, setNoteReasonCode] = useState<number>(1);
   const [noteReasonText, setNoteReasonText] = useState<string>("");
   const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
@@ -904,13 +912,34 @@ export default function BusinessPosPage() {
   };
 
   const handleEditSale = (sale: any) => {
-    const isBilled = sale.billingStatus === "SUCCESS" && sale.billingSerie && sale.billingNumber;
+    const isBilled = (sale.billingType === "BOLETA" || sale.billingType === "FACTURA") && sale.billingSerie && sale.billingNumber;
+
+    // Regla de Turno: Si el turno cerró, advertir al usuario para no descuadrar el arqueo
+    if (activeShift && sale.shiftId && sale.shiftId !== activeShift.id) {
+      toast.error(
+        `Esta venta pertenece al turno cerrado #${sale.shiftId}. Para no alterar el balance del turno actual, cualquier nota o ajuste debe realizarse desde el módulo de Facturación.`
+      );
+      return;
+    }
+
+    if (sale.billingStatus === "REJECTED") {
+      toast.error(
+        "Este comprobante fue Rechazado por SUNAT y no tiene validez fiscal. No es posible emitir Notas sobre él; reintenta el envío con el botón de diagnóstico."
+      );
+      return;
+    }
+
+    // Si cuenta con comprobante electrónico aceptado, abrir Edición Inteligente SUNAT (Diff Engine)
+    if (isBilled && sale.billingStatus === "SUCCESS") {
+      setSelectedSaleForSmartEdit(sale);
+      setIsSmartEditModalOpen(true);
+      return;
+    }
+
     setPosConfirmModal({
       isOpen: true,
-      title: isBilled ? "Modificar Venta Facturada" : "Modificar Venta",
-      message: isBilled
-        ? `Esta venta cuenta con comprobante electrónico SUNAT (${sale.billingSerie}-${String(sale.billingNumber).padStart(8, "0")}). Al modificarla:\n\n1. Se anulará el comprobante anterior emitiendo la Nota de Crédito legal ante SUNAT.\n2. Los productos se cargarán nuevamente en el carrito POS para que hagas las correcciones necesarias.\n3. Al volver a cobrar, se emitirá un nuevo comprobante corregido.\n\n¿Deseas modificar esta venta?`
-        : "¿Deseas editar esta venta? Los productos se cargarán en el carrito actual para que puedas modificarlos, y se devolverá el stock de la venta anterior.",
+      title: "Modificar Venta",
+      message: "¿Deseas editar esta venta? Los productos se cargarán en el carrito actual para que puedas modificarlos, y se devolverá el stock de la venta anterior.",
       confirmText: "Cargar al Carrito y Modificar",
       cancelText: "Cancelar",
       variant: "warning",
@@ -4682,7 +4711,7 @@ export default function BusinessPosPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {sales.slice((salesPage - 1) * 6, salesPage * 6).map((sale) => (
+                      {sales.slice((salesPage - 1) * posSalesPageSize, salesPage * posSalesPageSize).map((sale) => (
                         <tr
                           key={sale.id}
                           className="hover:bg-gray-50 transition-colors"
@@ -4769,6 +4798,43 @@ export default function BusinessPosPage() {
                                     )}
                                   </>
                                     )}
+                                  {sale.billingStatus === "REJECTED" && (
+                                    <div className="flex flex-col gap-1">
+                                      <div className="flex items-center gap-1">
+                                        <span className="text-[9px] bg-rose-50 text-rose-700 font-black border border-rose-200 px-1.5 py-0.5 rounded uppercase" title={sale.billingError || "Rechazado oficialmente por SUNAT"}>
+                                          Rechazado SUNAT
+                                        </span>
+                                        <button
+                                          onClick={async () => {
+                                            const loading = toast.loading("Reintentando transmisión a SUNAT...");
+                                            try {
+                                              await retrySaleBillingRequest(sale.id);
+                                              toast.dismiss(loading);
+                                              toast.success("Envío completado");
+                                              loadData();
+                                            } catch (err: any) {
+                                              toast.dismiss(loading);
+                                              setSystemError(parseSystemError(err, "Diagnóstico de Rechazo SUNAT"));
+                                            }
+                                          }}
+                                          className="p-0.5 bg-gray-50 hover:bg-gray-150 border border-gray-200 rounded text-gray-650 hover:text-gray-950 transition-colors cursor-pointer"
+                                          title="Diagnosticar y Reintentar Envío a SUNAT"
+                                        >
+                                          <RefreshCw className="w-3 h-3" />
+                                        </button>
+                                      </div>
+                                      {sale.billingError && (
+                                        <p className="text-[9px] text-rose-500 font-medium max-w-[150px] truncate" title={sale.billingError}>
+                                          {sale.billingError}
+                                        </p>
+                                      )}
+                                    </div>
+                                  )}
+                                  {sale.billingStatus === "QUEUED" && (
+                                    <span className="text-[9px] bg-amber-50 text-amber-700 font-black border border-amber-200 px-1.5 py-0.5 rounded uppercase" title="En cola asíncrona de reintentos SUNAT">
+                                      En Cola
+                                    </span>
+                                  )}
                                   {sale.billingStatus === "ERROR" && (
                                     <div className="flex flex-col gap-1">
                                       <div className="flex items-center gap-1">
@@ -4843,27 +4909,31 @@ export default function BusinessPosPage() {
                             <>
                               <button
                                 onClick={() => {
+                                  if (activeShift && sale.shiftId && sale.shiftId !== activeShift.id) {
+                                    toast.error("Esta venta pertenece a un turno cerrado. Para emitir notas sobre turnos anteriores, ingrese al módulo de Facturación.");
+                                    return;
+                                  }
                                   setSelectedSaleForNote(sale);
                                   setNoteType("CREDIT");
-                                  setNoteReasonCode(1);
-                                  setNoteReasonText("");
-                                  setIsNoteModalOpen(true);
+                                  setIsManualNoteModalOpen(true);
                                 }}
-                                className="p-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-lg transition-colors"
-                                title="Emitir Nota de Crédito (Anular/Descontar)"
+                                className="p-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-lg transition-colors cursor-pointer"
+                                title="Emitir Nota de Crédito Oficial SUNAT (Descuentos, devoluciones, anulación)"
                               >
                                 <MinusCircle className="w-3.5 h-3.5" />
                               </button>
                               <button
                                 onClick={() => {
+                                  if (activeShift && sale.shiftId && sale.shiftId !== activeShift.id) {
+                                    toast.error("Esta venta pertenece a un turno cerrado. Para emitir notas sobre turnos anteriores, ingrese al módulo de Facturación.");
+                                    return;
+                                  }
                                   setSelectedSaleForNote(sale);
                                   setNoteType("DEBIT");
-                                  setNoteReasonCode(1);
-                                  setNoteReasonText("");
-                                  setIsNoteModalOpen(true);
+                                  setIsManualNoteModalOpen(true);
                                 }}
-                                className="p-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg transition-colors"
-                                title="Emitir Nota de Débito (Aumento de valor)"
+                                className="p-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg transition-colors cursor-pointer"
+                                title="Emitir Nota de Débito Oficial SUNAT (Intereses, aumento de valor)"
                               >
                                 <PlusCircle className="w-3.5 h-3.5" />
                               </button>
@@ -4873,7 +4943,7 @@ export default function BusinessPosPage() {
                           <button
                             onClick={() => handleEditSale(sale)}
                             className="p-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-lg transition-colors cursor-pointer"
-                            title="Editar Venta (Devuelve stock, anula comprobante anterior y recarga carrito)"
+                            title="Editar Venta (Diff Engine SUNAT o Edición de Venta)"
                           >
                             <Edit className="w-3.5 h-3.5" />
                           </button>
@@ -4892,13 +4962,31 @@ export default function BusinessPosPage() {
                 </table>
               </div>
             {sales.length > 0 && (
-              <Pagination
-                currentPage={salesPage}
-                totalItems={sales.length}
-                pageSize={6}
-                onPageChange={(page) => setSalesPage(page)}
-                className="border-t border-gray-100 bg-gray-50 px-4 py-3"
-              />
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-gray-100 bg-gray-50 px-4 py-3">
+                <div className="flex items-center gap-2 text-xs text-gray-500 font-medium">
+                  <span>Mostrar:</span>
+                  <select
+                    value={posSalesPageSize}
+                    onChange={(e) => {
+                      setPosSalesPageSize(Number(e.target.value));
+                      setSalesPage(1);
+                    }}
+                    className="bg-white border border-gray-200 rounded-lg px-2 py-1 text-xs font-bold text-gray-700 outline-none cursor-pointer"
+                  >
+                    <option value={10}>10 por página</option>
+                    <option value={20}>20 por página</option>
+                    <option value={50}>50 por página</option>
+                  </select>
+                  <span>de {sales.length} registros</span>
+                </div>
+                <Pagination
+                  currentPage={salesPage}
+                  totalItems={sales.length}
+                  pageSize={posSalesPageSize}
+                  onPageChange={(page) => setSalesPage(page)}
+                  className="bg-transparent p-0"
+                />
+              </div>
             )}
           </>
             )}
@@ -5157,105 +5245,96 @@ export default function BusinessPosPage() {
     </div>
   </Modal>
 
-  {/* MODAL: Emitir Nota de Crédito / Débito */ }
-  <Modal
-    isOpen={isNoteModalOpen}
-    onClose={() => {
-      if (!isSubmittingNote) {
-        setIsNoteModalOpen(false);
-        setSelectedSaleForNote(null);
-      }
-    }}
-    title={`Emitir Nota de ${noteType === "CREDIT" ? "Crédito" : "Débito"}`}
-  >
-    {selectedSaleForNote && (
-      <div className="space-y-4">
-        <div className="p-4 bg-gray-50 rounded-2xl border border-gray-150 text-xs space-y-2">
-          <p className="font-extrabold text-gray-800">
-            Documento de Referencia:{" "}
-            <span className="font-mono bg-white px-2 py-0.5 border border-gray-200 rounded">
-              {selectedSaleForNote.billingSerie}-{selectedSaleForNote.billingNumber}
-            </span>
-          </p>
-          <p className="font-semibold text-gray-600">
-            Cliente: <span className="text-gray-950 font-bold">{selectedSaleForNote.description?.split(" - ")[1] || "Cliente general"}</span>
-          </p>
-          <p className="font-semibold text-gray-655">
-            Monto Original: <span className="text-emerald-600 font-extrabold">S/ {Number(selectedSaleForNote.amount).toFixed(2)}</span>
-          </p>
-        </div>
+      {/* MODAL: Emitir Nota Oficial SUNAT (Crédito / Débito) en POS */}
+      <SunatManualNoteModal
+        isOpen={isManualNoteModalOpen}
+        onClose={() => {
+          setIsManualNoteModalOpen(false);
+          setSelectedSaleForNote(null);
+        }}
+        initialType={noteType || "CREDIT"}
+        document={
+          selectedSaleForNote
+            ? {
+                id: selectedSaleForNote.id,
+                fullNumber: `${selectedSaleForNote.billingSerie}-${String(selectedSaleForNote.billingNumber).padStart(8, "0")}`,
+                docType: selectedSaleForNote.billingType === "FACTURA" ? "01" : "03",
+                serie: selectedSaleForNote.billingSerie,
+                correlative: selectedSaleForNote.billingNumber,
+                status: selectedSaleForNote.billingStatus,
+                customerName: selectedSaleForNote.clientDenomination || "CLIENTES VARIOS",
+                customerDocType: selectedSaleForNote.clientDocumentType || "1",
+                customerDocNum: selectedSaleForNote.clientDocumentNumber || "00000000",
+                totalAmount: Number(selectedSaleForNote.amount || selectedSaleForNote.total || 0),
+                issueDate: selectedSaleForNote.date,
+                items: (selectedSaleForNote.items || []).map((it: any) => ({
+                  productId: it.productId,
+                  name: it.name || it.product?.name || "Producto",
+                  quantity: Number(it.quantity) || 1,
+                  price: Number(it.price) || 0,
+                })),
+              }
+            : null
+        }
+        onConfirm={async (payload: any) => {
+          if (!selectedSaleForNote) return;
+          await manualNoteSaleRequest(selectedSaleForNote.id, payload);
+          toast.success("Nota emitida y transmitida a SUNAT exitosamente.");
+          setIsManualNoteModalOpen(false);
+          setSelectedSaleForNote(null);
+          loadData();
+        }}
+      />
 
-        <div>
-          <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1.5">
-            Motivo / Código de Operación
-          </label>
-          <select
-            value={noteReasonCode}
-            onChange={(e) => setNoteReasonCode(Number(e.target.value))}
-            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-xs font-bold bg-white outline-none focus:ring-2 focus:ring-indigo-400"
-          >
-            {noteType === "CREDIT" ? (
-              <>
-                <option value="1">1 - Anulación de la operación</option>
-                <option value="2">2 - Anulación por error en el RUC</option>
-                <option value="3">3 - Corrección por error en la descripción</option>
-                <option value="4">4 - Descuento global</option>
-                <option value="5">5 - Descuento por ítem</option>
-                <option value="6">6 - Devolución total</option>
-                <option value="7">7 - Devolución por ítem</option>
-                <option value="8">8 - Bonificación</option>
-                <option value="9">9 - Disminución en el valor</option>
-                <option value="10">10 - Otros conceptos</option>
-              </>
-            ) : (
-              <>
-                <option value="1">1 - Intereses por mora</option>
-                <option value="2">2 - Aumento en el valor</option>
-                <option value="3">3 - Penalidades / otros conceptos</option>
-              </>
-            )}
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1.5">
-            Sustento / Comentarios (Obligatorio)
-          </label>
-          <textarea
-            placeholder="Indique detalladamente la razón de emisión..."
-            rows={3}
-            value={noteReasonText}
-            onChange={(e) => setNoteReasonText(e.target.value)}
-            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-xs font-bold bg-white outline-none focus:ring-2 focus:ring-indigo-400"
-          />
-        </div>
-
-        <div className="flex gap-2 justify-end pt-2">
-          <button
-            type="button"
-            disabled={isSubmittingNote}
-            onClick={() => {
-              setIsNoteModalOpen(false);
-              setSelectedSaleForNote(null);
-            }}
-            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 font-bold text-xs"
-          >
-            Cancelar
-          </button>
-          <button
-            type="button"
-            disabled={isSubmittingNote || !noteReasonText.trim()}
-            onClick={handleSubmitNote}
-            className={`px-4 py-2 text-white rounded-xl font-black text-xs shadow-sm transition-all flex items-center gap-1.5 ${noteType === "CREDIT" ? "bg-rose-600 hover:bg-rose-700" : "bg-blue-600 hover:bg-blue-700"
-              } disabled:opacity-50`}
-          >
-            {isSubmittingNote && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-            <span>Emitir Nota</span>
-          </button>
-        </div>
-      </div>
-    )}
-  </Modal>
+      {/* MODAL: Edición Inteligente SUNAT (Diff Engine) en POS */}
+      <SunatSmartEditModal
+        isOpen={isSmartEditModalOpen}
+        onClose={() => {
+          setIsSmartEditModalOpen(false);
+          setSelectedSaleForSmartEdit(null);
+        }}
+        document={
+          selectedSaleForSmartEdit
+            ? {
+                id: selectedSaleForSmartEdit.id,
+                fullNumber: `${selectedSaleForSmartEdit.billingSerie}-${String(selectedSaleForSmartEdit.billingNumber).padStart(8, "0")}`,
+                docType: selectedSaleForSmartEdit.billingType === "FACTURA" ? "01" : "03",
+                serie: selectedSaleForSmartEdit.billingSerie,
+                correlative: selectedSaleForSmartEdit.billingNumber,
+                customerName: selectedSaleForSmartEdit.clientDenomination || "CLIENTES VARIOS",
+                customerDocType: selectedSaleForSmartEdit.clientDocumentType || "1",
+                customerDocNum: selectedSaleForSmartEdit.clientDocumentNumber || "00000000",
+                customerAddress: selectedSaleForSmartEdit.clientAddress || "",
+                customerEmail: selectedSaleForSmartEdit.clientEmail || "",
+                paymentMethod: selectedSaleForSmartEdit.paymentMethod || "CASH",
+                issueDate: selectedSaleForSmartEdit.date,
+                totalAmount: Number(selectedSaleForSmartEdit.amount || selectedSaleForSmartEdit.total || 0),
+                items: (selectedSaleForSmartEdit.items || []).map((it: any) => ({
+                  productId: it.productId,
+                  name: it.name || it.product?.name || "Producto",
+                  quantity: Number(it.quantity) || 1,
+                  price: Number(it.price) || 0,
+                })),
+              }
+            : null
+        }
+        onConfirm={async (payload) => {
+          if (!selectedSaleForSmartEdit) return;
+          const loadingToast = toast.loading("Analizando diferencias y procesando con SUNAT...");
+          try {
+            await smartEditSaleRequest(selectedSaleForSmartEdit.id, payload);
+            toast.dismiss(loadingToast);
+            toast.success("Venta y comprobante modificados formalmente ante SUNAT.");
+            setIsSmartEditModalOpen(false);
+            setSelectedSaleForSmartEdit(null);
+            loadData();
+          } catch (err: any) {
+            toast.dismiss(loadingToast);
+            const parsed = parseSystemError(err, "Error en Edición Inteligente SUNAT");
+            setSystemError(parsed);
+          }
+        }}
+      />
   {/* MODAL: Ajustar Precio Ítem */ }
   <Modal
     isOpen={adjustingCartIndex !== null}

@@ -170,7 +170,7 @@ export default function BusinessCashRegisterPage() {
     try {
       const params = {
         page,
-        limit: 6,
+        limit: 10,
         branchId: filterBranchId || undefined,
         workerId: filterWorkerId || undefined,
         startDate: filterStartDate ? `${filterStartDate}T00:00:00.000Z` : undefined,
@@ -928,7 +928,7 @@ export default function BusinessCashRegisterPage() {
             <Pagination
               currentPage={currentPage}
               totalItems={totalItems}
-              pageSize={6}
+              pageSize={10}
               onPageChange={(p) => setCurrentPage(p)}
               className="border-t border-gray-100 bg-gray-50 px-6 py-4"
             />

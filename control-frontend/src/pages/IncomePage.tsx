@@ -346,7 +346,7 @@ export default function IncomePage() {
   // 🔥 Separa por tipo (INCOME/EXPENSE) si es necesario
   const income = filtered;
 
-  const ITEMS_PER_PAGE = 6;
+  const ITEMS_PER_PAGE = 10;
 
   // Paginación (para desktop y mobile)
   const paginatedIncomes = income.slice(

@@ -69,7 +69,7 @@ export default function BusinessReportsPage() {
   const [inventoryPage, setInventoryPage] = useState(1);
   const [kardexPage, setKardexPage] = useState(1);
   const [commissionsPage, setCommissionsPage] = useState(1);
-  const pageSize = 6;
+  const pageSize = 10;
 
   // Reset pagination on filter change
   useEffect(() => {
@@ -1492,7 +1492,7 @@ export default function BusinessReportsPage() {
                     <Pagination
                       currentPage={salesPage}
                       totalItems={filteredSales.length}
-                      pageSize={6}
+                      pageSize={pageSize}
                       onPageChange={(p) => setSalesPage(p)}
                       className="border-t border-gray-100 bg-gray-50 px-4 py-3"
                     />
@@ -1605,7 +1605,7 @@ export default function BusinessReportsPage() {
                     <Pagination
                       currentPage={treasuryPage}
                       totalItems={filteredTreasury.length}
-                      pageSize={6}
+                      pageSize={pageSize}
                       onPageChange={(p) => setTreasuryPage(p)}
                       className="border-t border-gray-100 bg-gray-50 px-4 py-3"
                     />
@@ -1700,7 +1700,7 @@ export default function BusinessReportsPage() {
                     <Pagination
                       currentPage={inventoryPage}
                       totalItems={products.length}
-                      pageSize={6}
+                      pageSize={pageSize}
                       onPageChange={(p) => setInventoryPage(p)}
                       className="border-t border-gray-100 bg-gray-50 px-4 py-3"
                     />
@@ -1806,7 +1806,7 @@ export default function BusinessReportsPage() {
                     <Pagination
                       currentPage={kardexPage}
                       totalItems={filteredMovements.length}
-                      pageSize={6}
+                      pageSize={pageSize}
                       onPageChange={(p) => setKardexPage(p)}
                       className="border-t border-gray-100 bg-gray-50 px-4 py-3"
                     />
@@ -1958,7 +1958,7 @@ export default function BusinessReportsPage() {
                     <Pagination
                       currentPage={commissionsPage}
                       totalItems={filteredAdvisorSales.length}
-                      pageSize={6}
+                      pageSize={pageSize}
                       onPageChange={(p) => setCommissionsPage(p)}
                       className="border-t border-gray-100 bg-gray-50 px-4 py-3"
                     />

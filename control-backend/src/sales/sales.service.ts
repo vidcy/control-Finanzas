@@ -104,22 +104,41 @@ export class SalesService {
 
     const result = await this.ccofactService.sendInvoice(id);
 
-    if (result.success) {
+    const targetBillingStatus =
+      (result as any).status ||
+      ((result as any).isRejected
+        ? 'REJECTED'
+        : (result as any).isQueued
+        ? 'QUEUED'
+        : result.success
+        ? 'SUCCESS'
+        : 'ERROR');
+
+    if (result.success || (result as any).isQueued) {
       await this.prisma.sale.update({
         where: { id },
         data: {
-          billingStatus: 'SUCCESS',
+          billingStatus: targetBillingStatus,
           billingNumber: result.number,
           billingSerie: result.serie,
           billingPdfUrl: result.pdfUrl,
           billingXmlUrl: result.xmlUrl,
           billingCdrUrl: result.cdrUrl,
+          billingError: result.error || null,
         },
       });
     } else {
       await this.prisma.sale.update({
         where: { id },
-        data: { billingStatus: 'ERROR', billingError: result.error },
+        data: {
+          billingStatus: targetBillingStatus,
+          billingSerie: result.serie || undefined,
+          billingNumber: result.number || undefined,
+          billingPdfUrl: result.pdfUrl || undefined,
+          billingXmlUrl: result.xmlUrl || undefined,
+          billingCdrUrl: result.cdrUrl || undefined,
+          billingError: result.error || 'Comprobante rechazado por SUNAT',
+        },
       });
     }
     return result;
@@ -803,16 +822,36 @@ export class SalesService {
     const owner = await this.prisma.user.findUnique({ where: { id: ownerId } });
     if (!owner) throw new NotFoundException('Usuario propietario no encontrado');
 
+    // Normalizar payload antes de enviar a CCOFACT PRO
+    const normalizedDto = {
+      note_type: dto.note_type || dto.noteType || '07',
+      reason_code: String(dto.reason_code || dto.reasonCode || '01').padStart(2, '0'),
+      reason_description: String(dto.reason_description || dto.reasonText || dto.reason_text || 'Anulación de la operación').trim(),
+      amount: dto.amount !== undefined ? Number(dto.amount) : undefined,
+      issue_date: dto.issue_date || dto.issueDate,
+      items: Array.isArray(dto.items)
+        ? dto.items
+            .map((it: any) => ({
+              code: it.code || it.productId || '',
+              description: it.description || it.name || 'Ítem',
+              quantity: Number(it.quantity) || 1,
+              unit_price: Number(it.unit_price ?? it.price ?? 0),
+              total: Number(it.total ?? (Number(it.quantity || 1) * Number(it.unit_price ?? it.price ?? 0))),
+            }))
+            .filter((it: any) => it.description && it.unit_price > 0)
+        : undefined,
+    };
+
     const result = await this.ccofactService.emitManualNote(
       owner,
       sale.billingSerie,
       sale.billingNumber,
-      dto,
+      normalizedDto,
     );
 
     // Si la nota es de Crédito y anula totalmente o devuelve mercadería, restaurar stock
-    if (dto.note_type === '07' && ['01', '02', '06', '07'].includes(dto.reason_code)) {
-      if (['01', '02', '06'].includes(dto.reason_code)) {
+    if (normalizedDto.note_type === '07' && ['01', '02', '06', '07'].includes(normalizedDto.reason_code)) {
+      if (['01', '02', '06'].includes(normalizedDto.reason_code)) {
         for (const item of sale.items) {
           if (sale.branchId) {
             const bStock = await this.prisma.branchStock.findUnique({
@@ -850,9 +889,9 @@ export class SalesService {
           where: { id: sale.id },
           data: { billingStatus: 'CANCELLED' },
         });
-      } else if (dto.reason_code === '07' && Array.isArray(dto.items)) {
-        for (const it of dto.items) {
-          const matchingItem = sale.items.find(si => si.productId === it.product_id || si.name === it.name);
+      } else if (normalizedDto.reason_code === '07' && Array.isArray(normalizedDto.items)) {
+        for (const it of normalizedDto.items) {
+          const matchingItem = sale.items.find(si => si.productId === it.code || si.name === it.description);
           const returnQty = Number(it.quantity) || 0;
           if (matchingItem && returnQty > 0) {
             if (sale.branchId) {
