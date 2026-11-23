@@ -89,12 +89,15 @@ export class SalesService {
       where: {
         id,
         user: { OR: [{ id: ownerId }, { parentId: ownerId }] },
-        billingStatus: 'ERROR',
       },
     });
 
     if (!sale) {
-      return { success: false, error: 'Venta no encontrada o no tiene errores' };
+      return { success: false, error: 'Venta no encontrada en el sistema' };
+    }
+
+    if (sale.billingStatus === 'SUCCESS' && sale.billingSerie && sale.billingNumber) {
+      return { success: true, message: 'El comprobante ya fue aceptado formalmente por SUNAT previamente' };
     }
 
     await this.prisma.sale.update({

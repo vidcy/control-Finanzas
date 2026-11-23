@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Param, Body, Query, Req, UseGuards, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Put, Param, Body, Query, Req, UseGuards, Delete, BadRequestException } from '@nestjs/common';
 import { SalesService } from './sales.service';
 import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard } from '../auth/role.guard';
@@ -39,9 +39,13 @@ export class SalesController {
 
   @UseGuards(AuthGuard('jwt'))
   @Post(':id/retry-billing')
-  retryBilling(@Req() req, @Param('id') id: string) {
+  async retryBilling(@Req() req, @Param('id') id: string) {
     const ownerId = req.user.parentId || req.user.id;
-    return this.salesService.retryBilling(ownerId, id);
+    const res = await this.salesService.retryBilling(ownerId, id);
+    if (!res.success && (res as any).status !== 'QUEUED') {
+      throw new BadRequestException((res as any).error || 'Comprobante rechazado por SUNAT al reintentar');
+    }
+    return res;
   }
 
   @UseGuards(AuthGuard('jwt'))

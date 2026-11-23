@@ -935,6 +935,35 @@ export default function BusinessPosPage() {
     }
   };
 
+  const handleRetryBilling = (sale: any) => {
+    const isFactura = sale.billingType === "FACTURA";
+    const compLabel = `${isFactura ? "Factura" : "Boleta"} ${sale.billingSerie || ""}-${String(sale.billingNumber || "").padStart(8, "0")}`.trim();
+    setPosConfirmModal({
+      isOpen: true,
+      title: "Reenviar Comprobante a SUNAT",
+      message: `¿Estás seguro de que deseas retransmitir formalmente el comprobante ${compLabel} ante SUNAT? El sistema reconstruirá la firma digital con el certificado X.509 y consultará la Constancia de Recepción Oficial (CDR).`,
+      confirmText: "Sí, Reenviar a SUNAT",
+      cancelText: "Cancelar",
+      variant: "info",
+      onConfirm: async () => {
+        setPosConfirmModal((prev) => ({ ...prev, isOpen: false }));
+        const loading = toast.loading(`Transmitiendo ${compLabel} a SUNAT...`);
+        try {
+          await retrySaleBillingRequest(sale.id);
+          toast.dismiss(loading);
+          toast.success(`✅ Comprobante ${compLabel} enviado y validado exitosamente ante SUNAT`);
+          await loadSales();
+          await loadData();
+        } catch (err: any) {
+          toast.dismiss(loading);
+          setSystemError(parseSystemError(err, "Diagnóstico Oficial de Respuesta SUNAT"));
+          await loadSales();
+          await loadData();
+        }
+      },
+    });
+  };
+
   const handleEditSale = (sale: any) => {
     const isBilled = (sale.billingType === "BOLETA" || sale.billingType === "FACTURA") && sale.billingSerie && sale.billingNumber;
 
@@ -4894,67 +4923,59 @@ export default function BusinessPosPage() {
                                     )}
                                   {sale.billingStatus === "REJECTED" && (
                                     <div className="flex flex-col gap-1">
-                                      <div className="flex items-center gap-1">
+                                      <div className="flex items-center gap-1.5">
                                         <span className="text-[9px] bg-rose-50 text-rose-700 font-black border border-rose-200 px-1.5 py-0.5 rounded uppercase" title={sale.billingError || "Rechazado oficialmente por SUNAT"}>
                                           Rechazado SUNAT
                                         </span>
                                         <button
-                                          onClick={async () => {
-                                            const loading = toast.loading("Reintentando transmisión a SUNAT...");
-                                            try {
-                                              await retrySaleBillingRequest(sale.id);
-                                              toast.dismiss(loading);
-                                              toast.success("Envío completado");
-                                              loadData();
-                                            } catch (err: any) {
-                                              toast.dismiss(loading);
-                                              setSystemError(parseSystemError(err, "Diagnóstico de Rechazo SUNAT"));
-                                            }
-                                          }}
-                                          className="p-0.5 bg-gray-50 hover:bg-gray-150 border border-gray-200 rounded text-gray-650 hover:text-gray-950 transition-colors cursor-pointer"
-                                          title="Diagnosticar y Reintentar Envío a SUNAT"
+                                          type="button"
+                                          onClick={() => handleRetryBilling(sale)}
+                                          className="px-1.5 py-0.5 bg-rose-50 hover:bg-rose-100 border border-rose-300 rounded text-rose-700 hover:text-rose-900 font-bold text-[10px] transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
+                                          title="Reenviar y Validar Comprobante ante SUNAT"
                                         >
                                           <RefreshCw className="w-3 h-3" />
+                                          <span>Reenviar</span>
                                         </button>
                                       </div>
                                       {sale.billingError && (
-                                        <p className="text-[9px] text-rose-500 font-medium max-w-[150px] truncate" title={sale.billingError}>
+                                        <p className="text-[9px] text-rose-500 font-medium max-w-[170px] truncate" title={sale.billingError}>
                                           {sale.billingError}
                                         </p>
                                       )}
                                     </div>
                                   )}
                                   {sale.billingStatus === "QUEUED" && (
-                                    <span className="text-[9px] bg-amber-50 text-amber-700 font-black border border-amber-200 px-1.5 py-0.5 rounded uppercase" title="En cola asíncrona de reintentos SUNAT">
-                                      En Cola
-                                    </span>
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-[9px] bg-amber-50 text-amber-700 font-black border border-amber-200 px-1.5 py-0.5 rounded uppercase" title="En cola asíncrona de reintentos SUNAT">
+                                        En Cola
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRetryBilling(sale)}
+                                        className="p-1 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded text-amber-700 hover:text-amber-900 transition-colors cursor-pointer"
+                                        title="Forzar Envío a SUNAT"
+                                      >
+                                        <RefreshCw className="w-3 h-3" />
+                                      </button>
+                                    </div>
                                   )}
                                   {sale.billingStatus === "ERROR" && (
                                     <div className="flex flex-col gap-1">
-                                      <div className="flex items-center gap-1">
+                                      <div className="flex items-center gap-1.5">
                                         <span className="text-[9px] bg-red-50 text-red-700 font-black border border-red-200 px-1.5 py-0.5 rounded uppercase" title={sale.billingError}>
                                           Error SUNAT
                                         </span>
                                         <button
-                                          onClick={async () => {
-                                            const loading = toast.loading("Reintentando envío a SUNAT...");
-                                            try {
-                                              await retrySaleBillingRequest(sale.id);
-                                              toast.dismiss(loading);
-                                              toast.success("Envío completado");
-                                              loadData();
-                                            } catch (err: any) {
-                                              toast.dismiss(loading);
-                                              setSystemError(parseSystemError(err, "Diagnóstico de Reintento SUNAT"));
-                                            }
-                                          }}
-                                          className="p-0.5 bg-gray-50 hover:bg-gray-150 border border-gray-200 rounded text-gray-650 hover:text-gray-950 transition-colors animate-pulse"
-                                          title="Reintentar Facturación"
+                                          type="button"
+                                          onClick={() => handleRetryBilling(sale)}
+                                          className="px-1.5 py-0.5 bg-red-50 hover:bg-red-100 border border-red-300 rounded text-red-700 hover:text-red-900 font-bold text-[10px] transition-colors cursor-pointer flex items-center gap-1 shadow-xs animate-pulse"
+                                          title="Reintentar Facturación ante SUNAT"
                                         >
                                           <RefreshCw className="w-3 h-3" />
+                                          <span>Reenviar</span>
                                         </button>
                                       </div>
-                                      <p className="text-[9px] text-red-500 font-medium max-w-[150px] truncate" title={sale.billingError}>
+                                      <p className="text-[9px] text-red-500 font-medium max-w-[170px] truncate" title={sale.billingError}>
                                         {sale.billingError}
                                       </p>
                                     </div>
