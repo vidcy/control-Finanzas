@@ -48,11 +48,20 @@ export class CcofactService {
     pdfUrl?: string;
     xmlUrl?: string;
     cdrUrl?: string;
+    hash?: string;
+    qrCode?: string;
+    fullNumber?: string;
     error?: string;
     number?: number;
     serie?: string;
     sunatResponseCode?: string;
     sunatDescription?: string;
+    totalGravada?: number;
+    totalExonerada?: number;
+    totalInafecta?: number;
+    totalIgv?: number;
+    igvAffectation?: string;
+    igvRate?: number;
   }> {
     try {
       const sale = await this.prisma.sale.findUnique({
@@ -365,8 +374,15 @@ export class CcofactService {
         pdfUrl: finalPdf,
         xmlUrl: finalXml,
         cdrUrl: finalCdr,
+        hash: finalHash,
         sunatResponseCode,
         sunatDescription: sunatDesc,
+        totalGravada,
+        totalExonerada,
+        totalInafecta,
+        totalIgv,
+        igvAffectation: affectation,
+        igvRate: affectation === '10' ? effectiveIgvRate : 0,
       };
     } catch (e: any) {
       this.logger.error(`Excepción en CcofactService.sendInvoice: ${e.message}`);

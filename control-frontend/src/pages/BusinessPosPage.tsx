@@ -534,11 +534,13 @@ export default function BusinessPosPage() {
     const isFiscal = lastSale.billingType === "BOLETA" || lastSale.billingType === "FACTURA";
     const totalAmount = Number(lastSale.total) || 0;
     const activeBranch = branches.find((b: any) => b.id === (lastSale.branchId || activeShift?.branchId));
+    const resolvedAffectation = (lastSale as any)?.igvAffectation || (user?.defaultIgvAffectation || "20");
+    const resolvedRate = (lastSale as any)?.igvRate ?? activeBranch?.igvRate ?? user?.igvRate ?? 18.0;
     const breakdown = calculateFiscalBreakdown(totalAmount, {
-      taxRegime: activeBranch?.taxRegime || user?.taxRegime,
+      taxRegime: (lastSale as any)?.taxRegime || activeBranch?.taxRegime || user?.taxRegime,
       department: activeBranch?.department || user?.businessDepartment,
-      igvRate: activeBranch?.igvRate ?? user?.igvRate,
-      igvAffectation: (lastSale as any)?.igvAffectation || "20",
+      igvRate: resolvedRate,
+      igvAffectation: resolvedAffectation,
     });
 
     const formattedCorrelative = lastSale.billingNumber ? String(lastSale.billingNumber).padStart(8, "0") : "00000001";
@@ -806,6 +808,12 @@ export default function BusinessPosPage() {
       clientDocumentNumber: sale.clientDocumentNumber,
       clientDenomination: sale.clientDenomination,
       clientAddress: sale.clientAddress,
+      igvAffectation: sale.igvAffectation || sale.taxRegime || undefined,
+      igvRate: sale.igvRate,
+      totalGravada: sale.totalGravada,
+      totalExonerada: sale.totalExonerada,
+      totalInafecta: sale.totalInafecta,
+      totalIgv: sale.totalIgv,
     });
     setShowTicket(true);
   };
@@ -1305,8 +1313,9 @@ export default function BusinessPosPage() {
     setBillingType("TICKET_VENTA"); // Por defecto siempre Nota de Venta
     setClientDenomination("CLIENTES VARIOS");
     setClientDocumentNumber("");
-    setPosIgvAffectation("20");
-    setPosIgvRate(18.0);
+    setPosIgvAffectation((user?.defaultIgvAffectation as any) || "20");
+    const userRate = user?.igvRate ? Number(user.igvRate) : 18.0;
+    setPosIgvRate(userRate <= 10.5 ? 10.5 : 18.0);
     setAmountPaid(total.toString());
     setIsCheckoutOpen(true);
   };
@@ -1434,6 +1443,17 @@ export default function BusinessPosPage() {
       const finalNumber = txResult?.billing?.number || (billingType === 'BOLETA' || billingType === 'FACTURA' ? 1 : undefined);
       const finalFullNumber = txResult?.billing?.fullNumber || (finalSerie && finalNumber ? `${finalSerie}-${String(finalNumber).padStart(8, '0')}` : undefined);
 
+      const resolvedAffectation = billingType === "TICKET_VENTA"
+        ? (posIgvAffectation || "20")
+        : (txResult?.billing?.igvAffectation || txResult?.igvAffectation || posIgvAffectation || "20");
+      const resolvedIgvRate = billingType === "TICKET_VENTA"
+        ? (posIgvAffectation === "10" ? posIgvRate : 0.0)
+        : (txResult?.billing?.igvRate ?? txResult?.igvRate ?? (posIgvAffectation === "10" ? posIgvRate : 0.0));
+      const resolvedTotalGravada = txResult?.billing?.totalGravada ?? txResult?.totalGravada;
+      const resolvedTotalExonerada = txResult?.billing?.totalExonerada ?? txResult?.totalExonerada;
+      const resolvedTotalInafecta = txResult?.billing?.totalInafecta ?? txResult?.totalInafecta;
+      const resolvedTotalIgv = txResult?.billing?.totalIgv ?? txResult?.totalIgv;
+
       setLastSale({
         items: [...cart],
         total,
@@ -1454,6 +1474,12 @@ export default function BusinessPosPage() {
         clientDocumentNumber: (billingType === 'BOLETA' || billingType === 'FACTURA') ? clientDocumentNumber : undefined,
         clientDenomination: clientDenomination.trim() || "CLIENTES VARIOS",
         clientAddress: (billingType === 'BOLETA' || billingType === 'FACTURA') ? clientAddress : undefined,
+        igvAffectation: resolvedAffectation,
+        igvRate: resolvedIgvRate,
+        totalGravada: resolvedTotalGravada,
+        totalExonerada: resolvedTotalExonerada,
+        totalInafecta: resolvedTotalInafecta,
+        totalIgv: resolvedTotalIgv,
       });
 
       // 5. Limpieza de estados
@@ -1488,12 +1514,14 @@ export default function BusinessPosPage() {
     const totalAmount = Number(lastSale.total) || 0;
     const activeBranchId = activeShift?.branchId || lastSale.branchId;
     const branchInfo = branches.find((b: any) => b.id === activeBranchId);
+    const resolvedAffectation = (lastSale as any)?.igvAffectation || (user?.defaultIgvAffectation || "20");
+    const resolvedRate = (lastSale as any)?.igvRate ?? branchInfo?.igvRate ?? user?.igvRate ?? 18.0;
 
     const breakdown = calculateFiscalBreakdown(totalAmount, {
-      taxRegime: branchInfo?.taxRegime || user?.taxRegime,
+      taxRegime: (lastSale as any)?.taxRegime || branchInfo?.taxRegime || user?.taxRegime,
       department: branchInfo?.department || user?.businessDepartment,
-      igvRate: branchInfo?.igvRate ?? user?.igvRate,
-      igvAffectation: (lastSale as any)?.igvAffectation || "20",
+      igvRate: resolvedRate,
+      igvAffectation: resolvedAffectation,
     });
 
     const formattedCorrelative = lastSale.billingNumber ? String(lastSale.billingNumber).padStart(8, "0") : "00000001";
@@ -1686,7 +1714,16 @@ export default function BusinessPosPage() {
           <div class="double-line"></div>
           ${isFiscal ? `
             <div style="font-size: 10px; line-height: 1.4; margin-bottom: 4px;">
-              ${breakdown.isExonerated ? `
+              ${breakdown.isInafecta || breakdown.baseInafecta > 0 ? `
+                <div class="flex-between">
+                  <span>OP. INAFECTA:</span>
+                  <span>S/ ${breakdown.baseInafecta.toFixed(2)}</span>
+                </div>
+                <div class="flex-between">
+                  <span>I.G.V. (0.00%):</span>
+                  <span>S/ 0.00</span>
+                </div>
+              ` : breakdown.isExonerated || breakdown.baseExonerada > 0 ? `
                 <div class="flex-between">
                   <span>OP. EXONERADA:</span>
                   <span>S/ ${breakdown.baseExonerada.toFixed(2)}</span>
@@ -2428,16 +2465,29 @@ export default function BusinessPosPage() {
               const isFiscal = lastSale.billingType === "BOLETA" || lastSale.billingType === "FACTURA";
               const totalAmt = Number(lastSale.total) || 0;
               const activeBranch = branches.find((b: any) => b.id === (lastSale.branchId || activeShift?.branchId));
+              const resolvedAffectation = (lastSale as any)?.igvAffectation || (user?.defaultIgvAffectation || "20");
+              const resolvedRate = (lastSale as any)?.igvRate ?? activeBranch?.igvRate ?? user?.igvRate ?? 18.0;
               const breakdown = calculateFiscalBreakdown(totalAmt, {
-                taxRegime: activeBranch?.taxRegime || user?.taxRegime,
+                taxRegime: (lastSale as any)?.taxRegime || activeBranch?.taxRegime || user?.taxRegime,
                 department: activeBranch?.department || user?.businessDepartment,
-                igvRate: activeBranch?.igvRate ?? user?.igvRate,
-                igvAffectation: (lastSale as any)?.igvAffectation || "20",
+                igvRate: resolvedRate,
+                igvAffectation: resolvedAffectation,
               });
 
               return isFiscal ? (
                 <div style={{ fontSize: "10px", lineHeight: "1.4", marginBottom: "4px" }}>
-                  {breakdown.isExonerated ? (
+                  {breakdown.isInafecta || breakdown.baseInafecta > 0 ? (
+                    <>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span>OP. INAFECTA:</span>
+                        <span>S/ {breakdown.baseInafecta.toFixed(2)}</span>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span>I.G.V. (0.00%):</span>
+                        <span>S/ 0.00</span>
+                      </div>
+                    </>
+                  ) : breakdown.isExonerated || breakdown.baseExonerada > 0 ? (
                     <>
                       <div style={{ display: "flex", justifyContent: "space-between" }}>
                         <span>OP. EXONERADA:</span>
@@ -3521,16 +3571,29 @@ export default function BusinessPosPage() {
                 const isFiscal = lastSale.billingType === "BOLETA" || lastSale.billingType === "FACTURA";
                 const totalAmt = Number(lastSale.total) || 0;
                 const activeBranch = branches.find((b: any) => b.id === (lastSale.branchId || activeShift?.branchId));
+                const resolvedAffectation = (lastSale as any)?.igvAffectation || (user?.defaultIgvAffectation || "20");
+                const resolvedRate = (lastSale as any)?.igvRate ?? activeBranch?.igvRate ?? user?.igvRate ?? 18.0;
                 const breakdown = calculateFiscalBreakdown(totalAmt, {
-                  taxRegime: activeBranch?.taxRegime || user?.taxRegime,
+                  taxRegime: (lastSale as any)?.taxRegime || activeBranch?.taxRegime || user?.taxRegime,
                   department: activeBranch?.department || user?.businessDepartment,
-                  igvRate: activeBranch?.igvRate ?? user?.igvRate,
-                  igvAffectation: (lastSale as any)?.igvAffectation || "20",
+                  igvRate: resolvedRate,
+                  igvAffectation: resolvedAffectation,
                 });
 
                 return isFiscal ? (
                   <div className="text-[10px] space-y-1 mb-2">
-                    {breakdown.isExonerated ? (
+                    {breakdown.isInafecta || breakdown.baseInafecta > 0 ? (
+                      <>
+                        <div className="flex justify-between text-gray-600">
+                          <span>OP. INAFECTA:</span>
+                          <span>S/ {breakdown.baseInafecta.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between text-gray-600">
+                          <span>I.G.V. (0.00%):</span>
+                          <span>S/ 0.00</span>
+                        </div>
+                      </>
+                    ) : breakdown.isExonerated || breakdown.baseExonerada > 0 ? (
                       <>
                         <div className="flex justify-between text-gray-600">
                           <span>OP. EXONERADA:</span>

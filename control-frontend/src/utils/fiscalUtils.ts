@@ -243,6 +243,7 @@ export interface FiscalBreakdown {
   isExonerated: boolean;
   isAmazonia: boolean;
   isRestaurantes: boolean;
+  isInafecta?: boolean;
   isNrus: boolean;
   rate: number;
   incomeTaxRate: number;
@@ -280,6 +281,7 @@ export function calculateFiscalBreakdown(
       shortName: "Exonerado 0%",
       category: "AMAZONIA",
       isExonerated: true,
+      isInafecta: false,
       isAmazonia: true,
       isRestaurantes: false,
       isNrus: false,
@@ -302,7 +304,8 @@ export function calculateFiscalBreakdown(
       regimeName: "Operaciones Inafectas (0% IGV)",
       shortName: "Inafecto 0%",
       category: "ESPECIAL",
-      isExonerated: true,
+      isExonerated: false,
+      isInafecta: true,
       isAmazonia: false,
       isRestaurantes: false,
       isNrus: false,
@@ -319,8 +322,8 @@ export function calculateFiscalBreakdown(
     };
   }
 
-  if (config?.igvAffectation === "10") {
-    const rate = config.igvRate ? Number(config.igvRate) : 18.0;
+  if (config?.igvAffectation === "10" || config?.igvAffectation === "10_MYPE") {
+    const rate = config.igvAffectation === "10_MYPE" ? 10.0 : (config.igvRate ? Number(config.igvRate) : 18.0);
     const isSpecialMype = rate <= 10.5;
     const divisor = 1 + rate / 100;
     const base = Number((total / divisor).toFixed(2));
@@ -333,6 +336,7 @@ export function calculateFiscalBreakdown(
       shortName: `Gravado ${rate}%`,
       category: isSpecialMype ? "ESPECIAL" : "RG",
       isExonerated: false,
+      isInafecta: false,
       isAmazonia: false,
       isRestaurantes: isSpecialMype,
       isNrus: false,
@@ -352,7 +356,7 @@ export function calculateFiscalBreakdown(
   // Si no se especificó régimen pero el departamento es amazónico (ej. Madre de Dios), usar Amazonía
   let rawRegimeCode = config?.taxRegime || (autoAmazonia ? "AMAZONIA_EXONERADO" : "RER_18");
 
-  if (autoAmazonia && (rawRegimeCode === "GENERAL_18" || rawRegimeCode === "RER_18")) {
+  if (!config?.taxRegime && autoAmazonia) {
     rawRegimeCode = "AMAZONIA_EXONERADO";
   }
 

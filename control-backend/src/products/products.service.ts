@@ -1134,6 +1134,24 @@ export class ProductsService {
       // Determinar el estado inicial de facturación
       const hasBilling = billingType === 'BOLETA' || billingType === 'FACTURA';
 
+      // Calcular desglose tributario exacto según la afectación elegida por el usuario
+      const chosenAffectation = checkoutDto.igvAffectation || '20';
+      const chosenRate = Number(checkoutDto.igvRate) || 18.0;
+      let initialGravada = 0;
+      let initialExonerada = 0;
+      let initialInafecta = 0;
+      let initialIgv = 0;
+
+      if (chosenAffectation === '20') {
+        initialExonerada = parseFloat(totalAmount.toFixed(2));
+      } else if (chosenAffectation === '30') {
+        initialInafecta = parseFloat(totalAmount.toFixed(2));
+      } else {
+        const divisor = 1 + (chosenRate / 100);
+        initialGravada = parseFloat((totalAmount / divisor).toFixed(2));
+        initialIgv = parseFloat((totalAmount - initialGravada).toFixed(2));
+      }
+
       const sale = await tx.sale.create({
         data: {
           userId: workerId,
@@ -1152,6 +1170,12 @@ export class ProductsService {
           clientDenomination: clientDenomination || null,
           clientAddress: clientAddress || null,
           clientEmail: clientEmail || null,
+          igvAffectation: chosenAffectation,
+          igvRate: chosenAffectation === '10' ? chosenRate : 0,
+          totalGravada: initialGravada,
+          totalExonerada: initialExonerada,
+          totalInafecta: initialInafecta,
+          totalIgv: initialIgv,
         },
       });
 
@@ -1256,6 +1280,12 @@ export class ProductsService {
         saleId: sale.id,
         amount: totalAmount,
         details: salesDetails,
+        igvAffectation: chosenAffectation,
+        igvRate: chosenAffectation === '10' ? chosenRate : 0,
+        totalGravada: initialGravada,
+        totalExonerada: initialExonerada,
+        totalInafecta: initialInafecta,
+        totalIgv: initialIgv,
       };
     }).then(async (result) => {
       // ✅ FACTURACIÓN ELECTRÓNICA: Se ejecuta FUERA de la transacción DB
@@ -1278,7 +1308,24 @@ export class ProductsService {
                 billingCdrUrl: billingResult.cdrUrl,
               },
             });
-            return { ...result, billing: { success: true, pdfUrl: billingResult.pdfUrl, serie: billingResult.serie, number: billingResult.number } };
+            return {
+              ...result,
+              billing: {
+                success: true,
+                pdfUrl: billingResult.pdfUrl,
+                xmlUrl: billingResult.xmlUrl,
+                cdrUrl: billingResult.cdrUrl,
+                serie: billingResult.serie,
+                number: billingResult.number,
+                hash: (billingResult as any).hash,
+                totalGravada: (billingResult as any).totalGravada ?? result.totalGravada,
+                totalExonerada: (billingResult as any).totalExonerada ?? result.totalExonerada,
+                totalInafecta: (billingResult as any).totalInafecta ?? result.totalInafecta,
+                totalIgv: (billingResult as any).totalIgv ?? result.totalIgv,
+                igvAffectation: (billingResult as any).igvAffectation ?? result.igvAffectation,
+                igvRate: (billingResult as any).igvRate ?? result.igvRate,
+              },
+            };
           } else {
             await this.prisma.sale.update({
               where: { id: result.saleId },
