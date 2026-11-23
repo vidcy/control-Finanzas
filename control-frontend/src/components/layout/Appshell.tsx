@@ -53,6 +53,7 @@ import CatalogManagerModal from "../catalog/CatalogManagerModal";
 import NotificationDropdown from "./NotificationDropdown";
 import { formatPeruTime } from "../../utils/date.utils";
 import Modal from "../ui/Modal";
+import ConfirmModal from "../ui/ConfirmModal";
 import SystemErrorModal from "../ui/SystemErrorModal";
 import { parseSystemError, type SystemErrorInfo } from "../../utils/systemErrorHandler";
 import { changePasswordRequest } from "../../services/auth.api";
@@ -61,7 +62,19 @@ import PersonalAIChatFloating from "../dashboard/PersonalAIChatFloating";
 import { TAX_REGIMES, TAX_REGIMES_LIST, isAmazoniaDepartment } from "../../utils/fiscalUtils";
 import { generateCatalogSlug, getStoreCatalogSlug, getStoreCatalogUrl } from "../../utils/catalogUtils";
 
-export default function FinanceAppShell({ children }: { children: ReactNode }) {
+export interface NavigationBlocker {
+  isBlocked: boolean;
+  documentLabel?: string;
+  onCancelAndLeave: () => void;
+}
+
+export default function FinanceAppShell({
+  children,
+  navigationBlocker,
+}: {
+  children: ReactNode;
+  navigationBlocker?: NavigationBlocker;
+}) {
   const navigate = useNavigate();
   const { user, setUser, activeWorkspace, setActiveWorkspace, logout, syncProfile } = useAuth();
   const location = useLocation();
@@ -947,7 +960,59 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
     })
     : menu;
 
+  const [pendingNavPath, setPendingNavPath] = useState<string | null>(null);
+  const [isNavBlockModalOpen, setIsNavBlockModalOpen] = useState(false);
+
+  const handleSafeNavigate = (targetPath: string) => {
+    if (location.pathname === targetPath) {
+      setIsMobileMenuOpen(false);
+      return;
+    }
+
+    if (navigationBlocker?.isBlocked) {
+      setPendingNavPath(targetPath);
+      setIsNavBlockModalOpen(true);
+      return;
+    }
+
+    navigate(targetPath);
+    setIsMobileMenuOpen(false);
+  };
+
+  const handleConfirmLeave = () => {
+    if (navigationBlocker?.onCancelAndLeave) {
+      navigationBlocker.onCancelAndLeave();
+    }
+    const path = pendingNavPath;
+    setPendingNavPath(null);
+    setIsNavBlockModalOpen(false);
+    setIsMobileMenuOpen(false);
+
+    if (path === "__LOGOUT__") {
+      localStorage.removeItem("token");
+      navigate("/login");
+    } else if (path === "/dashboard") {
+      setActiveWorkspace("PERSONAL");
+      navigate(path);
+    } else if (path === "/business-dashboard") {
+      setActiveWorkspace("BUSINESS");
+      navigate(path);
+    } else if (path) {
+      navigate(path);
+    }
+  };
+
+  const handleStay = () => {
+    setPendingNavPath(null);
+    setIsNavBlockModalOpen(false);
+  };
+
   const handleLogout = () => {
+    if (navigationBlocker?.isBlocked) {
+      setPendingNavPath("__LOGOUT__");
+      setIsNavBlockModalOpen(true);
+      return;
+    }
     localStorage.removeItem("token");
     navigate("/login");
   };
@@ -1024,10 +1089,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
             <div className="bg-gray-100/80 p-1 rounded-2xl flex gap-1 border border-gray-200/50 relative">
               <button
                 type="button"
-                onClick={() => {
-                  setActiveWorkspace("PERSONAL");
-                  navigate("/dashboard");
-                }}
+                onClick={() => handleSafeNavigate("/dashboard")}
                 className={`flex-grow flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold transition-all relative z-10 ${activeWorkspace === "PERSONAL"
                   ? "bg-white text-blue-600 shadow-sm"
                   : "text-gray-500 hover:text-gray-900"
@@ -1038,10 +1100,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setActiveWorkspace("BUSINESS");
-                  navigate("/business-dashboard");
-                }}
+                onClick={() => handleSafeNavigate("/business-dashboard")}
                 className={`flex-grow flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold transition-all relative z-10 ${activeWorkspace === "BUSINESS"
                   ? "bg-white text-purple-600 shadow-sm"
                   : "text-gray-500 hover:text-gray-900"
@@ -1066,7 +1125,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
             return (
               <button
                 key={item.path}
-                onClick={() => navigate(item.path)}
+                onClick={() => handleSafeNavigate(item.path)}
                 className={`
                                     w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all duration-300 ease-out group relative overflow-hidden
                                     ${active
@@ -1100,10 +1159,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
             <div className="px-2 pt-3 space-y-2">
               <button
                 type="button"
-                onClick={() => {
-                  navigate("/leads?scope=PLATFORM");
-                  setIsMobileMenuOpen(false);
-                }}
+                onClick={() => handleSafeNavigate("/leads?scope=PLATFORM")}
                 className={`w-full p-3 rounded-2xl flex items-center justify-between group transition-all cursor-pointer shadow-md border ${location.pathname === "/leads" && (!location.search || location.search.includes("scope=PLATFORM"))
                     ? "bg-gradient-to-r from-purple-700 via-indigo-700 to-indigo-900 text-white shadow-purple-500/25 border-purple-500"
                     : "bg-gradient-to-r from-purple-50 to-indigo-50 hover:from-purple-100 hover:to-indigo-100 text-purple-950 border-purple-200/70"
@@ -1127,10 +1183,7 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
 
               <button
                 type="button"
-                onClick={() => {
-                  navigate("/users");
-                  setIsMobileMenuOpen(false);
-                }}
+                onClick={() => handleSafeNavigate("/users")}
                 className={`w-full p-3 rounded-2xl flex items-center justify-between group transition-all cursor-pointer shadow-md border ${location.pathname === "/users"
                     ? "bg-gradient-to-r from-purple-600 to-indigo-700 text-white shadow-purple-500/25 border-purple-500"
                     : "bg-gradient-to-r from-purple-50 to-indigo-50 hover:from-purple-100 hover:to-indigo-100 text-purple-950 border-purple-200/70"
@@ -2944,6 +2997,18 @@ export default function FinanceAppShell({ children }: { children: ReactNode }) {
         isOpen={Boolean(systemError)}
         onClose={() => setSystemError(null)}
         error={systemError}
+      />
+
+      {/* Modal de Protección de Navegación durante Edición de Comprobante */}
+      <ConfirmModal
+        isOpen={isNavBlockModalOpen}
+        onClose={handleStay}
+        onConfirm={handleConfirmLeave}
+        title="⚠️ Edición de Comprobante en Curso"
+        message={`Estás en edición de ${navigationBlocker?.documentLabel || "un comprobante"}. Si sales a otro módulo, la edición se cancelará y el comprobante original permanecerá completamente intacto en el sistema (no se emitirá ninguna nota de crédito ni se modificará la venta).\n\n¿Deseas cancelar la edición y salir?`}
+        confirmText="Sí, Cancelar Edición y Salir"
+        cancelText="Continuar Editando"
+        variant="warning"
       />
     </div>
   );

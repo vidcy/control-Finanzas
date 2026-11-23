@@ -427,6 +427,22 @@ export default function BusinessPosPage() {
   // Estado para edición inteligente de venta en el carrito del POS
   const [editingSale, setEditingSale] = useState<any | null>(null);
   const [saleIssueDate, setSaleIssueDate] = useState<string>("");
+
+  // Proteger contra recarga o cierre accidental de pestaña mientras edita un comprobante
+  useEffect(() => {
+    if (!editingSale) return;
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "Estás modificando un comprobante. Si sales, la edición se cancelará y no se aplicarán cambios.";
+      return e.returnValue;
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [editingSale]);
   const [posSalesPageSize, setPosSalesPageSize] = useState<number>(10);
   const [noteReasonCode, setNoteReasonCode] = useState<number>(1);
   const [noteReasonText, setNoteReasonText] = useState<string>("");
@@ -2504,7 +2520,29 @@ export default function BusinessPosPage() {
   };
 
   return (
-    <Appshell>
+    <Appshell
+      navigationBlocker={
+        editingSale
+          ? {
+              isBlocked: true,
+              documentLabel: editingSale.billingSerie
+                ? `${editingSale.billingType === "FACTURA" ? "la Factura" : "la Boleta"} ${editingSale.billingSerie}-${String(editingSale.billingNumber).padStart(8, "0")}`
+                : (editingSale.billingType ? `${editingSale.billingType} #${editingSale.id.slice(0, 8)}` : `la Nota de Venta #${editingSale.id.slice(0, 8)}`),
+              onCancelAndLeave: () => {
+                setEditingSale(null);
+                setCart([]);
+                setClientDenomination("CLIENTES VARIOS");
+                setClientDocumentNumber("");
+                setClientAddress("");
+                setClientEmail("");
+                setBillingType("TICKET_VENTA");
+                setSaleIssueDate("");
+                toast("Modo de edición cancelado. El comprobante original no sufrió modificaciones.", { icon: "ℹ️" });
+              },
+            }
+          : undefined
+      }
+    >
       {/* Print styles — applied globally during window.print() */}
       <style>{`
         @media print {

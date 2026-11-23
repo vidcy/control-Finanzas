@@ -1036,11 +1036,11 @@ export default function BusinessKardexPage() {
                       Stock {selectedBranchId === "ALL" ? "Global" : "en Sede"}
                     </p>
                     <p className={`text-sm font-black mt-1 ${(() => {
-                        const stock = selectedBranchId === "ALL"
-                          ? selectedProductDetail.stock
-                          : (selectedProductDetail.branchStocks?.find((bs: any) => bs.branchId === selectedBranchId)?.stock ?? 0);
-                        return stock <= selectedProductDetail.minStock ? "text-red-650" : "text-emerald-600";
-                      })()
+                      const stock = selectedBranchId === "ALL"
+                        ? selectedProductDetail.stock
+                        : (selectedProductDetail.branchStocks?.find((bs: any) => bs.branchId === selectedBranchId)?.stock ?? 0);
+                      return stock <= selectedProductDetail.minStock ? "text-red-650" : "text-emerald-600";
+                    })()
                       }`}>
                       {selectedBranchId === "ALL"
                         ? selectedProductDetail.stock
@@ -1356,12 +1356,12 @@ export default function BusinessKardexPage() {
                         {/* Motivo / Badge */}
                         <td className="px-4 py-3 text-left border-r border-gray-100">
                           <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider shadow-sm ${isPurchase
-                              ? "bg-teal-50 text-teal-700 border border-teal-100"
-                              : isSale
-                                ? "bg-blue-50 text-blue-700 border border-blue-100"
-                                : isRevert
-                                  ? "bg-rose-50 text-rose-700 border border-rose-100"
-                                  : "bg-amber-50 text-amber-700 border border-amber-100"
+                            ? "bg-teal-50 text-teal-700 border border-teal-100"
+                            : isSale
+                              ? "bg-blue-50 text-blue-700 border border-blue-100"
+                              : isRevert
+                                ? "bg-rose-50 text-rose-700 border border-rose-100"
+                                : "bg-amber-50 text-amber-700 border border-amber-100"
                             }`}>
                             {isPurchase && <ShoppingCart className="w-3 h-3 text-teal-600" />}
                             {isSale && <ProfitIcon className="w-3 h-3 text-blue-600" />}
@@ -1641,8 +1641,8 @@ export default function BusinessKardexPage() {
 
               {/* Type Header Badge */}
               <div className={`p-4 rounded-2xl border flex items-center justify-between ${selectedMovementForDetail.type === "IN"
-                  ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white border-emerald-400/30"
-                  : "bg-gradient-to-r from-rose-500 to-red-600 text-white border-rose-400/30"
+                ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white border-emerald-400/30"
+                : "bg-gradient-to-r from-rose-500 to-red-600 text-white border-rose-400/30"
                 }`}>
                 <div className="flex items-center gap-3">
                   <div className="p-2.5 bg-white/10 rounded-xl">
