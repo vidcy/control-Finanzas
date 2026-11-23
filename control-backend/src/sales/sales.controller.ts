@@ -87,8 +87,20 @@ export class SalesController {
 
   @UseGuards(AuthGuard('jwt'))
   @Delete(':id')
-  deleteSale(@Req() req, @Param('id') id: string) {
+  deleteSale(
+    @Req() req,
+    @Param('id') id: string,
+    @Body() body?: { method?: 'COMUNICACION_BAJA' | 'NOTA_CREDITO'; motivo?: string; deliveredToClient?: boolean },
+    @Query('method') queryMethod?: 'COMUNICACION_BAJA' | 'NOTA_CREDITO',
+    @Query('motivo') queryMotivo?: string,
+    @Query('deliveredToClient') queryDelivered?: string,
+  ) {
     const ownerId = req.user.parentId || req.user.id;
-    return this.salesService.deleteSale(ownerId, id);
+    const options = {
+      method: body?.method || queryMethod,
+      motivo: body?.motivo || queryMotivo,
+      deliveredToClient: body?.deliveredToClient !== undefined ? body.deliveredToClient : (queryDelivered === 'true'),
+    };
+    return this.salesService.deleteSale(ownerId, id, options);
   }
 }

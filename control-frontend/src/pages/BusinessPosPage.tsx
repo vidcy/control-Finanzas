@@ -46,6 +46,7 @@ import ReceiptUploader, {
 } from "../components/ui/ImageUploader";
 import Pagination from "../components/ui/Pagination";
 import ConfirmModal from "../components/ui/ConfirmModal";
+import { SunatAnnulmentModal, type SunatAnnulmentOptions } from "../components/ui/SunatAnnulmentModal";
 import SystemErrorModal from "../components/ui/SystemErrorModal";
 import { parseSystemError, type SystemErrorInfo } from "../utils/systemErrorHandler";
 
@@ -392,6 +393,17 @@ export default function BusinessPosPage() {
     title: "",
     message: "",
     onConfirm: () => {},
+  });
+
+  // Modal oficial de Anulación SUNAT (Comunicación de Baja vs Nota de Crédito)
+  const [annulModalState, setAnnulModalState] = useState<{
+    isOpen: boolean;
+    sale: any | null;
+    isSubmitting: boolean;
+  }>({
+    isOpen: false,
+    sale: null,
+    isSubmitting: false,
   });
 
   // Modal de diagnóstico / error oficial del sistema
@@ -819,32 +831,41 @@ export default function BusinessPosPage() {
   };
 
   const handleDeleteSale = (sale: any) => {
-    const isBilled = sale.billingStatus === "SUCCESS" && sale.billingSerie && sale.billingNumber;
-    setPosConfirmModal({
+    setAnnulModalState({
       isOpen: true,
-      title: isBilled ? "Anular Venta y Comprobante SUNAT" : "Eliminar Venta del POS",
-      message: isBilled
-        ? `Esta venta cuenta con comprobante electrónico SUNAT (${sale.billingSerie}-${String(sale.billingNumber).padStart(8, "0")}). Al anularla:\n\n1. Se emitirá automáticamente la Nota de Crédito oficial ante SUNAT (Motivo 01: Anulación de la operación).\n2. Se restablecerá el stock de todos los productos en el inventario.\n3. Se cancelarán las comisiones y se excluirá de la caja.`
-        : "¿Estás seguro de que deseas eliminar esta venta? Esto restablecerá el stock de los productos al inventario y cancelará las comisiones de forma inmediata.",
-      confirmText: isBilled ? "Anular con Nota de Crédito" : "Eliminar Venta",
-      cancelText: "Cancelar",
-      variant: "danger",
-      onConfirm: async () => {
-        try {
-          await deleteSaleRequest(sale.id);
-          toast.success(
-            isBilled
-              ? "Venta y comprobante SUNAT anulados con éxito (Nota de Crédito emitida y stock restablecido)"
-              : "Venta eliminada con éxito y stock restablecido"
-          );
-          loadSales();
-          loadData();
-        } catch (error: any) {
-          const parsed = parseSystemError(error, "Error al Anular Venta y Comprobante");
-          setSystemError(parsed);
-        }
-      },
+      sale,
+      isSubmitting: false,
     });
+  };
+
+  const handleConfirmAnnulment = async (options: SunatAnnulmentOptions) => {
+    if (!annulModalState.sale) return;
+    setAnnulModalState((prev) => ({ ...prev, isSubmitting: true }));
+    try {
+      const isBilled =
+        annulModalState.sale.billingStatus === "SUCCESS" &&
+        annulModalState.sale.billingSerie &&
+        annulModalState.sale.billingNumber;
+      await deleteSaleRequest(annulModalState.sale.id, {
+        method: options.method,
+        motivo: options.motivo,
+        deliveredToClient: options.deliveredToClient,
+      });
+      toast.success(
+        isBilled
+          ? options.method === "COMUNICACION_BAJA"
+            ? "Venta y comprobante anulados mediante Comunicación de Baja (stock restablecido sin gastar Nota de Crédito)"
+            : "Venta anulada formalmente con Nota de Crédito oficial ante SUNAT (stock restablecido)"
+          : "Venta eliminada con éxito y stock restablecido"
+      );
+      setAnnulModalState({ isOpen: false, sale: null, isSubmitting: false });
+      loadSales();
+      loadData();
+    } catch (error: any) {
+      setAnnulModalState((prev) => ({ ...prev, isSubmitting: false }));
+      const parsed = parseSystemError(error, "Error al Anular Venta y Comprobante");
+      setSystemError(parsed);
+    }
   };
 
   const handleEditSale = (sale: any) => {
@@ -5596,6 +5617,33 @@ export default function BusinessPosPage() {
         confirmText={posConfirmModal.confirmText}
         cancelText={posConfirmModal.cancelText}
         variant={posConfirmModal.variant || "danger"}
+      />
+
+      {/* Modal Oficial de Anulación SUNAT (Comunicación de Baja vs Nota de Crédito) */}
+      <SunatAnnulmentModal
+        isOpen={annulModalState.isOpen}
+        onClose={() => setAnnulModalState((prev) => ({ ...prev, isOpen: false, sale: null }))}
+        onConfirm={handleConfirmAnnulment}
+        isSubmitting={annulModalState.isSubmitting}
+        documentInfo={
+          annulModalState.sale
+            ? {
+                fullNumber:
+                  annulModalState.sale.billingSerie && annulModalState.sale.billingNumber
+                    ? `${annulModalState.sale.billingSerie}-${String(annulModalState.sale.billingNumber).padStart(8, "0")}`
+                    : (annulModalState.sale.id?.slice(0, 8) || "VENTA").toUpperCase(),
+                documentType: annulModalState.sale.billingType,
+                totalAmount: Number(annulModalState.sale.amount) || 0,
+                clientName: annulModalState.sale.clientDenomination || "CLIENTES VARIOS",
+                issueDate: annulModalState.sale.date,
+                isBilled: Boolean(
+                  annulModalState.sale.billingStatus === "SUCCESS" &&
+                    annulModalState.sale.billingSerie &&
+                    annulModalState.sale.billingNumber
+                ),
+              }
+            : null
+        }
       />
 
       {/* Modal de Diagnóstico y Asistencia Oficial de Errores del Sistema y SUNAT */}

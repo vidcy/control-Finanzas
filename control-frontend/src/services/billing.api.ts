@@ -171,7 +171,13 @@ export const updateBillingDocumentRequest = async (id: string, payload: any) => 
 
 export const deleteBillingDocumentRequest = async (
   id: string,
-  options?: { motivo?: string; forceDelete?: boolean; restoreStock?: boolean },
+  options?: {
+    motivo?: string;
+    forceDelete?: boolean;
+    restoreStock?: boolean;
+    method?: 'COMUNICACION_BAJA' | 'NOTA_CREDITO';
+    deliveredToClient?: boolean;
+  },
 ) => {
   const { data } = await axios.delete(`/billing/documents/${id}`, { data: options });
   return data;

@@ -189,6 +189,13 @@ export class DeleteBillingDto {
   reasonText?: string;
 
   @IsOptional()
+  @IsString()
+  method?: 'COMUNICACION_BAJA' | 'NOTA_CREDITO';
+
+  @IsOptional()
+  deliveredToClient?: boolean;
+
+  @IsOptional()
   forceDelete?: boolean;
 
   @IsOptional()

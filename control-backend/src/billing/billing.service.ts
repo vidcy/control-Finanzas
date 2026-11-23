@@ -998,38 +998,63 @@ export class BillingService {
 
     // Si ya está ACEPTADO por SUNAT: No se puede eliminar en frío, debe anularse legalmente
     if (doc.status === FiscalStatus.ACCEPTED) {
-      const motivo = options?.motivo || 'ANULACION DE LA OPERACION POR EL EMISOR';
+      const motivo = options?.motivo || options?.reasonText || 'ANULACION DE LA OPERACION POR EL EMISOR';
+      const docDate = new Date(doc.createdAt);
+      const daysElapsed = Math.max(0, Math.floor((Date.now() - docDate.getTime()) / (1000 * 60 * 60 * 24)));
+      const isWithin7Days = daysElapsed <= 7;
+      const delivered = Boolean(options?.deliveredToClient);
+      const chosenMethod = options?.method || (isWithin7Days && !delivered ? 'COMUNICACION_BAJA' : 'NOTA_CREDITO');
 
       let anularData: any = null;
       if (hasLiveBilling && owner?.ccofactUrl && owner?.ccofactApiKey) {
-        const baseUrl = this.normalizeCcofactBaseUrl(owner.ccofactUrl);
         try {
-          const anularRes = await fetch(`${baseUrl}/api/v1/documents/by-series-number/${doc.serie}/${doc.correlative}/anular-fiscal`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-api-key': owner.ccofactApiKey,
-              'Authorization': `Bearer ${owner.ccofactApiKey}`,
-            },
-            body: JSON.stringify({ motivo }),
-          });
-          anularData = await anularRes.json();
-          this.logger.log(`Resultado de anulación CCOFACT: ${JSON.stringify(anularData)}`);
+          if (chosenMethod === 'COMUNICACION_BAJA') {
+            anularData = await this.ccofactService.comunicacionBaja(
+              owner,
+              doc.serie,
+              doc.correlative,
+              motivo,
+              delivered,
+            );
+          } else {
+            const baseUrl = this.normalizeCcofactBaseUrl(owner.ccofactUrl);
+            const anularRes = await fetch(`${baseUrl}/api/v1/documents/by-series-number/${doc.serie}/${doc.correlative}/anular-fiscal`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': owner.ccofactApiKey,
+                'Authorization': `Bearer ${owner.ccofactApiKey}`,
+              },
+              body: JSON.stringify({ motivo }),
+            });
+            anularData = await anularRes.json();
+          }
+          this.logger.log(`Resultado de anulación CCOFACT (${chosenMethod}): ${JSON.stringify(anularData)}`);
         } catch (e: any) {
           this.logger.warn(`Error al comunicar anulación a CCOFACT: ${e.message}`);
         }
       }
 
       const ncFullNumber = anularData?.nota_credito?.full_number;
+      const ticketBaja = anularData?.ticket;
+
+      let annulDescription: string;
+      if (chosenMethod === 'COMUNICACION_BAJA') {
+        annulDescription = ticketBaja
+          ? `Comprobante dado de baja formalmente ante SUNAT mediante Comunicación de Baja (Ticket: ${ticketBaja}). Motivo: ${motivo}`
+          : `Comprobante dado de baja formalmente ante SUNAT mediante Comunicación de Baja directa (≤ 7 días). Motivo: ${motivo}`;
+      } else {
+        annulDescription = ncFullNumber
+          ? `Comprobante anulado formalmente ante SUNAT mediante Nota de Crédito ${ncFullNumber} (Catálogo 09 Motivo 01). Motivo: ${motivo}`
+          : `Comprobante anulado formalmente ante SUNAT conforme a Ley (Catálogo 09 Motivo 01). Motivo: ${motivo}`;
+      }
 
       // Marcar comprobante como CANCELLED
       const cancelledDoc = await this.prisma.fiscalDocument.update({
         where: { id },
         data: {
           status: FiscalStatus.CANCELLED,
-          sunatDescription: ncFullNumber
-            ? `Comprobante anulado formalmente ante SUNAT mediante Nota de Crédito ${ncFullNumber} (Catálogo 09 Motivo 01). Motivo: ${motivo}`
-            : `Comprobante anulado formalmente ante SUNAT conforme a Ley (Catálogo 09 Motivo 01). Motivo: ${motivo}`,
+          sunatDescription: annulDescription,
         },
       });
 

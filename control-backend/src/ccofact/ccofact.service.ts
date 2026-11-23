@@ -635,6 +635,34 @@ export class CcofactService {
   }
 
   /**
+   * Comunicación de Baja oficial en CCOFACT PRO (Anulación directa sin emisión de Nota de Crédito)
+   * Resolución de Superintendencia N.° 097-2012/SUNAT
+   */
+  async comunicacionBaja(
+    owner: { ccofactUrl?: string | null; ccofactApiKey?: string | null },
+    serie: string,
+    number: number,
+    motivo: string = 'ERROR EN EMISION O COMPROBANTE NO ENTREGADO',
+    deliveredToClient: boolean = false,
+  ) {
+    const apiUrl = owner.ccofactUrl;
+    const apiKey = owner.ccofactApiKey;
+    if (!apiUrl || !apiKey) return { success: false };
+    const baseUrl = this.normalizeBaseUrl(apiUrl);
+    const url = `${baseUrl}/api/v1/documents/by-series-number/${serie}/${number}/comunicacion-baja`;
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+      },
+      body: JSON.stringify({ motivo, deliveredToClient }),
+    });
+    return res.json();
+  }
+
+  /**
    * Eliminación sincronizada de comprobante en CCOFACT PRO
    */
   async deleteFiscal(

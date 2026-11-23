@@ -31,7 +31,14 @@ export const issueSaleDebitNoteRequest = async (
   return data;
 };
 
-export const deleteSaleRequest = async (id: string) => {
-  const { data } = await axios.delete(`/sales/${id}`);
+export const deleteSaleRequest = async (
+  id: string,
+  options?: {
+    method?: 'COMUNICACION_BAJA' | 'NOTA_CREDITO';
+    motivo?: string;
+    deliveredToClient?: boolean;
+  },
+) => {
+  const { data } = await axios.delete(`/sales/${id}`, { data: options });
   return data;
 };

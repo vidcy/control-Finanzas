@@ -52,6 +52,7 @@ import {
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
+import { SunatAnnulmentModal, type SunatAnnulmentOptions } from "../components/ui/SunatAnnulmentModal";
 import SystemErrorModal from "../components/ui/SystemErrorModal";
 import { parseSystemError, type SystemErrorInfo } from "../utils/systemErrorHandler";
 import {
@@ -470,17 +471,19 @@ export default function BusinessBillingPage() {
   };
 
   // Confirm Delete / Annul
-  const handleConfirmDelete = async () => {
+  const handleConfirmDelete = async (options: SunatAnnulmentOptions) => {
     if (!selectedDocForDelete) return;
     try {
       setIsSubmittingDelete(true);
       const res = await deleteBillingDocumentRequest(selectedDocForDelete.id, {
-        motivo: deleteMotivo,
-        restoreStock: deleteRestoreStock,
-        forceDelete: deleteForce,
+        motivo: options.motivo,
+        restoreStock: options.restoreStock,
+        method: options.method,
+        deliveredToClient: options.deliveredToClient,
       });
       toast.success(res.message || "Operación completada exitosamente");
       setIsDeleteModalOpen(false);
+      setSelectedDocForDelete(null);
       loadData();
     } catch (err: any) {
       setSystemError(
@@ -2692,97 +2695,28 @@ export default function BusinessBillingPage() {
           </div>
         </Modal>
 
-        {/* MODAL 5: ANULAR O ELIMINAR COMPROBANTE */}
-        <Modal
+        {/* MODAL OFICIAL: ANULAR O DAR DE BAJA COMPROBANTE SUNAT */}
+        <SunatAnnulmentModal
           isOpen={isDeleteModalOpen}
-          onClose={() => setIsDeleteModalOpen(false)}
-          title={`Anular / Eliminar Comprobante ${selectedDocForDelete?.fullNumber || ""}`}
-          maxWidth="max-w-lg"
-        >
-          <div className="p-6 space-y-4">
-            {selectedDocForDelete?.status === "ACCEPTED" ? (
-              <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl space-y-2">
-                <div className="flex items-center gap-2 text-rose-900 font-bold text-sm">
-                  <AlertCircle className="w-5 h-5 text-rose-600 flex-shrink-0" />
-                  Anulación Legal ante SUNAT con Nota de Crédito
-                </div>
-                <p className="text-xs text-rose-800 leading-relaxed">
-                  Este comprobante está <strong>ACEPTADO</strong> por SUNAT. Al anularlo, el motor CCOFACT PRO generará y transmitirá de inmediato la <strong>Nota de Crédito Oficial (Catálogo 09 Motivo 01: Anulación de la operación)</strong>.
-                </p>
-                <p className="text-xs text-rose-800 leading-relaxed">
-                  El comprobante permanecerá visible en el sistema con el estado oficial <strong>ANULADO (CANCELLED)</strong> junto a su Nota de Crédito, garantizando la conservación del correlativo quemado y la trazabilidad contable auditada exigida por SUNAT (R.S. 097-2012).
-                </p>
-              </div>
-            ) : (
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
-                Este comprobante será anulado formalmente. Se conservará su registro histórico en el archivo fiscal con estado Anulado conforme a la normativa tributaria.
-              </div>
-            )}
-
-            <div>
-              <label className="block text-xs font-black uppercase text-slate-600 mb-1">
-                Motivo de Anulación
-              </label>
-              <input
-                type="text"
-                value={deleteMotivo}
-                onChange={(e) => setDeleteMotivo(e.target.value)}
-                className="w-full px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-rose-500"
-              />
-            </div>
-
-            {selectedDocForDelete?.saleId && (
-              <div className="pt-1">
-                <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={deleteRestoreStock}
-                    onChange={(e) => setDeleteRestoreStock(e.target.checked)}
-                    className="rounded border-slate-300 text-rose-600 focus:ring-rose-500"
-                  />
-                  Revertir unidades al inventario (Devolución de stock)
-                </label>
-              </div>
-            )}
-
-            {selectedDocForDelete?.status === "ACCEPTED" && (
-              <div className="pt-1">
-                <label className="flex items-center gap-2 text-xs text-slate-500 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={deleteForce}
-                    onChange={(e) => setDeleteForce(e.target.checked)}
-                    className="rounded border-slate-300 text-rose-600 focus:ring-rose-500"
-                  />
-                  Remover completamente de la vista tras la anulación legal en SUNAT
-                </label>
-              </div>
-            )}
-
-            {/* Footer */}
-            <div className="flex justify-end gap-3 pt-3 border-t border-slate-200">
-              <button
-                type="button"
-                onClick={() => setIsDeleteModalOpen(false)}
-                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                disabled={isSubmittingDelete}
-                onClick={handleConfirmDelete}
-                className="px-5 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-md disabled:opacity-50 flex items-center gap-2 cursor-pointer"
-              >
-                {isSubmittingDelete
-                  ? "Procesando..."
-                  : selectedDocForDelete?.status === "ACCEPTED"
-                  ? "Confirmar Anulación en SUNAT"
-                  : "Confirmar Anulación Fiscal"}
-              </button>
-            </div>
-          </div>
-        </Modal>
+          onClose={() => {
+            setIsDeleteModalOpen(false);
+            setSelectedDocForDelete(null);
+          }}
+          onConfirm={handleConfirmDelete}
+          isSubmitting={isSubmittingDelete}
+          documentInfo={
+            selectedDocForDelete
+              ? {
+                  fullNumber: selectedDocForDelete.fullNumber,
+                  documentType: selectedDocForDelete.docType,
+                  totalAmount: Number(selectedDocForDelete.totalAmount) || 0,
+                  clientName: selectedDocForDelete.customerName || "CLIENTES VARIOS",
+                  issueDate: selectedDocForDelete.createdAt,
+                  isBilled: selectedDocForDelete.status === "ACCEPTED" || Boolean(selectedDocForDelete.fullNumber),
+                }
+              : null
+          }
+        />
 
         {/* Modal de Diagnóstico y Asistencia Oficial de Errores del Sistema y SUNAT */}
         <SystemErrorModal

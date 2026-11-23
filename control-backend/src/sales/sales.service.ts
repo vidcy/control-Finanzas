@@ -227,7 +227,15 @@ export class SalesService {
     return result;
   }
 
-  async deleteSale(ownerId: string, id: string) {
+  async deleteSale(
+    ownerId: string,
+    id: string,
+    options?: {
+      method?: 'COMUNICACION_BAJA' | 'NOTA_CREDITO';
+      motivo?: string;
+      deliveredToClient?: boolean;
+    },
+  ) {
     const sale = await this.prisma.sale.findFirst({
       where: {
         id,
@@ -305,30 +313,56 @@ export class SalesService {
       }
 
       // 2. Sincronización con Facturación Electrónica CCOFACT PRO:
-      // Anulación oficial con Nota de Crédito conforme a Ley SUNAT (Catálogo 09 Motivo 01)
+      // Dos caminos legales SUNAT: Comunicación de Baja (≤ 7 días y no entregada) vs Nota de Crédito (Tipo 01)
       if (sale.billingSerie && sale.billingNumber) {
         let anularResult: any = null;
-        try {
-          const owner = await tx.user.findUnique({
-            where: { id: ownerId },
-          });
+        const owner = await tx.user.findUnique({
+          where: { id: ownerId },
+        });
 
-          if (owner?.ccofactUrl && owner?.ccofactApiKey) {
-            anularResult = await this.ccofactService.anularFiscal(
-              owner,
-              sale.billingSerie,
-              sale.billingNumber,
-              'ANULACION DE VENTA EN SISTEMA COMERCIAL',
-            );
+        const saleDateObj = new Date(sale.date);
+        const daysElapsed = Math.max(0, Math.floor((Date.now() - saleDateObj.getTime()) / (1000 * 60 * 60 * 24)));
+        const isWithin7Days = daysElapsed <= 7;
+        const delivered = Boolean(options?.deliveredToClient);
+        const chosenMethod = options?.method || (isWithin7Days && !delivered ? 'COMUNICACION_BAJA' : 'NOTA_CREDITO');
+        const reasonText = options?.motivo || 'ANULACION DE VENTA EN SISTEMA COMERCIAL';
+
+        if (owner?.ccofactUrl && owner?.ccofactApiKey) {
+          try {
+            if (chosenMethod === 'COMUNICACION_BAJA') {
+              anularResult = await this.ccofactService.comunicacionBaja(
+                owner,
+                sale.billingSerie,
+                sale.billingNumber,
+                reasonText,
+                delivered,
+              );
+            } else {
+              anularResult = await this.ccofactService.anularFiscal(
+                owner,
+                sale.billingSerie,
+                sale.billingNumber,
+                reasonText,
+              );
+            }
+          } catch (billingErr: any) {
+            console.warn(`[Sincronización CCOFACT PRO] Error al anular comprobante ${sale.billingSerie}-${sale.billingNumber}:`, billingErr?.message);
           }
-        } catch (billingErr: any) {
-          console.warn(`[Sincronización CCOFACT PRO] Error al anular comprobante ${sale.billingSerie}-${sale.billingNumber}:`, billingErr?.message);
         }
 
         const ncFullNumber = anularResult?.nota_credito?.full_number;
-        const annulDescription = ncFullNumber
-          ? `Comprobante anulado formalmente ante SUNAT mediante Nota de Crédito ${ncFullNumber} (Catálogo 09 Motivo 01: Anulación de la operación).`
-          : 'Comprobante anulado formalmente ante SUNAT por anulación de la venta comercial.';
+        const ticketBaja = anularResult?.ticket;
+
+        let annulDescription: string;
+        if (chosenMethod === 'COMUNICACION_BAJA') {
+          annulDescription = ticketBaja
+            ? `Comprobante dado de baja formalmente ante SUNAT mediante Comunicación de Baja (Ticket: ${ticketBaja}). Motivo: ${reasonText}`
+            : `Comprobante dado de baja formalmente ante SUNAT mediante Comunicación de Baja directa (≤ 7 días). Motivo: ${reasonText}`;
+        } else {
+          annulDescription = ncFullNumber
+            ? `Comprobante anulado formalmente ante SUNAT mediante Nota de Crédito ${ncFullNumber} (Catálogo 09 Motivo 01: Anulación de la operación). Motivo: ${reasonText}`
+            : `Comprobante anulado formalmente ante SUNAT conforme a Ley (Catálogo 09 Motivo 01). Motivo: ${reasonText}`;
+        }
 
         // Sincronizar comprobante fiscal centralizado (garantizar que permanezca como CANCELLED)
         await tx.fiscalDocument.updateMany({
