@@ -4804,6 +4804,27 @@ export default function BusinessPosPage() {
                                       Enviando...
                                     </span>
                                   )}
+                                  {sale.billingStatus === "CANCELLED" && (
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-[9px] bg-rose-50 text-rose-700 font-black border border-rose-200 px-1.5 py-0.5 rounded uppercase">
+                                        Anulado (N/C)
+                                      </span>
+                                      {(sale.billingPdfUrl || (sale.billingSerie && sale.billingNumber)) && (
+                                        <a
+                                          href={
+                                            sale.billingPdfUrl ||
+                                            `http://localhost:4001/api/v1/documents/by-series-number/${sale.billingSerie}/${sale.billingNumber}/html?format=A4`
+                                          }
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="text-slate-400 hover:text-slate-600"
+                                          title="Ver Comprobante Anulado"
+                                        >
+                                          <FileText className="w-3.5 h-3.5" />
+                                        </a>
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
                                 </div>
                           )}

@@ -1313,10 +1313,43 @@ export class BillingService {
     const owner = await this.prisma.user.findUnique({ where: { id: ownerId } });
     if (!owner) throw new NotFoundException('Usuario propietario no encontrado.');
 
-    const result = await this.ccofactService.emitManualNote(owner, doc.serie, doc.correlative, dto);
+    const noteType = dto.note_type || dto.noteType || '07';
+    const reasonCode = String(dto.reason_code || dto.reasonCode || '01');
+    const reasonDescription = String(
+      dto.reason_description || dto.reason_text || dto.reasonText || 'ANULACION DE LA OPERACION'
+    ).trim();
 
-    // Si fue anulación total (motivos 01, 02 o 06 de NC), marcar como CANCELLED
-    if (dto.note_type === '07' && ['01', '02', '06'].includes(dto.reason_code)) {
+    const normalizedItems = (dto.items && Array.isArray(dto.items) && dto.items.length > 0)
+      ? dto.items
+          .filter((it: any) => (Number(it.quantity || it.returnQty || 0) > 0) && (Number(it.unit_price || it.price || 0) > 0))
+          .map((it: any) => ({
+            code: it.code || 'PROD',
+            description: String(it.description || it.name || 'Detalle del producto').trim(),
+            quantity: Number(it.quantity || it.returnQty || 1),
+            unit_price: Number(it.unit_price || it.price || 0),
+            unit_measure: it.unit_measure || it.unit || 'NIU',
+            igv_affectation_type: it.igv_affectation_type || it.igvAffectation || '10',
+          }))
+      : undefined;
+
+    const normalizedDto = {
+      note_type: noteType,
+      reason_code: reasonCode,
+      reason_description: reasonDescription,
+      amount: dto.amount !== undefined && dto.amount !== null ? Number(dto.amount) : undefined,
+      issue_date: dto.issue_date || dto.issueDate,
+      items: normalizedItems && normalizedItems.length > 0 ? normalizedItems : undefined,
+    };
+
+    const result = await this.ccofactService.emitManualNote(owner, doc.serie, doc.correlative, normalizedDto);
+
+    // Si fue anulación total (motivos 01, 02 o 06 de NC) o el monto anula el saldo
+    const isTotalAnnulment =
+      noteType === '07' &&
+      (['01', '02', '06'].includes(reasonCode) ||
+        (dto.amount && Number(dto.amount) >= Number(doc.totalAmount) - 0.01));
+
+    if (isTotalAnnulment) {
       await this.prisma.fiscalDocument.update({
         where: { id: doc.id },
         data: {

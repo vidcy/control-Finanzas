@@ -237,19 +237,27 @@ export const SunatManualNoteModal: React.FC<SunatManualNoteModalProps> = ({
       return;
     }
 
+    const isItemSpecific = noteType === "07" && (reasonCode === "05" || reasonCode === "07");
+    const activeItems = selectedItems
+      .filter((it) => it.returnQty > 0 && it.price > 0)
+      .map((it) => ({
+        product_id: it.productId,
+        code: it.code || "PROD",
+        description: it.name || "Detalle de producto",
+        name: it.name,
+        quantity: Number(it.returnQty),
+        unit_price: Number(it.price),
+        price: Number(it.price),
+      }));
+
     onConfirm({
       note_type: noteType,
       reason_code: reasonCode,
+      reason_description: reasonText.trim(),
       reason_text: reasonText.trim(),
       amount: Number(amount),
       issue_date: issueDate,
-      items: selectedItems.map((it) => ({
-        product_id: it.productId,
-        code: it.code,
-        name: it.name,
-        quantity: it.returnQty,
-        price: it.price,
-      })),
+      items: isItemSpecific && activeItems.length > 0 ? activeItems : undefined,
     });
   };
 
