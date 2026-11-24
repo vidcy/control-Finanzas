@@ -860,7 +860,7 @@ export default function BusinessPosPage() {
   };
 
   const handleSubmitNote = async () => {
-    if (!selectedSaleForNote) return;
+    if (!selectedSaleForNote || isSubmittingNote) return;
     if (noteReasonCode <= 0) {
       toast.error("Por favor, selecciona un motivo válido");
       return;
@@ -1556,6 +1556,7 @@ export default function BusinessPosPage() {
   };
 
   const handleCheckout = async () => {
+    if (isProcessing) return;
     // 1. Validaciones iniciales de negocio
     if (!activeShift) {
       toast.error("Debes ABRIR CAJA antes de poder registrar ventas.");

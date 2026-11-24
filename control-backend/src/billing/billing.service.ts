@@ -196,6 +196,27 @@ export class BillingService {
     });
     if (!owner) throw new NotFoundException('Usuario propietario no encontrado');
 
+    // Protección de Idempotencia por Venta para evitar doble emisión
+    if (dto.saleId) {
+      const existingDoc = await this.prisma.fiscalDocument.findFirst({
+        where: { saleId: dto.saleId },
+      });
+      if (existingDoc && (existingDoc.status === FiscalStatus.ACCEPTED || existingDoc.status === FiscalStatus.QUEUED_OUTBOX)) {
+        this.logger.log(`[IDEMPOTENCIA VENTA] Comprobante ya emitido para saleId ${dto.saleId}. Retornando comprobante existente ${existingDoc.fullNumber}.`);
+        return {
+          document: existingDoc,
+          message: `El comprobante ${existingDoc.fullNumber} ya se encuentra emitido para esta venta.`,
+          fullNumber: existingDoc.fullNumber,
+          hash: existingDoc.hash,
+          xmlUrl: existingDoc.xmlUrl,
+          pdfUrl: existingDoc.pdfUrl,
+          cdrUrl: existingDoc.cdrUrl,
+          sunatResponseCode: existingDoc.sunatResponseCode,
+          sunatDescription: existingDoc.sunatDescription,
+        };
+      }
+    }
+
     const prismaDocType = this.mapDocType(dto.docType);
 
     let serie = dto.serie?.trim().toUpperCase();

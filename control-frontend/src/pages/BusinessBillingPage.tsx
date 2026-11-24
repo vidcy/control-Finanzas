@@ -531,7 +531,7 @@ export default function BusinessBillingPage() {
   };
 
   const handleConfirmManualNote = async (payload: any) => {
-    if (!selectedDocForManualNote) return;
+    if (!selectedDocForManualNote || isSubmittingManualNote) return;
     const targetDocId = selectedDocForManualNote.id;
     try {
       setIsSubmittingManualNote(true);
@@ -674,7 +674,7 @@ export default function BusinessBillingPage() {
 
   // Submit Note
   const handleSubmitNote = async () => {
-    if (!selectedDocForNote) return;
+    if (!selectedDocForNote || isSubmittingNote) return;
     try {
       setIsSubmittingNote(true);
       const res = await issueBillingNoteRequest({
@@ -837,8 +837,10 @@ export default function BusinessBillingPage() {
     );
   }, [emitDocType, emitCalculations.total, emitDocTypeNum, emitCustomerDoc, emitCustomerName]);
 
-  // Submit Emit con validaciones SUNAT enterprise
+  // Submit Emit con validaciones SUNAT enterprise y protección anti-duplicidad
   const handleSubmitEmit = async () => {
+    if (isSubmittingEmit) return;
+
     // 1. Validar rango de fecha de emisión (Máximo 3 días calendario según R.S. N° 193-2020)
     const dateValidation = validateIssueDateRange(emitIssueDate);
     if (!dateValidation.isValid) {
