@@ -250,4 +250,12 @@ export class SyncSeriesDto {
   @IsOptional()
   @IsNumber()
   initialNdFacturaNumber?: number;
+
+  @IsOptional()
+  @IsString()
+  serieGuiaRemision?: string;
+
+  @IsOptional()
+  @IsNumber()
+  initialGuiaNumber?: number;
 }

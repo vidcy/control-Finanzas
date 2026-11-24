@@ -79,6 +79,13 @@ export class BillingController {
   }
 
   @UseGuards(AuthGuard('jwt'))
+  @Post(['documents/:id/guia-remision', ':id/guia-remision', 'guia-remision/:id'])
+  emitGuiaRemision(@Req() req, @Param('id') id: string, @Body() body: any) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.billingService.emitGuiaRemisionForDocument(ownerId, id, body);
+  }
+
+  @UseGuards(AuthGuard('jwt'))
   @Post('simulate-sandbox')
   simulateSandbox(@Req() req) {
     const ownerId = req.user.parentId || req.user.id;

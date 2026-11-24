@@ -955,7 +955,7 @@ export class BillingService {
       },
     });
 
-    // Si fue anulación total (motivo 1), marcar el comprobante original como CANCELLED
+    // Si fue anulación total (motivo 1), marcar el comprobante original como CANCELLED y restaurar stock/kardex
     if (dto.reasonCode === 1 && status === FiscalStatus.ACCEPTED) {
       await this.prisma.fiscalDocument.update({
         where: { id: original.id },
@@ -966,12 +966,54 @@ export class BillingService {
       });
 
       if (original.saleId) {
+        const sale = await this.prisma.sale.findUnique({
+          where: { id: original.saleId },
+          include: { items: true },
+        });
+
         await this.prisma.sale.update({
           where: { id: original.saleId },
           data: {
             billingStatus: 'CANCELLED',
           },
         }).catch(() => { });
+
+        // Restablecer valores de kardex, almacén y stock inteligente
+        if (sale && sale.items && sale.items.length > 0) {
+          for (const item of sale.items) {
+            if (item.productId) {
+              if (sale.branchId) {
+                const bStock = await this.prisma.branchStock.findUnique({
+                  where: { productId_branchId: { productId: item.productId, branchId: sale.branchId } },
+                });
+                if (bStock) {
+                  await this.prisma.branchStock.update({
+                    where: { id: bStock.id },
+                    data: { stock: { increment: item.quantity } },
+                  });
+                }
+              }
+              await this.prisma.product.update({
+                where: { id: item.productId },
+                data: { stock: { increment: item.quantity } },
+              });
+              await this.prisma.inventoryMovement.create({
+                data: {
+                  productId: item.productId,
+                  quantity: item.quantity,
+                  type: 'IN',
+                  reason: 'SALE_RETURN',
+                  userId: sale.userId,
+                  unitCost: item.price,
+                  totalCost: Number((item.quantity * item.price).toFixed(2)),
+                  stockResult: 0,
+                  documentId: sale.id,
+                  branchId: sale.branchId,
+                },
+              }).catch(() => { });
+            }
+          }
+        }
       }
     }
 
@@ -1781,6 +1823,191 @@ export class BillingService {
   }
 
   /**
+   * EMISIÓN DE GUÍA DE REMISIÓN REMITENTE (GRE - Tipo 09) VINCULADA A COMPROBANTE
+   */
+  async emitGuiaRemisionForDocument(ownerId: string, id: string, dto: any) {
+    const doc = await this.prisma.fiscalDocument.findFirst({
+      where: { id, userId: ownerId },
+      include: { sale: { include: { items: true } } },
+    });
+    if (!doc) throw new NotFoundException('Comprobante original no encontrado para vincular la Guía de Remisión.');
+
+    const owner = await this.prisma.user.findUnique({ where: { id: ownerId } });
+    if (!owner) throw new NotFoundException('Usuario propietario no encontrado.');
+
+    const seriesConfig = (owner?.catalogConfig as any)?.seriesConfig || {};
+    const serieGuia = (dto.serie || seriesConfig.serieGuiaRemision || 'T001').toUpperCase().trim();
+    const configuredFloor = Number(seriesConfig.initialGuiaNumber) || 0;
+
+    const lastGuia = await this.prisma.fiscalDocument.findFirst({
+      where: { userId: ownerId, docType: FiscalDocType.DISPATCH_GUIDE, serie: serieGuia },
+      orderBy: { correlative: 'desc' },
+    });
+    const highestExisting = lastGuia ? lastGuia.correlative : 0;
+    const correlative = Math.max(highestExisting, configuredFloor) + 1;
+    const fullNumber = `${serieGuia}-${String(correlative).padStart(8, '0')}`;
+
+    // Construir guía_datos oficiales UBL 2.1 DespatchAdvice
+    const guiaDatos = {
+      motivo_traslado: dto.motivo_traslado || '01', // Venta
+      motivo_traslado_descripcion: dto.motivo_traslado_descripcion || 'VENTA DE MERCADERIAS',
+      modalidad_transporte: dto.modalidad_transporte || '02', // 01 Público, 02 Privado
+      fecha_inicio_traslado: dto.fecha_inicio_traslado || new Date().toISOString().split('T')[0],
+      peso_total: Number(dto.peso_total || 1.0),
+      unidad_medida_peso: dto.unidad_medida_peso || 'KGM',
+      bultos: Number(dto.bultos || 1),
+      punto_partida: {
+        ubigeo: dto.punto_partida?.ubigeo || '150101',
+        direccion: dto.punto_partida?.direccion || owner.businessAddress || 'PUNTO DE PARTIDA PRINCIPAL',
+      },
+      punto_llegada: {
+        ubigeo: dto.punto_llegada?.ubigeo || '150101',
+        direccion: dto.punto_llegada?.direccion || doc.customerAddress || 'PUNTO DE LLEGADA DESTINO',
+      },
+      transportista: dto.modalidad_transporte === '01' ? {
+        tipo_documento: dto.transportista?.tipo_documento || '6',
+        numero_documento: dto.transportista?.numero_documento || '',
+        razon_social: dto.transportista?.razon_social || '',
+      } : undefined,
+      conductor: dto.modalidad_transporte === '02' ? {
+        tipo_documento: dto.conductor?.tipo_documento || '1',
+        numero_documento: dto.conductor?.numero_documento || '00000000',
+        nombre_completo: dto.conductor?.nombre_completo || 'CONDUCTOR ASIGNADO',
+        licencia: dto.conductor?.licencia || '',
+      } : undefined,
+      vehiculo: dto.modalidad_transporte === '02' ? {
+        placa: (dto.vehiculo?.placa || 'ABC-123').toUpperCase(),
+      } : undefined,
+    };
+
+    // Items para el despacho
+    const items = (dto.items && Array.isArray(dto.items) && dto.items.length > 0)
+      ? dto.items.map((it: any, idx: number) => ({
+          codigo: it.codigo || it.code || `ITEM-${idx + 1}`,
+          descripcion: it.descripcion || it.description || 'Mercadería despachada',
+          unidad_medida: it.unidad_medida || it.unit || 'NIU',
+          cantidad: Number(it.cantidad || it.quantity || 1),
+          precio_unitario: Number(it.precio_unitario || it.unit_price || 0),
+          tipo_afectacion_igv: '10',
+        }))
+      : (doc.sale?.items && doc.sale.items.length > 0)
+        ? doc.sale.items.map((it: any, idx: number) => ({
+            codigo: it.productId || `ITEM-${idx + 1}`,
+            descripcion: it.description || 'Mercadería en traslado',
+            unidad_medida: 'NIU',
+            cantidad: Number(it.quantity || 1),
+            precio_unitario: Number(it.price || 0),
+            tipo_afectacion_igv: '10',
+          }))
+        : [{
+            codigo: 'PROD-01',
+            descripcion: 'Mercadería según comprobante de venta',
+            unidad_medida: 'NIU',
+            cantidad: 1,
+            precio_unitario: doc.totalAmount,
+            tipo_afectacion_igv: '10',
+          }];
+
+    let pdfUrl: string | null = null;
+    let xmlUrl: string | null = null;
+    let cdrUrl: string | null = null;
+    let hash: string | null = null;
+    let sunatResponseCode = '0';
+    let sunatDescription = 'Guía de Remisión aceptada satisfactoriamente por SUNAT.';
+    let status: FiscalStatus = FiscalStatus.ACCEPTED;
+
+    if (owner.hasElectronicBilling && owner.ccofactUrl && owner.ccofactApiKey) {
+      const emitUrl = this.normalizeCcofactEmitUrl(owner.ccofactUrl);
+      const ccofactPayload = {
+        tipo_comprobante: '09',
+        serie: serieGuia,
+        numero: correlative,
+        fecha_emision: new Date().toISOString().split('T')[0],
+        cliente: {
+          tipo_documento: doc.customerDocType,
+          numero_documento: doc.customerDocNum,
+          razon_social: doc.customerName,
+          direccion: doc.customerAddress || '',
+        },
+        ref_documento: {
+          tipo: doc.docType === FiscalDocType.INVOICE ? '01' : '03',
+          serie: doc.serie,
+          numero: doc.correlative,
+        },
+        guia_datos: guiaDatos,
+        items,
+        enviar_a_sunat_inmediato: true,
+      };
+
+      try {
+        const resp = await fetch(emitUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': owner.ccofactApiKey,
+            'Authorization': `Bearer ${owner.ccofactApiKey}`,
+          },
+          body: JSON.stringify(ccofactPayload),
+        });
+
+        const respData: any = await resp.json();
+        if (resp.ok && respData.exito !== false && !respData.errors) {
+          const sunatData = respData.sunat || {};
+          pdfUrl = respData.recursos?.pdf_a4 || respData.enlace_del_pdf || null;
+          xmlUrl = respData.recursos?.xml_firmado || respData.enlace_del_xml || null;
+          cdrUrl = respData.recursos?.cdr_sunat || respData.enlace_del_cdr || null;
+          hash = sunatData.codigo_hash || respData.codigo_hash || null;
+          sunatResponseCode = String(sunatData.codigo_respuesta || '0');
+          sunatDescription = sunatData.descripcion || 'Guía de Remisión emitida y transmitida a SUNAT con éxito.';
+          status = sunatData.aceptada_por_sunat !== false ? FiscalStatus.ACCEPTED : FiscalStatus.REJECTED;
+        } else {
+          status = FiscalStatus.REJECTED;
+          sunatResponseCode = '3000';
+          sunatDescription = respData.mensaje || respData.message || 'SUNAT observó o rechazó la Guía de Remisión.';
+        }
+      } catch (err: any) {
+        status = FiscalStatus.QUEUED_OUTBOX;
+        sunatDescription = `Encolada para despacho de Guía: ${err.message}`;
+      }
+    }
+
+    const guiaDoc = await this.prisma.fiscalDocument.create({
+      data: {
+        userId: ownerId,
+        docType: FiscalDocType.DISPATCH_GUIDE,
+        serie: serieGuia,
+        correlative,
+        fullNumber,
+        issuerRuc: doc.issuerRuc,
+        customerDocType: doc.customerDocType,
+        customerDocNum: doc.customerDocNum,
+        customerName: doc.customerName,
+        customerAddress: guiaDatos.punto_llegada.direccion,
+        totalOpGravada: 0,
+        totalOpExonerada: 0,
+        totalOpInafecta: 0,
+        totalIgv: 0,
+        totalAmount: 0,
+        currency: Currency.PEN,
+        status,
+        hash,
+        pdfUrl,
+        xmlUrl,
+        cdrUrl,
+        sunatResponseCode,
+        sunatDescription: `${sunatDescription} [Ref: ${doc.fullNumber}]`,
+        branchId: doc.branchId,
+      },
+    });
+
+    return {
+      success: true,
+      message: `Guía de Remisión Remitente ${fullNumber} generada y vinculada a ${doc.fullNumber}.`,
+      document: guiaDoc,
+    };
+  }
+
+  /**
    * PROBAR CONEXIÓN EN VIVO CON CCOFACT PRO ENGINE
    */
   async testCcofactConnection(ownerId: string) {
@@ -1926,6 +2153,8 @@ export class BillingService {
       initialNcFacturaNumber: sCfg.initialNcFacturaNumber ?? 0,
       initialNdBoletaNumber: sCfg.initialNdBoletaNumber ?? 0,
       initialNdFacturaNumber: sCfg.initialNdFacturaNumber ?? 0,
+      serieGuiaRemision: sCfg.serieGuiaRemision || 'T001',
+      initialGuiaNumber: sCfg.initialGuiaNumber ?? 0,
     };
   }
 
@@ -2353,6 +2582,8 @@ export class BillingService {
       initialNcFacturaNumber?: number;
       initialNdBoletaNumber?: number;
       initialNdFacturaNumber?: number;
+      serieGuiaRemision?: string;
+      initialGuiaNumber?: number;
     },
   ) {
     const owner = await this.prisma.user.findUnique({ where: { id: ownerId } });
@@ -2369,12 +2600,14 @@ export class BillingService {
       serieNotaCreditoFactura: (body.serieNotaCreditoFactura || prevSeriesConfig.serieNotaCreditoFactura || 'FC01').toUpperCase(),
       serieNotaDebitoBoleta: (body.serieNotaDebitoBoleta || prevSeriesConfig.serieNotaDebitoBoleta || 'BD01').toUpperCase(),
       serieNotaDebitoFactura: (body.serieNotaDebitoFactura || prevSeriesConfig.serieNotaDebitoFactura || 'FD01').toUpperCase(),
+      serieGuiaRemision: (body.serieGuiaRemision || prevSeriesConfig.serieGuiaRemision || 'T001').toUpperCase(),
       initialBoletaNumber: body.initialBoletaNumber !== undefined ? Number(body.initialBoletaNumber) : (prevSeriesConfig.initialBoletaNumber ?? 0),
       initialFacturaNumber: body.initialFacturaNumber !== undefined ? Number(body.initialFacturaNumber) : (prevSeriesConfig.initialFacturaNumber ?? 0),
       initialNcBoletaNumber: body.initialNcBoletaNumber !== undefined ? Number(body.initialNcBoletaNumber) : (prevSeriesConfig.initialNcBoletaNumber ?? 0),
       initialNcFacturaNumber: body.initialNcFacturaNumber !== undefined ? Number(body.initialNcFacturaNumber) : (prevSeriesConfig.initialNcFacturaNumber ?? 0),
       initialNdBoletaNumber: body.initialNdBoletaNumber !== undefined ? Number(body.initialNdBoletaNumber) : (prevSeriesConfig.initialNdBoletaNumber ?? 0),
       initialNdFacturaNumber: body.initialNdFacturaNumber !== undefined ? Number(body.initialNdFacturaNumber) : (prevSeriesConfig.initialNdFacturaNumber ?? 0),
+      initialGuiaNumber: body.initialGuiaNumber !== undefined ? Number(body.initialGuiaNumber) : (prevSeriesConfig.initialGuiaNumber ?? 0),
     };
 
     // VALIDACIÓN ESTRICTA ANTI-COLISIÓN CONTRA REGISTROS EXISTENTES
@@ -2411,6 +2644,17 @@ export class BillingService {
       );
     }
 
+    const maxGuia = await this.prisma.fiscalDocument.aggregate({
+      where: { userId: ownerId, docType: FiscalDocType.DISPATCH_GUIDE, serie: updatedSeriesConfig.serieGuiaRemision },
+      _max: { correlative: true },
+    });
+    const highestGuia = maxGuia._max.correlative || 0;
+    if (body.initialGuiaNumber !== undefined && Number(body.initialGuiaNumber) < highestGuia) {
+      throw new BadRequestException(
+        `No se puede inicializar la serie ${updatedSeriesConfig.serieGuiaRemision} en ${body.initialGuiaNumber}. Ya existen guías de remisión emitidas hasta el número ${highestGuia}.`,
+      );
+    }
+
     const updateData: any = {
       billingSerieBoleta: updatedSeriesConfig.serieBoleta,
       billingSerieInvoice: updatedSeriesConfig.serieFactura,
@@ -2438,6 +2682,7 @@ export class BillingService {
         { type: '07', series: updatedSeriesConfig.serieNotaCreditoFactura, initial: updatedSeriesConfig.initialNcFacturaNumber },
         { type: '08', series: updatedSeriesConfig.serieNotaDebitoBoleta, initial: updatedSeriesConfig.initialNdBoletaNumber },
         { type: '08', series: updatedSeriesConfig.serieNotaDebitoFactura, initial: updatedSeriesConfig.initialNdFacturaNumber },
+        { type: '09', series: updatedSeriesConfig.serieGuiaRemision, initial: updatedSeriesConfig.initialGuiaNumber },
       ];
 
       try {
