@@ -197,6 +197,12 @@ export const SunatManualNoteModal: React.FC<SunatManualNoteModalProps> = ({
 
   const availableBalance = useMemo(() => {
     if (!document) return 0;
+    if ((document as any).saldoDisponible !== undefined) {
+      return Number((document as any).saldoDisponible);
+    }
+    if ((document as any).netAmount !== undefined) {
+      return Number((document as any).netAmount);
+    }
     if (document.metadata?.saldo_disponible !== undefined) {
       return Number(document.metadata.saldo_disponible);
     }
@@ -255,6 +261,20 @@ export const SunatManualNoteModal: React.FC<SunatManualNoteModalProps> = ({
         // Sugerir reducción a la mitad o disponible por defecto
         setAmount(Number((availableBalance / 2).toFixed(2)) || availableBalance);
         setTargetTotal(Number((availableBalance / 2).toFixed(2)));
+      } else if (newCode === "07" || newCode === "05") {
+        if (selectedItems.length > 0) {
+          const sumItems = selectedItems.reduce((acc, it) => acc + (it.returnQty * it.price), 0);
+          if (sumItems > 0 && sumItems <= availableBalance) {
+            setAmount(Number(sumItems.toFixed(2)));
+            setTargetTotal(Number((availableBalance - sumItems).toFixed(2)));
+          } else {
+            setAmount(availableBalance);
+            setTargetTotal(0);
+          }
+        } else {
+          setAmount(availableBalance);
+          setTargetTotal(0);
+        }
       }
     } else {
       const defaultText = SUNAT_CATALOGO_10_TEXTS[newCode] || "";
@@ -326,6 +346,11 @@ export const SunatManualNoteModal: React.FC<SunatManualNoteModalProps> = ({
     setAmount(val);
     if (noteType === "07") {
       setTargetTotal(Math.max(0, Number((availableBalance - val).toFixed(2))));
+      if (selectedItems.length === 1 && selectedItems[0].returnQty > 0) {
+        const updated = [...selectedItems];
+        updated[0].price = Number((val / updated[0].returnQty).toFixed(2));
+        setSelectedItems(updated);
+      }
     }
   };
 
@@ -361,15 +386,22 @@ export const SunatManualNoteModal: React.FC<SunatManualNoteModalProps> = ({
     }
 
     const isItemSpecific = noteType === "07" && (reasonCode === "05" || reasonCode === "07" || reasonCode === "03");
-    const activeItems = selectedItems.map((it) => ({
-      product_id: it.productId,
-      code: it.code || "PROD",
-      description: it.customDescription || it.name || "Detalle de producto",
-      name: it.customDescription || it.name || "Detalle de producto",
-      quantity: Number(it.returnQty || it.quantity || 1),
-      unit_price: Number(it.price || 0),
-      price: Number(it.price || 0),
-    }));
+    const activeItems = selectedItems.map((it) => {
+      const qty = Number(it.returnQty || it.quantity || 1);
+      let itemPrice = Number(it.price || 0);
+      if (reasonCode !== "03" && Number(amount) > 0 && (itemPrice <= 0 || selectedItems.length === 1)) {
+        itemPrice = Number((Number(amount) / qty).toFixed(2));
+      }
+      return {
+        product_id: it.productId,
+        code: it.code || "PROD",
+        description: it.customDescription || it.name || "Detalle de producto",
+        name: it.customDescription || it.name || "Detalle de producto",
+        quantity: qty,
+        unit_price: itemPrice,
+        price: itemPrice,
+      };
+    });
 
     onConfirm({
       note_type: noteType,

@@ -426,55 +426,43 @@ export const SunatNotesListModal: React.FC<SunatNotesListModalProps> = ({
                         <span>Ticket</span>
                       </button>
 
-                      {note.pdfUrl ? (
-                        <a
-                          href={note.pdfUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="p-1 px-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-colors border border-slate-200"
-                          title="Ver PDF A4 Oficial"
-                        >
-                          <FileText className="w-3 h-3" />
-                          <span>PDF</span>
-                        </a>
-                      ) : (
-                        <a
-                          href={`http://localhost:4001/api/v1/documents/by-series-number/${note.serie}/${note.correlative}/html?format=A4`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="p-1 px-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-colors border border-slate-200"
-                          title="Ver PDF A4 Oficial"
-                        >
-                          <FileText className="w-3 h-3" />
-                          <span>PDF</span>
-                        </a>
-                      )}
+                      {/* PDF A4 Oficial */}
+                      <a
+                        href={note.pdfUrl || `http://localhost:4001/api/v1/documents/by-series-number/${note.serie || note.fullNumber?.split('-')[0]}/${note.correlative || (note as any).number || parseInt(note.fullNumber?.split('-')[1] || '0', 10)}/html?format=A4`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-1 px-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-colors border border-slate-200"
+                        title="Ver / Imprimir / Descargar PDF A4 Oficial"
+                      >
+                        <FileText className="w-3 h-3" />
+                        <span>PDF</span>
+                      </a>
 
-                      {note.xmlUrl && (
-                        <a
-                          href={note.xmlUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="p-1 px-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-colors"
-                          title="Ver XML Firmado"
-                        >
-                          <FileCode className="w-3 h-3" />
-                          <span>XML</span>
-                        </a>
-                      )}
+                      {/* XML Firmado UBL 2.1 */}
+                      <a
+                        href={note.xmlUrl || `http://localhost:4001/api/v1/documents/by-series-number/${note.serie || note.fullNumber?.split('-')[0]}/${note.correlative || (note as any).number || parseInt(note.fullNumber?.split('-')[1] || '0', 10)}/xml`}
+                        target="_blank"
+                        rel="noreferrer"
+                        download={`${note.fullNumber || 'nota'}.xml`}
+                        className="p-1 px-2 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-colors border border-amber-200"
+                        title="Ver y Descargar XML Firmado UBL 2.1"
+                      >
+                        <FileCode className="w-3 h-3 text-amber-600" />
+                        <span>XML</span>
+                      </a>
 
-                      {note.cdrUrl && (
-                        <a
-                          href={note.cdrUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="p-1 px-1.5 bg-teal-50 hover:bg-teal-100 text-teal-700 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-colors"
-                          title="Ver Constancia CDR SUNAT"
-                        >
-                          <FileCheck className="w-3 h-3" />
-                          <span>CDR</span>
-                        </a>
-                      )}
+                      {/* Constancia CDR SUNAT */}
+                      <a
+                        href={note.cdrUrl || `http://localhost:4001/api/v1/documents/by-series-number/${note.serie || note.fullNumber?.split('-')[0]}/${note.correlative || (note as any).number || parseInt(note.fullNumber?.split('-')[1] || '0', 10)}/cdr`}
+                        target="_blank"
+                        rel="noreferrer"
+                        download={`R-${note.fullNumber || 'nota'}.xml`}
+                        className="p-1 px-2 bg-teal-50 hover:bg-teal-100 text-teal-700 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-colors border border-teal-200"
+                        title="Ver y Descargar Constancia CDR SUNAT"
+                      >
+                        <FileCheck className="w-3 h-3 text-teal-600" />
+                        <span>CDR</span>
+                      </a>
                     </div>
                   </div>
                 </div>

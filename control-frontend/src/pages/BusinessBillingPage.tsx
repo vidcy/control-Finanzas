@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, Fragment } from "react";
 import Appshell from "../components/layout/Appshell";
 import { useAuth } from "../auth/AuthContext";
 import { getPeruTodayInputStr } from "../utils/date.utils";
@@ -28,6 +28,7 @@ import {
   Printer,
   FileCode2,
   FileCheck2,
+  FileCheck,
   RotateCcw,
   Sparkles,
   DollarSign,
@@ -51,6 +52,7 @@ import {
   Calendar,
   CreditCard,
   Loader2,
+  ChevronDown,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
@@ -59,6 +61,7 @@ import { SunatSmartEditModal } from "../components/ui/SunatSmartEditModal";
 import { SunatManualNoteModal } from "../components/ui/SunatManualNoteModal";
 import { SunatSuccessResultModal } from "../components/ui/SunatSuccessResultModal";
 import { SunatNotesListModal } from "../components/ui/SunatNotesListModal";
+import { printFiscalTicket } from "../utils/ticketPrinter";
 import SystemErrorModal from "../components/ui/SystemErrorModal";
 import { parseSystemError, type SystemErrorInfo } from "../utils/systemErrorHandler";
 import {
@@ -96,14 +99,17 @@ export default function BusinessBillingPage() {
   const [selectedStatus, setSelectedStatus] = useState<string>("ALL");
   const [filterStartDate, setFilterStartDate] = useState("");
   const [filterEndDate, setFilterEndDate] = useState("");
+  const [viewMode, setViewMode] = useState<"EXPEDIENTES" | "ALL_DOCS">("EXPEDIENTES");
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(6);
+  const [expandedBillingDocIds, setExpandedBillingDocIds] = useState<Record<string, boolean>>({});
+  const [manualNoteInitialType, setManualNoteInitialType] = useState<"CREDIT" | "DEBIT">("CREDIT");
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, selectedType, selectedStatus, filterStartDate, filterEndDate, pageSize]);
+  }, [searchTerm, selectedType, selectedStatus, filterStartDate, filterEndDate, pageSize, viewMode]);
 
   // Modals
   const [isEmitModalOpen, setIsEmitModalOpen] = useState(false);
@@ -526,12 +532,17 @@ export default function BusinessBillingPage() {
 
   const handleConfirmManualNote = async (payload: any) => {
     if (!selectedDocForManualNote) return;
+    const targetDocId = selectedDocForManualNote.id;
     try {
       setIsSubmittingManualNote(true);
-      const res = await manualNoteBillingDocumentRequest(selectedDocForManualNote.id, payload);
+      const res = await manualNoteBillingDocumentRequest(targetDocId, payload);
       toast.success("Nota oficial emitida con éxito ante SUNAT");
       setIsManualNoteModalOpen(false);
-      loadData();
+      setSelectedDocForManualNote(null);
+      await loadData();
+      if (targetDocId) {
+        setExpandedBillingDocIds((prev) => ({ ...prev, [targetDocId]: true }));
+      }
 
       setSuccessModalData({
         caso: "MANUAL_NOTE",
@@ -561,6 +572,7 @@ export default function BusinessBillingPage() {
       });
       setIsSuccessModalOpen(true);
     } catch (err: any) {
+      await loadData().catch(() => {});
       const parsed = parseSystemError(err, "Error al Emitir Nota Oficial SUNAT");
       setSystemError(parsed);
     } finally {
@@ -965,31 +977,71 @@ export default function BusinessBillingPage() {
 
   // Filtered documents
   const filteredDocuments = useMemo(() => {
-    return documents.filter((doc) => {
-      // docType filter
-      if (selectedType !== "ALL" && doc.docType !== selectedType) return false;
-      // status filter
-      if (selectedStatus !== "ALL" && doc.status !== selectedStatus) return false;
-      // date filter
-      if (filterStartDate) {
-        const docDate = new Date(doc.createdAt).toISOString().substring(0, 10);
-        if (docDate < filterStartDate) return false;
-      }
-      if (filterEndDate) {
-        const docDate = new Date(doc.createdAt).toISOString().substring(0, 10);
-        if (docDate > filterEndDate) return false;
-      }
-      // search term
-      if (searchTerm.trim()) {
-        const term = searchTerm.toLowerCase();
-        const matchNum = doc.fullNumber?.toLowerCase().includes(term);
-        const matchName = doc.customerName?.toLowerCase().includes(term);
-        const matchDoc = doc.customerDocNum?.toLowerCase().includes(term);
-        return matchNum || matchName || matchDoc;
-      }
-      return true;
+    return documents
+      .filter((doc) => {
+        // En modo "Expedientes Tributarios" (Principal y por defecto):
+        // Si el filtro de tipo está en ALL, se muestran únicamente los comprobantes comerciales raíz
+        // (Boletas, Facturas y Guías de Remisión), ya que las notas de crédito y débito se gestionan
+        // formalmente dentro del expediente de su comprobante origen.
+        if (viewMode === "EXPEDIENTES" && selectedType === "ALL") {
+          const isRoot = doc.docType === "BOLETA" || doc.docType === "INVOICE" || doc.docType === "DISPATCH_GUIDE";
+          if (!isRoot) return false;
+        }
+
+        // docType filter
+        if (selectedType !== "ALL" && doc.docType !== selectedType) return false;
+        // status filter
+        if (selectedStatus !== "ALL" && doc.status !== selectedStatus) return false;
+        // date filter
+        if (filterStartDate) {
+          const docDate = new Date(doc.createdAt).toISOString().substring(0, 10);
+          if (docDate < filterStartDate) return false;
+        }
+        if (filterEndDate) {
+          const docDate = new Date(doc.createdAt).toISOString().substring(0, 10);
+          if (docDate > filterEndDate) return false;
+        }
+        // search term
+        if (searchTerm.trim()) {
+          const term = searchTerm.toLowerCase();
+          const matchNum = doc.fullNumber?.toLowerCase().includes(term);
+          const matchName = doc.customerName?.toLowerCase().includes(term);
+          const matchDoc = doc.customerDocNum?.toLowerCase().includes(term);
+          return matchNum || matchName || matchDoc;
+        }
+        return true;
+      })
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [documents, selectedType, selectedStatus, searchTerm, filterStartDate, filterEndDate, viewMode]);
+
+  const handlePrintNoteTicket = (note: any, doc: any) => {
+    const isCredit = note.docType === "CREDIT_NOTE" || (note.fullNumber && note.fullNumber.includes("C"));
+    const parts = note.fullNumber ? note.fullNumber.split("-") : [];
+    const noteSerie = note.serie || parts[0] || (isCredit ? "FC01" : "FD01");
+    const noteCorrelative = note.correlative || note.number || (parts[1] ? parseInt(parts[1], 10) : 1);
+
+    printFiscalTicket({
+      user,
+      branch: (user as any)?.branch || null,
+      document: {
+        docType: isCredit ? "NOTA_CREDITO" : "NOTA_DEBITO",
+        serie: noteSerie,
+        correlative: noteCorrelative,
+        fullNumber: note.fullNumber || `${noteSerie}-${String(noteCorrelative).padStart(8, "0")}`,
+        date: note.createdAt || doc.createdAt || new Date(),
+        clientDenomination: doc.customerName,
+        clientDocumentType: doc.customerDocType,
+        clientDocumentNumber: doc.customerDocNum,
+        refFullNumber: doc.fullNumber,
+        refReasonDesc: note.description ? note.description.replace(/^\[REF:[^\]]+\]\s*/i, "") : (isCredit ? "Anulación o Descuento" : "Aumento de Valor"),
+        total: Number(note.totalAmount || 0),
+        totalGravada: 0,
+        totalExonerada: Number(note.totalAmount || 0),
+        totalInafecta: 0,
+        totalIgv: 0,
+      },
     });
-  }, [documents, selectedType, selectedStatus, searchTerm, filterStartDate, filterEndDate]);
+  };
 
   const totalPages = Math.max(1, Math.ceil(filteredDocuments.length / pageSize));
   const paginatedDocuments = useMemo(() => {
@@ -1194,6 +1246,53 @@ export default function BusinessBillingPage() {
 
         {/* Filter Bar & Document Management Toolbar */}
         <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm space-y-4">
+          {/* MODO DE VISTA TRIBUTARIO: EXPEDIENTES (PRINCIPAL) vs CRONOGRAMA CONTINUO */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+            <div className="inline-flex p-1 bg-slate-100/90 rounded-2xl border border-slate-200">
+              <button
+                type="button"
+                onClick={() => setViewMode("EXPEDIENTES")}
+                className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  viewMode === "EXPEDIENTES"
+                    ? "bg-white text-indigo-700 shadow-xs border border-indigo-100/60"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <Layers className="w-4 h-4 text-indigo-600" />
+                <span>Expedientes Tributarios (Con Trazabilidad)</span>
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-extrabold uppercase border border-indigo-200/60">
+                  Principal
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("ALL_DOCS")}
+                className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  viewMode === "ALL_DOCS"
+                    ? "bg-white text-indigo-700 shadow-xs border border-indigo-100/60"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <Clock className="w-4 h-4 text-slate-500" />
+                <span>Cronograma Total (Todos los Comprobantes)</span>
+              </button>
+            </div>
+
+            <div className="text-xs text-slate-500 font-medium">
+              {viewMode === "EXPEDIENTES" ? (
+                <span className="flex items-center gap-1.5 text-indigo-900 font-semibold">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                  Boletas, Facturas y Guías con su línea de notas relacionadas, saldo y CDR oficial
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5 text-slate-700 font-semibold">
+                  <Clock className="w-3.5 h-3.5 text-slate-500" />
+                  Listado cronológico continuo de todos los comprobantes emitidos (más reciente a más antiguo)
+                </span>
+              )}
+            </div>
+          </div>
+
           <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
             {/* Search Input */}
             <div className="relative flex-1">
@@ -1283,7 +1382,7 @@ export default function BusinessBillingPage() {
           <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
             <h3 className="font-bold text-slate-900 flex items-center gap-2">
               <FileCheck2 className="h-5 w-5 text-blue-600" />
-              Comprobantes Electrónicos Emitidos ({filteredDocuments.length})
+              {viewMode === "EXPEDIENTES" ? "Expedientes Tributarios SUNAT" : "Cronograma Total de Comprobantes"} ({filteredDocuments.length})
             </h3>
             <span className="text-xs font-semibold text-slate-400">
               Mostrando registros en tiempo real
@@ -1291,31 +1390,28 @@ export default function BusinessBillingPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm text-slate-600">
-              <thead className="bg-slate-50 text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b border-slate-200/60">
+            <table className="w-full text-left text-sm text-slate-600 border-collapse min-w-[850px]">
+              <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-500 border-b border-slate-200/80">
                 <tr>
-                  <th className="px-6 py-3.5">Comprobante</th>
-                  <th className="px-6 py-3.5">Fecha Emisión</th>
-                  <th className="px-6 py-3.5">Receptor / Cliente</th>
-                  <th className="px-6 py-3.5 text-right">Base Gravada</th>
-                  <th className="px-6 py-3.5 text-right">IGV (18%)</th>
-                  <th className="px-6 py-3.5 text-right">Total</th>
-                  <th className="px-6 py-3.5 text-center">Estado Comercial</th>
-                  <th className="px-6 py-3.5 text-center">Estado SUNAT</th>
-                  <th className="px-6 py-3.5 text-right">Acciones</th>
+                  <th className="px-4 py-3">Comprobante</th>
+                  <th className="px-4 py-3 whitespace-nowrap">Emisión</th>
+                  <th className="px-4 py-3">Receptor / Cliente</th>
+                  <th className="px-4 py-3 text-right">Importe Fiscal</th>
+                  <th className="px-4 py-3 text-center">Estado SUNAT</th>
+                  <th className="px-4 py-3 text-center">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={9} className="px-6 py-12 text-center text-slate-400">
+                    <td colSpan={6} className="px-4 py-12 text-center text-slate-400">
                       <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2 text-blue-600" />
                       Cargando comprobantes fiscales de la base de datos...
                     </td>
                   </tr>
                 ) : filteredDocuments.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-6 py-12 text-center text-slate-400">
+                    <td colSpan={6} className="px-4 py-12 text-center text-slate-400">
                       <FileText className="h-8 w-8 mx-auto mb-2 text-slate-300" />
                       No se encontraron comprobantes emitidos con los filtros actuales.
                     </td>
@@ -1327,11 +1423,12 @@ export default function BusinessBillingPage() {
                     const isCredit = doc.docType === "CREDIT_NOTE";
 
                     return (
-                      <tr key={doc.id} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-2">
+                      <Fragment key={doc.id}>
+                        <tr className="hover:bg-slate-50/80 transition-colors">
+                        <td className="px-4 py-2.5">
+                          <div className="flex items-center gap-1.5">
                             <span
-                              className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase ${
+                              className={`px-1.5 py-0.5 rounded text-[9px] font-black tracking-wider uppercase ${
                                 isInvoice
                                   ? "bg-blue-100 text-blue-800 border border-blue-200"
                                   : isBoleta
@@ -1343,203 +1440,509 @@ export default function BusinessBillingPage() {
                             >
                               {isInvoice ? "FAC" : isBoleta ? "BOL" : isCredit ? "N/C" : "N/D"}
                             </span>
-                            <span className="font-mono font-bold text-slate-900">
+                            <span className="font-mono font-bold text-slate-900 text-xs">
                               {doc.fullNumber}
                             </span>
+                            <button
+                              type="button"
+                              onClick={() => setExpandedBillingDocIds(prev => ({ ...prev, [doc.id]: !prev[doc.id] }))}
+                              className={`p-1 rounded text-[10px] font-bold cursor-pointer transition-all shadow-2xs ${
+                                expandedBillingDocIds[doc.id]
+                                  ? "bg-indigo-600 text-white"
+                                  : "bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200"
+                              }`}
+                              title={expandedBillingDocIds[doc.id] ? "Ocultar diagnóstico oficial y notas" : "Ver diagnóstico oficial SUNAT y conciliación de notas"}
+                            >
+                              <Search className="w-3 h-3" />
+                            </button>
                           </div>
-                          {doc.notas && doc.notas.length > 0 && (
-                            <div className="pt-1">
-                              <button
-                                type="button"
-                                onClick={() => setSelectedDocForNotesList(doc)}
-                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 cursor-pointer shadow-2xs transition-colors"
-                                title="Ver notas oficiales emitidas ante SUNAT"
-                              >
-                                <Receipt className="w-3 h-3 text-indigo-600" />
-                                <span>{doc.notas.length} Nota(s) ({doc.notas[0].fullNumber})</span>
-                              </button>
-                            </div>
-                          )}
                         </td>
 
-                        <td className="px-6 py-4 text-xs text-slate-500 whitespace-nowrap">
-                          {new Date(doc.createdAt).toLocaleDateString("es-PE", {
-                            year: "numeric",
-                            month: "short",
-                            day: "2-digit",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
+                        <td className="px-4 py-2.5 text-xs text-slate-500 whitespace-nowrap">
+                          <span className="font-semibold text-slate-700">
+                            {new Date(doc.createdAt).toLocaleDateString("es-PE", {
+                              year: "numeric",
+                              month: "2-digit",
+                              day: "2-digit",
+                            })}
+                          </span>
+                          <span className="block text-[10px] text-slate-400 font-mono">
+                            {new Date(doc.createdAt).toLocaleTimeString("es-PE", {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </span>
                         </td>
 
-                        <td className="px-6 py-4">
-                          <div className="font-semibold text-slate-900 line-clamp-1 max-w-xs">
+                        <td className="px-4 py-2.5">
+                          <div className="font-semibold text-slate-900 text-xs truncate max-w-[200px]" title={doc.customerName}>
                             {doc.customerName}
                           </div>
-                          <div className="font-mono text-xs text-slate-400">
-                            {doc.customerDocType === "6" ? "RUC: " : doc.customerDocType === "1" ? "DNI: " : ""}
+                          <div className="font-mono text-[10px] text-slate-400">
+                            {doc.customerDocType === "6" ? "RUC " : doc.customerDocType === "1" ? "DNI " : ""}
                             {doc.customerDocNum}
                           </div>
                         </td>
 
-                        <td className="px-6 py-4 text-right font-mono text-slate-600">
-                          {doc.currency === "USD" ? "$ " : "S/ "}
-                          {doc.totalOpGravada.toFixed(2)}
-                        </td>
-
-                        <td className="px-6 py-4 text-right font-mono text-slate-600">
-                          {doc.currency === "USD" ? "$ " : "S/ "}
-                          {doc.totalIgv.toFixed(2)}
-                        </td>
-
-                        <td className="px-6 py-4 text-right font-mono font-bold text-slate-900">
-                          <div>
-                            {doc.currency === "USD" ? "$ " : "S/ "}
-                            {(doc.saldoDisponible !== undefined ? doc.saldoDisponible : doc.totalAmount).toFixed(2)}
+                        <td className="px-4 py-2.5 text-right font-mono font-bold text-slate-900 whitespace-nowrap">
+                          <div className="text-xs">
+                            <span className={Number(doc.saldoDisponible !== undefined ? doc.saldoDisponible : doc.totalAmount) > 0 ? "text-emerald-700 font-black" : "text-slate-500 font-bold"}>
+                              {doc.currency === "USD" ? "$ " : "S/ "}
+                              {(doc.saldoDisponible !== undefined ? doc.saldoDisponible : doc.totalAmount).toFixed(2)}
+                            </span>
                           </div>
-                          {doc.saldoDisponible !== undefined && Number(doc.saldoDisponible) !== Number(doc.totalAmount) && (
-                            <span className="block text-[10px] text-slate-400 font-normal line-through">
-                              Orig: {doc.currency === "USD" ? "$ " : "S/ "}
-                              {doc.totalAmount.toFixed(2)}
-                            </span>
-                          )}
-                        </td>
-
-                        {/* ESTADO COMERCIAL */}
-                        <td className="px-6 py-4 text-center">
-                          {doc.status === "CANCELLED" ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-rose-50 text-rose-700 border border-rose-200">
-                              Anulado
-                            </span>
+                          {doc.notas && doc.notas.length > 0 ? (
+                            <div className="text-[9px] text-slate-400 font-normal space-x-1" title={`Base: S/ ${doc.totalOpGravada.toFixed(2)} | IGV: S/ ${doc.totalIgv.toFixed(2)}`}>
+                              <span className="line-through">Orig: S/ {doc.totalAmount.toFixed(2)}</span>
+                            </div>
                           ) : (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-emerald-50 text-emerald-700 border border-emerald-200">
-                              Vigente
-                            </span>
+                            <div className="text-[9px] text-slate-400 font-normal" title={`Base: S/ ${doc.totalOpGravada.toFixed(2)} | IGV: S/ ${doc.totalIgv.toFixed(2)}`}>
+                              <span>Base: S/ {doc.totalOpGravada.toFixed(2)}</span>
+                            </div>
                           )}
                         </td>
 
-                        {/* ESTADO SUNAT */}
-                        <td className="px-6 py-4 text-center">
+                        {/* ESTADO SUNAT INTEGRADO */}
+                        <td className="px-4 py-2.5 text-center whitespace-nowrap">
                           {doc.status === "ACCEPTED" ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                              Aceptado CDR
-                            </span>
+                            doc.notas && doc.notas.length > 0 ? (
+                              Number(doc.saldoDisponible !== undefined ? doc.saldoDisponible : doc.totalAmount) > 0 ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-indigo-50 text-indigo-700 border border-indigo-200" title={`Aceptado SUNAT · Modificado con ${doc.notas.length} Nota(s). Saldo: S/ ${(doc.saldoDisponible ?? doc.totalAmount).toFixed(2)}`}>
+                                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
+                                  Modificado ({doc.notas.length})
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-slate-100 text-slate-700 border border-slate-300" title="Aceptado SUNAT · Saldo liquidado a S/ 0.00">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                                  Liquidado
+                                </span>
+                              )
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-50 text-emerald-700 border border-emerald-200" title="Aceptado oficialmente por SUNAT según CDR">
+                                <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                                Aceptado CDR
+                              </span>
+                            )
                           ) : doc.status === "REJECTED" ? (
                             <button
                               type="button"
                               onClick={() => handleShowDiagnostic(doc)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 hover:border-rose-300 transition-all cursor-pointer shadow-xs group"
-                              title="Hacer clic para ver diagnóstico detallado de SUNAT y solución sugerida"
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 transition cursor-pointer shadow-xs"
+                              title="Hacer clic para ver diagnóstico oficial de SUNAT"
                             >
-                              <AlertCircle className="h-3.5 w-3.5 text-rose-600 group-hover:scale-110 transition-transform" />
+                              <AlertCircle className="h-3 w-3 text-rose-600" />
                               <span>Observado</span>
                             </button>
-                          ) : doc.status === "CANCELLED" ? (
+                          ) : doc.status === "CANCELLED" || (doc as any).isAnnulledByNote ? (
                             <button
                               type="button"
                               onClick={() => handleShowDiagnostic(doc)}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 transition-all cursor-pointer shadow-xs group"
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 transition cursor-pointer shadow-xs"
                               title={doc.sunatDescription || "Comprobante anulado formalmente ante SUNAT con Nota de Crédito."}
                             >
-                              <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse"></span>
+                              <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>
                               <span>Anulado (NC)</span>
                             </button>
                           ) : (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                              <Clock className="h-3.5 w-3.5 text-slate-500" />
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-slate-100 text-slate-700 border border-slate-200">
+                              <Clock className="h-3 w-3 text-slate-500" />
                               {doc.status}
                             </span>
                           )}
                         </td>
 
-                        <td className="px-6 py-4 text-right whitespace-nowrap">
-                          <div className="flex items-center justify-end gap-1.5">
-                            {/* Ver Preview & Imprimir */}
-                            <button
-                              onClick={() => handleOpenPreview(doc)}
-                              className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                              title="Visualizar Comprobante / Imprimir Ticket"
-                            >
-                              <Printer className="h-4 w-4" />
-                            </button>
+                        {/* ACCIONES COMPACTAS */}
+                        <td className="px-4 py-2.5 text-center whitespace-nowrap">
+                          {(() => {
+                            const [rowSerie, rowNum] = (doc.fullNumber || "").split("-");
+                            const parsedNum = rowNum ? parseInt(rowNum, 10) : doc.correlative;
+                            const effectivePdf = doc.pdfUrl || (doc.fullNumber ? `http://localhost:4001/api/v1/documents/by-series-number/${rowSerie}/${parsedNum}/html?format=A4` : null);
+                            const effectiveXml = doc.xmlUrl || (doc.fullNumber ? `http://localhost:4001/api/v1/documents/by-series-number/${rowSerie}/${parsedNum}/xml` : null);
+                            const effectiveCdr = doc.cdrUrl || (doc.fullNumber ? `http://localhost:4001/api/v1/documents/by-series-number/${rowSerie}/${parsedNum}/cdr` : null);
+                            const isNote = doc.docType === "CREDIT_NOTE" || doc.docType === "DEBIT_NOTE";
 
-                            {/* Descargar XML UBL 2.1 */}
-                            {doc.xmlUrl && (
-                              <a
-                                href={doc.xmlUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="p-1.5 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                                title="Descargar XML firmado UBL 2.1"
-                              >
-                                <FileCode2 className="h-4 w-4" />
-                              </a>
-                            )}
+                            return (
+                              <div className="flex items-center justify-center gap-1">
+                                {/* Ver Preview & Imprimir Ticket */}
+                                <button
+                                  onClick={() => {
+                                    if (isNote) {
+                                      handlePrintNoteTicket(doc, doc);
+                                    } else {
+                                      handleOpenPreview(doc);
+                                    }
+                                  }}
+                                  className="p-1 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                                  title={isNote ? "Imprimir Ticket Térmico de la Nota" : "Visualizar Comprobante / Imprimir Ticket"}
+                                >
+                                  <Printer className="h-3.5 w-3.5" />
+                                </button>
 
-                            {/* Descargar CDR */}
-                            {doc.cdrUrl && (
-                              <a
-                                href={doc.cdrUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="p-1.5 text-slate-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
-                                title="Descargar Constancia de Recepción CDR SUNAT"
-                              >
-                                <Download className="h-4 w-4" />
-                              </a>
-                            )}
+                                {/* Ver / Descargar PDF Oficial A4 */}
+                                {effectivePdf && (
+                                  <a
+                                    href={effectivePdf}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                    title="Ver / Imprimir PDF Oficial A4"
+                                  >
+                                    <FileText className="h-3.5 w-3.5" />
+                                  </a>
+                                )}
 
-                            {/* Botón Inteligente: Edición con Diff Engine */}
-                            {doc.status === "ACCEPTED" && (
-                              <button
-                                onClick={() => handleOpenSmartEditModal(doc)}
-                                className="p-1.5 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-lg transition-colors font-bold"
-                                title="Edición Inteligente con Diff Engine (SUNAT UBL 2.1) - Detección automática de Casos A, B, C y D"
-                              >
-                                <Wand2 className="h-4 w-4" />
-                              </button>
-                            )}
+                                {/* Descargar XML UBL 2.1 */}
+                                {effectiveXml && (
+                                  <a
+                                    href={effectiveXml}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="p-1 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                                    title="Descargar XML firmado UBL 2.1"
+                                  >
+                                    <FileCode2 className="h-3.5 w-3.5" />
+                                  </a>
+                                )}
 
-                            {/* Emisión Manual de Nota de Crédito / Débito */}
-                            {doc.status === "ACCEPTED" && doc.docType !== "CREDIT_NOTE" && (
-                              <button
-                                onClick={() => handleOpenManualNoteModal(doc)}
-                                className="p-1.5 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded-lg transition-colors"
-                                title="Emisión Manual de Nota de Crédito o Débito (Catálogo 09 y 10 Oficial)"
-                              >
-                                <FileSpreadsheet className="h-4 w-4" />
-                              </button>
-                            )}
+                                {/* Descargar CDR */}
+                                {effectiveCdr && (
+                                  <a
+                                    href={effectiveCdr}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="p-1 text-slate-500 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-colors"
+                                    title="Descargar Constancia CDR SUNAT"
+                                  >
+                                    <FileCheck2 className="h-3.5 w-3.5" />
+                                  </a>
+                                )}
 
-                            {/* Anular ante SUNAT con Nota de Crédito o Eliminar */}
-                            {doc.status !== "CANCELLED" && (
-                              <button
-                                onClick={() => handleOpenDeleteModal(doc)}
-                                className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                                title={
-                                  doc.status === "ACCEPTED"
-                                    ? "Anular legalmente ante SUNAT con Nota de Crédito (Catálogo 09 Motivo 01)"
-                                    : "Eliminar comprobante"
-                                }
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            )}
+                                {/* Botón Inteligente: Edición con Diff Engine */}
+                                {!isNote && doc.status === "ACCEPTED" && (
+                                  <button
+                                    onClick={() => handleOpenSmartEditModal(doc)}
+                                    className="p-1 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                                    title="Edición Inteligente Diff Engine (SUNAT UBL 2.1)"
+                                  >
+                                    <Wand2 className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
 
-                            {/* Reintentar si falló */}
-                            {doc.status === "REJECTED" && (
-                              <button
-                                onClick={() => handleRetry(doc.id, doc.fullNumber)}
-                                className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                                title="Reintentar transmisión a SUNAT"
-                              >
-                                <RefreshCw className="h-4 w-4" />
-                              </button>
-                            )}
-                          </div>
+                                {/* Emisión Manual de Nota de Crédito / Débito */}
+                                {!isNote && doc.status === "ACCEPTED" && (
+                                  <button
+                                    onClick={() => handleOpenManualNoteModal(doc)}
+                                    className="p-1 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded-lg transition-colors cursor-pointer"
+                                    title="Emitir Nota de Crédito / Débito (Catálogo 09 y 10)"
+                                  >
+                                    <FileSpreadsheet className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+
+                                {/* Anular ante SUNAT con Nota de Crédito o Eliminar */}
+                                {!isNote && doc.status !== "CANCELLED" && !(doc as any).isAnnulledByNote && (
+                                  <button
+                                    onClick={() => handleOpenDeleteModal(doc)}
+                                    className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                    title="Anular Comprobante con Nota de Crédito Oficial"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+
+                                {/* Reintentar si falló */}
+                                {(doc.status === "REJECTED" || doc.status === "QUEUED_OUTBOX") && (
+                                  <button
+                                    onClick={() => handleRetry(doc.id, doc.fullNumber)}
+                                    className="p-1 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer animate-pulse"
+                                    title="Reintentar transmisión a SUNAT"
+                                  >
+                                    <RefreshCw className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </td>
                       </tr>
+
+                      {/* CAJÓN DESPLEGABLE PRO (2 PANELES EJECUTIVOS) */}
+                      {expandedBillingDocIds[doc.id] && (
+                        <tr className="bg-slate-50/80 border-t border-b border-indigo-100">
+                          <td colSpan={6} className="p-3 pl-6 sm:pl-8">
+                            <div className="bg-white border border-indigo-100 rounded-xl p-3 shadow-2xs space-y-3">
+                              {/* Header con resumen y título */}
+                              <div className="flex flex-wrap items-center justify-between border-b border-slate-100 pb-2 gap-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="p-1.5 bg-indigo-50 text-indigo-700 rounded-lg">
+                                    <FileCheck className="w-4 h-4" />
+                                  </span>
+                                  <div>
+                                    <span className="text-[11px] font-black text-indigo-950 block">
+                                      Auditoría Tributaria SUNAT: {doc.fullNumber}
+                                    </span>
+                                    <span className="text-[10px] text-slate-500">
+                                      Emisión: {new Date(doc.createdAt).toLocaleDateString("es-PE")} • Cliente: {doc.customerName} ({doc.customerDocNum})
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className={`text-[10px] font-black border px-2 py-0.5 rounded-full uppercase ${
+                                    doc.status === 'ACCEPTED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                    doc.status === 'REJECTED' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                                    'bg-amber-50 text-amber-700 border-amber-200'
+                                  }`}>
+                                    SUNAT: {doc.status}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Dos paneles: Panel A (Diagnóstico SUNAT) y Panel B (Conciliación Financiera y Notas) */}
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                {/* PANEL A: Diagnóstico Oficial SUNAT (CDR) */}
+                                <div className="bg-slate-50/70 border border-slate-200 rounded-xl p-3 space-y-2.5">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[11px] font-black text-slate-700 flex items-center gap-1.5">
+                                      <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+                                      Panel A: Diagnóstico Oficial SUNAT (CDR)
+                                    </span>
+                                    <span className="text-[9px] font-mono font-bold bg-slate-200 text-slate-800 px-1.5 py-0.5 rounded">
+                                      Código: {doc.sunatResponseCode || "0"}
+                                    </span>
+                                  </div>
+
+                                  <div className="text-[11px] space-y-2">
+                                    <div className="bg-white border border-slate-200 rounded-lg p-2.5">
+                                      <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">
+                                        Respuesta / Constancia Oficial SUNAT (CDR)
+                                      </span>
+                                      <p className="text-slate-700 font-medium mt-1 leading-relaxed break-words">
+                                        {doc.sunatDescription || (
+                                          doc.status === 'ACCEPTED'
+                                            ? "El comprobante ha sido aceptado formalmente por SUNAT según constancia CDR UBL 2.1."
+                                            : doc.status === 'REJECTED'
+                                            ? "El comprobante fue formalmente RECHAZADO por validaciones de SUNAT."
+                                            : "Pendiente o en proceso de transmisión electrónica a SUNAT."
+                                        )}
+                                      </p>
+                                    </div>
+
+                                    {/* Botón de Reenvío directo si hay error o rechazo */}
+                                    {doc.status === 'REJECTED' && (
+                                      <div className="pt-0.5">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleRetry(doc.id, doc.fullNumber)}
+                                          className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold cursor-pointer transition shadow-xs"
+                                        >
+                                          <RefreshCw className="w-3.5 h-3.5" />
+                                          <span>Reenviar Comprobante Oficial a SUNAT</span>
+                                        </button>
+                                      </div>
+                                    )}
+
+                                    {/* Enlaces de descarga oficiales */}
+                                    <div className="flex items-center gap-2 pt-0.5">
+                                      {doc.pdfUrl && (
+                                        <a
+                                          href={doc.pdfUrl}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="inline-flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-indigo-50 border border-slate-200 rounded text-[10px] font-bold text-indigo-700 transition shadow-2xs"
+                                        >
+                                          <FileText className="w-3 h-3 text-indigo-600" />
+                                          <span>PDF A4</span>
+                                        </a>
+                                      )}
+                                      {doc.xmlUrl && (
+                                        <a
+                                          href={doc.xmlUrl}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="inline-flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-amber-50 border border-slate-200 rounded text-[10px] font-bold text-amber-700 transition shadow-2xs"
+                                        >
+                                          <FileCode2 className="w-3 h-3 text-amber-600" />
+                                          <span>XML UBL 2.1</span>
+                                        </a>
+                                      )}
+                                      {doc.cdrUrl && (
+                                        <a
+                                          href={doc.cdrUrl}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="inline-flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-teal-50 border border-slate-200 rounded text-[10px] font-bold text-teal-700 transition shadow-2xs"
+                                        >
+                                          <FileCheck2 className="w-3 h-3 text-teal-600" />
+                                          <span>CDR SUNAT</span>
+                                        </a>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* PANEL B: Conciliación Financiera y Trazabilidad de Notas */}
+                                <div className="bg-slate-50/70 border border-slate-200 rounded-xl p-3 space-y-2.5">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[11px] font-black text-slate-700 flex items-center gap-1.5">
+                                      <Receipt className="w-3.5 h-3.5 text-indigo-600" />
+                                      Panel B: Conciliación & Notas Vinculadas
+                                    </span>
+                                    <span className="text-[10px] font-bold text-slate-500">
+                                      {doc.notas?.length || 0} nota(s)
+                                    </span>
+                                  </div>
+
+                                  {/* Cuadro de Conciliación Matemática */}
+                                  <div className="grid grid-cols-4 gap-1 text-center bg-white border border-slate-200 rounded-lg p-2">
+                                    <div className="border-r border-slate-100 pr-1">
+                                      <span className="text-[9px] font-semibold text-slate-400 block">Base Orig.</span>
+                                      <span className="font-mono text-xs font-black text-slate-700">
+                                        S/ {doc.totalAmount.toFixed(2)}
+                                      </span>
+                                    </div>
+                                    <div className="border-r border-slate-100 pr-1">
+                                      <span className="text-[9px] font-semibold text-blue-600 block">+N. Débito</span>
+                                      <span className="font-mono text-xs font-black text-blue-700">
+                                        +{Number(doc.totalNotasDebito || 0).toFixed(2)}
+                                      </span>
+                                    </div>
+                                    <div className="border-r border-slate-100 pr-1">
+                                      <span className="text-[9px] font-semibold text-rose-500 block">-N. Crédito</span>
+                                      <span className="font-mono text-xs font-black text-rose-600">
+                                        -{Number(doc.totalNotasCredito || 0).toFixed(2)}
+                                      </span>
+                                    </div>
+                                    <div>
+                                      <span className="text-[9px] font-semibold text-emerald-600 block">Saldo Vigente</span>
+                                      <span className="font-mono text-xs font-black text-emerald-700">
+                                        S/ {(doc.saldoDisponible !== undefined ? doc.saldoDisponible : doc.totalAmount).toFixed(2)}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  {/* Listado de Notas Vinculadas */}
+                                  {doc.notas && doc.notas.length > 0 ? (
+                                    <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+                                      {doc.notas.map((n: any) => {
+                                        const isCredit = n.docType === 'CREDIT_NOTE' || (n.fullNumber && n.fullNumber.includes('C'));
+                                        const parts = n.fullNumber ? n.fullNumber.split('-') : [];
+                                        const nSerie = n.serie || parts[0] || (isCredit ? 'FC01' : 'FD01');
+                                        const nNumber = n.correlative || n.number || (parts[1] ? parseInt(parts[1], 10) : '');
+                                        const nPdf = n.pdfUrl || (nSerie && nNumber ? `http://localhost:4001/api/v1/documents/by-series-number/${nSerie}/${nNumber}/html?format=A4` : null);
+                                        const nXml = n.xmlUrl || (nSerie && nNumber ? `http://localhost:4001/api/v1/documents/by-series-number/${nSerie}/${nNumber}/xml` : null);
+                                        const nCdr = n.cdrUrl || (nSerie && nNumber ? `http://localhost:4001/api/v1/documents/by-series-number/${nSerie}/${nNumber}/cdr` : null);
+
+                                        return (
+                                          <div key={n.id || n.fullNumber} className="flex flex-wrap items-center justify-between text-xs p-2 bg-white rounded-lg border border-slate-200 hover:bg-slate-50 transition gap-1.5">
+                                            <div className="flex items-center gap-1.5 min-w-0">
+                                              <span className="text-slate-400 font-mono text-[10px]">↳</span>
+                                              <span className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase ${
+                                                isCredit ? 'bg-rose-100 text-rose-800' : 'bg-blue-100 text-blue-800'
+                                              }`}>
+                                                {isCredit ? 'N. Crédito' : 'N. Débito'}
+                                              </span>
+                                              <span className="font-mono font-bold text-slate-800 text-[11px]">{n.fullNumber || `${nSerie}-${nNumber}`}</span>
+                                              <span className="text-slate-500 text-[10px] truncate max-w-[120px]" title={n.description || 'Ajuste comercial'}>
+                                                {n.description || 'Ajuste comercial'}
+                                              </span>
+                                            </div>
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                              <span className={`font-mono font-black text-xs ${
+                                                isCredit ? 'text-rose-600' : 'text-blue-600'
+                                              }`}>
+                                                {isCredit ? '-' : '+'} S/ {Number(n.totalAmount).toFixed(2)}
+                                              </span>
+                                              <span className={`text-[8px] font-bold border px-1 py-0.2 rounded uppercase ${
+                                                n.status === 'REJECTED' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                                                n.status === 'ERROR' ? 'bg-red-50 text-red-700 border-red-200' :
+                                                n.status === 'QUEUED' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                                'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                              }`}>
+                                                {n.status || 'ACEPTADO'}
+                                              </span>
+                                              {(n.status === 'REJECTED' || n.status === 'ERROR' || n.status === 'QUEUED') && (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleRetry(n.id, n.fullNumber)}
+                                                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-rose-50 hover:bg-rose-100 border border-rose-300 text-rose-700 rounded text-[9px] font-bold cursor-pointer transition shadow-2xs"
+                                                  title="Reenviar y Validar Nota ante SUNAT"
+                                                >
+                                                  <RefreshCw className="w-2.5 h-2.5" />
+                                                  <span>Reenviar</span>
+                                                </button>
+                                              )}
+                                              <div className="flex items-center gap-1">
+                                                {/* Imprimir Ticket */}
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handlePrintNoteTicket(n, doc)}
+                                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded text-[9px] font-bold cursor-pointer transition shadow-2xs"
+                                                  title="Imprimir Ticket Térmico 80mm de la Nota"
+                                                >
+                                                  <Printer className="w-3 h-3 text-indigo-600" />
+                                                  <span>Ticket</span>
+                                                </button>
+
+                                                {/* Ver y Descargar PDF A4 */}
+                                                {nPdf && (
+                                                  <a
+                                                    href={nPdf}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-white hover:bg-indigo-50 border border-slate-200 text-indigo-700 rounded text-[9px] font-bold transition shadow-2xs"
+                                                    title="Ver / Imprimir / Descargar PDF Oficial A4"
+                                                  >
+                                                    <FileText className="w-3 h-3 text-indigo-600" />
+                                                    <span>PDF</span>
+                                                  </a>
+                                                )}
+
+                                                {/* Ver y Descargar XML */}
+                                                {nXml && (
+                                                  <a
+                                                    href={nXml}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    download={`${n.fullNumber || 'nota'}.xml`}
+                                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-white hover:bg-amber-50 border border-slate-200 text-amber-700 rounded text-[9px] font-bold transition shadow-2xs"
+                                                    title="Ver y Descargar XML firmado UBL 2.1"
+                                                  >
+                                                    <FileCode2 className="w-3 h-3 text-amber-600" />
+                                                    <span>XML</span>
+                                                  </a>
+                                                )}
+
+                                                {/* Ver y Descargar CDR */}
+                                                {nCdr && (
+                                                  <a
+                                                    href={nCdr}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    download={`R-${n.fullNumber || 'nota'}.xml`}
+                                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-white hover:bg-teal-50 border border-slate-200 text-teal-700 rounded text-[9px] font-bold transition shadow-2xs"
+                                                    title="Ver y Descargar Constancia CDR SUNAT"
+                                                  >
+                                                    <FileCheck2 className="w-3 h-3 text-teal-600" />
+                                                    <span>CDR</span>
+                                                  </a>
+                                                )}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}                                    </div>
+                                  ) : (
+                                    <div className="text-center py-3 bg-white border border-dashed border-slate-200 rounded-lg text-slate-400 text-xs">
+                                      <span>Sin notas vinculadas emitidas para este comprobante.</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      </Fragment>
                     );
                   })
                 )}
@@ -1567,10 +1970,10 @@ export default function BusinessBillingPage() {
                     onChange={(e) => setPageSize(Number(e.target.value))}
                     className="bg-white border border-slate-200 rounded-lg px-2 py-1 font-bold text-slate-800 outline-none cursor-pointer"
                   >
-                    <option value={10}>10</option>
-                    <option value={25}>25</option>
-                    <option value={50}>50</option>
-                    <option value={100}>100</option>
+                    <option value={6}>6</option>
+                    <option value={12}>12</option>
+                    <option value={24}>24</option>
+                    <option value={48}>48</option>
                   </select>
                 </div>
               </div>
@@ -2981,6 +3384,10 @@ export default function BusinessBillingPage() {
                   fullNumber: selectedDocForDelete.fullNumber,
                   documentType: selectedDocForDelete.docType,
                   totalAmount: Number(selectedDocForDelete.totalAmount) || 0,
+                  saldoDisponible: selectedDocForDelete.saldoDisponible !== undefined ? Number(selectedDocForDelete.saldoDisponible) : Number(selectedDocForDelete.totalAmount) || 0,
+                  totalNotasCredito: Number(selectedDocForDelete.totalNotasCredito || 0),
+                  totalNotasDebito: Number(selectedDocForDelete.totalNotasDebito || 0),
+                  hasNotes: Boolean(selectedDocForDelete.hasNotes || (selectedDocForDelete.notas && selectedDocForDelete.notas.length > 0)),
                   clientName: selectedDocForDelete.customerName || "CLIENTES VARIOS",
                   issueDate: selectedDocForDelete.createdAt,
                   isBilled: selectedDocForDelete.status === "ACCEPTED" || Boolean(selectedDocForDelete.fullNumber),
@@ -3036,6 +3443,7 @@ export default function BusinessBillingPage() {
             setIsManualNoteModalOpen(false);
             setSelectedDocForManualNote(null);
           }}
+          initialType={manualNoteInitialType}
           document={
             selectedDocForManualNote
               ? {
@@ -3090,9 +3498,10 @@ export default function BusinessBillingPage() {
             status={selectedDocForNotesList.status}
             notes={selectedDocForNotesList.notas || []}
             user={user}
-            onEmitSubsequentNote={(_type, _availableBalance) => {
+            onEmitSubsequentNote={(type, _availableBalance) => {
               const doc = selectedDocForNotesList;
               setSelectedDocForNotesList(null);
+              setManualNoteInitialType(type);
               setSelectedDocForManualNote(doc);
               setIsManualNoteModalOpen(true);
             }}

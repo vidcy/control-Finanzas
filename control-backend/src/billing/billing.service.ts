@@ -601,12 +601,20 @@ export class BillingService {
       let hasAnnulNote = false;
 
       for (const n of docNotes) {
+        const descUpper = (n.sunatDescription || '').toUpperCase();
+        const isFormalAnnul =
+          descUpper.includes('ANULACIÓN DE LA OPERACIÓN') ||
+          descUpper.includes('ANULACION DE LA OPERACION') ||
+          descUpper.includes('ANULACIÓN POR ERROR EN EL RUC') ||
+          descUpper.includes('ANULACION POR ERROR EN EL RUC') ||
+          descUpper.includes('MOTIVO: 01') ||
+          descUpper.includes('MOTIVO 01') ||
+          descUpper.includes('MOTIVO: 02') ||
+          descUpper.includes('MOTIVO 02');
+
         if (n.docType === FiscalDocType.CREDIT_NOTE) {
           sumCredits += Number(n.totalAmount || 0);
-          if (
-            n.sunatDescription?.toUpperCase().includes('ANULACION') ||
-            sumCredits >= Number(doc.totalAmount) - 0.01
-          ) {
+          if (isFormalAnnul) {
             hasAnnulNote = true;
           }
         } else if (n.docType === FiscalDocType.DEBIT_NOTE) {
@@ -614,15 +622,19 @@ export class BillingService {
         }
       }
 
-      const status = hasAnnulNote ? FiscalStatus.CANCELLED : doc.status;
-      const saldoDisponible = Math.max(
-        0,
-        Number((Number(doc.totalAmount) - sumCredits + sumDebits).toFixed(2)),
-      );
+      const status = (hasAnnulNote || doc.status === FiscalStatus.CANCELLED) ? FiscalStatus.CANCELLED : doc.status;
+      const saldoDisponible = hasAnnulNote
+        ? 0
+        : Math.max(0, Number((Number(doc.totalAmount) - sumCredits + sumDebits).toFixed(2)));
 
       return {
         ...doc,
         status,
+        isAnnulledByNote: hasAnnulNote,
+        saldoDisponible,
+        totalNotasCredito: sumCredits,
+        totalNotasDebito: sumDebits,
+        hasNotes: docNotes.length > 0,
         notas: docNotes.map((n) => ({
           id: n.id,
           docType: n.docType,
@@ -637,9 +649,6 @@ export class BillingService {
           cdrUrl: n.cdrUrl,
           createdAt: n.createdAt,
         })),
-        saldoDisponible,
-        totalNotasCredito: sumCredits,
-        totalNotasDebito: sumDebits,
       };
     });
   }
@@ -1635,24 +1644,32 @@ export class BillingService {
       doc.sale?.igvAffectation ||
       (Number(doc.totalOpExonerada || 0) > 0 ? '20' : Number(doc.totalOpInafecta || 0) > 0 ? '30' : '10');
 
+    const reqAmount = dto.amount !== undefined && dto.amount !== null ? Number(dto.amount) : undefined;
     const normalizedItems = (dto.items && Array.isArray(dto.items) && dto.items.length > 0)
       ? dto.items
-          .filter((it: any) => (Number(it.quantity || it.returnQty || 0) > 0) && (Number(it.unit_price || it.price || 0) >= 0))
-          .map((it: any) => ({
-            code: it.code || 'PROD',
-            description: String(it.description || it.name || 'Detalle del producto').trim(),
-            quantity: Number(it.quantity || it.returnQty || 1),
-            unit_price: Number(it.unit_price || it.price || 0),
-            unit_measure: it.unit_measure || it.unit || 'NIU',
-            igv_affectation_type: it.igv_affectation_type || it.igvAffectation || originalAffectation,
-          }))
+          .filter((it: any) => Number(it.quantity || it.returnQty || 0) > 0)
+          .map((it: any) => {
+            const qty = Number(it.quantity || it.returnQty || 1);
+            let uPrice = Number(it.unit_price ?? it.price ?? 0);
+            if (uPrice <= 0 && reqAmount && reqAmount > 0) {
+              uPrice = Number((reqAmount / qty).toFixed(2));
+            }
+            return {
+              code: it.code || 'PROD',
+              description: String(it.description || it.name || 'Detalle del producto').trim(),
+              quantity: qty,
+              unit_price: uPrice,
+              unit_measure: it.unit_measure || it.unit || 'NIU',
+              igv_affectation_type: it.igv_affectation_type || it.igvAffectation || originalAffectation,
+            };
+          })
       : undefined;
 
     const normalizedDto = {
       note_type: noteType,
       reason_code: reasonCode,
       reason_description: reasonDescription,
-      amount: dto.amount !== undefined && dto.amount !== null ? Number(dto.amount) : undefined,
+      amount: reqAmount,
       issue_date: dto.issue_date || dto.issueDate,
       items: normalizedItems && normalizedItems.length > 0 ? normalizedItems : undefined,
     };

@@ -28,6 +28,10 @@ export interface SunatAnnulmentModalProps {
     fullNumber: string;
     documentType?: string;
     totalAmount: number;
+    saldoDisponible?: number;
+    totalNotasCredito?: number;
+    totalNotasDebito?: number;
+    hasNotes?: boolean;
     clientName?: string;
     issueDate: Date | string;
     isBilled: boolean;
@@ -55,6 +59,10 @@ export const SunatAnnulmentModal: React.FC<SunatAnnulmentModalProps> = ({
   const [restoreStock, setRestoreStock] = useState(true);
 
   const isFiscal = documentInfo?.isBilled ?? false;
+  const totalOriginal = Number(documentInfo?.totalAmount || 0);
+  const saldoRestante = documentInfo?.saldoDisponible !== undefined ? Number(documentInfo.saldoDisponible) : totalOriginal;
+  const hasAdjustments = Boolean(documentInfo?.hasNotes || (documentInfo?.totalNotasCredito || 0) > 0 || (documentInfo?.totalNotasDebito || 0) > 0 || Math.abs(saldoRestante - totalOriginal) > 0.005);
+  const isLiquidated = isFiscal && saldoRestante <= 0.005;
 
   useEffect(() => {
     if (isOpen) {
@@ -99,33 +107,93 @@ export const SunatAnnulmentModal: React.FC<SunatAnnulmentModalProps> = ({
                   </span>
                 )}
               </div>
-              <p className="text-xs text-slate-500 font-medium">
-                Comprobante: <span className="font-mono font-bold text-slate-900">{documentInfo.fullNumber}</span> &bull; Total: <span className="font-mono font-bold text-emerald-700">S/ {documentInfo.totalAmount.toFixed(2)}</span>
-              </p>
+              <div className="text-xs text-slate-500 font-medium flex items-center gap-2 flex-wrap mt-0.5">
+                <span>Comprobante: <strong className="font-mono text-slate-900">{documentInfo.fullNumber}</strong></span>
+                <span>&bull;</span>
+                {hasAdjustments ? (
+                  <span className="flex items-center gap-1.5">
+                    <span className="line-through text-slate-400">Orig: S/ {totalOriginal.toFixed(2)}</span>
+                    <span className="font-mono font-black text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                      Saldo Vigente: S/ {saldoRestante.toFixed(2)}
+                    </span>
+                  </span>
+                ) : (
+                  <span>Total: <strong className="font-mono text-emerald-700">S/ {totalOriginal.toFixed(2)}</strong></span>
+                )}
+              </div>
             </div>
           </div>
         </div>
 
-        {/* RESUMEN TRIBUTARIO NORMATIVO */}
+        {/* RESUMEN FINANCIERO Y TRIBUTARIO NORMATIVO */}
         {isFiscal ? (
-          <div className="bg-gradient-to-r from-blue-50/70 to-indigo-50/40 border border-blue-200/80 rounded-2xl p-3.5 space-y-2">
-            <div className="flex items-center gap-2">
-              <ShieldAlert className="w-4 h-4 text-blue-600 shrink-0" />
-              <span className="text-xs font-black text-blue-900">
-                Normativa Tributaria Oficial SUNAT:
-              </span>
-            </div>
-            <p className="text-xs text-slate-700 leading-relaxed font-medium">
-              Conforme a la normativa tributaria UBL 2.1 vigente, la anulación formal de un comprobante aceptado por SUNAT se realiza mediante la emisión de una <strong>Nota de Crédito Electrónica ({isFactura ? "Serie FC01" : "Serie BC01"})</strong> bajo el Catálogo 09 (Motivo 01: Anulación de la operación).
-            </p>
-            <div className="flex flex-wrap gap-2 pt-1 text-[11px] font-semibold text-slate-600">
-              <span className="inline-flex items-center gap-1 bg-white px-2.5 py-1 rounded-lg border border-blue-100 shadow-xs">
-                ✓ Anula el efecto tributario en SIRE
-              </span>
-              <span className="inline-flex items-center gap-1 bg-white px-2.5 py-1 rounded-lg border border-blue-100 shadow-xs">
-                ✓ Genera XML, PDF y CDR oficial
-              </span>
-            </div>
+          <div className="space-y-3">
+            {hasAdjustments && (
+              <div className="bg-indigo-50/70 border border-indigo-200 rounded-2xl p-3.5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-indigo-950 flex items-center gap-1.5">
+                    <Info className="w-4 h-4 text-indigo-600" />
+                    Conciliación de Saldos Previos
+                  </span>
+                  <span className="text-[10px] font-mono font-black px-2 py-0.5 bg-indigo-600 text-white rounded-md">
+                    CERO SALDO NEGATIVO
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-center font-mono">
+                  <div className="bg-white p-2 rounded-xl border border-indigo-100">
+                    <span className="text-[10px] text-slate-400 font-bold block uppercase">Base Original</span>
+                    <span className="text-xs font-black text-slate-700">S/ {totalOriginal.toFixed(2)}</span>
+                  </div>
+                  <div className="bg-white p-2 rounded-xl border border-blue-100">
+                    <span className="text-[10px] text-blue-500 font-bold block uppercase">+ Notas Débito</span>
+                    <span className="text-xs font-black text-blue-700">S/ {(documentInfo.totalNotasDebito || 0).toFixed(2)}</span>
+                  </div>
+                  <div className="bg-white p-2 rounded-xl border border-rose-100">
+                    <span className="text-[10px] text-rose-500 font-bold block uppercase">- Notas Crédito</span>
+                    <span className="text-xs font-black text-rose-700">S/ {(documentInfo.totalNotasCredito || 0).toFixed(2)}</span>
+                  </div>
+                  <div className="bg-white p-2 rounded-xl border border-emerald-200 bg-emerald-50/30">
+                    <span className="text-[10px] text-emerald-600 font-bold block uppercase">Saldo a Anular</span>
+                    <span className="text-xs font-black text-emerald-700">S/ {saldoRestante.toFixed(2)}</span>
+                  </div>
+                </div>
+                <p className="text-[11px] text-indigo-900 leading-relaxed font-medium pt-1">
+                  💡 <strong>Control Tributario SUNAT:</strong> Dado que este comprobante ya cuenta con notas de débito y crédito previas, la Nota de Crédito final se emitirá exactamente por el saldo remanente vigente de <strong>S/ {saldoRestante.toFixed(2)}</strong>. Esto garantiza que la operación quede con saldo final <strong>S/ 0.00</strong> sin incurrir en inconsistencias fiscales por saldos negativos en SIRE / RVIE.
+                </p>
+              </div>
+            )}
+
+            {isLiquidated ? (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 flex items-start gap-2.5">
+                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div className="text-xs text-amber-900 space-y-1">
+                  <p className="font-bold">Saldo Comercial Previamente Liquidado (S/ 0.00)</p>
+                  <p className="leading-relaxed">
+                    Este comprobante ya tiene su saldo comercial completamente liquidado mediante notas previas. La anulación formal ante SUNAT cerrará la operación legalmente (Motivo 01) sin emitir un crédito adicional que generaría saldos negativos.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-gradient-to-r from-blue-50/70 to-indigo-50/40 border border-blue-200/80 rounded-2xl p-3.5 space-y-2">
+                <div className="flex items-center gap-2">
+                  <ShieldAlert className="w-4 h-4 text-blue-600 shrink-0" />
+                  <span className="text-xs font-black text-blue-900">
+                    Normativa Tributaria Oficial SUNAT:
+                  </span>
+                </div>
+                <p className="text-xs text-slate-700 leading-relaxed font-medium">
+                  Conforme a la normativa tributaria UBL 2.1 vigente, la anulación formal de un comprobante aceptado por SUNAT se realiza mediante la emisión de una <strong>Nota de Crédito Electrónica ({isFactura ? "Serie FC01" : "Serie BC01"})</strong> bajo el Catálogo 09 (Motivo 01: Anulación de la operación).
+                </p>
+                <div className="flex flex-wrap gap-2 pt-1 text-[11px] font-semibold text-slate-600">
+                  <span className="inline-flex items-center gap-1 bg-white px-2.5 py-1 rounded-lg border border-blue-100 shadow-xs">
+                    ✓ Anula el efecto tributario en SIRE
+                  </span>
+                  <span className="inline-flex items-center gap-1 bg-white px-2.5 py-1 rounded-lg border border-blue-100 shadow-xs">
+                    ✓ Genera XML, PDF y CDR oficial
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-600">
@@ -214,12 +282,18 @@ export const SunatAnnulmentModal: React.FC<SunatAnnulmentModalProps> = ({
             {isSubmitting ? (
               <span className="flex items-center gap-1.5">
                 <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                Emitiendo Nota de Crédito SUNAT...
+                {isFiscal ? "Emitiendo Nota de Crédito SUNAT..." : "Eliminando venta..."}
               </span>
             ) : (
               <>
                 <FileX className="w-4 h-4" />
-                {isFiscal ? "Emitir Nota de Crédito y Anular" : "Confirmar Eliminación"}
+                {isFiscal
+                  ? isLiquidated
+                    ? "Confirmar Anulación Formal (Saldo en S/ 0.00)"
+                    : hasAdjustments
+                    ? `Emitir Nota de Crédito por S/ ${saldoRestante.toFixed(2)} y Anular`
+                    : "Emitir Nota de Crédito Oficial y Anular"
+                  : "Confirmar Eliminación"}
               </>
             )}
           </button>

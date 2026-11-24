@@ -66,6 +66,7 @@ export class SalesService {
         branch: { select: { id: true, name: true } },
         advisor: { select: { id: true, name: true } },
         items: true,
+        fiscalDocument: true,
       },
     });
 
@@ -79,7 +80,16 @@ export class SalesService {
 
     return sales.map((sale) => {
       if (!sale.billingSerie || !sale.billingNumber) {
-        return { ...sale, billingNotes: [], netAmount: sale.amount, isAnnulledByNote: false };
+        return {
+          ...sale,
+          billingNotes: [],
+          netAmount: sale.amount,
+          baseAmount: sale.amount,
+          isAnnulledByNote: false,
+          totalCreditNotes: 0,
+          totalDebitNotes: 0,
+          hasNotes: false,
+        };
       }
 
       const fullTag = `[REF:${sale.billingSerie}-${String(sale.billingNumber).padStart(8, '0')}]`;
@@ -90,15 +100,23 @@ export class SalesService {
 
       let sumCredits = 0;
       let sumDebits = 0;
-      let isAnnulled = sale.billingStatus === 'CANCELLED';
+      let isAnnulled = sale.fiscalDocument?.status === 'CANCELLED';
 
       for (const ln of linkedNotes) {
+        const descUpper = (ln.sunatDescription || '').toUpperCase();
+        const isFormalAnnul =
+          descUpper.includes('ANULACIÓN DE LA OPERACIÓN') ||
+          descUpper.includes('ANULACION DE LA OPERACION') ||
+          descUpper.includes('ANULACIÓN POR ERROR EN EL RUC') ||
+          descUpper.includes('ANULACION POR ERROR EN EL RUC') ||
+          descUpper.includes('MOTIVO: 01') ||
+          descUpper.includes('MOTIVO 01') ||
+          descUpper.includes('MOTIVO: 02') ||
+          descUpper.includes('MOTIVO 02');
+
         if (ln.docType === ('CREDIT_NOTE' as any)) {
           sumCredits += Number(ln.totalAmount || 0);
-          if (
-            ln.sunatDescription?.toUpperCase().includes('ANULACION') ||
-            sumCredits >= Number(sale.amount) - 0.01
-          ) {
+          if (isFormalAnnul) {
             isAnnulled = true;
           }
         } else if (ln.docType === ('DEBIT_NOTE' as any)) {
@@ -106,18 +124,26 @@ export class SalesService {
         }
       }
 
-      const netAmount = Math.max(
-        0,
-        Number((Number(sale.amount) - sumCredits + sumDebits).toFixed(2)),
-      );
+      const baseAmount = Number(sale.amount) || 0;
+      const netAmount = isAnnulled
+        ? 0
+        : Math.max(0, Number((baseAmount - sumCredits + sumDebits).toFixed(2)));
+
+      const finalBillingStatus = isAnnulled
+        ? 'CANCELLED'
+        : sale.billingStatus === 'CANCELLED' && sale.fiscalDocument?.status !== 'CANCELLED'
+        ? 'SUCCESS'
+        : sale.billingStatus;
 
       return {
         ...sale,
-        billingStatus: isAnnulled ? 'CANCELLED' : sale.billingStatus,
+        billingStatus: finalBillingStatus,
         isAnnulledByNote: isAnnulled,
+        baseAmount,
         netAmount,
         totalCreditNotes: sumCredits,
         totalDebitNotes: sumDebits,
+        hasNotes: linkedNotes.length > 0,
         billingNotes: linkedNotes.map((n) => ({
           id: n.id,
           docType: n.docType,
@@ -998,23 +1024,30 @@ export class SalesService {
     const owner = await this.prisma.user.findUnique({ where: { id: ownerId } });
     if (!owner) throw new NotFoundException('Usuario propietario no encontrado');
 
-    // Normalizar payload antes de enviar a CCOFACT PRO
+    const reqAmount = dto.amount !== undefined ? Number(dto.amount) : undefined;
     const normalizedDto = {
       note_type: dto.note_type || dto.noteType || '07',
       reason_code: String(dto.reason_code || dto.reasonCode || '01').padStart(2, '0'),
       reason_description: String(dto.reason_description || dto.reasonText || dto.reason_text || 'Anulación de la operación').trim(),
-      amount: dto.amount !== undefined ? Number(dto.amount) : undefined,
+      amount: reqAmount,
       issue_date: dto.issue_date || dto.issueDate,
       items: (Array.isArray(dto.items) && dto.items.length > 0)
         ? dto.items
-            .map((it: any) => ({
-              code: it.code || it.productId || 'PROD',
-              description: it.description || it.name || 'Ítem',
-              quantity: Number(it.quantity || it.returnQty) || 1,
-              unit_price: Number(it.unit_price ?? it.price ?? 0),
-              unit_measure: it.unit_measure || it.unit || 'NIU',
-              igv_affectation_type: it.igv_affectation_type || it.igvAffectation || sale.igvAffectation || '20',
-            }))
+            .map((it: any) => {
+              const qty = Number(it.quantity || it.returnQty) || 1;
+              let uPrice = Number(it.unit_price ?? it.price ?? 0);
+              if (uPrice <= 0 && reqAmount && reqAmount > 0) {
+                uPrice = Number((reqAmount / qty).toFixed(2));
+              }
+              return {
+                code: it.code || it.productId || 'PROD',
+                description: it.description || it.name || 'Ítem',
+                quantity: qty,
+                unit_price: uPrice,
+                unit_measure: it.unit_measure || it.unit || 'NIU',
+                igv_affectation_type: it.igv_affectation_type || it.igvAffectation || sale.igvAffectation || '20',
+              };
+            })
             .filter((it: any) => it.description && it.unit_price >= 0)
         : undefined,
     };
@@ -1039,9 +1072,57 @@ export class SalesService {
       });
     }
 
-    // Si la nota es de Crédito y anula totalmente o devuelve mercadería, restaurar stock
-    if (normalizedDto.note_type === '07' && ['01', '02', '06', '07'].includes(normalizedDto.reason_code)) {
-      if (['01', '02', '06'].includes(normalizedDto.reason_code)) {
+    // Si la nota es de Crédito y anula formalmente ante SUNAT (01 Anulación de la operación, 02 Error en RUC), restaurar stock y marcar anulado
+    if (normalizedDto.note_type === '07' && ['01', '02'].includes(normalizedDto.reason_code)) {
+      for (const item of sale.items) {
+        if (item.productId) {
+          if (sale.branchId) {
+            const bStock = await this.prisma.branchStock.findUnique({
+              where: { productId_branchId: { productId: item.productId, branchId: sale.branchId } },
+            });
+            if (bStock) {
+              await this.prisma.branchStock.update({
+                where: { id: bStock.id },
+                data: { stock: { increment: item.quantity } },
+              });
+            }
+          }
+          await this.prisma.product.update({
+            where: { id: item.productId },
+            data: { stock: { increment: item.quantity } },
+          });
+
+          await this.prisma.inventoryMovement.create({
+            data: {
+              productId: item.productId,
+              quantity: item.quantity,
+              type: 'IN',
+              reason: 'SALE_RETURN',
+              userId: sale.userId,
+              unitCost: item.price,
+              totalCost: Number((item.quantity * item.price).toFixed(2)),
+              stockResult: 0,
+              documentId: sale.id,
+              branchId: sale.branchId,
+            },
+          });
+        }
+      }
+
+      await this.prisma.sale.update({
+        where: { id: sale.id },
+        data: { billingStatus: 'CANCELLED' },
+      });
+
+      await this.prisma.fiscalDocument.updateMany({
+        where: { serie: sale.billingSerie, correlative: sale.billingNumber },
+        data: {
+          status: FiscalStatus.CANCELLED,
+        },
+      });
+    } else if (normalizedDto.note_type === '07' && ['06', '07'].includes(normalizedDto.reason_code)) {
+      // Devolución total o por ítem de mercadería: restablecer stock de ítems devueltos sin anular comprobante fiscal
+      if (normalizedDto.reason_code === '06') {
         for (const item of sale.items) {
           if (item.productId) {
             if (sale.branchId) {
@@ -1076,19 +1157,6 @@ export class SalesService {
             });
           }
         }
-
-        await this.prisma.sale.update({
-          where: { id: sale.id },
-          data: { billingStatus: 'CANCELLED' },
-        });
-
-        await this.prisma.fiscalDocument.updateMany({
-          where: { serie: sale.billingSerie, correlative: sale.billingNumber },
-          data: {
-            status: FiscalStatus.CANCELLED,
-            sunatDescription: `Anulado mediante Nota de Crédito ${result.nota?.full_number || ''}`,
-          },
-        });
       } else if (normalizedDto.reason_code === '07' && Array.isArray(normalizedDto.items)) {
         for (const it of normalizedDto.items) {
           const matchingItem = sale.items.find(si => si.productId === it.code || si.name === it.description);
@@ -1286,7 +1354,7 @@ export class SalesService {
 
         if (note.document_type === '07' && refSerie && refNumber > 0) {
           const reasonCode = String(note.ref_reason_code || '');
-          if (['01', '02', '06'].includes(reasonCode)) {
+          if (['01', '02'].includes(reasonCode)) {
             await this.prisma.fiscalDocument.updateMany({
               where: {
                 userId: ownerId,
@@ -1295,7 +1363,6 @@ export class SalesService {
               },
               data: {
                 status: 'CANCELLED' as any,
-                sunatDescription: `Comprobante anulado formalmente ante SUNAT mediante Nota de Crédito ${note.full_number || ''}`,
               },
             }).catch(() => {});
 

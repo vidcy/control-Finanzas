@@ -78,6 +78,8 @@ export interface FiscalDocument {
   updatedAt: string;
   notas?: any[];
   saldoDisponible?: number;
+  isAnnulledByNote?: boolean;
+  hasNotes?: boolean;
   totalNotasCredito?: number;
   totalNotasDebito?: number;
 }

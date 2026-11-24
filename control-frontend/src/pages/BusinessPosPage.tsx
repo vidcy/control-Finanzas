@@ -1,6 +1,6 @@
 import QRCode from "qrcode";
 import { getBranchesRequest, type Branch } from "../services/branch.api";
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, Fragment } from "react";
 import { motion } from "framer-motion";
 import Appshell from "../components/layout/Appshell";
 import {
@@ -50,9 +50,11 @@ import {
   smartEditSaleRequest,
   deleteSaleRequest,
 } from "../services/sale.api";
+import { retryBillingDocumentRequest } from "../services/billing.api";
 import { SunatManualNoteModal } from "../components/ui/SunatManualNoteModal";
 import { SunatSmartEditModal } from "../components/ui/SunatSmartEditModal";
 import { SunatNotesListModal } from "../components/ui/SunatNotesListModal";
+import { printFiscalTicket } from "../utils/ticketPrinter";
 import { queryDocumentRequest } from "../services/user.api";
 import { shareSaleReceiptViaWhatsApp } from "../utils/whatsappUtils";
 import ReceiptUploader, {
@@ -101,6 +103,8 @@ import {
   Layers,
   Barcode,
   Receipt,
+  ChevronDown,
+  ShieldCheck,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
@@ -446,7 +450,8 @@ export default function BusinessPosPage() {
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
   }, [editingSale]);
-  const [posSalesPageSize, setPosSalesPageSize] = useState<number>(10);
+  const [posSalesPageSize, setPosSalesPageSize] = useState<number>(6);
+  const [expandedSales, setExpandedSales] = useState<Record<string, boolean>>({});
   const [noteReasonCode, setNoteReasonCode] = useState<number>(1);
   const [noteReasonText, setNoteReasonText] = useState<string>("");
   const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
@@ -922,6 +927,39 @@ export default function BusinessPosPage() {
       totalIgv: sale.totalIgv,
     });
     setShowTicket(true);
+  };
+
+  const handlePrintNoteTicket = (note: any, sale: any) => {
+    const isCredit = note.docType === "CREDIT_NOTE" || (note.fullNumber && note.fullNumber.includes("C"));
+    const parts = note.fullNumber ? note.fullNumber.split("-") : [];
+    const noteSerie = note.serie || parts[0] || (isCredit ? "BC01" : "BD01");
+    const noteCorrelative = note.correlative || note.number || (parts[1] ? parseInt(parts[1], 10) : 1);
+    const refDoc = sale.billingSerie && sale.billingNumber
+      ? `${sale.billingType === "FACTURA" ? "Factura" : "Boleta"} ${sale.billingSerie}-${String(sale.billingNumber).padStart(8, "0")}`
+      : `Venta #${sale.id?.slice(0, 8)}`;
+    const cleanReason = note.description ? note.description.replace(/^\[REF:[^\]]+\]\s*/i, "") : (isCredit ? "Anulación o Descuento" : "Aumento de Valor");
+
+    printFiscalTicket({
+      user,
+      branch: (user as any)?.branch || null,
+      document: {
+        docType: isCredit ? "NOTA_CREDITO" : "NOTA_DEBITO",
+        serie: noteSerie,
+        correlative: noteCorrelative,
+        fullNumber: note.fullNumber || `${noteSerie}-${String(noteCorrelative).padStart(8, "0")}`,
+        date: note.createdAt || sale.date || new Date(),
+        clientDenomination: sale.clientDenomination || "CLIENTES VARIOS",
+        clientDocumentType: sale.clientDocumentType || "1",
+        clientDocumentNumber: sale.clientDocumentNumber || "00000000",
+        refFullNumber: refDoc,
+        refReasonDesc: cleanReason,
+        total: Number(note.totalAmount || 0),
+        totalGravada: 0,
+        totalExonerada: Number(note.totalAmount || 0),
+        totalInafecta: 0,
+        totalIgv: 0,
+      },
+    });
   };
 
   const handleDeleteSale = (sale: any) => {
@@ -5098,266 +5136,499 @@ export default function BusinessPosPage() {
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {sales.slice((salesPage - 1) * posSalesPageSize, salesPage * posSalesPageSize).map((sale) => (
-                        <tr
-                          key={sale.id}
-                          className="hover:bg-gray-50 transition-colors"
-                        >
-                          <td className="px-4 py-3 text-gray-500 whitespace-nowrap text-xs font-medium">
-                            {formatPeruDateTime24(sale.date)}
-                          </td>
-                          {user?.role === "ADMIN" && (
-                            <td className="px-4 py-3 text-gray-600 whitespace-nowrap text-xs font-bold">
-                              {sale.user ? `${sale.user.name} ${sale.user.lastName || ""}`.trim() : "N/A"}
+                        <Fragment key={sale.id}>
+                          <tr className="hover:bg-gray-50/80 transition-colors">
+                            <td className="px-3 py-2 text-gray-500 whitespace-nowrap text-xs font-medium">
+                              {formatPeruDateTime24(sale.date)}
                             </td>
-                          )}
-                          <td className="px-4 py-3">
-                            <p
-                              className="font-semibold text-gray-800 text-xs truncate max-w-xs"
-                              title={
-                                sale.items && sale.items.length > 0
-                                  ? sale.items.map((i: any) => `${i.quantity}x ${i.name}`).join(", ")
-                                  : sale.description?.replace("Venta en POS: ", "") || "Venta POS"
-                              }
-                            >
-                              {sale.items && sale.items.length > 0
-                                ? sale.items.map((i: any) => `${i.quantity}x ${i.name}`).join(", ")
-                                : sale.description?.replace("Venta en POS: ", "") || "Venta POS"}
-                            </p>
-                            {sale.receiptUrl && (
-                              <a
-                                href={
-                                  getReceiptAbsoluteUrl(sale.receiptUrl) || "#"
+                            {user?.role === "ADMIN" && (
+                              <td className="px-3 py-2 text-gray-700 whitespace-nowrap text-xs font-bold">
+                                {sale.user ? `${sale.user.name} ${sale.user.lastName || ""}`.trim() : "N/A"}
+                              </td>
+                            )}
+                            <td className="px-3 py-2">
+                              <p
+                                className="font-semibold text-gray-800 text-xs truncate max-w-xs"
+                                title={
+                                  sale.items && sale.items.length > 0
+                                    ? sale.items.map((i: any) => `${i.quantity}x ${i.name}`).join(", ")
+                                    : sale.description?.replace("Venta en POS: ", "") || "Venta POS"
                                 }
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-indigo-500 text-[10px] font-bold block mt-0.5 hover:underline"
                               >
-                                📎 Ver comprobante adjunto
-                              </a>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <span className="text-[10px] font-bold bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md">
-                              {paymentLabel[sale.paymentMethod] ||
-                                sale.paymentMethod}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-right font-black text-emerald-600 text-xs">
-                            <div>
-                              S/ {Number(sale.netAmount !== undefined ? sale.netAmount : sale.amount).toFixed(2)}
-                            </div>
-                            {sale.netAmount !== undefined && Number(sale.netAmount) !== Number(sale.amount) && (
-                              <span className="block text-[10px] text-gray-400 font-semibold line-through">
-                                Orig: S/ {Number(sale.amount).toFixed(2)}
+                                {sale.items && sale.items.length > 0
+                                  ? sale.items.map((i: any) => `${i.quantity}x ${i.name}`).join(", ")
+                                  : sale.description?.replace("Venta en POS: ", "") || "Venta POS"}
+                              </p>
+                              {sale.receiptUrl && (
+                                <a
+                                  href={getReceiptAbsoluteUrl(sale.receiptUrl) || "#"}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-indigo-500 text-[10px] font-bold block mt-0.5 hover:underline"
+                                >
+                                  📎 Adjunto
+                                </a>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-center whitespace-nowrap">
+                              <span className="text-[10px] font-bold bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md">
+                                {paymentLabel[sale.paymentMethod] || sale.paymentMethod}
                               </span>
-                            )}
-                          </td>
-                          {user?.hasElectronicBilling && (
-                            <td className="px-4 py-3 text-xs">
-                              {sale.billingType === "TICKET_VENTA" ? (
-                                <span className="text-gray-400 font-bold">PROFORMA DE VENTA</span>
-                              ) : (
-                                <div className="space-y-1">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="font-extrabold text-gray-800">
-                                      {sale.billingType === "BOLETA" ? "Boleta" : sale.billingType === "FACTURA" ? "Factura" : sale.billingType === "NOTA_CREDITO" ? "N. Crédito" : "N. Débito"}
+                            </td>
+                            <td className="px-3 py-2 text-right font-mono whitespace-nowrap">
+                              <div className="font-black text-xs">
+                                <span className={Number(sale.netAmount !== undefined ? sale.netAmount : sale.amount) > 0 ? "text-emerald-600 font-black" : "text-slate-500 font-bold"}>
+                                  S/ {Number(sale.netAmount !== undefined ? sale.netAmount : sale.amount).toFixed(2)}
+                                </span>
+                              </div>
+                              {(sale.hasNotes || (sale.billingNotes && sale.billingNotes.length > 0)) && (
+                                <div className="text-[9px] text-slate-400 font-semibold" title={`Base: S/ ${Number(sale.baseAmount ?? sale.amount).toFixed(2)} | +N/D: S/ ${Number(sale.totalDebitNotes || 0).toFixed(2)} | -N/C: S/ ${Number(sale.totalCreditNotes || 0).toFixed(2)}`}>
+                                  <span className="line-through">S/ {Number(sale.baseAmount ?? sale.amount).toFixed(2)}</span>
+                                </div>
+                              )}
+                            </td>
+                            {user?.hasElectronicBilling && (
+                              <td className="px-3 py-2 text-xs whitespace-nowrap">
+                                {sale.billingType === "TICKET_VENTA" ? (
+                                  <span className="text-[10px] font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded">
+                                    TICKET
+                                  </span>
+                                ) : (
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${
+                                      sale.billingType === "BOLETA" ? "bg-emerald-100 text-emerald-800" :
+                                      sale.billingType === "FACTURA" ? "bg-blue-100 text-blue-800" :
+                                      "bg-purple-100 text-purple-800"
+                                    }`}>
+                                      {sale.billingType === "BOLETA" ? "BOL" : sale.billingType === "FACTURA" ? "FAC" : "NOTA"}
                                     </span>
                                     {sale.billingSerie && sale.billingNumber && (
-                                      <span className="font-mono text-gray-500 font-semibold bg-gray-100 px-1.5 py-0.5 rounded">
+                                      <span className="font-mono text-xs font-bold text-slate-700">
                                         {sale.billingSerie}-{sale.billingNumber}
                                       </span>
                                     )}
-                                  </div>
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    {(sale.billingStatus === "SUCCESS" && !sale.isAnnulledByNote) && (
-                                      <>
-                                        <span className="text-[9px] bg-emerald-50 text-emerald-700 font-black border border-emerald-200 px-1.5 py-0.5 rounded uppercase">
-                                          Aceptado
-                                        </span>
-                                        {sale.billingPdfUrl && (
-                                          <a href={sale.billingPdfUrl || `http://localhost:4001/api/v1/documents/by-series-number/${sale.billingSerie}/${sale.billingNumber}/html?format=A4`} target="_blank" rel="noreferrer" className="text-indigo-650 hover:text-indigo-850" title="Ver PDF">
-                                        <FileText className="w-3.5 h-3.5" />
-                                      </a>
-                                        )}
-                                    {sale.billingXmlUrl && (
-                                      <a href={sale.billingXmlUrl} target="_blank" rel="noreferrer" className="text-amber-650 hover:text-amber-850" title="Ver XML">
-                                        <FileCode className="w-3.5 h-3.5" />
-                                      </a>
-                                    )}
-                                    {sale.billingCdrUrl && (
-                                      <a href={sale.billingCdrUrl} target="_blank" rel="noreferrer" className="text-teal-650 hover:text-teal-850" title="Ver CDR">
-                                        <FileCheck className="w-3.5 h-3.5" />
-                                      </a>
-                                    )}
-                                  </>
-                                    )}
-                                  {sale.billingStatus === "REJECTED" && (
-                                    <div className="flex flex-col gap-1">
-                                      <div className="flex items-center gap-1.5">
-                                        <span className="text-[9px] bg-rose-50 text-rose-700 font-black border border-rose-200 px-1.5 py-0.5 rounded uppercase" title={sale.billingError || "Rechazado oficialmente por SUNAT"}>
-                                          Rechazado SUNAT
-                                        </span>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleRetryBilling(sale)}
-                                          className="px-1.5 py-0.5 bg-rose-50 hover:bg-rose-100 border border-rose-300 rounded text-rose-700 hover:text-rose-900 font-bold text-[10px] transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
-                                          title="Reenviar y Validar Comprobante ante SUNAT"
-                                        >
-                                          <RefreshCw className="w-3 h-3" />
-                                          <span>Reenviar</span>
-                                        </button>
-                                      </div>
-                                      {sale.billingError && (
-                                        <p className="text-[9px] text-rose-500 font-medium max-w-[170px] truncate" title={sale.billingError}>
-                                          {sale.billingError}
-                                        </p>
-                                      )}
-                                    </div>
-                                  )}
-                                  {sale.billingStatus === "QUEUED" && (
-                                    <div className="flex items-center gap-1.5">
-                                      <span className="text-[9px] bg-amber-50 text-amber-700 font-black border border-amber-200 px-1.5 py-0.5 rounded uppercase" title="En cola asíncrona de reintentos SUNAT">
-                                        En Cola
+                                    {(sale.isAnnulledByNote || sale.billingStatus === "CANCELLED") ? (
+                                      <span className="px-1.5 py-0.2 rounded text-[9px] font-black uppercase bg-rose-50 text-rose-700 border border-rose-200" title="Comprobante Anulado">
+                                        Anulado
                                       </span>
+                                    ) : sale.billingStatus === "SUCCESS" ? (
+                                      (sale.hasNotes || (sale.billingNotes && sale.billingNotes.length > 0)) ? (
+                                        Number(sale.netAmount !== undefined ? sale.netAmount : sale.amount) > 0 ? (
+                                          <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-black uppercase bg-indigo-50 text-indigo-700 border border-indigo-200" title={`Aceptado · Modificado con ${sale.billingNotes?.length || 0} nota(s)`}>
+                                            <span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
+                                            Modificado
+                                          </span>
+                                        ) : (
+                                          <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-black uppercase bg-slate-100 text-slate-700 border border-slate-300" title="Saldo liquidado a S/ 0.00">
+                                            Liquidado
+                                          </span>
+                                        )
+                                      ) : (
+                                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-black uppercase bg-emerald-50 text-emerald-700 border border-emerald-200" title="Aceptado ante SUNAT">
+                                          CDR OK
+                                        </span>
+                                      )
+                                    ) : sale.billingStatus === "REJECTED" ? (
+                                      <span className="px-1.5 py-0.2 rounded text-[9px] font-black uppercase bg-rose-50 text-rose-700 border border-rose-200" title={sale.billingError || "Rechazado SUNAT"}>
+                                        Rechazado
+                                      </span>
+                                    ) : (
+                                      <span className="px-1.5 py-0.2 rounded text-[9px] font-black uppercase bg-amber-50 text-amber-700 border border-amber-200">
+                                        {sale.billingStatus}
+                                      </span>
+                                    )}
+                                    {sale.billingType !== "TICKET_VENTA" && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setExpandedSales(prev => ({ ...prev, [sale.id]: !prev[sale.id] }))}
+                                        className={`p-1 rounded text-[10px] font-bold cursor-pointer transition-all shadow-2xs ${
+                                          expandedSales[sale.id]
+                                            ? "bg-indigo-600 text-white"
+                                            : "bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200"
+                                        }`}
+                                        title={expandedSales[sale.id] ? "Ocultar diagnóstico y notas" : "Ver diagnóstico oficial SUNAT y conciliación de notas"}
+                                      >
+                                        <Search className="w-3 h-3" />
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </td>
+                            )}
+                            <td className="px-3 py-2 text-center whitespace-nowrap">
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  onClick={() => handleDownloadPastTicket(sale)}
+                                  className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                                  title="Reconstruir y Descargar Ticket"
+                                >
+                                  <Printer className="w-3.5 h-3.5" />
+                                </button>
+                                {user?.hasElectronicBilling && sale.billingStatus === "SUCCESS" && (sale.billingType === "BOLETA" || sale.billingType === "FACTURA") && (
+                                  <>
+                                    <button
+                                      onClick={() => {
+                                        const saleShift = sale.cashShiftId || sale.shiftId;
+                                        if (activeShift && saleShift && saleShift !== activeShift.id) {
+                                          toast.error("Esta venta pertenece a un turno cerrado. Para emitir notas sobre turnos anteriores sin alterar el balance de caja actual, ingrese al módulo de Facturación.");
+                                          return;
+                                        }
+                                        setSelectedSaleForNote(sale);
+                                        setNoteType("CREDIT");
+                                        setIsManualNoteModalOpen(true);
+                                      }}
+                                      className="p-1 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                      title="Emitir Nota de Crédito Oficial SUNAT"
+                                    >
+                                      <MinusCircle className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        const saleShift = sale.cashShiftId || sale.shiftId;
+                                        if (activeShift && saleShift && saleShift !== activeShift.id) {
+                                          toast.error("Esta venta pertenece a un turno cerrado. Para emitir notas sobre turnos anteriores sin alterar el balance de caja actual, ingrese al módulo de Facturación.");
+                                          return;
+                                        }
+                                        setSelectedSaleForNote(sale);
+                                        setNoteType("DEBIT");
+                                        setIsManualNoteModalOpen(true);
+                                      }}
+                                      className="p-1 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                                      title="Emitir Nota de Débito Oficial SUNAT"
+                                    >
+                                      <PlusCircle className="w-3.5 h-3.5" />
+                                    </button>
+                                  </>
+                                )}
+                                <button
+                                  onClick={() => handleEditSale(sale)}
+                                  className="p-1 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
+                                  title="Editar Venta (Diff Engine SUNAT o Edición de Venta)"
+                                >
+                                  <Edit className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteSale(sale)}
+                                  className="p-1 text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                                  title="Anular / Revertir Venta (Restablece stock en inventario y anula en SUNAT)"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                    {expandedSales[sale.id] && (
+                      <tr className="bg-slate-50/80 border-t border-b border-indigo-100">
+                        <td colSpan={user?.role === "ADMIN" ? 7 : 6} className="p-3 pl-6 sm:pl-8">
+                          <div className="bg-white border border-indigo-100 rounded-xl p-3 shadow-2xs space-y-3">
+                            {/* Header con resumen y título */}
+                            <div className="flex flex-wrap items-center justify-between border-b border-slate-100 pb-2 gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className="p-1.5 bg-indigo-50 text-indigo-700 rounded-lg">
+                                  <FileCheck className="w-4 h-4" />
+                                </span>
+                                <div>
+                                  <span className="text-[11px] font-black text-indigo-950 block">
+                                    Auditoría Tributaria SUNAT: {sale.billingType === "FACTURA" ? "Factura Electrónica" : "Boleta de Venta"} {sale.billingSerie || ""}-{String(sale.billingNumber || "").padStart(8, '0')}
+                                  </span>
+                                  <span className="text-[10px] text-slate-500">
+                                    Emisión: {sale.date ? new Date(sale.date).toLocaleDateString('es-PE') : "-"} • Cliente: {sale.clientDenomination || "CLIENTES VARIOS"}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className={`text-[10px] font-black border px-2 py-0.5 rounded-full uppercase ${
+                                  sale.billingStatus === 'SUCCESS' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                  sale.billingStatus === 'REJECTED' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                                  sale.billingStatus === 'ERROR' ? 'bg-red-50 text-red-700 border-red-200' :
+                                  sale.billingStatus === 'QUEUED' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                  'bg-slate-50 text-slate-700 border-slate-200'
+                                }`}>
+                                  SUNAT: {sale.fiscalDocument?.status || sale.billingStatus || 'PENDING'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Dos paneles: Panel A (Diagnóstico Oficial SUNAT) y Panel B (Conciliación Financiera y Notas) */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              {/* PANEL A: Diagnóstico Oficial SUNAT (CDR) */}
+                              <div className="bg-slate-50/70 border border-slate-200 rounded-xl p-3 space-y-2.5">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[11px] font-black text-slate-700 flex items-center gap-1.5">
+                                    <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+                                    Panel A: Diagnóstico Oficial SUNAT (CDR)
+                                  </span>
+                                  {(sale.fiscalDocument?.sunatResponseCode || sale.billingStatus === 'SUCCESS') && (
+                                    <span className="text-[9px] font-mono font-bold bg-slate-200 text-slate-800 px-1.5 py-0.5 rounded">
+                                      Código: {sale.fiscalDocument?.sunatResponseCode || "0"}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="text-[11px] space-y-2">
+                                  <div className="bg-white border border-slate-200 rounded-lg p-2.5">
+                                    <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">
+                                      Respuesta / Constancia Oficial SUNAT (CDR)
+                                    </span>
+                                    <p className="text-slate-700 font-medium mt-1 leading-relaxed break-words">
+                                      {sale.fiscalDocument?.sunatDescription || sale.billingError || (
+                                        sale.billingStatus === 'SUCCESS'
+                                          ? "La Boleta/Factura ha sido aceptada formalmente por SUNAT según constancia CDR UBL 2.1."
+                                          : sale.billingStatus === 'REJECTED'
+                                          ? "El comprobante fue formalmente RECHAZADO por validaciones de SUNAT."
+                                          : "Pendiente o en proceso de transmisión electrónica a SUNAT."
+                                      )}
+                                    </p>
+                                  </div>
+
+                                  {/* Botón de Reenvío directo si hay error o rechazo */}
+                                  {(sale.billingStatus === 'REJECTED' || sale.billingStatus === 'ERROR' || sale.billingStatus === 'QUEUED') && (
+                                    <div className="pt-0.5">
                                       <button
                                         type="button"
                                         onClick={() => handleRetryBilling(sale)}
-                                        className="p-1 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded text-amber-700 hover:text-amber-900 transition-colors cursor-pointer"
-                                        title="Forzar Envío a SUNAT"
+                                        className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold cursor-pointer transition shadow-xs"
                                       >
-                                        <RefreshCw className="w-3 h-3" />
+                                        <RefreshCw className="w-3.5 h-3.5" />
+                                        <span>Reenviar Comprobante Oficial a SUNAT</span>
                                       </button>
                                     </div>
                                   )}
-                                  {sale.billingStatus === "ERROR" && (
-                                    <div className="flex flex-col gap-1">
-                                      <div className="flex items-center gap-1.5">
-                                        <span className="text-[9px] bg-red-50 text-red-700 font-black border border-red-200 px-1.5 py-0.5 rounded uppercase" title={sale.billingError}>
-                                          Error SUNAT
-                                        </span>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleRetryBilling(sale)}
-                                          className="px-1.5 py-0.5 bg-red-50 hover:bg-red-100 border border-red-300 rounded text-red-700 hover:text-red-900 font-bold text-[10px] transition-colors cursor-pointer flex items-center gap-1 shadow-xs animate-pulse"
-                                          title="Reintentar Facturación ante SUNAT"
-                                        >
-                                          <RefreshCw className="w-3 h-3" />
-                                          <span>Reenviar</span>
-                                        </button>
+
+                                  {/* Enlaces de descarga oficiales */}
+                                  {(() => {
+                                    const sSerie = sale.billingSerie;
+                                    const sNum = sale.billingNumber;
+                                    const sPdf = sale.billingPdfUrl || (sSerie && sNum ? `http://localhost:4001/api/v1/documents/by-series-number/${sSerie}/${sNum}/html?format=A4` : null);
+                                    const sXml = sale.billingXmlUrl || (sSerie && sNum ? `http://localhost:4001/api/v1/documents/by-series-number/${sSerie}/${sNum}/xml` : null);
+                                    const sCdr = sale.billingCdrUrl || (sSerie && sNum ? `http://localhost:4001/api/v1/documents/by-series-number/${sSerie}/${sNum}/cdr` : null);
+                                    const fullLabel = sSerie && sNum ? `${sSerie}-${String(sNum).padStart(8, '0')}` : 'comprobante';
+
+                                    return (
+                                      <div className="flex items-center gap-2 pt-0.5 flex-wrap">
+                                        {sPdf && (
+                                          <a
+                                            href={sPdf}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-indigo-50 border border-slate-200 rounded text-[10px] font-bold text-indigo-700 transition shadow-2xs"
+                                            title="Ver / Imprimir / Descargar PDF Oficial A4"
+                                          >
+                                            <FileText className="w-3 h-3 text-indigo-600" />
+                                            <span>PDF A4</span>
+                                          </a>
+                                        )}
+                                        {sXml && (
+                                          <a
+                                            href={sXml}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            download={`${fullLabel}.xml`}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-amber-50 border border-slate-200 rounded text-[10px] font-bold text-amber-700 transition shadow-2xs"
+                                            title="Ver y Descargar XML firmado UBL 2.1"
+                                          >
+                                            <FileCode className="w-3 h-3 text-amber-600" />
+                                            <span>XML UBL 2.1</span>
+                                          </a>
+                                        )}
+                                        {sCdr && (
+                                          <a
+                                            href={sCdr}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            download={`R-${fullLabel}.xml`}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-teal-50 border border-slate-200 rounded text-[10px] font-bold text-teal-700 transition shadow-2xs"
+                                            title="Ver y Descargar Constancia de Recepción CDR SUNAT"
+                                          >
+                                            <FileCheck className="w-3 h-3 text-teal-600" />
+                                            <span>CDR SUNAT</span>
+                                          </a>
+                                        )}
                                       </div>
-                                      <p className="text-[9px] text-red-500 font-medium max-w-[170px] truncate" title={sale.billingError}>
-                                        {sale.billingError}
-                                      </p>
-                                    </div>
-                                  )}
-                                  {sale.billingStatus === "PENDING" && (
-                                    <span className="text-[9px] bg-amber-50 text-amber-700 font-black border border-amber-200 px-1.5 py-0.5 rounded uppercase">
-                                      Enviando...
+                                    );
+                                  })()}
+                                </div>
+                              </div>
+
+                              {/* PANEL B: Conciliación Financiera y Trazabilidad de Notas */}
+                              <div className="bg-slate-50/70 border border-slate-200 rounded-xl p-3 space-y-2.5">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[11px] font-black text-slate-700 flex items-center gap-1.5">
+                                    <Receipt className="w-3.5 h-3.5 text-indigo-600" />
+                                    Panel B: Conciliación & Notas Vinculadas
+                                  </span>
+                                  <span className="text-[10px] font-bold text-slate-500">
+                                    {sale.billingNotes?.length || 0} nota(s)
+                                  </span>
+                                </div>
+
+                                {/* Cuadro de Conciliación Matemática */}
+                                <div className="grid grid-cols-4 gap-1 text-center bg-white border border-slate-200 rounded-lg p-2">
+                                  <div className="border-r border-slate-100 pr-1">
+                                    <span className="text-[9px] font-semibold text-slate-400 block">Base Orig.</span>
+                                    <span className="font-mono text-xs font-black text-slate-700">
+                                      S/ {Number(sale.baseAmount ?? sale.amount).toFixed(2)}
                                     </span>
-                                  )}
-                                  {(sale.billingStatus === "CANCELLED" || sale.isAnnulledByNote) && (
-                                    <div className="flex items-center gap-1.5">
-                                      <span className="text-[9px] bg-rose-50 text-rose-700 font-black border border-rose-200 px-1.5 py-0.5 rounded uppercase">
-                                        Anulado (N/C)
-                                      </span>
-                                      {(sale.billingPdfUrl || (sale.billingSerie && sale.billingNumber)) && (
-                                        <a
-                                          href={
-                                            sale.billingPdfUrl ||
-                                            `http://localhost:4001/api/v1/documents/by-series-number/${sale.billingSerie}/${sale.billingNumber}/html?format=A4`
-                                          }
-                                          target="_blank"
-                                          rel="noreferrer"
-                                          className="text-slate-400 hover:text-slate-600"
-                                          title="Ver Comprobante Anulado"
-                                        >
-                                          <FileText className="w-3.5 h-3.5" />
-                                        </a>
-                                      )}
-                                    </div>
-                                  )}
-                                  {sale.billingNotes && sale.billingNotes.length > 0 && (
-                                    <div className="pt-1">
-                                      <button
-                                        type="button"
-                                        onClick={() => setSelectedSaleForNotes(sale)}
-                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded text-[10px] font-bold cursor-pointer transition-all shadow-2xs"
-                                        title="Ver notas oficiales emitidas ante SUNAT"
-                                      >
-                                        <Receipt className="w-3 h-3 text-indigo-600" />
-                                        <span>{sale.billingNotes.length} Nota(s) ({sale.billingNotes[0].fullNumber})</span>
-                                      </button>
-                                    </div>
-                                  )}
+                                  </div>
+                                  <div className="border-r border-slate-100 pr-1">
+                                    <span className="text-[9px] font-semibold text-blue-600 block">+N. Débito</span>
+                                    <span className="font-mono text-xs font-black text-blue-700">
+                                      +{Number(sale.totalDebitNotes || 0).toFixed(2)}
+                                    </span>
+                                  </div>
+                                  <div className="border-r border-slate-100 pr-1">
+                                    <span className="text-[9px] font-semibold text-rose-500 block">-N. Crédito</span>
+                                    <span className="font-mono text-xs font-black text-rose-600">
+                                      -{Number(sale.totalCreditNotes || 0).toFixed(2)}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-[9px] font-semibold text-emerald-600 block">Saldo Vigente</span>
+                                    <span className="font-mono text-xs font-black text-emerald-700">
+                                      S/ {Number(sale.netAmount !== undefined ? sale.netAmount : sale.amount).toFixed(2)}
+                                    </span>
+                                  </div>
                                 </div>
-                                </div>
-                          )}
+
+                                {/* Listado de Notas Vinculadas */}
+                                {sale.billingNotes && sale.billingNotes.length > 0 ? (
+                                  <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+                                    {sale.billingNotes.map((note: any) => {
+                                      const isCredit = note.docType === 'CREDIT_NOTE' || (note.fullNumber && note.fullNumber.includes('C'));
+                                      const parts = note.fullNumber ? note.fullNumber.split('-') : [];
+                                      const nSerie = note.serie || parts[0] || (isCredit ? 'BC01' : 'BD01');
+                                      const nNumber = note.correlative || note.number || (parts[1] ? parseInt(parts[1], 10) : '');
+                                      const nPdf = note.pdfUrl || (nSerie && nNumber ? `http://localhost:4001/api/v1/documents/by-series-number/${nSerie}/${nNumber}/html?format=A4` : null);
+                                      const nXml = note.xmlUrl || (nSerie && nNumber ? `http://localhost:4001/api/v1/documents/by-series-number/${nSerie}/${nNumber}/xml` : null);
+                                      const nCdr = note.cdrUrl || (nSerie && nNumber ? `http://localhost:4001/api/v1/documents/by-series-number/${nSerie}/${nNumber}/cdr` : null);
+
+                                      return (
+                                        <div key={note.id || note.fullNumber} className="flex flex-wrap items-center justify-between text-xs p-2 bg-white rounded-lg border border-slate-200 hover:bg-slate-50 transition gap-1.5">
+                                          <div className="flex items-center gap-1.5 min-w-0">
+                                            <span className="text-slate-400 font-mono text-[10px]">↳</span>
+                                            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase ${
+                                              isCredit ? 'bg-rose-100 text-rose-800' : 'bg-blue-100 text-blue-800'
+                                            }`}>
+                                              {isCredit ? 'N. Crédito' : 'N. Débito'}
+                                            </span>
+                                            <span className="font-mono font-bold text-slate-800 text-[11px]">{note.fullNumber || `${nSerie}-${nNumber}`}</span>
+                                            <span className="text-slate-500 text-[10px] truncate max-w-[120px]" title={note.description || 'Ajuste comercial'}>
+                                              {note.description || 'Ajuste comercial'}
+                                            </span>
+                                          </div>
+                                          <div className="flex items-center gap-1.5 flex-wrap">
+                                            <span className={`font-mono font-black text-xs ${
+                                              isCredit ? 'text-rose-600' : 'text-blue-600'
+                                            }`}>
+                                              {isCredit ? '-' : '+'} S/ {Number(note.totalAmount).toFixed(2)}
+                                            </span>
+                                            <span className={`text-[8px] font-bold border px-1 py-0.2 rounded uppercase ${
+                                              note.status === 'REJECTED' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                                              note.status === 'ERROR' ? 'bg-red-50 text-red-700 border-red-200' :
+                                              note.status === 'QUEUED' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                              'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                            }`}>
+                                              {note.status || 'ACEPTADO'}
+                                            </span>
+                                            {(note.status === 'REJECTED' || note.status === 'ERROR' || note.status === 'QUEUED') && (
+                                              <button
+                                                type="button"
+                                                onClick={async () => {
+                                                  try {
+                                                    toast.loading(`Reintentando transmisión de ${note.fullNumber}...`, { id: "retry-note" });
+                                                    const res = await retryBillingDocumentRequest(note.id);
+                                                    if (res.success) {
+                                                      toast.success(`Nota ${note.fullNumber} aceptada por SUNAT`, { id: "retry-note" });
+                                                      await loadSales();
+                                                    } else {
+                                                      toast.dismiss("retry-note");
+                                                      setSystemError(parseSystemError(res.error || res.message || "Rechazado por SUNAT", `Diagnóstico SUNAT: ${note.fullNumber}`));
+                                                    }
+                                                  } catch (err: any) {
+                                                    toast.dismiss("retry-note");
+                                                    setSystemError(parseSystemError(err, `Error en Reintento: ${note.fullNumber}`));
+                                                  }
+                                                }}
+                                                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-rose-50 hover:bg-rose-100 border border-rose-300 text-rose-700 rounded text-[9px] font-bold cursor-pointer transition shadow-2xs"
+                                                title="Reenviar y Validar Nota ante SUNAT"
+                                              >
+                                                <RefreshCw className="w-2.5 h-2.5" />
+                                                <span>Reenviar</span>
+                                              </button>
+                                            )}
+                                            <div className="flex items-center gap-1">
+                                              {/* Imprimir Ticket */}
+                                              <button
+                                                type="button"
+                                                onClick={() => handlePrintNoteTicket(note, sale)}
+                                                className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded text-[9px] font-bold cursor-pointer transition shadow-2xs"
+                                                title="Imprimir Ticket Térmico 80mm de la Nota"
+                                              >
+                                                <Printer className="w-3 h-3 text-indigo-600" />
+                                                <span>Ticket</span>
+                                              </button>
+
+                                              {/* Ver y Descargar PDF A4 Oficial */}
+                                              {nPdf && (
+                                                <a
+                                                  href={nPdf}
+                                                  target="_blank"
+                                                  rel="noreferrer"
+                                                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-white hover:bg-indigo-50 border border-slate-200 text-indigo-700 rounded text-[9px] font-bold transition shadow-2xs"
+                                                  title="Ver / Imprimir / Descargar PDF Oficial A4"
+                                                >
+                                                  <FileText className="w-3 h-3 text-indigo-600" />
+                                                  <span>PDF</span>
+                                                </a>
+                                              )}
+
+                                              {/* Ver y Descargar XML UBL 2.1 */}
+                                              {nXml && (
+                                                <a
+                                                  href={nXml}
+                                                  target="_blank"
+                                                  rel="noreferrer"
+                                                  download={`${note.fullNumber || 'nota'}.xml`}
+                                                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-white hover:bg-amber-50 border border-slate-200 text-amber-700 rounded text-[9px] font-bold transition shadow-2xs"
+                                                  title="Ver y Descargar XML firmado UBL 2.1"
+                                                >
+                                                  <FileCode className="w-3 h-3 text-amber-600" />
+                                                  <span>XML</span>
+                                                </a>
+                                              )}
+
+                                              {/* Ver y Descargar CDR SUNAT */}
+                                              {nCdr && (
+                                                <a
+                                                  href={nCdr}
+                                                  target="_blank"
+                                                  rel="noreferrer"
+                                                  download={`R-${note.fullNumber || 'nota'}.xml`}
+                                                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-white hover:bg-teal-50 border border-slate-200 text-teal-700 rounded text-[9px] font-bold transition shadow-2xs"
+                                                  title="Ver y Descargar Constancia de Recepción CDR SUNAT"
+                                                >
+                                                  <FileCheck className="w-3 h-3 text-teal-600" />
+                                                  <span>CDR</span>
+                                                </a>
+                                              )}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}                                  </div>
+                                ) : (
+                                  <div className="text-center py-3 bg-white border border-dashed border-slate-200 rounded-lg text-slate-400 text-xs">
+                                    <span>Sin notas vinculadas emitidas para este comprobante.</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
                         </td>
-                      )}
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-center gap-1.5">
-                          <button
-                            onClick={() => handleDownloadPastTicket(sale)}
-                            className="p-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors"
-                            title="Reconstruir y Descargar Ticket"
-                          >
-                            <Printer className="w-3.5 h-3.5" />
-                          </button>
-                          {user?.hasElectronicBilling && sale.billingStatus === "SUCCESS" && (sale.billingType === "BOLETA" || sale.billingType === "FACTURA") && (
-                            <>
-                              <button
-                                onClick={() => {
-                                  const saleShift = sale.cashShiftId || sale.shiftId;
-                                  if (activeShift && saleShift && saleShift !== activeShift.id) {
-                                    toast.error("Esta venta pertenece a un turno cerrado. Para emitir notas sobre turnos anteriores sin alterar el balance de caja actual, ingrese al módulo de Facturación.");
-                                    return;
-                                  }
-                                  setSelectedSaleForNote(sale);
-                                  setNoteType("CREDIT");
-                                  setIsManualNoteModalOpen(true);
-                                }}
-                                className="p-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-lg transition-colors cursor-pointer"
-                                title="Emitir Nota de Crédito Oficial SUNAT (Descuentos, devoluciones, anulación)"
-                              >
-                                <MinusCircle className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={() => {
-                                  const saleShift = sale.cashShiftId || sale.shiftId;
-                                  if (activeShift && saleShift && saleShift !== activeShift.id) {
-                                    toast.error("Esta venta pertenece a un turno cerrado. Para emitir notas sobre turnos anteriores sin alterar el balance de caja actual, ingrese al módulo de Facturación.");
-                                    return;
-                                  }
-                                  setSelectedSaleForNote(sale);
-                                  setNoteType("DEBIT");
-                                  setIsManualNoteModalOpen(true);
-                                }}
-                                className="p-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg transition-colors cursor-pointer"
-                                title="Emitir Nota de Débito Oficial SUNAT (Intereses, aumento de valor)"
-                              >
-                                <PlusCircle className="w-3.5 h-3.5" />
-                              </button>
-                            </>
-                          )}
-                          {/* Botones de Edición y Anulación Universal (Restablece Stock y Emite Nota de Crédito si aplica) */}
-                          <button
-                            onClick={() => handleEditSale(sale)}
-                            className="p-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-lg transition-colors cursor-pointer"
-                            title="Editar Venta (Diff Engine SUNAT o Edición de Venta)"
-                          >
-                            <Edit className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteSale(sale)}
-                            className="p-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors cursor-pointer"
-                            title="Anular / Revertir Venta (Restablece stock en inventario y anula en SUNAT)"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                      ))}
+                      </tr>
+                    )}
+                    </Fragment>
+                  ))}
                   </tbody>
                 </table>
               </div>
@@ -5373,8 +5644,9 @@ export default function BusinessPosPage() {
                     }}
                     className="bg-white border border-gray-200 rounded-lg px-2 py-1 text-xs font-bold text-gray-700 outline-none cursor-pointer"
                   >
-                    <option value={10}>10 por página</option>
-                    <option value={20}>20 por página</option>
+                    <option value={6}>6 por página</option>
+                    <option value={12}>12 por página</option>
+                    <option value={24}>24 por página</option>
                     <option value={50}>50 por página</option>
                   </select>
                   <span>de {sales.length} registros</span>
@@ -5678,14 +5950,20 @@ export default function BusinessPosPage() {
         }
         onConfirm={async (payload: any) => {
           if (!selectedSaleForNote) return;
+          const targetSaleId = selectedSaleForNote.id;
           try {
-            await manualNoteSaleRequest(selectedSaleForNote.id, payload);
+            await manualNoteSaleRequest(targetSaleId, payload);
             toast.success("Nota emitida y transmitida a SUNAT exitosamente.");
             setIsManualNoteModalOpen(false);
             setSelectedSaleForNote(null);
-            loadData();
+            await loadSales();
+            await loadData();
+            if (targetSaleId) {
+              setExpandedSales((prev) => ({ ...prev, [targetSaleId]: true }));
+            }
           } catch (err: any) {
-            toast.error(err.response?.data?.message || err.message || "Error al emitir nota");
+            await loadSales().catch(() => {});
+            setSystemError(parseSystemError(err, "Diagnóstico Oficial de Respuesta SUNAT"));
           }
         }}
       />
@@ -6239,6 +6517,18 @@ export default function BusinessPosPage() {
               : (annulModalState.sale.id?.slice(0, 8) || "VENTA").toUpperCase(),
           documentType: annulModalState.sale.billingType,
           totalAmount: Number(annulModalState.sale.amount) || 0,
+          saldoDisponible:
+            annulModalState.sale.netAmount !== undefined
+              ? Number(annulModalState.sale.netAmount)
+              : annulModalState.sale.saldoDisponible !== undefined
+              ? Number(annulModalState.sale.saldoDisponible)
+              : Number(annulModalState.sale.amount) || 0,
+          totalNotasCredito: Number(annulModalState.sale.totalCreditNotes || annulModalState.sale.totalNotasCredito || 0),
+          totalNotasDebito: Number(annulModalState.sale.totalDebitNotes || annulModalState.sale.totalNotasDebito || 0),
+          hasNotes: Boolean(
+            annulModalState.sale.hasNotes ||
+            (annulModalState.sale.billingNotes && annulModalState.sale.billingNotes.length > 0)
+          ),
           clientName: annulModalState.sale.clientDenomination || "CLIENTES VARIOS",
           issueDate: annulModalState.sale.date,
           isBilled: Boolean(
