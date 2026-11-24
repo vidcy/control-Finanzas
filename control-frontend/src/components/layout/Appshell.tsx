@@ -42,6 +42,7 @@ import {
   Landmark,
   ShieldCheck,
   Layers,
+  Truck,
 } from "lucide-react";
 
 import { toast } from "react-hot-toast";
@@ -186,14 +187,16 @@ export default function FinanceAppShell({
         serieFactura: billingSerieInvoice,
         serieNotaCreditoBoleta: serieNotaCreditoBoleta || "BC01",
         serieNotaDebitoBoleta: serieNotaDebitoBoleta || "BD01",
+        serieGuiaRemision: serieGuiaRemision || "T001",
         ...(initialBoletaNumber !== "" ? { initialBoletaNumber: Number(initialBoletaNumber) } : {}),
         ...(initialFacturaNumber !== "" ? { initialFacturaNumber: Number(initialFacturaNumber) } : {}),
         ...(initialNcBoletaNumber !== "" ? { initialNcBoletaNumber: Number(initialNcBoletaNumber) } : {}),
         ...(initialNdBoletaNumber !== "" ? { initialNdBoletaNumber: Number(initialNdBoletaNumber) } : {}),
+        ...(initialGuiaNumber !== "" ? { initialGuiaNumber: Number(initialGuiaNumber) } : {}),
       });
       if (res && res.success) {
         toast.success(
-          `✓ Correlativos inicializados: Boleta (${billingSerieBoleta}-${String(Number(initialBoletaNumber || 0) + 1).padStart(8, '0')}), Factura (${billingSerieInvoice}-${String(Number(initialFacturaNumber || 0) + 1).padStart(8, '0')}), NC (${serieNotaCreditoBoleta || 'BC01'}-${String(Number(initialNcBoletaNumber || 0) + 1).padStart(8, '0')}), ND (${serieNotaDebitoBoleta || 'BD01'}-${String(Number(initialNdBoletaNumber || 0) + 1).padStart(8, '0')})`,
+          `✓ Correlativos inicializados: Boleta (${billingSerieBoleta}-${String(Number(initialBoletaNumber || 0) + 1).padStart(8, '0')}), Factura (${billingSerieInvoice}-${String(Number(initialFacturaNumber || 0) + 1).padStart(8, '0')}), NC (${serieNotaCreditoBoleta || 'BC01'}-${String(Number(initialNcBoletaNumber || 0) + 1).padStart(8, '0')}), Guía (${serieGuiaRemision || 'T001'}-${String(Number(initialGuiaNumber || 0) + 1).padStart(8, '0')})`,
           { id: "sync-corr-profile", duration: 5000 }
         );
         if (syncProfile) syncProfile();
@@ -306,6 +309,14 @@ export default function FinanceAppShell({
       ? String((user as any)?.catalogConfig?.seriesConfig?.initialNdBoletaNumber)
       : ""
   );
+  const [serieGuiaRemision, setSerieGuiaRemision] = useState(
+    (user as any)?.catalogConfig?.seriesConfig?.serieGuiaRemision || "T001"
+  );
+  const [initialGuiaNumber, setInitialGuiaNumber] = useState<number | string>(
+    ((user as any)?.catalogConfig?.seriesConfig?.initialGuiaNumber !== undefined && (user as any)?.catalogConfig?.seriesConfig?.initialGuiaNumber > 0)
+      ? String((user as any)?.catalogConfig?.seriesConfig?.initialGuiaNumber)
+      : ""
+  );
   const [isSyncingCorrelatives, setIsSyncingCorrelatives] = useState(false);
   const [taxRegime, setTaxRegime] = useState(user?.taxRegime || "GENERAL_18");
   const [igvRate, setIgvRate] = useState<number>(user?.igvRate !== undefined ? user.igvRate : 18);
@@ -370,6 +381,8 @@ export default function FinanceAppShell({
       setInitialNcBoletaNumber(sCfg.initialNcBoletaNumber !== undefined && sCfg.initialNcBoletaNumber > 0 ? String(sCfg.initialNcBoletaNumber) : "");
       setSerieNotaDebitoBoleta(sCfg.serieNotaDebitoBoleta || "BD01");
       setInitialNdBoletaNumber(sCfg.initialNdBoletaNumber !== undefined && sCfg.initialNdBoletaNumber > 0 ? String(sCfg.initialNdBoletaNumber) : "");
+      setSerieGuiaRemision(sCfg.serieGuiaRemision || "T001");
+      setInitialGuiaNumber(sCfg.initialGuiaNumber !== undefined && sCfg.initialGuiaNumber > 0 ? String(sCfg.initialGuiaNumber) : "");
       const initialRegime = user.taxRegime || (isAmazoniaDepartment(user.businessDepartment) ? "AMAZONIA_EXONERADO" : "GENERAL_18");
       setTaxRegime(initialRegime);
       setIgvRate(user.igvRate !== undefined ? user.igvRate : (initialRegime === "AMAZONIA_EXONERADO" ? 0 : 18));
@@ -1918,6 +1931,43 @@ export default function FinanceAppShell({
                                   className="w-full px-2.5 py-1.5 font-mono text-xs font-bold border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50/50 focus:bg-white text-right"
                                   value={initialNdBoletaNumber}
                                   onChange={(e) => setInitialNdBoletaNumber(e.target.value)}
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Guía de Remisión Electrónica (GRE - Tipo 09) */}
+                          <div className="p-3 bg-white rounded-xl border border-slate-200/90 space-y-2 shadow-xs sm:col-span-2">
+                            <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-1.5">
+                              <span className="text-xs font-black text-slate-800 flex items-center gap-1.5 min-w-0">
+                                <Truck className="w-3.5 h-3.5 text-cyan-600 shrink-0" />
+                                <span className="truncate">Guía de Remisión Remitente (09 - GRE)</span>
+                              </span>
+                              <span className="text-[10px] font-mono font-bold text-cyan-700 bg-cyan-50 border border-cyan-200 px-2 py-0.5 rounded shrink-0">
+                                Próx: {serieGuiaRemision || "T001"}-{String(Number(initialGuiaNumber || 0) + 1).padStart(8, '0')}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-12 gap-2.5 pt-0.5">
+                              <div className="col-span-5 sm:col-span-4">
+                                <span className="text-[10px] text-slate-500 font-bold block uppercase mb-1">Serie (T...)</span>
+                                <input
+                                  type="text"
+                                  maxLength={4}
+                                  placeholder="T001"
+                                  className="w-full px-2.5 py-1.5 font-mono text-xs uppercase font-extrabold border border-gray-200 rounded-lg focus:ring-2 focus:ring-cyan-500 outline-none bg-slate-50/50 focus:bg-white text-center"
+                                  value={serieGuiaRemision}
+                                  onChange={(e) => setSerieGuiaRemision(e.target.value.toUpperCase().trim())}
+                                />
+                              </div>
+                              <div className="col-span-7 sm:col-span-8">
+                                <span className="text-[10px] text-slate-500 font-bold block uppercase mb-1">Último Número Emitido en SUNAT</span>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  placeholder="0"
+                                  className="w-full px-2.5 py-1.5 font-mono text-xs font-bold border border-gray-200 rounded-lg focus:ring-2 focus:ring-cyan-500 outline-none bg-slate-50/50 focus:bg-white text-right"
+                                  value={initialGuiaNumber}
+                                  onChange={(e) => setInitialGuiaNumber(e.target.value)}
                                 />
                               </div>
                             </div>

@@ -185,6 +185,11 @@ export const manualNoteBillingDocumentRequest = async (id: string, payload: any)
   return data;
 };
 
+export const emitGuiaRemisionRequest = async (id: string, payload: any) => {
+  const { data } = await axios.post(`/billing/documents/${id}/guia-remision`, payload);
+  return data;
+};
+
 export const deleteBillingDocumentRequest = async (
   id: string,
   options?: {
@@ -245,6 +250,8 @@ export const syncSeriesRequest = async (payload: {
   initialNcFacturaNumber?: number;
   initialNdBoletaNumber?: number;
   initialNdFacturaNumber?: number;
+  serieGuiaRemision?: string;
+  initialGuiaNumber?: number;
 }) => {
   try {
     const { data } = await axios.post('/billing/sync-series', payload);

@@ -53,6 +53,7 @@ import {
   CreditCard,
   Loader2,
   ChevronDown,
+  Truck,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
@@ -79,11 +80,13 @@ import {
   deleteBillingDocumentRequest,
   smartEditBillingDocumentRequest,
   manualNoteBillingDocumentRequest,
+  emitGuiaRemisionRequest,
   testCcofactConnectionRequest,
   type FiscalDocument,
   type BillingStats,
   type BillingItem,
 } from "../services/billing.api";
+import { queryDocumentRequest } from "../services/user.api";
 import QRCode from "qrcode";
 
 export default function BusinessBillingPage() {
@@ -212,6 +215,22 @@ export default function BusinessBillingPage() {
   const [isManualNoteModalOpen, setIsManualNoteModalOpen] = useState(false);
   const [selectedDocForManualNote, setSelectedDocForManualNote] = useState<FiscalDocument | null>(null);
   const [isSubmittingManualNote, setIsSubmittingManualNote] = useState(false);
+
+  // Guía de Remisión (GRE - 09) Modal State
+  const [isGuiaModalOpen, setIsGuiaModalOpen] = useState(false);
+  const [selectedDocForGuia, setSelectedDocForGuia] = useState<FiscalDocument | null>(null);
+  const [isSubmittingGuia, setIsSubmittingGuia] = useState(false);
+  const [guiaMotivoTraslado, setGuiaMotivoTraslado] = useState("01");
+  const [guiaModalidad, setGuiaModalidad] = useState("02");
+  const [guiaPeso, setGuiaPeso] = useState("1.0");
+  const [guiaBultos, setGuiaBultos] = useState("1");
+  const [guiaPuntoPartida, setGuiaPuntoPartida] = useState("");
+  const [guiaPuntoLlegada, setGuiaPuntoLlegada] = useState("");
+  const [guiaCarrierRuc, setGuiaCarrierRuc] = useState("");
+  const [guiaCarrierName, setGuiaCarrierName] = useState("");
+  const [guiaDriverDni, setGuiaDriverDni] = useState("");
+  const [guiaDriverName, setGuiaDriverName] = useState("");
+  const [guiaVehiclePlate, setGuiaVehiclePlate] = useState("");
 
   // Success Result Smart Modal State
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
@@ -530,6 +549,70 @@ export default function BusinessBillingPage() {
     setIsManualNoteModalOpen(true);
   };
 
+  const handleOpenGuiaModal = (doc: FiscalDocument) => {
+    setSelectedDocForGuia(doc);
+    setGuiaMotivoTraslado("01");
+    setGuiaModalidad("02");
+    setGuiaPeso("1.0");
+    setGuiaBultos("1");
+    setGuiaPuntoPartida(user?.businessAddress || "");
+    setGuiaPuntoLlegada(doc.customerAddress || "");
+    setGuiaCarrierRuc("");
+    setGuiaCarrierName("");
+    setGuiaDriverDni("");
+    setGuiaDriverName("");
+    setGuiaVehiclePlate("");
+    setIsGuiaModalOpen(true);
+  };
+
+  const handleConfirmEmitGuia = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedDocForGuia || isSubmittingGuia) return;
+    try {
+      setIsSubmittingGuia(true);
+      const payload = {
+        motivo_traslado: guiaMotivoTraslado,
+        motivo_traslado_descripcion: guiaMotivoTraslado === "01" ? "VENTA DE MERCADERIAS" : "TRASLADO ENTRE ESTABLECIMIENTOS",
+        modalidad_transporte: guiaModalidad,
+        peso_total: Number(guiaPeso) || 1,
+        unidad_medida_peso: "KGM",
+        bultos: Number(guiaBultos) || 1,
+        punto_partida: {
+          ubigeo: "150101",
+          direccion: (guiaPuntoPartida || user?.businessAddress || "PUNTO DE PARTIDA PRINCIPAL").trim(),
+        },
+        punto_llegada: {
+          ubigeo: "150101",
+          direccion: (guiaPuntoLlegada || selectedDocForGuia.customerAddress || "PUNTO DE LLEGADA DESTINO").trim(),
+        },
+        transportista: guiaModalidad === "01" ? {
+          tipo_documento: "6",
+          numero_documento: guiaCarrierRuc.trim(),
+          razon_social: guiaCarrierName.trim(),
+        } : undefined,
+        conductor: guiaModalidad === "02" ? {
+          tipo_documento: "1",
+          numero_documento: (guiaDriverDni || "00000000").trim(),
+          nombre_completo: (guiaDriverName || "CONDUCTOR DESIGNADO").trim(),
+        } : undefined,
+        vehiculo: guiaModalidad === "02" ? {
+          placa: (guiaVehiclePlate || "ABC-123").trim().toUpperCase(),
+        } : undefined,
+      };
+
+      const res = await emitGuiaRemisionRequest(selectedDocForGuia.id, payload);
+      toast.success(res.message || "Guía de Remisión Remitente (GRE) emitida con éxito");
+      setIsGuiaModalOpen(false);
+      setSelectedDocForGuia(null);
+      await loadData();
+    } catch (err: any) {
+      const parsed = parseSystemError(err, "Error al Emitir Guía de Remisión");
+      setSystemError(parsed);
+    } finally {
+      setIsSubmittingGuia(false);
+    }
+  };
+
   const handleConfirmManualNote = async (payload: any) => {
     if (!selectedDocForManualNote || isSubmittingManualNote) return;
     const targetDocId = selectedDocForManualNote.id;
@@ -836,6 +919,63 @@ export default function BusinessBillingPage() {
       emitCustomerName
     );
   }, [emitDocType, emitCalculations.total, emitDocTypeNum, emitCustomerDoc, emitCustomerName]);
+
+  // Consulta y autocompletado oficial SUNAT (RUC) / RENIEC (DNI)
+  const [isQueryingDoc, setIsQueryingDoc] = useState(false);
+
+  const handleConsultCustomerDoc = async () => {
+    const cleanDoc = emitCustomerDoc.trim();
+    if (!cleanDoc) {
+      toast.error("Ingresa primero el número de RUC o DNI.");
+      return;
+    }
+    const len = cleanDoc.length;
+    if (len !== 8 && len !== 11) {
+      toast.error("El DNI debe tener 8 dígitos y el RUC 11 dígitos.");
+      return;
+    }
+
+    setIsQueryingDoc(true);
+    const toastId = toast.loading(len === 11 ? "Consultando RUC en SUNAT..." : "Consultando DNI en RENIEC...");
+    try {
+      if (len === 11) {
+        const data = await consultarRucRequest(cleanDoc);
+        toast.dismiss(toastId);
+        if (data && ((data as any).razonSocial || (data as any).razon_social || (data as any).nombre)) {
+          const razon = (data as any).razonSocial || (data as any).razon_social || (data as any).nombre;
+          setEmitCustomerName(razon);
+          if (data.direccion && data.direccion !== "-") {
+            setEmitCustomerAddress(data.direccion);
+          }
+          setEmitDocType("FACTURA");
+          setEmitDocTypeNum("6");
+          toast.success(`✓ RUC verificado en SUNAT: ${data.condicion || "HABIDO"}`);
+        } else {
+          toast.error(`No se encontraron datos en SUNAT para el RUC ${cleanDoc}.`);
+        }
+      } else {
+        const data = await queryDocumentRequest("DNI", cleanDoc);
+        toast.dismiss(toastId);
+        if (data && (data.nombre || data.nombres)) {
+          const fullName = data.nombre || `${data.nombres || ''} ${data.apellidoPaterno || ''} ${data.apellidoMaterno || ''}`.trim();
+          setEmitCustomerName(fullName);
+          if (data.direccion) {
+            setEmitCustomerAddress(data.direccion);
+          }
+          setEmitDocType("BOLETA");
+          setEmitDocTypeNum("1");
+          toast.success(`✓ DNI verificado en RENIEC: ${fullName}`);
+        } else {
+          toast.error(`No se encontraron datos en RENIEC para el DNI ${cleanDoc}.`);
+        }
+      }
+    } catch (err: any) {
+      toast.dismiss(toastId);
+      toast.error(err.message || "Error al consultar documento ante SUNAT/RENIEC");
+    } finally {
+      setIsQueryingDoc(false);
+    }
+  };
 
   // Submit Emit con validaciones SUNAT enterprise y protección anti-duplicidad
   const handleSubmitEmit = async () => {
@@ -1641,6 +1781,17 @@ export default function BusinessBillingPage() {
                                   </button>
                                 )}
 
+                                {/* Emisión de Guía de Remisión (09 - GRE) */}
+                                {!isNote && doc.status === "ACCEPTED" && (
+                                  <button
+                                    onClick={() => handleOpenGuiaModal(doc)}
+                                    className="p-1 text-cyan-600 hover:text-cyan-800 hover:bg-cyan-50 rounded-lg transition-colors cursor-pointer"
+                                    title="Emitir Guía de Remisión Remitente Electrónica (GRE)"
+                                  >
+                                    <Truck className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+
                                 {/* Anular ante SUNAT con Nota de Crédito o Eliminar */}
                                 {!isNote && doc.status !== "CANCELLED" && !(doc as any).isAnnulledByNote && (
                                   <button
@@ -2128,17 +2279,42 @@ export default function BusinessBillingPage() {
             {/* Datos del Cliente */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-bold uppercase text-slate-600 mb-1">
-                  {emitDocType === "FACTURA" ? "RUC del Cliente (11 dígitos) *" : "DNI del Cliente (8 dígitos)"}
-                </label>
-                <input
-                  type="text"
-                  maxLength={emitDocType === "FACTURA" ? 11 : 8}
-                  placeholder={emitDocType === "FACTURA" ? "20601234567" : "70891234"}
-                  value={emitCustomerDoc}
-                  onChange={(e) => setEmitCustomerDoc(e.target.value.replace(/\D/g, ""))}
-                  className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20"
-                />
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold uppercase text-slate-600">
+                    {emitDocType === "FACTURA" ? "RUC del Cliente (11 dígitos) *" : "DNI del Cliente (8 dígitos)"}
+                  </label>
+                  <span className="text-[10px] text-indigo-600 font-bold">Auto-completar SUNAT/Reniec</span>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    maxLength={emitDocType === "FACTURA" ? 11 : 8}
+                    placeholder={emitDocType === "FACTURA" ? "20601234567" : "70891234"}
+                    value={emitCustomerDoc}
+                    onChange={(e) => setEmitCustomerDoc(e.target.value.replace(/\D/g, ""))}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleConsultCustomerDoc();
+                      }
+                    }}
+                    className="flex-1 px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleConsultCustomerDoc}
+                    disabled={isQueryingDoc || !emitCustomerDoc.trim()}
+                    className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shrink-0 shadow-sm"
+                    title="Consultar datos oficiales en SUNAT / RENIEC"
+                  >
+                    {isQueryingDoc ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Search className="w-4 h-4" />
+                    )}
+                    <span>{isQueryingDoc ? "Buscando..." : emitCustomerDoc.length === 11 ? "SUNAT" : "RENIEC"}</span>
+                  </button>
+                </div>
               </div>
 
               <div>
@@ -3508,6 +3684,205 @@ export default function BusinessBillingPage() {
               setIsManualNoteModalOpen(true);
             }}
           />
+        )}
+
+        {/* Modal Guía de Remisión Remitente (GRE - 09) */}
+        {isGuiaModalOpen && selectedDocForGuia && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+            <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-cyan-50 text-cyan-700 rounded-xl">
+                    <Truck className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-800">Emitir Guía de Remisión (GRE)</h3>
+                    <p className="text-xs text-slate-500">
+                      Vinculada al comprobante <span className="font-bold text-slate-700">{selectedDocForGuia.fullNumber}</span>
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsGuiaModalOpen(false);
+                    setSelectedDocForGuia(null);
+                  }}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleConfirmEmitGuia} className="space-y-4 text-xs">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-600 font-bold mb-1">Motivo de Traslado</label>
+                    <select
+                      value={guiaMotivoTraslado}
+                      onChange={(e) => setGuiaMotivoTraslado(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-cyan-500 font-medium"
+                    >
+                      <option value="01">01 - Venta de mercaderías</option>
+                      <option value="02">02 - Compra</option>
+                      <option value="04">04 - Traslado entre establecimientos de la misma empresa</option>
+                      <option value="13">13 - Otros</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-slate-600 font-bold mb-1">Modalidad de Transporte</label>
+                    <select
+                      value={guiaModalidad}
+                      onChange={(e) => setGuiaModalidad(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-cyan-500 font-medium"
+                    >
+                      <option value="02">Transporte Privado (Vehículo Propio)</option>
+                      <option value="01">Transporte Público (Empresa Transportista)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-600 font-bold mb-1">Peso Bruto Total (KGM)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      required
+                      value={guiaPeso}
+                      onChange={(e) => setGuiaPeso(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-cyan-500 font-medium"
+                      placeholder="1.0"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-600 font-bold mb-1">Cantidad de Bultos</label>
+                    <input
+                      type="number"
+                      min="1"
+                      required
+                      value={guiaBultos}
+                      onChange={(e) => setGuiaBultos(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-cyan-500 font-medium"
+                      placeholder="1"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-slate-600 font-bold mb-1">Punto de Partida (Origen)</label>
+                  <input
+                    type="text"
+                    required
+                    value={guiaPuntoPartida}
+                    onChange={(e) => setGuiaPuntoPartida(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-cyan-500 font-medium"
+                    placeholder="Dirección del almacén o punto de partida"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-600 font-bold mb-1">Punto de Llegada (Destino del Cliente)</label>
+                  <input
+                    type="text"
+                    required
+                    value={guiaPuntoLlegada}
+                    onChange={(e) => setGuiaPuntoLlegada(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-cyan-500 font-medium"
+                    placeholder="Dirección del cliente o destino final"
+                  />
+                </div>
+
+                {guiaModalidad === "01" ? (
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                    <span className="font-bold text-slate-700 block text-[11px] uppercase">Datos del Transportista (Público)</span>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="text"
+                        maxLength={11}
+                        required
+                        placeholder="RUC Transportista (11 dígitos)"
+                        value={guiaCarrierRuc}
+                        onChange={(e) => setGuiaCarrierRuc(e.target.value.replace(/\D/g, ""))}
+                        className="px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs"
+                      />
+                      <input
+                        type="text"
+                        required
+                        placeholder="Razón Social Empresa de Transporte"
+                        value={guiaCarrierName}
+                        onChange={(e) => setGuiaCarrierName(e.target.value)}
+                        className="px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                    <span className="font-bold text-slate-700 block text-[11px] uppercase">Datos de Conductor y Vehículo (Privado)</span>
+                    <div className="grid grid-cols-3 gap-2">
+                      <input
+                        type="text"
+                        maxLength={8}
+                        required
+                        placeholder="DNI Conductor"
+                        value={guiaDriverDni}
+                        onChange={(e) => setGuiaDriverDni(e.target.value.replace(/\D/g, ""))}
+                        className="px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs"
+                      />
+                      <input
+                        type="text"
+                        required
+                        placeholder="Nombre Conductor"
+                        value={guiaDriverName}
+                        onChange={(e) => setGuiaDriverName(e.target.value)}
+                        className="px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs"
+                      />
+                      <input
+                        type="text"
+                        required
+                        placeholder="Placa (ej. ABC-123)"
+                        value={guiaVehiclePlate}
+                        onChange={(e) => setGuiaVehiclePlate(e.target.value.toUpperCase())}
+                        className="px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    disabled={isSubmittingGuia}
+                    onClick={() => {
+                      setIsGuiaModalOpen(false);
+                      setSelectedDocForGuia(null);
+                    }}
+                    className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl font-bold cursor-pointer transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingGuia}
+                    className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-xl font-bold cursor-pointer transition-colors flex items-center gap-1.5 shadow-md shadow-cyan-600/20"
+                  >
+                    {isSubmittingGuia ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Transmitiendo a SUNAT...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Truck className="w-4 h-4" />
+                        <span>Emitir Guía de Remisión</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
         )}
 
         {/* Modal de Diagnóstico y Asistencia Oficial de Errores del Sistema y SUNAT */}

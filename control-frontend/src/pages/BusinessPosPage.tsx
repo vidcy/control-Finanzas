@@ -709,8 +709,12 @@ export default function BusinessPosPage() {
         endDate: salesEndDate ? getPeruDayEndUtcISO(salesEndDate) : undefined,
         userId: user?.role === "USER" ? user.id : undefined,
       });
+      // Filtrar ventas con anulación total (CANCELLED) para que desaparezcan del POS
+      const activeSales = (data || []).filter(
+        (s: any) => s.billingStatus !== 'CANCELLED' && s.status !== 'CANCELLED'
+      );
       setSales(
-        data.sort(
+        activeSales.sort(
           (a: any, b: any) =>
             new Date(b.date).getTime() - new Date(a.date).getTime(),
         ),
