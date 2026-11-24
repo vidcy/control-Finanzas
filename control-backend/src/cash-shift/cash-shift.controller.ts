@@ -119,6 +119,12 @@ export class CashShiftController {
     return this.cashShiftService.getShiftAuditTrail(id);
   }
 
+  @Post('reconcile-all')
+  async reconcileAllShifts(@Request() req) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.cashShiftService.reconcileAllClosedShifts(ownerId);
+  }
+
   @Post(':id/recalculate')
   async recalculateShift(@Param('id') id: string) {
     return this.cashShiftService.recalculateShiftTotals(id);

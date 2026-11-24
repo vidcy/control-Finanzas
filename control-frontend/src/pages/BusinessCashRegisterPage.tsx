@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import Appshell from "../components/layout/Appshell";
-import { Lock, Unlock, History, DollarSign, Eye, Loader2, Key, Users } from "lucide-react";
+import { Lock, Unlock, History, DollarSign, Eye, Loader2, Key, Users, RotateCcw } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -16,6 +16,7 @@ import {
   getCashShiftDetailsRequest,
   getCashRegisterPinRequest,
   setCashRegisterPinRequest,
+  reconcileAllCashShiftsRequest,
 } from "../services/cash-shift.api";
 import { getBranchesRequest } from "../services/branch.api";
 import { listCategoriesRequest } from "../services/category.api";
@@ -250,6 +251,30 @@ export default function BusinessCashRegisterPage() {
     } catch {
       toast.dismiss(exportToast);
       toast.error("Error al exportar historial");
+    }
+  };
+
+  const [reconciling, setReconciling] = useState(false);
+
+  const handleReconcileAll = async () => {
+    setReconciling(true);
+    const t = toast.loading("Auditando y recalculando turnos con ventas anuladas...");
+    try {
+      const res = await reconcileAllCashShiftsRequest();
+      toast.dismiss(t);
+      toast.success(
+        `Se auditaron y conciliaron ${res?.totalReconciled || 0} turnos con ventas anuladas.`,
+      );
+      // Reload history and open details
+      loadInitialData();
+      if (selectedShiftId) {
+        handleViewDetails(selectedShiftId);
+      }
+    } catch (err: any) {
+      toast.dismiss(t);
+      toast.error(err?.response?.data?.message || "Error al conciliar turnos");
+    } finally {
+      setReconciling(false);
     }
   };
 
@@ -842,6 +867,15 @@ export default function BusinessCashRegisterPage() {
 
               <div className="flex gap-2">
                 <button
+                  onClick={handleReconcileAll}
+                  disabled={reconciling}
+                  className="px-3.5 py-1.5 bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200 rounded-lg text-xs font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5"
+                  title="Auditar y conciliar automáticamente turnos que tuvieron ventas anuladas post-cierre"
+                >
+                  <RotateCcw className={`w-3.5 h-3.5 ${reconciling ? "animate-spin" : ""}`} />
+                  Conciliar Cajas
+                </button>
+                <button
                   onClick={exportHistoryExcel}
                   className="px-3.5 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-lg text-xs font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5"
                 >
@@ -901,7 +935,14 @@ export default function BusinessCashRegisterPage() {
                           S/ {shift.initialBalance.toFixed(2)}
                         </td>
                         <td className="px-6 py-4 text-right text-blue-600 font-bold text-xs">
-                          + S/ {shift.totalSales.toFixed(2)}
+                          <div className="flex flex-col items-end">
+                            <span>+ S/ {shift.totalSales.toFixed(2)}</span>
+                            {shift.hasAdjustments && (
+                              <span className="text-[9px] font-black uppercase text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded mt-0.5">
+                                ⚖️ Ajustada
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-6 py-4 text-right text-emerald-600 font-black text-xs">
                           S/ {(shift.finalBalance || 0).toFixed(2)}
@@ -1228,18 +1269,86 @@ export default function BusinessCashRegisterPage() {
                 </span>
               </div>
               <div className="p-3 bg-blue-50 rounded-xl border border-blue-100 text-center">
-                <span className="text-[10px] font-bold text-blue-600 uppercase block mb-1">Total Ventas (Bruto)</span>
+                <span className="text-[10px] font-bold text-blue-600 uppercase block mb-1">Total Ventas (Vigentes)</span>
                 <span className="text-base font-black text-blue-700">
-                  S/ {Number(shiftDetails.totalSales || shiftDetails.shift.totalSales || 0).toFixed(2)}
+                  S/ {Number(shiftDetails.totalSales !== undefined ? shiftDetails.totalSales : shiftDetails.shift.totalSales || 0).toFixed(2)}
                 </span>
               </div>
               <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100 text-center">
-                <span className="text-[10px] font-bold text-emerald-600 uppercase block mb-1">Monto Final</span>
+                <span className="text-[10px] font-bold text-emerald-600 uppercase block mb-1">Monto Final Real</span>
                 <span className="text-base font-black text-emerald-700">
                   S/ {Number(shiftDetails.shift.finalBalance || 0).toFixed(2)}
                 </span>
               </div>
             </div>
+
+            {/* Banner de Recalculación y Ajustes si hay ventas anuladas post-cierre */}
+            {((shiftDetails.totalAdjustments && shiftDetails.totalAdjustments > 0) ||
+              (shiftDetails.sales || []).some(
+                (s: any) =>
+                  s.billingStatus === "CANCELLED" ||
+                  s.fiscalDocument?.status === "CANCELLED",
+              )) && (
+              <div className="p-4 bg-amber-50/80 border border-amber-200 rounded-2xl space-y-2.5 animate-fade-in text-xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 bg-amber-200 text-amber-900 rounded-md text-[10px] font-black uppercase tracking-wider">
+                      ⚖️ RECALCULACIÓN DE CAJA POR ANULACIÓN
+                    </span>
+                    <span className="font-bold text-amber-900">
+                      Ajuste por comprobantes dados de baja post-cierre
+                    </span>
+                  </div>
+                  <span className="font-black text-rose-600 bg-rose-50 px-2 py-1 rounded-lg border border-rose-200">
+                    - S/{" "}
+                    {Number(
+                      shiftDetails.totalAdjustments ||
+                        (shiftDetails.sales || [])
+                          .filter(
+                            (s: any) =>
+                              s.billingStatus === "CANCELLED" ||
+                              s.fiscalDocument?.status === "CANCELLED",
+                          )
+                          .reduce((acc: number, s: any) => acc + s.amount, 0),
+                    ).toFixed(2)}
+                  </span>
+                </div>
+                <div className="bg-white/90 p-2.5 rounded-xl border border-amber-100 space-y-1 text-[11px] text-slate-700">
+                  <div className="flex justify-between font-semibold">
+                    <span>Ventas Brutas Originales:</span>
+                    <span>
+                      S/{" "}
+                      {(shiftDetails.sales || [])
+                        .reduce((acc: number, s: any) => acc + s.amount, 0)
+                        .toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between font-semibold text-rose-600">
+                    <span>Descuento por Bajas / Anulaciones:</span>
+                    <span>
+                      - S/{" "}
+                      {(shiftDetails.sales || [])
+                        .filter(
+                          (s: any) =>
+                            s.billingStatus === "CANCELLED" ||
+                            s.fiscalDocument?.status === "CANCELLED",
+                        )
+                        .reduce((acc: number, s: any) => acc + s.amount, 0)
+                        .toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="border-t border-slate-100 pt-1 flex justify-between font-black text-slate-900">
+                    <span>Ventas Netas Finales (Reales):</span>
+                    <span className="text-emerald-700">
+                      S/ {Number(shiftDetails.totalSales || 0).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-amber-800 font-medium">
+                  🏛️ <strong>Trazabilidad en Tesorería:</strong> Se registró automáticamente el contra-asiento de Egreso en Tesorería para descontar este importe de la liquidez del negocio.
+                </p>
+              </div>
+            )}
 
             {(user?.role === "ADMIN" || !user?.parentId) && (
               <div className="grid grid-cols-2 gap-3 mt-3 animate-fade-in">

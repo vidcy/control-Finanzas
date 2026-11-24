@@ -147,6 +147,106 @@ export class TransactionService {
       } else {
         whereClause.OR = [{ userId: ownerId }, { user: { parentId: ownerId } }];
       }
+
+      // Auto-conciliación inteligente: encontrar turnos cerrados con ventas anuladas sin ajuste de tesorería
+      try {
+        const shiftsWithCancelledSales = await this.prisma.cashShift.findMany({
+          where: {
+            status: 'CLOSED',
+            OR: [{ userId: ownerId }, { user: { parentId: ownerId } }],
+            sales: {
+              some: {
+                OR: [
+                  { billingStatus: 'CANCELLED' },
+                  { fiscalDocument: { status: 'CANCELLED' } },
+                ],
+              },
+            },
+          },
+          include: {
+            sales: {
+              where: {
+                OR: [
+                  { billingStatus: 'CANCELLED' },
+                  { fiscalDocument: { status: 'CANCELLED' } },
+                ],
+              },
+              include: { fiscalDocument: true },
+            },
+          },
+          take: 10,
+        });
+
+        for (const shift of shiftsWithCancelledSales) {
+          for (const cs of shift.sales) {
+            const docRef =
+              cs.fiscalDocument?.fullNumber ||
+              (cs.billingSerie && cs.billingNumber
+                ? `${cs.billingSerie}-${String(cs.billingNumber).padStart(8, '0')}`
+                : cs.code || cs.id);
+
+            const existingAdj = await this.prisma.transaction.findFirst({
+              where: {
+                cashShiftId: shift.id,
+                description: { contains: docRef },
+              },
+            });
+
+            if (!existingAdj) {
+              const cashPart =
+                !cs.paymentMethod ||
+                cs.paymentMethod === 'CASH' ||
+                (cs.paymentMethod as string) === 'EFECTIVO'
+                  ? cs.amount
+                  : 0;
+
+              if (cashPart > 0) {
+                let cat = await this.prisma.category.findFirst({
+                  where: {
+                    userId: ownerId,
+                    type: 'EXPENSE',
+                    OR: [
+                      { name: { contains: 'Ajuste', mode: 'insensitive' } },
+                      { name: { contains: 'Devoluc', mode: 'insensitive' } },
+                      { name: { contains: 'Caja', mode: 'insensitive' } },
+                      { name: { contains: 'Egreso', mode: 'insensitive' } },
+                    ],
+                  },
+                });
+                if (!cat) {
+                  cat = await this.prisma.category.create({
+                    data: {
+                      name: 'Ajustes y Devoluciones de Caja',
+                      type: 'EXPENSE',
+                      userId: ownerId,
+                    },
+                  });
+                }
+
+                await this.prisma.transaction.create({
+                  data: {
+                    name: 'Ajuste por Anulación de Venta',
+                    type: 'EXPENSE',
+                    amount: parseFloat(cashPart.toFixed(2)),
+                    categoryId: cat.id,
+                    date: new Date(),
+                    status: 'PAID',
+                    currency: 'PEN',
+                    paymentMethod: 'CASH',
+                    description: `[BITÁCORA DE AJUSTE: ANULADO] Referencia: ${docRef}. Turno de Caja: ${shift.id.substring(0, 8)}... Motivo: ${cs.fiscalDocument?.sunatDescription || cs.billingError || 'Anulación formal de comprobante'}. Monto descontado de tesorería: S/ ${cashPart.toFixed(2)}`,
+                    workspace: 'BUSINESS',
+                    branchId: cs.branchId || shift.branchId,
+                    cashShiftId: shift.id,
+                    userId: cs.userId,
+                  },
+                });
+              }
+            }
+          }
+        }
+      } catch (err: any) {
+        // Safe failover
+      }
     } else {
       // In personal workspace, workers (if any) only see their own transactions
       if (workerId) {

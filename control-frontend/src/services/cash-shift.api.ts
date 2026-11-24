@@ -77,3 +77,8 @@ export const getCashShiftAuditRequest = async (id: string) => {
   const res = await axios.get(`/cash-shift/${id}/audit`);
   return res.data; // Returns { shift, transactions, sales }
 };
+
+export const reconcileAllCashShiftsRequest = async () => {
+  const res = await axios.post('/cash-shift/reconcile-all');
+  return res.data;
+};

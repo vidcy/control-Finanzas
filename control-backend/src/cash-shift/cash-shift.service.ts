@@ -505,8 +505,75 @@ export class CashShiftService {
       }),
     ]);
 
+    const reconciledItems = await Promise.all(
+      items.map(async (shift) => {
+        const salesInShift = await this.prisma.sale.findMany({
+          where: { cashShiftId: shift.id },
+          select: {
+            amount: true,
+            billingStatus: true,
+            paymentMethod: true,
+            fiscalDocument: { select: { status: true } },
+          },
+        });
+
+        const hasCancelled = salesInShift.some(
+          (s) =>
+            s.billingStatus === 'CANCELLED' ||
+            s.fiscalDocument?.status === 'CANCELLED',
+        );
+
+        if (hasCancelled) {
+          const validSales = salesInShift.filter(
+            (s) =>
+              s.billingStatus !== 'CANCELLED' &&
+              s.fiscalDocument?.status !== 'CANCELLED',
+          );
+          const netTotalSales = parseFloat(
+            validSales.reduce((acc, s) => acc + s.amount, 0).toFixed(2),
+          );
+          const cashSales = validSales
+            .filter(
+              (s) =>
+                !s.paymentMethod ||
+                s.paymentMethod === 'CASH' ||
+                (s.paymentMethod as string) === 'EFECTIVO',
+            )
+            .reduce((acc, s) => acc + s.amount, 0);
+
+          const netFinalBalance = parseFloat(
+            (shift.initialBalance + cashSales).toFixed(2),
+          );
+
+          if (
+            shift.totalSales !== netTotalSales ||
+            shift.finalBalance !== netFinalBalance
+          ) {
+            await this.prisma.cashShift
+              .update({
+                where: { id: shift.id },
+                data: {
+                  totalSales: netTotalSales,
+                  finalBalance: netFinalBalance,
+                },
+              })
+              .catch(() => {});
+          }
+
+          return {
+            ...shift,
+            totalSales: netTotalSales,
+            finalBalance: netFinalBalance,
+            hasAdjustments: true,
+          };
+        }
+
+        return shift;
+      }),
+    );
+
     return {
-      items,
+      items: reconciledItems,
       total,
       page,
       limit,
@@ -590,9 +657,33 @@ export class CashShiftService {
 
     const showFinancials = userRole === 'ADMIN' || !workerId;
 
+    // Auto-conciliar el turno si hubieron ventas anuladas posteriormente
+    await this.recalculateShiftTotals(id).catch(() => {});
+
+    const updatedShift = await this.prisma.cashShift.findUnique({
+      where: { id },
+      include: {
+        branch: true,
+        user: { select: { id: true, name: true, lastName: true, email: true } },
+      },
+    });
+
+    const adjustments = await this.prisma.transaction.findMany({
+      where: {
+        cashShiftId: id,
+        type: 'EXPENSE',
+        name: { contains: 'Ajuste' },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const totalAdjustments = adjustments.reduce((sum, a) => sum + a.amount, 0);
+
     return {
-      shift,
+      shift: updatedShift || shift,
       sales,
+      adjustments,
+      totalAdjustments: parseFloat(totalAdjustments.toFixed(2)),
       ...(showFinancials ? {
         totalSales: parseFloat(totalSales.toFixed(2)),
         totalCommissions: parseFloat(totalCommissions.toFixed(2)),
@@ -918,6 +1009,30 @@ export class CashShiftService {
       shift,
       transactions,
       sales,
+    };
+  }
+
+  /**
+   * CONCILIAR MASIVAMENTE TODOS LOS TURNOS CERRADOS CON VENTAS ANULADAS
+   */
+  async reconcileAllClosedShifts(ownerId: string) {
+    const closedShifts = await this.prisma.cashShift.findMany({
+      where: {
+        status: 'CLOSED',
+        OR: [{ userId: ownerId }, { user: { parentId: ownerId } }],
+      },
+    });
+
+    const results = [];
+    for (const shift of closedShifts) {
+      const res = await this.recalculateShiftTotals(shift.id);
+      if (res) results.push(res);
+    }
+
+    return {
+      success: true,
+      totalReconciled: results.length,
+      shifts: results,
     };
   }
 }
