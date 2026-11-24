@@ -676,16 +676,49 @@ export class CashShiftService {
         },
       });
 
-      await this.prisma.transaction.updateMany({
+      // Asegurar que todas las ventas anuladas de esta caja cerrada tengan su registro formal de Egreso en tesorería
+      const cancelledSales = await this.prisma.sale.findMany({
         where: {
           cashShiftId: shiftId,
-          name: 'Cierre de Caja',
+          OR: [
+            { billingStatus: 'CANCELLED' },
+            { fiscalDocument: { status: 'CANCELLED' } },
+          ],
         },
-        data: {
-          amount: finalBalance,
-          description: `Cierre de Caja - ID: ${shiftId.substring(0, 8)}... (Ajustado por anulación) (Fondo Inicial: S/ ${shift.initialBalance.toFixed(2)} + Ventas (Neto comisiones): S/ ${(totalSales - totalAdditionalCommissions).toFixed(2)})`,
-        },
+        include: { fiscalDocument: true },
       });
+
+      for (const cs of cancelledSales) {
+        const docRef =
+          cs.fiscalDocument?.fullNumber ||
+          (cs.billingSerie && cs.billingNumber
+            ? `${cs.billingSerie}-${String(cs.billingNumber).padStart(8, '0')}`
+            : cs.code || cs.id);
+
+        const cashPart =
+          !cs.paymentMethod ||
+          cs.paymentMethod === 'CASH' ||
+          (cs.paymentMethod as string) === 'EFECTIVO'
+            ? cs.amount
+            : 0;
+
+        if (cashPart > 0) {
+          await this.registerTreasuryAdjustment({
+            shiftId,
+            saleId: cs.id,
+            docNumber: docRef,
+            adjustmentType: 'ANULADO',
+            amountDeducted: cashPart,
+            reason:
+              cs.fiscalDocument?.sunatDescription ||
+              cs.billingError ||
+              'Anulación / Baja formal de comprobante',
+            ownerId: shift.userId,
+            workerId: cs.userId,
+            branchId: cs.branchId || shift.branchId,
+          }).catch(() => {});
+        }
+      }
     }
 
     return {
@@ -693,6 +726,198 @@ export class CashShiftService {
       totalSales: parseFloat(totalSales.toFixed(2)),
       cashSales: parseFloat(cashSales.toFixed(2)),
       finalBalance,
+    };
+  }
+
+  /**
+   * REGISTRO AUDITABLE DE AJUSTE EN TESORERÍA (CONTRA-ASIENTO DE EGRESO)
+   * Crea un nuevo registro en tesorería haciendo referencia a la venta anulada/modificada
+   * y al turno de caja original para trazabilidad contable impecable.
+   */
+  async registerTreasuryAdjustment(options: {
+    shiftId: string;
+    saleId?: string;
+    docNumber?: string;
+    adjustmentType: 'ELIMINADO' | 'MODIFICADO' | 'ANULADO';
+    amountDeducted: number;
+    reason: string;
+    ownerId: string;
+    workerId?: string;
+    branchId?: string | null;
+  }) {
+    const {
+      shiftId,
+      saleId,
+      docNumber,
+      adjustmentType,
+      amountDeducted,
+      reason,
+      ownerId,
+      workerId,
+      branchId,
+    } = options;
+
+    if (!shiftId || !amountDeducted || amountDeducted <= 0) return null;
+
+    const shift = await this.prisma.cashShift.findUnique({
+      where: { id: shiftId },
+      include: { user: true },
+    });
+    if (!shift) return null;
+
+    const closingTx = await this.prisma.transaction.findFirst({
+      where: {
+        cashShiftId: shiftId,
+        name: 'Cierre de Caja',
+      },
+    });
+
+    if (!closingTx && shift.status !== 'CLOSED') {
+      return null;
+    }
+
+    const refTag = docNumber || saleId || 'Venta';
+    const bitacoraDesc = `[BITÁCORA DE AJUSTE: ${adjustmentType}] Referencia: ${refTag}. Turno de Caja: ${shiftId.substring(0, 8)}... Motivo: ${reason}. Monto descontado de tesorería: S/ ${amountDeducted.toFixed(2)}`;
+
+    // Evitar transacciones duplicadas para la misma referencia en este turno
+    const existingTx = await this.prisma.transaction.findFirst({
+      where: {
+        cashShiftId: shiftId,
+        description: { contains: refTag },
+      },
+    });
+
+    if (existingTx) {
+      return existingTx;
+    }
+
+    // Buscar categoría de Egreso adecuada
+    const effectiveOwnerId = ownerId || shift.user?.parentId || shift.userId;
+    let categoryIdToUse = closingTx?.categoryId || '';
+    let subCategoryIdToUse = closingTx?.subCategoryId || null;
+
+    const adjustmentCat = await this.prisma.category.findFirst({
+      where: {
+        userId: effectiveOwnerId,
+        type: 'EXPENSE',
+        OR: [
+          { name: { contains: 'Ajuste', mode: 'insensitive' } },
+          { name: { contains: 'Devoluc', mode: 'insensitive' } },
+          { name: { contains: 'Caja', mode: 'insensitive' } },
+          { name: { contains: 'Egreso', mode: 'insensitive' } },
+        ],
+      },
+    });
+
+    if (adjustmentCat) {
+      categoryIdToUse = adjustmentCat.id;
+      subCategoryIdToUse = null;
+    } else if (!categoryIdToUse) {
+      const anyExpense = await this.prisma.category.findFirst({
+        where: { userId: effectiveOwnerId, type: 'EXPENSE' },
+      });
+      if (anyExpense) categoryIdToUse = anyExpense.id;
+    }
+
+    if (!categoryIdToUse) {
+      const newCat = await this.prisma.category.create({
+        data: {
+          name: 'Ajustes y Devoluciones de Caja',
+          type: 'EXPENSE',
+          userId: effectiveOwnerId,
+        },
+      });
+      categoryIdToUse = newCat.id;
+    }
+
+    const actionName =
+      adjustmentType === 'MODIFICADO'
+        ? 'Ajuste por Modificación de Venta'
+        : 'Ajuste por Anulación de Venta';
+
+    const adjustmentTx = await this.prisma.transaction.create({
+      data: {
+        name: actionName,
+        type: 'EXPENSE',
+        amount: parseFloat(amountDeducted.toFixed(2)),
+        categoryId: categoryIdToUse,
+        subCategoryId: subCategoryIdToUse,
+        date: new Date(),
+        status: 'PAID',
+        currency: 'PEN',
+        paymentMethod: 'CASH',
+        description: bitacoraDesc,
+        workspace: 'BUSINESS',
+        branchId: branchId || shift.branchId,
+        cashShiftId: shiftId,
+        userId: workerId || shift.userId,
+      },
+    });
+
+    // Restaurar el monto bruto del Cierre de Caja en tesorería para que el Egreso
+    // registrado formalmente sea el que descuente el saldo con total transparencia
+    if (closingTx) {
+      const allAdjustments = await this.prisma.transaction.findMany({
+        where: {
+          cashShiftId: shiftId,
+          type: 'EXPENSE',
+          name: { contains: 'Ajuste' },
+        },
+      });
+      const totalExpenseAdjustments = allAdjustments.reduce(
+        (acc, t) => acc + t.amount,
+        0,
+      );
+
+      const expectedOriginalGross = parseFloat(
+        (shift.finalBalance + totalExpenseAdjustments).toFixed(2),
+      );
+      if (closingTx.amount !== expectedOriginalGross) {
+        await this.prisma.transaction.update({
+          where: { id: closingTx.id },
+          data: {
+            amount: expectedOriginalGross,
+            description: `Cierre de Caja - ID: ${shiftId.substring(0, 8)}... (Registro original bruto de cierre. Ajustes registrados debajo).`,
+          },
+        });
+      }
+    }
+
+    return adjustmentTx;
+  }
+
+  /**
+   * BITÁCORA DETALLADA DE AUDITORÍA DE TURNO DE CAJA & TESORERÍA
+   */
+  async getShiftAuditTrail(shiftId: string) {
+    const shift = await this.prisma.cashShift.findUnique({
+      where: { id: shiftId },
+      include: {
+        user: { select: { id: true, name: true, lastName: true, email: true } },
+        branch: true,
+      },
+    });
+
+    if (!shift) {
+      throw new NotFoundException('Turno de caja no encontrado.');
+    }
+
+    const transactions = await this.prisma.transaction.findMany({
+      where: { cashShiftId: shiftId },
+      include: { category: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const sales = await this.prisma.sale.findMany({
+      where: { cashShiftId: shiftId },
+      include: { fiscalDocument: true, items: true },
+      orderBy: { date: 'asc' },
+    });
+
+    return {
+      shift,
+      transactions,
+      sales,
     };
   }
 }

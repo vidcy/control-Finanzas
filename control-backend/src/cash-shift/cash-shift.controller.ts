@@ -114,6 +114,11 @@ export class CashShiftController {
     return this.cashShiftService.getShiftDetails(id, ownerId, workerId, userRole);
   }
 
+  @Get(':id/audit')
+  async getShiftAudit(@Param('id') id: string) {
+    return this.cashShiftService.getShiftAuditTrail(id);
+  }
+
   @Post(':id/recalculate')
   async recalculateShift(@Param('id') id: string) {
     return this.cashShiftService.recalculateShiftTotals(id);

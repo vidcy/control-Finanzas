@@ -536,7 +536,28 @@ export class SalesService {
     });
 
     if (result.cashShiftId) {
-      await this.cashShiftService.recalculateShiftTotals(result.cashShiftId).catch(() => {});
+      const docRef =
+        sale.billingSerie && sale.billingNumber
+          ? `${sale.billingSerie}-${String(sale.billingNumber).padStart(8, '0')}`
+          : sale.code || sale.id;
+
+      await this.cashShiftService
+        .registerTreasuryAdjustment({
+          shiftId: result.cashShiftId,
+          saleId: sale.id,
+          docNumber: docRef,
+          adjustmentType: 'ELIMINADO',
+          amountDeducted: sale.amount,
+          reason: options?.motivo || 'Anulación / Eliminación de venta',
+          ownerId,
+          workerId: sale.userId,
+          branchId: sale.branchId,
+        })
+        .catch(() => {});
+
+      await this.cashShiftService
+        .recalculateShiftTotals(result.cashShiftId)
+        .catch(() => {});
     }
 
     return { success: true };
@@ -556,17 +577,6 @@ export class SalesService {
 
     if (!sale) {
       throw new NotFoundException('Venta no encontrada');
-    }
-
-    if (sale.cashShiftId) {
-      const shift = await this.prisma.cashShift.findUnique({
-        where: { id: sale.cashShiftId },
-      });
-      if (shift && shift.status === 'CLOSED') {
-        throw new BadRequestException(
-          'No se puede modificar una venta perteneciente a un cierre de caja ya cerrado.',
-        );
-      }
     }
 
     const isBilled = sale.billingStatus === 'SUCCESS' && sale.billingSerie && sale.billingNumber;
@@ -735,6 +745,35 @@ export class SalesService {
           },
         });
       }
+    }
+
+    if (sale.cashShiftId && updateData.amount !== undefined && updateData.amount !== sale.amount) {
+      const diff = sale.amount - updateData.amount;
+      if (diff > 0) {
+        const docRef =
+          sale.billingSerie && sale.billingNumber
+            ? `${sale.billingSerie}-${String(sale.billingNumber).padStart(8, '0')}`
+            : sale.code || sale.id;
+
+        await this.cashShiftService
+          .registerTreasuryAdjustment({
+            shiftId: sale.cashShiftId,
+            saleId: sale.id,
+            docNumber: docRef,
+            adjustmentType: 'MODIFICADO',
+            amountDeducted: diff,
+            reason:
+              dto.rectifyReason ||
+              'Modificación / reducción del importe de la venta',
+            ownerId,
+            workerId: sale.userId,
+            branchId: sale.branchId,
+          })
+          .catch(() => {});
+      }
+      await this.cashShiftService
+        .recalculateShiftTotals(sale.cashShiftId)
+        .catch(() => {});
     }
 
     return {
@@ -1428,9 +1467,26 @@ export class SalesService {
                 }
               }
 
-              // 2. Recalcular turno de caja (incluso si la caja ya fue cerrada)
+              // 2. Registrar contra-asiento de ajuste en tesorería y recalcular turno de caja
               if (affSale.cashShiftId) {
-                await this.cashShiftService.recalculateShiftTotals(affSale.cashShiftId).catch(() => {});
+                const docRef = `${refSerie}-${String(refNumber).padStart(8, '0')}`;
+                await this.cashShiftService
+                  .registerTreasuryAdjustment({
+                    shiftId: affSale.cashShiftId,
+                    saleId: affSale.id,
+                    docNumber: docRef,
+                    adjustmentType: 'ANULADO',
+                    amountDeducted: affSale.amount,
+                    reason: `Nota de Crédito SUNAT ${note.series}-${note.number}. Motivo: ${note.ref_reason_description || 'Anulación de operación'}`,
+                    ownerId,
+                    workerId: affSale.userId,
+                    branchId: affSale.branchId,
+                  })
+                  .catch(() => {});
+
+                await this.cashShiftService
+                  .recalculateShiftTotals(affSale.cashShiftId)
+                  .catch(() => {});
               }
             }
           }

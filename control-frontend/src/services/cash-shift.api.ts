@@ -72,3 +72,8 @@ export const getCashShiftDetailsRequest = async (id: string) => {
   const res = await axios.get(`/cash-shift/${id}`);
   return res.data; // Returns { shift: {...}, sales: [...] }
 };
+
+export const getCashShiftAuditRequest = async (id: string) => {
+  const res = await axios.get(`/cash-shift/${id}/audit`);
+  return res.data; // Returns { shift, transactions, sales }
+};

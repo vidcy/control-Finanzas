@@ -1017,9 +1017,30 @@ export class BillingService {
           }
         }
 
-        // Recalcular turno de caja asociado (incluso si la caja ya fue cerrada)
+        // Registrar contra-asiento de ajuste en tesorería y recalcular turno de caja asociado
         if (sale && sale.cashShiftId) {
-          await this.cashShiftService.recalculateShiftTotals(sale.cashShiftId).catch(() => {});
+          const docRef =
+            original.fullNumber ||
+            `${original.serie}-${String(original.correlative).padStart(8, '0')}`;
+          await this.cashShiftService
+            .registerTreasuryAdjustment({
+              shiftId: sale.cashShiftId,
+              saleId: sale.id,
+              docNumber: docRef,
+              adjustmentType: 'ANULADO',
+              amountDeducted: Number(
+                original.totalAmount || sale.amount,
+              ),
+              reason: `Nota de Crédito ${fullNumber}. Motivo: ${dto.reasonText}`,
+              ownerId,
+              workerId: sale.userId,
+              branchId: sale.branchId,
+            })
+            .catch(() => {});
+
+          await this.cashShiftService
+            .recalculateShiftTotals(sale.cashShiftId)
+            .catch(() => {});
         }
       }
     }
@@ -1309,10 +1330,26 @@ export class BillingService {
           }
         }
 
-        // Recalcular turno de caja asociado (incluso si la caja ya fue cerrada)
+        // Registrar contra-asiento de ajuste en tesorería y recalcular turno de caja asociado
         const sale = await this.prisma.sale.findUnique({ where: { id: doc.saleId } });
         if (sale?.cashShiftId) {
-          await this.cashShiftService.recalculateShiftTotals(sale.cashShiftId).catch(() => {});
+          await this.cashShiftService
+            .registerTreasuryAdjustment({
+              shiftId: sale.cashShiftId,
+              saleId: sale.id,
+              docNumber: doc.fullNumber,
+              adjustmentType: 'ANULADO',
+              amountDeducted: doc.totalAmount || sale.amount,
+              reason: motivo || 'Anulación de comprobante fiscal',
+              ownerId,
+              workerId: sale.userId,
+              branchId: sale.branchId,
+            })
+            .catch(() => {});
+
+          await this.cashShiftService
+            .recalculateShiftTotals(sale.cashShiftId)
+            .catch(() => {});
         }
       }
 
@@ -1600,9 +1637,26 @@ export class BillingService {
                 }
               }
 
-              // 2. Recalcular turno de caja (incluso si la caja ya fue cerrada)
+              // 2. Registrar contra-asiento de ajuste en tesorería y recalcular turno de caja
               if (affSale.cashShiftId) {
-                await this.cashShiftService.recalculateShiftTotals(affSale.cashShiftId).catch(() => {});
+                const docRef = `${refSerie}-${String(refNumber).padStart(8, '0')}`;
+                await this.cashShiftService
+                  .registerTreasuryAdjustment({
+                    shiftId: affSale.cashShiftId,
+                    saleId: affSale.id,
+                    docNumber: docRef,
+                    adjustmentType: 'ANULADO',
+                    amountDeducted: affSale.amount,
+                    reason: `Nota de Crédito SUNAT ${note.full_number || ''}`,
+                    ownerId,
+                    workerId: affSale.userId,
+                    branchId: affSale.branchId,
+                  })
+                  .catch(() => {});
+
+                await this.cashShiftService
+                  .recalculateShiftTotals(affSale.cashShiftId)
+                  .catch(() => {});
               }
             }
           }

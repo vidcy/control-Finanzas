@@ -15,6 +15,8 @@ describe('BillingService (Unit Tests)', () => {
   beforeEach(async () => {
     cashShiftMock = {
       recalculateShiftTotals: jest.fn().mockResolvedValue({ success: true }),
+      registerTreasuryAdjustment: jest.fn().mockResolvedValue({ success: true }),
+      getShiftAuditTrail: jest.fn().mockResolvedValue({ shift: {}, transactions: [], sales: [] }),
     };
     prismaMock = {
       user: {
