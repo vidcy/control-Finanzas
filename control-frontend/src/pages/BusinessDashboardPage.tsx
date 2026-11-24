@@ -82,13 +82,31 @@ export default function BusinessDashboardPage() {
 
       const safeTx = txs.filter((t: any) => t.status === "PAID");
 
-      // Calculate Liquidity (Total Income - Total Expense)
-      const totalIncome = safeTx
-        .filter((t: any) => t.type === "INCOME")
-        .reduce((acc: number, t: any) => acc + t.amount, 0);
+      // Detección estricta de transacciones de ajuste / anulación contable de ventas
+      const isAdjustmentTx = (t: any) =>
+        Boolean(
+          t.name?.includes("Ajuste") ||
+          t.description?.includes("[BITÁCORA DE AJUSTE") ||
+          t.description?.includes("Ajuste por Anulación") ||
+          t.name?.includes("Devolución")
+        );
+
+      // Total de ajustes aplicados a ventas (reducción de ingreso, no gasto operativo)
+      const totalAdjustments = safeTx
+        .filter((t: any) => t.type === "EXPENSE" && isAdjustmentTx(t))
+        .reduce((acc: number, t: any) => acc + (t.currency === "USD" ? t.amount * (t.exchangeRate || 1) : t.amount), 0);
+
+      // Egresos Operativos Genuinos (OPEX / compras / servicios reales - excluye ajustes contables)
       const totalExpense = safeTx
-        .filter((t: any) => t.type === "EXPENSE")
-        .reduce((acc: number, t: any) => acc + t.amount, 0);
+        .filter((t: any) => t.type === "EXPENSE" && !isAdjustmentTx(t))
+        .reduce((acc: number, t: any) => acc + (t.currency === "USD" ? t.amount * (t.exchangeRate || 1) : t.amount), 0);
+
+      // Ingresos Netos (Ingresos brutos menos ajustes/anulaciones de ventas)
+      const rawIncome = safeTx
+        .filter((t: any) => t.type === "INCOME")
+        .reduce((acc: number, t: any) => acc + (t.currency === "USD" ? t.amount * (t.exchangeRate || 1) : t.amount), 0);
+      const totalIncome = Math.max(0, rawIncome - totalAdjustments);
+
       const businessLiquidity = totalIncome - totalExpense;
 
       // Calculate Liquidity breakdown by Payment Method
@@ -144,10 +162,10 @@ export default function BusinessDashboardPage() {
       // Patrimonio (Liquidity + Inventory Cost)
       const patrimonio = businessLiquidity + inventoryCostValuation;
 
-      // Monthly Expenses
+      // Monthly Expenses (Egresos y compras reales del mes, excluye ajustes contables por anulación)
       const monthlyExpenses = safeTx
-        .filter((t: any) => t.type === "EXPENSE" && new Date(t.date) >= monthStart)
-        .reduce((acc: number, t: any) => acc + t.amount, 0);
+        .filter((t: any) => t.type === "EXPENSE" && !isAdjustmentTx(t) && new Date(t.date) >= monthStart)
+        .reduce((acc: number, t: any) => acc + (t.currency === "USD" ? t.amount * (t.exchangeRate || 1) : t.amount), 0);
 
       const lowStockList = prods.filter(
         (p: any) => p.stock <= p.minStock

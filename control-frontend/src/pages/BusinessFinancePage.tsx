@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, Fragment } from "react";
 import Appshell from "../components/layout/Appshell";
 import {
   getTransactionsRequest,
@@ -32,6 +32,10 @@ import {
   Calendar,
   Info,
   Paperclip,
+  ChevronUp,
+  Layers,
+  Sparkles,
+  ShieldCheck,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
@@ -106,6 +110,19 @@ export default function BusinessFinancePage() {
   const [dateTo, setDateTo] = useState("");
   const [txPage, setTxPage] = useState(1);
   const [txPageSize, setTxPageSize] = useState(8);
+  const [financeViewMode, setFinanceViewMode] = useState<"EXPEDIENTES" | "ALL_TXS">("EXPEDIENTES");
+  const [expandedFinanceTxIds, setExpandedFinanceTxIds] = useState<Record<string, boolean>>({});
+
+  const toggleExpandFinance = (id: string) => {
+    setExpandedFinanceTxIds((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
+  };
+
+  useEffect(() => {
+    setTxPage(1);
+  }, [searchTerm, filterType, filterCategory, filterBranch, dateFrom, dateTo, financeViewMode, txPageSize]);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -145,13 +162,32 @@ export default function BusinessFinancePage() {
     loadData();
   }, []);
 
-  const totalIngresosTesorerias = transactions
-    .filter((t) => t.type === "INCOME" && t.status === "PAID")
+  // Detección estricta de movimientos de ajuste contable por anulación / descuento de ventas
+  const isAdjustmentTx = (t: any) =>
+    Boolean(
+      t.name?.includes("Ajuste") ||
+      t.description?.includes("[BITÁCORA DE AJUSTE") ||
+      t.description?.includes("Ajuste por Anulación") ||
+      t.name?.includes("Devolución")
+    );
+
+  // Total de Ajustes y Devoluciones aplicados a ventas (reducción de ingreso, no gasto operativo)
+  const totalAjustesVentas = transactions
+    .filter((t) => t.status === "PAID" && t.type === "EXPENSE" && isAdjustmentTx(t))
     .reduce((acc, t) => acc + (t.currency === "USD" ? t.amount * (t.exchangeRate || 1) : t.amount), 0);
 
+  // Egresos Operativos Genuinos (OPEX / compras reales - excluye asientos técnicos de anulación de ventas)
   const totalEgresosTesorerias = transactions
-    .filter((t) => t.type === "EXPENSE" && t.status === "PAID")
+    .filter((t) => t.status === "PAID" && t.type === "EXPENSE" && !isAdjustmentTx(t))
     .reduce((acc, t) => acc + (t.currency === "USD" ? t.amount * (t.exchangeRate || 1) : t.amount), 0);
+
+  // Ingresos Brutos de Tesorería (solo transacciones finalizadas/PAID)
+  const grossIngresosTesorerias = transactions
+    .filter((t) => t.status === "PAID" && t.type === "INCOME")
+    .reduce((acc, t) => acc + (t.currency === "USD" ? t.amount * (t.exchangeRate || 1) : t.amount), 0);
+
+  // Ingreso Neto Real: Ingresos Brutos menos los Ajustes por Anulación
+  const totalIngresosTesorerias = Math.max(0, grossIngresosTesorerias - totalAjustesVentas);
 
   const liquidezNeta = totalIngresosTesorerias - totalEgresosTesorerias;
 
@@ -507,26 +543,113 @@ export default function BusinessFinancePage() {
     toast.success("Reporte de tesorería exportado a PDF");
   };
 
-  const filteredTransactions = transactions.filter((t) => {
-    const concept = (t.name || t.description || "Movimiento Financiero").toLowerCase();
-    const desc = (t.description || "").toLowerCase();
-    const search = searchTerm.toLowerCase();
-    const matchesSearch = !searchTerm || concept.includes(search) || desc.includes(search);
+  const financeTree = useMemo(() => {
+    // 1. Filtrado base según filtros seleccionados
+    const matchingTxs = transactions.filter((t) => {
+      const concept = (t.name || t.description || "Movimiento Financiero").toLowerCase();
+      const desc = (t.description || "").toLowerCase();
+      const search = searchTerm.toLowerCase();
+      const matchesSearch = !searchTerm || concept.includes(search) || desc.includes(search);
 
-    const matchesType = filterType === "ALL" || t.type === filterType;
+      const matchesType = filterType === "ALL" || t.type === filterType;
+      const matchesCategory = !filterCategory || t.categoryId === filterCategory;
+      const matchesBranch =
+        !filterBranch ||
+        (filterBranch === "central" ? !t.branchId : t.branchId === filterBranch);
 
-    const matchesCategory = !filterCategory || t.categoryId === filterCategory;
+      const day = (t.date || "").slice(0, 10);
+      const matchesDateFrom = !dateFrom || day >= dateFrom;
+      const matchesDateTo = !dateTo || day <= dateTo;
 
-    const matchesBranch =
-      !filterBranch ||
-      (filterBranch === "central" ? !t.branchId : t.branchId === filterBranch);
+      return matchesSearch && matchesType && matchesCategory && matchesBranch && matchesDateFrom && matchesDateTo;
+    });
 
-    const day = (t.date || "").slice(0, 10);
-    const matchesDateFrom = !dateFrom || day >= dateFrom;
-    const matchesDateTo = !dateTo || day <= dateTo;
+    const getTxTime = (t: any) => new Date(t.date || t.createdAt).getTime() || 0;
 
-    return matchesSearch && matchesType && matchesCategory && matchesBranch && matchesDateFrom && matchesDateTo;
-  });
+    // Ordenamiento descendente estricto: De lo más reciente a lo más antiguo
+    const sortedMatchingTxs = [...matchingTxs].sort((a, b) => getTxTime(b) - getTxTime(a));
+
+    // MODO 2: Cronograma Total (Todos los registros planos de más reciente a más antiguo)
+    if (financeViewMode === "ALL_TXS") {
+      return sortedMatchingTxs.map((t) => {
+        const origSoles = t.currency === "USD" ? t.amount * (t.exchangeRate || 1) : t.amount;
+        return {
+          root: t,
+          adjustments: [],
+          timeline: [t],
+          origAmountSoles: origSoles,
+          totalAdjSoles: 0,
+          netAmount: origSoles,
+          statusType: t.status === "CANCELLED" ? "LIQUIDADO" : "NORMAL",
+        };
+      });
+    }
+
+    // MODO 1: Expedientes Financieros (Con Trazabilidad) - Principal y por Defecto
+    const adjustmentsByRef: Record<string, any[]> = {};
+    const adjustmentsByShift: Record<string, any[]> = {};
+
+    transactions.forEach((t) => {
+      if (isAdjustmentTx(t)) {
+        const matchRef = t.description?.match(/Referencia:\s*([A-Za-z0-9-]+)/);
+        if (matchRef && matchRef[1]) {
+          const ref = matchRef[1].trim();
+          if (!adjustmentsByRef[ref]) adjustmentsByRef[ref] = [];
+          adjustmentsByRef[ref].push(t);
+        }
+        if (t.cashShiftId) {
+          if (!adjustmentsByShift[t.cashShiftId]) adjustmentsByShift[t.cashShiftId] = [];
+          adjustmentsByShift[t.cashShiftId].push(t);
+        }
+      }
+    });
+
+    const roots: any[] = [];
+
+    sortedMatchingTxs.forEach((t) => {
+      if (isAdjustmentTx(t)) {
+        return;
+      }
+
+      const linkedAdjustments: any[] = [];
+      const docMatch = (t.name + " " + (t.description || "")).match(/([BF][A-Z0-9]{3}-\d+)/);
+      if (docMatch && docMatch[1] && adjustmentsByRef[docMatch[1]]) {
+        linkedAdjustments.push(...adjustmentsByRef[docMatch[1]]);
+      }
+      if (t.cashShiftId && adjustmentsByShift[t.cashShiftId]) {
+        linkedAdjustments.push(...adjustmentsByShift[t.cashShiftId]);
+      }
+
+      const uniqueLinked = Array.from(new Map(linkedAdjustments.map((a) => [a.id, a])).values());
+      const timeline = [t, ...uniqueLinked].sort((a, b) => getTxTime(a) - getTxTime(b));
+
+      const origAmountSoles = t.currency === "USD" ? t.amount * (t.exchangeRate || 1) : t.amount;
+      const totalAdjSoles = uniqueLinked.reduce((acc, a) => acc + (a.currency === "USD" ? a.amount * (a.exchangeRate || 1) : a.amount), 0);
+      const calculatedNet = origAmountSoles - totalAdjSoles;
+      const netAmount = Math.max(0, calculatedNet);
+
+      let statusType = "NORMAL";
+      if (t.status === "CANCELLED" || (uniqueLinked.length > 0 && netAmount <= 0.009)) {
+        statusType = "LIQUIDADO";
+      } else if (uniqueLinked.length > 0) {
+        statusType = "MODIFICADO";
+      }
+
+      roots.push({
+        root: t,
+        adjustments: uniqueLinked,
+        timeline,
+        origAmountSoles,
+        totalAdjSoles,
+        netAmount,
+        statusType,
+      });
+    });
+
+    return roots;
+  }, [transactions, searchTerm, filterType, filterCategory, filterBranch, dateFrom, dateTo, financeViewMode]);
+
+  const filteredTransactions = financeTree.map((item) => item.root);
 
   const filteredCategories = categories.filter(
     (c) => c.type === type && !c.parentId,
@@ -676,6 +799,59 @@ export default function BusinessFinancePage() {
             <div className="bg-white rounded-3xl shadow-xl shadow-slate-100/80 border border-slate-200/60 overflow-hidden">
               {/* FILTER BAR CONTAINER */}
               <div className="p-6 border-b border-slate-100 bg-slate-50/40 space-y-4">
+                {/* SELECTOR DE MODO: EXPEDIENTES FINANCIEROS (CON TRAZABILIDAD) VS CRONOGRAMA TOTAL */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200/70 pb-3">
+                  <div className="inline-flex p-1 bg-slate-200/80 rounded-2xl border border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFinanceViewMode("EXPEDIENTES");
+                        setTxPage(1);
+                      }}
+                      className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        financeViewMode === "EXPEDIENTES"
+                          ? "bg-white text-indigo-700 shadow-xs border border-indigo-100/60"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      <Layers className="w-4 h-4 text-indigo-600" />
+                      <span>Expedientes Financieros (Con Trazabilidad)</span>
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-extrabold uppercase border border-indigo-200/60">
+                        Principal
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFinanceViewMode("ALL_TXS");
+                        setTxPage(1);
+                      }}
+                      className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        financeViewMode === "ALL_TXS"
+                          ? "bg-white text-indigo-700 shadow-xs border border-indigo-100/60"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      <Clock className="w-4 h-4 text-slate-500" />
+                      <span>Cronograma Total (Todos los Movimientos)</span>
+                    </button>
+                  </div>
+
+                  <div className="text-xs text-slate-500 font-medium">
+                    {financeViewMode === "EXPEDIENTES" ? (
+                      <span className="flex items-center gap-1.5 text-indigo-900 font-semibold">
+                        <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                        Operaciones de origen con auditoría interna de ajustes, saldo neto y trazabilidad
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1.5 text-slate-600 font-medium">
+                        <Clock className="w-3.5 h-3.5 text-slate-400" />
+                        Historial cronológico continuo de todos los movimientos de más reciente a más antiguo
+                      </span>
+                    )}
+                  </div>
+                </div>
+
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                   <div className="flex items-center gap-2.5">
                     <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100">
@@ -685,12 +861,16 @@ export default function BusinessFinancePage() {
                       <h3 className="text-base font-black text-slate-900 tracking-tight">
                         Historial de Tesorería
                       </h3>
-                      <p className="text-xs text-slate-400 font-medium">Filtra y exporta las operaciones contables</p>
+                      <p className="text-xs text-slate-400 font-medium">
+                        {financeViewMode === "EXPEDIENTES"
+                          ? "Expedientes consolidados por orden de origen reciente"
+                          : "Cronograma continuo de movimientos"}
+                      </p>
                     </div>
                   </div>
 
                   <span className="text-xs font-bold text-slate-600 bg-white border border-slate-200/80 px-3.5 py-1.5 rounded-xl shadow-xs">
-                    {filteredTransactions.length} registros encontrados
+                    {financeTree.length} {financeViewMode === "EXPEDIENTES" ? "expedientes encontrados" : "movimientos encontrados"}
                   </span>
                 </div>
 
@@ -806,7 +986,7 @@ export default function BusinessFinancePage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100/80 text-xs font-medium">
-                    {filteredTransactions.length === 0 ? (
+                    {financeTree.length === 0 ? (
                       <tr>
                         <td colSpan={7} className="py-16 px-6 text-center">
                           <div className="flex flex-col items-center justify-center gap-2 max-w-sm mx-auto">
@@ -823,248 +1003,441 @@ export default function BusinessFinancePage() {
                         </td>
                       </tr>
                     ) : (
-                      filteredTransactions
+                      financeTree
                         .slice((txPage - 1) * txPageSize, txPage * txPageSize)
-                        .map((t) => (
-                          <tr
-                            key={t.id}
-                            className="hover:bg-indigo-50/20 transition-colors group"
-                          >
-                            {/* Fecha */}
-                            <td className="py-4 px-6 whitespace-nowrap text-slate-600 font-bold">
-                              <div className="flex items-center gap-2.5">
-                                <div className="p-1.5 rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-100/60 shadow-xs">
-                                  <Calendar className="w-3.5 h-3.5" />
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="text-xs font-black text-slate-800">
-                                    {formatPeruDate(t.date)}
-                                  </span>
-                                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">
-                                    Fecha de Pago
-                                  </span>
-                                </div>
-                              </div>
-                            </td>
+                        .map((item) => {
+                          const t = item.root;
+                          const isExpanded = !!expandedFinanceTxIds[t.id];
+                          const hasAuditOrAdjustments =
+                            item.adjustments.length > 0 ||
+                            !!t.cashShiftId ||
+                            t.name === "Cierre de Caja" ||
+                            t.description?.includes("[BITÁCORA DE AJUSTE");
 
-                            {/* Concepto & Clasificación */}
-                            <td className="py-4 px-6 max-w-sm">
-                              <div className="space-y-1.5">
-                                <div className="flex flex-wrap items-center gap-1.5">
-                                  <p className="font-extrabold text-slate-900 group-hover:text-indigo-600 transition-colors truncate">
-                                    {t.name || t.description || "Movimiento Financiero"}
-                                  </p>
-                                  {t.name === "Cierre de Caja" && (
-                                    <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200">
-                                      🔒 Cierre de Turno
-                                    </span>
-                                  )}
-                                  {(t.name?.includes("Ajuste") || t.description?.includes("[BITÁCORA DE AJUSTE")) && (
-                                    <span
-                                      className={`inline-flex items-center gap-1 text-[9px] font-black uppercase px-2 py-0.5 rounded-md ${
-                                        t.description?.includes("MODIFICADO")
-                                          ? "bg-amber-50 text-amber-700 border border-amber-200"
-                                          : "bg-rose-50 text-rose-700 border border-rose-200"
-                                      }`}
-                                    >
-                                      {t.description?.includes("MODIFICADO")
-                                        ? "✏️ Ajuste: Modificado"
-                                        : "🔻 Ajuste: Anulado / Baja"}
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="flex flex-wrap items-center gap-1.5">
-                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
-                                    <Tag className="w-2.5 h-2.5 text-slate-400" />
-                                    {t.category?.name || "Sin Categoría"}
-                                  </span>
-                                  {branches.length > 1 && (
-                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">
-                                      <Building2 className="w-2.5 h-2.5 text-indigo-400" />
-                                      {t.branch?.name || "Sede Principal"}
-                                    </span>
-                                  )}
-                                </div>
-                                {t.description && t.description !== t.name && (
-                                  <p
-                                    className={`text-[10px] font-medium leading-relaxed rounded-lg p-1.5 ${
-                                      t.description.includes("[BITÁCORA DE AJUSTE")
-                                        ? "bg-rose-50/70 text-rose-850 border border-rose-200/60 font-semibold"
-                                        : "text-slate-400 bg-slate-50/60"
-                                    }`}
-                                  >
-                                    {t.description}
-                                  </p>
-                                )}
-                              </div>
-                            </td>
+                          return (
+                            <Fragment key={t.id}>
+                              <tr className="hover:bg-indigo-50/20 transition-colors group">
+                                {/* Fecha */}
+                                <td className="py-4 px-6 whitespace-nowrap text-slate-600 font-bold">
+                                  <div className="flex items-center gap-2.5">
+                                    <div className="p-1.5 rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-100/60 shadow-xs">
+                                      <Calendar className="w-3.5 h-3.5" />
+                                    </div>
+                                    <div className="flex flex-col">
+                                      <span className="text-xs font-black text-slate-800">
+                                        {formatPeruDate(t.date)}
+                                      </span>
+                                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">
+                                        Fecha de Pago
+                                      </span>
+                                    </div>
+                                  </div>
+                                </td>
 
-                            {/* Tipo */}
-                            <td className="py-4 px-4 text-center whitespace-nowrap">
-                              <span
-                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider ${t.type === "INCOME"
-                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
-                                  : "bg-rose-50 text-rose-700 border border-rose-100"
-                                  }`}
-                              >
-                                {t.type === "INCOME" ? (
-                                  <>
-                                    <ArrowUpRight className="w-3 h-3 stroke-[3]" /> Ingreso
-                                  </>
-                                ) : (
-                                  <>
-                                    <ArrowDownRight className="w-3 h-3 stroke-[3]" /> Egreso
-                                  </>
-                                )}
-                              </span>
-                            </td>
-
-                            {/* Método & Comprobante */}
-                            <td className="py-4 px-4 text-center whitespace-nowrap">
-                              <div className="flex flex-col items-center gap-1">
-                                <span className="text-[10px] font-extrabold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
-                                  {paymentLabel[t.paymentMethod] || t.paymentMethod}
-                                </span>
-                                {t.receiptUrl ? (
-                                  <a
-                                    href={getReceiptAbsoluteUrl(t.receiptUrl) || "#"}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1 text-[10px] font-extrabold text-indigo-600 hover:text-indigo-800 hover:underline"
-                                  >
-                                    <Paperclip className="w-3 h-3" /> Ver Adjunto
-                                  </a>
-                                ) : (
-                                  <span className="text-[9px] text-slate-300 font-medium">Sin adjunto</span>
-                                )}
-                              </div>
-                            </td>
-
-                            {/* Monto (Soles) & USD */}
-                            <td className="py-4 px-6 text-right whitespace-nowrap">
-                              <div className="space-y-0.5">
-                                <p
-                                  className={`text-sm font-black ${t.type === "INCOME" ? "text-emerald-600" : "text-rose-600"
-                                    }`}
-                                >
-                                  {t.type === "INCOME" ? "+" : "-"} S/{" "}
-                                  {(t.currency === "USD" ? t.amount * (t.exchangeRate || 1) : t.amount).toLocaleString(
-                                    "es-PE",
-                                    { minimumFractionDigits: 2 }
-                                  )}
-                                </p>
-                                {t.currency === "USD" && (
-                                  <p className="text-[10px] text-slate-400 font-bold">
-                                    ${t.amount.toFixed(2)} (TC: {t.exchangeRate || 1})
-                                  </p>
-                                )}
-                              </div>
-                            </td>
-
-                            {/* Estado */}
-                            <td className="py-4 px-4 text-center whitespace-nowrap">
-                              <span
-                                className={`px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider ${t.status === "CANCELLED"
-                                  ? "bg-rose-100 text-rose-700 border border-rose-200"
-                                  : t.status === "PENDING"
-                                    ? "bg-amber-100 text-amber-700 border border-amber-200"
-                                    : "bg-emerald-100 text-emerald-700 border border-emerald-200"
-                                  }`}
-                              >
-                                {t.status === "CANCELLED"
-                                  ? "Anulado"
-                                  : t.status === "PENDING"
-                                    ? "Pendiente"
-                                    : "Finalizado"}
-                              </span>
-                            </td>
-
-                            {/* Acciones */}
-                            <td className="py-4 px-6 text-center whitespace-nowrap">
-                              <div className="flex items-center justify-center gap-1">
-                                {(() => {
-                                  const matchPurchase = t.description?.match(/Pedido de Compra\. ID:\s*([a-fA-F0-9-]+)/);
-                                  const purchaseOrderId = matchPurchase ? matchPurchase[1] : null;
-
-                                  if (purchaseOrderId) {
-                                    if (t.status === "CANCELLED") {
-                                      return <span className="text-xs text-slate-300 font-bold">—</span>;
-                                    }
-                                    return (
-                                      <button
-                                        onClick={() => {
-                                          setOrderToCancel({ id: purchaseOrderId, txId: t.id });
-                                          setIsCancelOrderConfirmOpen(true);
-                                        }}
-                                        className="p-2 text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
-                                        title="Cancelar Compra (Anula el egreso)"
-                                      >
-                                        <XCircle className="w-4 h-4" />
-                                      </button>
-                                    );
-                                  }
-
-                                  return (
-                                    <>
-                                      {(t.cashShiftId ||
-                                        t.name === "Cierre de Caja" ||
-                                        t.description?.includes("[BITÁCORA DE AJUSTE")) && (
-                                        <button
-                                          onClick={() => handleOpenAudit(t)}
-                                          className="p-2 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-xl transition-all"
-                                          title="Ver Bitácora de Auditoría y Trazabilidad Legal"
+                                {/* Concepto & Clasificación */}
+                                <td className="py-4 px-6 max-w-sm">
+                                  <div className="space-y-1.5">
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      <p className="font-extrabold text-slate-900 group-hover:text-indigo-600 transition-colors truncate">
+                                        {t.name || t.description || "Movimiento Financiero"}
+                                      </p>
+                                      {t.name === "Cierre de Caja" && (
+                                        <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                          🔒 Cierre de Turno
+                                        </span>
+                                      )}
+                                      {(t.name?.includes("Ajuste") || t.description?.includes("[BITÁCORA DE AJUSTE")) && (
+                                        <span
+                                          className={`inline-flex items-center gap-1 text-[9px] font-black uppercase px-2 py-0.5 rounded-md ${
+                                            t.description?.includes("MODIFICADO")
+                                              ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                              : "bg-rose-50 text-rose-700 border border-rose-200"
+                                          }`}
                                         >
-                                          <Search className="w-4 h-4" />
+                                          {t.description?.includes("MODIFICADO")
+                                            ? "✏️ Ajuste: Modificado"
+                                            : "🔻 Ajuste: Anulado / Baja"}
+                                        </span>
+                                      )}
+                                      {hasAuditOrAdjustments && (
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleExpandFinance(t.id)}
+                                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold cursor-pointer transition-all ${
+                                            isExpanded
+                                              ? "bg-indigo-600 text-white shadow-xs"
+                                              : "bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200"
+                                          }`}
+                                          title={isExpanded ? "Ocultar trazabilidad y ajustes" : "Ver trazabilidad, saldo neto y cronología"}
+                                        >
+                                          <Search className="w-3 h-3" />
+                                          <span>{item.timeline.length > 1 ? `${item.timeline.length} eventos` : "Trazabilidad"}</span>
+                                          {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                                         </button>
                                       )}
-                                      {t.status !== "CANCELLED" && (
-                                        <>
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
+                                        <Tag className="w-2.5 h-2.5 text-slate-400" />
+                                        {t.category?.name || "Sin Categoría"}
+                                      </span>
+                                      {branches.length > 1 && (
+                                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">
+                                          <Building2 className="w-2.5 h-2.5 text-indigo-400" />
+                                          {t.branch?.name || "Sede Principal"}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {t.description && t.description !== t.name && (
+                                      <p
+                                        className={`text-[10px] font-medium leading-relaxed rounded-lg p-1.5 ${
+                                          t.description.includes("[BITÁCORA DE AJUSTE")
+                                            ? "bg-rose-50/70 text-rose-850 border border-rose-200/60 font-semibold"
+                                            : "text-slate-400 bg-slate-50/60"
+                                        }`}
+                                      >
+                                        {t.description}
+                                      </p>
+                                    )}
+                                  </div>
+                                </td>
+
+                                {/* Tipo */}
+                                <td className="py-4 px-4 text-center whitespace-nowrap">
+                                  <span
+                                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider ${
+                                      t.type === "INCOME"
+                                        ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
+                                        : "bg-rose-50 text-rose-700 border border-rose-100"
+                                    }`}
+                                  >
+                                    {t.type === "INCOME" ? (
+                                      <>
+                                        <ArrowUpRight className="w-3 h-3 stroke-[3]" /> Ingreso
+                                      </>
+                                    ) : (
+                                      <>
+                                        <ArrowDownRight className="w-3 h-3 stroke-[3]" /> Egreso
+                                      </>
+                                    )}
+                                  </span>
+                                </td>
+
+                                {/* Método & Comprobante */}
+                                <td className="py-4 px-4 text-center whitespace-nowrap">
+                                  <div className="flex flex-col items-center gap-1">
+                                    <span className="text-[10px] font-extrabold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
+                                      {paymentLabel[t.paymentMethod] || t.paymentMethod}
+                                    </span>
+                                    {t.receiptUrl ? (
+                                      <a
+                                        href={getReceiptAbsoluteUrl(t.receiptUrl) || "#"}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-1 text-[10px] font-extrabold text-indigo-600 hover:text-indigo-800 hover:underline"
+                                      >
+                                        <Paperclip className="w-3 h-3" /> Ver Adjunto
+                                      </a>
+                                    ) : (
+                                      <span className="text-[9px] text-slate-300 font-medium">Sin adjunto</span>
+                                    )}
+                                  </div>
+                                </td>
+
+                                {/* Monto (Soles) & USD con balance neto */}
+                                <td className="py-4 px-6 text-right whitespace-nowrap">
+                                  <div className="space-y-0.5">
+                                    <div className="flex items-center justify-end gap-1.5">
+                                      {item.adjustments.length > 0 && (
+                                        <span className="text-[10px] text-slate-400 line-through font-bold">
+                                          S/ {item.origAmountSoles.toLocaleString("es-PE", { minimumFractionDigits: 2 })}
+                                        </span>
+                                      )}
+                                      <p
+                                        className={`text-sm font-black ${
+                                          t.type === "INCOME"
+                                            ? item.netAmount > 0.009
+                                              ? "text-emerald-600"
+                                              : "text-slate-400 line-through"
+                                            : "text-rose-600"
+                                        }`}
+                                      >
+                                        {t.type === "INCOME" ? "+" : "-"} S/{" "}
+                                        {item.netAmount.toLocaleString("es-PE", { minimumFractionDigits: 2 })}
+                                      </p>
+                                    </div>
+                                    {item.adjustments.length > 0 && (
+                                      <span className="inline-flex items-center gap-1 text-[9px] font-black text-amber-700 bg-amber-50 border border-amber-200/80 px-1.5 py-0.5 rounded-md">
+                                        Ajustes: -S/ {item.totalAdjSoles.toFixed(2)}
+                                      </span>
+                                    )}
+                                    {t.currency === "USD" && (
+                                      <p className="text-[10px] text-slate-400 font-bold">
+                                        ${t.amount.toFixed(2)} (TC: {t.exchangeRate || 1})
+                                      </p>
+                                    )}
+                                  </div>
+                                </td>
+
+                                {/* Estado Contable */}
+                                <td className="py-4 px-4 text-center whitespace-nowrap">
+                                  <span
+                                    className={`px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider ${
+                                      item.statusType === "LIQUIDADO"
+                                        ? "bg-rose-100 text-rose-700 border border-rose-200"
+                                        : item.statusType === "MODIFICADO"
+                                          ? "bg-amber-100 text-amber-800 border border-amber-200"
+                                          : t.status === "CANCELLED"
+                                            ? "bg-rose-100 text-rose-700 border border-rose-200"
+                                            : t.status === "PENDING"
+                                              ? "bg-amber-100 text-amber-700 border border-amber-200"
+                                              : "bg-emerald-100 text-emerald-700 border border-emerald-200"
+                                    }`}
+                                  >
+                                    {item.statusType === "LIQUIDADO"
+                                      ? "Liquidado / Anulado"
+                                      : item.statusType === "MODIFICADO"
+                                        ? "Modificado"
+                                        : t.status === "CANCELLED"
+                                          ? "Anulado"
+                                          : t.status === "PENDING"
+                                            ? "Pendiente"
+                                            : "Finalizado"}
+                                  </span>
+                                </td>
+
+                                {/* Acciones */}
+                                <td className="py-4 px-6 text-center whitespace-nowrap">
+                                  <div className="flex items-center justify-center gap-1">
+                                    {(() => {
+                                      const matchPurchase = t.description?.match(/Pedido de Compra\. ID:\s*([a-fA-F0-9-]+)/);
+                                      const purchaseOrderId = matchPurchase ? matchPurchase[1] : null;
+
+                                      if (purchaseOrderId) {
+                                        if (t.status === "CANCELLED") {
+                                          return <span className="text-xs text-slate-300 font-bold">—</span>;
+                                        }
+                                        return (
                                           <button
-                                            onClick={() => handleEditClick(t)}
-                                            className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
-                                            title="Editar movimiento"
+                                            onClick={() => {
+                                              setOrderToCancel({ id: purchaseOrderId, txId: t.id });
+                                              setIsCancelOrderConfirmOpen(true);
+                                            }}
+                                            className="p-2 text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
+                                            title="Cancelar Compra (Anula el egreso)"
                                           >
-                                            <Edit className="w-4 h-4" />
+                                            <XCircle className="w-4 h-4" />
                                           </button>
+                                        );
+                                      }
+
+                                      return (
+                                        <>
+                                          {(t.cashShiftId ||
+                                            t.name === "Cierre de Caja" ||
+                                            t.description?.includes("[BITÁCORA DE AJUSTE")) && (
+                                            <button
+                                              onClick={() => handleOpenAudit(t)}
+                                              className="p-2 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-xl transition-all"
+                                              title="Ver Bitácora de Auditoría y Trazabilidad Legal"
+                                            >
+                                              <Search className="w-4 h-4" />
+                                            </button>
+                                          )}
+                                          {t.status !== "CANCELLED" && (
+                                            <>
+                                              <button
+                                                onClick={() => handleEditClick(t)}
+                                                className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
+                                                title="Editar movimiento"
+                                              >
+                                                <Edit className="w-4 h-4" />
+                                              </button>
+                                              <button
+                                                onClick={() => {
+                                                  setTxIdToConfirm(t.id);
+                                                  setIsRevertConfirmOpen(true);
+                                                }}
+                                                className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition-all"
+                                                title="Devolver a pendientes (por cobrar/pagar)"
+                                              >
+                                                <RotateCcw className="w-4 h-4" />
+                                              </button>
+                                            </>
+                                          )}
                                           <button
                                             onClick={() => {
                                               setTxIdToConfirm(t.id);
-                                              setIsRevertConfirmOpen(true);
+                                              setIsDeleteConfirmOpen(true);
                                             }}
-                                            className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition-all"
-                                            title="Devolver a pendientes (por cobrar/pagar)"
+                                            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
+                                            title="Eliminar permanentemente"
                                           >
-                                            <RotateCcw className="w-4 h-4" />
+                                            <Trash2 className="w-4 h-4" />
                                           </button>
                                         </>
-                                      )}
-                                      <button
-                                        onClick={() => {
-                                          setTxIdToConfirm(t.id);
-                                          setIsDeleteConfirmOpen(true);
-                                        }}
-                                        className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
-                                        title="Eliminar permanentemente"
-                                      >
-                                        <Trash2 className="w-4 h-4" />
-                                      </button>
-                                    </>
-                                  );
-                                })()}
-                              </div>
-                            </td>
-                          </tr>
-                        ))
+                                      );
+                                    })()}
+                                  </div>
+                                </td>
+                              </tr>
+
+                              {/* CAJÓN DESPLEGABLE DE TRAZABILIDAD (2 PANELES EJECUTIVOS) */}
+                              {isExpanded && (
+                                <tr className="bg-slate-50/80 border-t border-b border-indigo-100">
+                                  <td colSpan={7} className="p-4 sm:p-5">
+                                    <div className="bg-white border border-indigo-100 rounded-2xl p-4 shadow-sm space-y-4">
+                                      {/* Header del Cajón */}
+                                      <div className="flex flex-wrap items-center justify-between border-b border-slate-100 pb-3 gap-2">
+                                        <div className="flex items-center gap-2">
+                                          <span className="p-1.5 bg-indigo-50 text-indigo-700 rounded-lg">
+                                            <ShieldCheck className="w-4 h-4" />
+                                          </span>
+                                          <div>
+                                            <span className="text-xs font-black text-indigo-950 block">
+                                              Expediente de Tesorería & Trazabilidad Contable
+                                            </span>
+                                            <span className="text-[10px] text-slate-500">
+                                              Concepto: {t.name || t.description || "Movimiento"} • Fecha: {formatPeruDate(t.date)}
+                                            </span>
+                                          </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-2">
+                                          <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-lg border ${
+                                            item.statusType === "LIQUIDADO"
+                                              ? "bg-rose-50 text-rose-700 border-rose-200"
+                                              : item.statusType === "MODIFICADO"
+                                                ? "bg-amber-50 text-amber-700 border-amber-200"
+                                                : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                          }`}>
+                                            {item.statusType === "LIQUIDADO" ? "Liquidado a Cero" : item.statusType === "MODIFICADO" ? "Saldo Modificado" : "Operación Vigente"}
+                                          </span>
+                                          {(t.cashShiftId || t.name === "Cierre de Caja" || t.description?.includes("[BITÁCORA DE AJUSTE")) && (
+                                            <button
+                                              type="button"
+                                              onClick={() => handleOpenAudit(t)}
+                                              className="px-2.5 py-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                                            >
+                                              <Search className="w-3 h-3" />
+                                              <span>Auditoría Legal Completa</span>
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      {/* 2 PANELES EJECUTIVOS */}
+                                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                                        {/* PANEL IZQUIERDO: Resumen Financiero y Balance de Liquidación */}
+                                        <div className="lg:col-span-5 bg-gradient-to-br from-slate-50 to-indigo-50/30 rounded-xl p-3.5 border border-indigo-50 space-y-3">
+                                          <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                                            <Landmark className="w-3.5 h-3.5 text-indigo-600" />
+                                            <span>Conciliación Financiera</span>
+                                          </div>
+
+                                          <div className="space-y-2 bg-white rounded-lg p-3 border border-slate-200/70 text-xs">
+                                            <div className="flex justify-between items-center text-slate-600">
+                                              <span className="text-[11px]">Importe Original:</span>
+                                              <span className="font-bold text-slate-900">
+                                                S/ {item.origAmountSoles.toLocaleString("es-PE", { minimumFractionDigits: 2 })}
+                                              </span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-rose-600">
+                                              <span className="text-[11px]">Total Deducciones / Ajustes:</span>
+                                              <span className="font-bold">
+                                                {item.totalAdjSoles > 0 ? `- S/ ${item.totalAdjSoles.toLocaleString("es-PE", { minimumFractionDigits: 2 })}` : "S/ 0.00"}
+                                              </span>
+                                            </div>
+                                            <div className="pt-2 border-t border-slate-100 flex justify-between items-center">
+                                              <span className="font-extrabold text-slate-800 text-[11px]">Saldo Líquido Vigente:</span>
+                                              <span className={`text-sm font-black ${item.netAmount > 0.009 ? "text-emerald-700" : "text-rose-600"}`}>
+                                                S/ {item.netAmount.toLocaleString("es-PE", { minimumFractionDigits: 2 })}
+                                              </span>
+                                            </div>
+                                          </div>
+
+                                          <p className="text-[10px] text-slate-500 leading-relaxed">
+                                            {item.statusType === "LIQUIDADO"
+                                              ? "Esta operación fue compensada en su totalidad por notas de crédito o cancelaciones formales. No suma como gasto operativo ni genera distorsión en la liquidez."
+                                              : item.statusType === "MODIFICADO"
+                                                ? "Esta operación tiene ajustes contables aplicados. Solo el saldo vigente de S/ " + item.netAmount.toFixed(2) + " computa en el balance real."
+                                                : "Operación financiera regular sin deducciones ni notas de ajuste aplicadas."}
+                                          </p>
+                                        </div>
+
+                                        {/* PANEL DERECHO: Cronología de Trazabilidad (Del Más Antiguo al Más Reciente) */}
+                                        <div className="lg:col-span-7 bg-white rounded-xl p-3.5 border border-slate-200/70 space-y-3">
+                                          <div className="flex items-center justify-between text-xs font-bold text-slate-800">
+                                            <div className="flex items-center gap-1.5">
+                                              <Clock className="w-3.5 h-3.5 text-indigo-600" />
+                                              <span>Secuencia Cronológica de Movimientos</span>
+                                            </div>
+                                            <span className="text-[10px] font-semibold text-slate-400">
+                                              (Origen ➔ Ajustes)
+                                            </span>
+                                          </div>
+
+                                          <div className="relative pl-4 space-y-3 before:absolute before:left-1.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-indigo-100">
+                                            {item.timeline.map((txItem: any, idx: number) => {
+                                              const isRootTx = txItem.id === t.id;
+                                              const txSoles = txItem.currency === "USD" ? txItem.amount * (txItem.exchangeRate || 1) : txItem.amount;
+                                              return (
+                                                <div key={txItem.id || idx} className="relative flex items-start gap-2.5 text-xs">
+                                                  <div className={`w-3 h-3 rounded-full mt-0.5 shrink-0 border-2 ${
+                                                    isRootTx
+                                                      ? "bg-indigo-600 border-white ring-2 ring-indigo-200"
+                                                      : "bg-amber-500 border-white ring-2 ring-amber-200"
+                                                  }`} />
+                                                  <div className="flex-1 bg-slate-50/70 hover:bg-slate-50 rounded-lg p-2 border border-slate-100 transition-colors">
+                                                    <div className="flex flex-wrap items-center justify-between gap-1">
+                                                      <div className="flex items-center gap-1.5">
+                                                        <span className={`text-[9px] font-black uppercase px-1.5 py-0.2 rounded ${
+                                                          isRootTx ? "bg-indigo-100 text-indigo-700" : "bg-amber-100 text-amber-800"
+                                                        }`}>
+                                                          {isRootTx ? "1. Registro de Origen" : `${idx + 1}. Movimiento de Ajuste`}
+                                                        </span>
+                                                        <span className="font-bold text-slate-800">
+                                                          {txItem.name || txItem.description || "Movimiento"}
+                                                        </span>
+                                                      </div>
+                                                      <span className={`font-black ${
+                                                        txItem.type === "INCOME" ? "text-emerald-600" : "text-rose-600"
+                                                      }`}>
+                                                        {txItem.type === "INCOME" ? "+" : "-"} S/ {txSoles.toFixed(2)}
+                                                      </span>
+                                                    </div>
+                                                    <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-slate-400">
+                                                      <span>{formatPeruDate(txItem.date)}</span>
+                                                      {txItem.description && txItem.description !== txItem.name && (
+                                                        <span className="text-slate-600 truncate max-w-xs">
+                                                          • {txItem.description}
+                                                        </span>
+                                                      )}
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
+                          );
+                        })
                     )}
                   </tbody>
                 </table>
               </div>
 
-              {filteredTransactions.length > 0 && (
+              {financeTree.length > 0 && (
                 <div className="p-4 border-t border-slate-100 bg-slate-50/30">
                   <Pagination
                     currentPage={txPage}
-                    totalItems={filteredTransactions.length}
+                    totalItems={financeTree.length}
                     pageSize={txPageSize}
                     onPageChange={(p) => setTxPage(p)}
                     onPageSizeChange={(s) => { setTxPageSize(s); setTxPage(1); }}
