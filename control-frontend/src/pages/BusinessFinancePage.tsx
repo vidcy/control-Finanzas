@@ -109,7 +109,7 @@ export default function BusinessFinancePage() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [txPage, setTxPage] = useState(1);
-  const [txPageSize, setTxPageSize] = useState(8);
+  const [txPageSize, setTxPageSize] = useState(6);
   const [financeViewMode, setFinanceViewMode] = useState<"EXPEDIENTES" | "ALL_TXS">("EXPEDIENTES");
   const [expandedFinanceTxIds, setExpandedFinanceTxIds] = useState<Record<string, boolean>>({});
 
