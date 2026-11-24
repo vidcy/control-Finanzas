@@ -23,7 +23,12 @@ export class ProductsService {
 
     // Standardize numeric fields
     const stock = parseFloat(productData.stock || 0) || 0;
-    const minStock = parseFloat(productData.minStock || 5) || 5;
+    const minStock =
+      productData.minStock !== undefined &&
+      productData.minStock !== null &&
+      !isNaN(parseFloat(productData.minStock))
+        ? parseFloat(productData.minStock)
+        : 1;
     const costPrice = parseFloat(productData.costPrice || 0) || 0;
     const salePrice = parseFloat(productData.salePrice || 0) || 0;
     const adjustedPrice =
@@ -229,7 +234,12 @@ export class ProductsService {
     if (productData.sku !== undefined) updateData.sku = productData.sku ? String(productData.sku).trim() : null;
     if (productData.color !== undefined) updateData.color = productData.color ? String(productData.color).trim() : null;
     if (productData.stock !== undefined) updateData.stock = parseFloat(productData.stock || 0) || 0;
-    if (productData.minStock !== undefined) updateData.minStock = parseFloat(productData.minStock || 0) || 0;
+    if (productData.minStock !== undefined) {
+      updateData.minStock =
+        productData.minStock !== null && !isNaN(parseFloat(productData.minStock))
+          ? parseFloat(productData.minStock)
+          : 1;
+    }
     if (productData.costPrice !== undefined) updateData.costPrice = parseFloat(productData.costPrice || 0) || 0;
     if (productData.salePrice !== undefined) updateData.salePrice = parseFloat(productData.salePrice || 0) || 0;
     if (productData.adjustedPrice !== undefined) {

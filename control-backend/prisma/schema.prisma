@@ -277,7 +277,7 @@ model Product {
   distributorPrice Float?
   initialStock  Float        @default(0)
   stock         Float        @default(0)
-  minStock      Float        @default(5)
+  minStock      Float        @default(1)
   maxStock      Float?
   unit          String       @default("UNIDAD")
   imageUrl      String?
