@@ -105,7 +105,7 @@ export default function BusinessDashboardPage() {
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
       const validSales = (rawSales || []).filter(
-        (s: any) => s.billingStatus !== "ANNULLED" && s.status !== "CANCELLED"
+        (s: any) => s.billingStatus !== "ANNULLED" && s.billingStatus !== "CANCELLED" && s.status !== "CANCELLED" && !s.isAnnulledByNote
       );
 
       // Fallback check if sales exist in transactions as well

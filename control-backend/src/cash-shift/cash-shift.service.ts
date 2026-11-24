@@ -186,25 +186,47 @@ export class CashShiftService {
     const salesList = await this.prisma.sale.findMany({
       where: {
         cashShiftId: activeShift.id,
+        billingStatus: { not: 'CANCELLED' },
       },
       select: {
         amount: true,
         paymentMethod: true,
+        fiscalDocument: {
+          select: { status: true },
+        },
       },
     });
 
+    const validSales = salesList.filter(
+      (s) => s.fiscalDocument?.status !== 'CANCELLED',
+    );
+
     const commissionsList = await this.prisma.commission.findMany({
       where: {
-        sale: { cashShiftId: activeShift.id }
-      }
+        sale: {
+          cashShiftId: activeShift.id,
+          billingStatus: { not: 'CANCELLED' },
+        },
+      },
+      include: {
+        sale: {
+          select: {
+            fiscalDocument: { select: { status: true } },
+          },
+        },
+      },
     });
 
-    const totalSales = salesList.reduce((acc, s) => acc + s.amount, 0);
-    const cashSales = salesList
+    const validCommissions = commissionsList.filter(
+      (c) => c.sale?.fiscalDocument?.status !== 'CANCELLED',
+    );
+
+    const totalSales = validSales.reduce((acc, s) => acc + s.amount, 0);
+    const cashSales = validSales
       .filter((s) => !s.paymentMethod || (s.paymentMethod as string) === 'CASH' || (s.paymentMethod as string) === 'EFECTIVO')
       .reduce((acc, s) => acc + s.amount, 0);
 
-    const totalAdditionalCommissions = commissionsList
+    const totalAdditionalCommissions = validCommissions
       .filter((c) => c.isAdditional)
       .reduce((sum, c) => sum + c.amount, 0);
 
@@ -347,12 +369,23 @@ export class CashShiftService {
     return Promise.all(
       shifts.map(async (shift) => {
         const salesList = await this.prisma.sale.findMany({
-          where: { cashShiftId: shift.id },
-          select: { amount: true, paymentMethod: true },
+          where: {
+            cashShiftId: shift.id,
+            billingStatus: { not: 'CANCELLED' },
+          },
+          select: {
+            amount: true,
+            paymentMethod: true,
+            fiscalDocument: { select: { status: true } },
+          },
         });
 
-        const totalSales = salesList.reduce((acc, s) => acc + s.amount, 0);
-        const cashSales = salesList
+        const validSales = salesList.filter(
+          (s) => s.fiscalDocument?.status !== 'CANCELLED',
+        );
+
+        const totalSales = validSales.reduce((acc, s) => acc + s.amount, 0);
+        const cashSales = validSales
           .filter(
             (s) =>
               !s.paymentMethod ||
@@ -514,21 +547,44 @@ export class CashShiftService {
       },
       include: {
         items: true,
+        fiscalDocument: true,
       },
       orderBy: { date: 'asc' },
     });
 
+    const validSales = sales.filter(
+      (sale) =>
+        sale.billingStatus !== 'CANCELLED' &&
+        sale.fiscalDocument?.status !== 'CANCELLED',
+    );
+
     let totalSales = 0;
-    for (const sale of sales) {
+    for (const sale of validSales) {
       totalSales += sale.amount;
     }
 
     const commissionsList = await this.prisma.commission.findMany({
-      where: { sale: { cashShiftId: id } }
+      where: {
+        sale: {
+          cashShiftId: id,
+          billingStatus: { not: 'CANCELLED' },
+        },
+      },
+      include: {
+        sale: {
+          select: {
+            fiscalDocument: { select: { status: true } },
+          },
+        },
+      },
     });
 
-    const totalCommissions = commissionsList.reduce((sum, c) => sum + c.amount, 0);
-    const totalAdditionalCommissions = commissionsList
+    const validCommissions = commissionsList.filter(
+      (c) => c.sale?.fiscalDocument?.status !== 'CANCELLED',
+    );
+
+    const totalCommissions = validCommissions.reduce((sum, c) => sum + c.amount, 0);
+    const totalAdditionalCommissions = validCommissions
       .filter((c) => c.isAdditional)
       .reduce((sum, c) => sum + c.amount, 0);
 
@@ -543,6 +599,100 @@ export class CashShiftService {
         netAmount: parseFloat((totalSales - totalAdditionalCommissions).toFixed(2)),
         netEarnings: parseFloat((totalSales - totalAdditionalCommissions).toFixed(2)),
       } : {}),
+    };
+  }
+
+  async recalculateShiftTotals(shiftId: string) {
+    if (!shiftId) return null;
+
+    const shift = await this.prisma.cashShift.findUnique({
+      where: { id: shiftId },
+    });
+    if (!shift) return null;
+
+    const salesList = await this.prisma.sale.findMany({
+      where: {
+        cashShiftId: shiftId,
+        billingStatus: { not: 'CANCELLED' },
+      },
+      select: {
+        amount: true,
+        paymentMethod: true,
+        fiscalDocument: {
+          select: { status: true },
+        },
+      },
+    });
+
+    const validSales = salesList.filter(
+      (s) => s.fiscalDocument?.status !== 'CANCELLED',
+    );
+
+    const commissionsList = await this.prisma.commission.findMany({
+      where: {
+        sale: {
+          cashShiftId: shiftId,
+          billingStatus: { not: 'CANCELLED' },
+        },
+      },
+      include: {
+        sale: {
+          select: {
+            fiscalDocument: { select: { status: true } },
+          },
+        },
+      },
+    });
+
+    const validCommissions = commissionsList.filter(
+      (c) => c.sale?.fiscalDocument?.status !== 'CANCELLED',
+    );
+
+    const totalSales = validSales.reduce((acc, s) => acc + s.amount, 0);
+    const cashSales = validSales
+      .filter(
+        (s) =>
+          !s.paymentMethod ||
+          (s.paymentMethod as string) === 'CASH' ||
+          (s.paymentMethod as string) === 'EFECTIVO',
+      )
+      .reduce((acc, s) => acc + s.amount, 0);
+
+    const totalAdditionalCommissions = validCommissions
+      .filter((c) => c.isAdditional)
+      .reduce((sum, c) => sum + c.amount, 0);
+
+    const finalBalance = parseFloat(
+      (shift.initialBalance + cashSales - totalAdditionalCommissions).toFixed(2),
+    );
+
+    if (shift.status === 'CLOSED') {
+      await this.prisma.cashShift.update({
+        where: { id: shiftId },
+        data: {
+          totalSales: parseFloat(totalSales.toFixed(2)),
+          finalBalance,
+          expectedBalance: finalBalance,
+        },
+      });
+
+      await this.prisma.transaction.updateMany({
+        where: {
+          cashShiftId: shiftId,
+          name: 'Cierre de Caja',
+        },
+        data: {
+          amount: finalBalance,
+          description: `Cierre de Caja - ID: ${shiftId.substring(0, 8)}... (Ajustado por anulación) (Fondo Inicial: S/ ${shift.initialBalance.toFixed(2)} + Ventas (Neto comisiones): S/ ${(totalSales - totalAdditionalCommissions).toFixed(2)})`,
+        },
+      });
+    }
+
+    return {
+      shiftId,
+      totalSales: parseFloat(totalSales.toFixed(2)),
+      cashSales: parseFloat(cashSales.toFixed(2)),
+      finalBalance,
     };
   }
 }

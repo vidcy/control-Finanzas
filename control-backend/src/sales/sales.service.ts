@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CcofactService } from '../ccofact/ccofact.service';
+import { CashShiftService } from '../cash-shift/cash-shift.service';
 import { FiscalStatus } from '@prisma/client';
 
 function parseStartDateFilter(val?: string): Date | undefined {
@@ -24,6 +25,7 @@ export class SalesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ccofactService: CcofactService,
+    private readonly cashShiftService: CashShiftService,
   ) { }
 
   async listSalesFiltered(options: {
@@ -381,18 +383,7 @@ export class SalesService {
       throw new NotFoundException('Venta no encontrada');
     }
 
-    if (sale.cashShiftId) {
-      const shift = await this.prisma.cashShift.findUnique({
-        where: { id: sale.cashShiftId },
-      });
-      if (shift && shift.status === 'CLOSED') {
-        throw new BadRequestException(
-          'No se puede eliminar una venta que pertenece a un cierre de caja ya cerrado.',
-        );
-      }
-    }
-
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       // 1. Restore stock based on OUT inventory movements of this sale
       const movements = await tx.inventoryMovement.findMany({
         where: { documentId: sale.id, type: 'OUT', reason: 'SALE' },
@@ -532,13 +523,23 @@ export class SalesService {
         }
       }
 
-      // 3. Delete the Sale (cascade will delete items and commissions)
-      await tx.sale.delete({
+      // 3. Marcar la venta como CANCELLED en base de datos (preservar auditoría histórica conforme a SUNAT)
+      await tx.sale.update({
         where: { id: sale.id },
+        data: {
+          billingStatus: 'CANCELLED',
+          billingError: `Venta anulada formalmente: ${options?.motivo || 'Anulación de operación'}`,
+        },
       });
 
-      return { success: true };
+      return { success: true, cashShiftId: sale.cashShiftId };
     });
+
+    if (result.cashShiftId) {
+      await this.cashShiftService.recalculateShiftTotals(result.cashShiftId).catch(() => {});
+    }
+
+    return { success: true };
   }
 
   /**
@@ -1354,7 +1355,7 @@ export class SalesService {
 
         if (note.document_type === '07' && refSerie && refNumber > 0) {
           const reasonCode = String(note.ref_reason_code || '');
-          if (['01', '02'].includes(reasonCode)) {
+          if (['01', '02', '06'].includes(reasonCode)) {
             await this.prisma.fiscalDocument.updateMany({
               where: {
                 userId: ownerId,
@@ -1363,19 +1364,75 @@ export class SalesService {
               },
               data: {
                 status: 'CANCELLED' as any,
+                sunatDescription: `Comprobante anulado formalmente ante SUNAT mediante Nota de Crédito ${note.series}-${note.number}. Motivo: ${note.ref_reason_description || 'Anulación'}`,
               },
             }).catch(() => {});
 
-            await this.prisma.sale.updateMany({
+            // Buscar y actualizar las ventas afectadas
+            const affectedSales = await this.prisma.sale.findMany({
               where: {
                 user: { OR: [{ id: ownerId }, { parentId: ownerId }] },
                 billingSerie: refSerie,
                 billingNumber: refNumber,
               },
-              data: {
-                billingStatus: 'CANCELLED',
-              },
-            }).catch(() => {});
+              include: { items: true },
+            });
+
+            for (const affSale of affectedSales) {
+              await this.prisma.sale.update({
+                where: { id: affSale.id },
+                data: {
+                  billingStatus: 'CANCELLED',
+                  billingError: `Anulada ante SUNAT mediante Nota de Crédito ${note.series}-${note.number}`,
+                },
+              }).catch(() => {});
+
+              // 1. Restaurar inventario/kardex si no se había restaurado ya
+              const alreadyRestored = await this.prisma.inventoryMovement.findFirst({
+                where: { documentId: affSale.id, reason: 'SALE_RETURN' },
+              });
+
+              if (!alreadyRestored && affSale.items && affSale.items.length > 0) {
+                for (const item of affSale.items) {
+                  if (item.productId) {
+                    if (affSale.branchId) {
+                      const bStock = await this.prisma.branchStock.findUnique({
+                        where: { productId_branchId: { productId: item.productId, branchId: affSale.branchId } },
+                      });
+                      if (bStock) {
+                        await this.prisma.branchStock.update({
+                          where: { id: bStock.id },
+                          data: { stock: { increment: item.quantity } },
+                        });
+                      }
+                    }
+                    await this.prisma.product.update({
+                      where: { id: item.productId },
+                      data: { stock: { increment: item.quantity } },
+                    });
+                    await this.prisma.inventoryMovement.create({
+                      data: {
+                        productId: item.productId,
+                        quantity: item.quantity,
+                        type: 'IN',
+                        reason: 'SALE_RETURN',
+                        userId: affSale.userId,
+                        unitCost: item.price,
+                        totalCost: Number((item.quantity * item.price).toFixed(2)),
+                        stockResult: 0,
+                        documentId: affSale.id,
+                        branchId: affSale.branchId,
+                      },
+                    }).catch(() => {});
+                  }
+                }
+              }
+
+              // 2. Recalcular turno de caja (incluso si la caja ya fue cerrada)
+              if (affSale.cashShiftId) {
+                await this.cashShiftService.recalculateShiftTotals(affSale.cashShiftId).catch(() => {});
+              }
+            }
           }
         }
       }

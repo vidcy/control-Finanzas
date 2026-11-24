@@ -7,5 +7,6 @@ import { PrismaModule } from '../prisma/prisma.module';
   imports: [PrismaModule],
   controllers: [CashShiftController],
   providers: [CashShiftService],
+  exports: [CashShiftService],
 })
 export class CashShiftModule {}

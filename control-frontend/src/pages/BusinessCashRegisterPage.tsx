@@ -1284,26 +1284,58 @@ export default function BusinessCashRegisterPage() {
                           </td>
                         </tr>
                       ) : (
-                        shiftDetails.sales.map((sale: any) => (
-                          <tr key={sale.id} className="hover:bg-gray-55">
-                            <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">
-                              {format(new Date(sale.date), "HH:mm:ss")}
-                            </td>
-                            <td className="px-4 py-2.5 text-gray-700 font-semibold truncate max-w-[200px]" title={sale.items && sale.items.length > 0 ? sale.items.map((i: any) => `${i.quantity}x ${i.name}`).join(", ") : sale.description || ""}>
-                              {sale.items && sale.items.length > 0
-                                ? sale.items.map((i: any) => `${i.quantity}x ${i.name}`).join(", ")
-                                : sale.description?.replace("Venta en POS: ", "") || "Venta en POS"}
-                            </td>
-                            <td className="px-4 py-2.5 text-center whitespace-nowrap">
-                              <span className="text-[9px] font-bold bg-gray-105 text-gray-600 px-1.5 py-0.5 rounded">
-                                {sale.paymentMethod}
-                              </span>
-                            </td>
-                            <td className="px-4 py-2.5 text-right font-bold text-emerald-600">
-                              S/ {Number(sale.amount).toFixed(2)}
-                            </td>
-                          </tr>
-                        ))
+                        shiftDetails.sales.map((sale: any) => {
+                          const isCancelled =
+                            sale.billingStatus === "CANCELLED" ||
+                            sale.status === "CANCELLED" ||
+                            sale.isAnnulledByNote ||
+                            sale.fiscalDocument?.status === "CANCELLED";
+                          return (
+                            <tr
+                              key={sale.id}
+                              className={
+                                isCancelled
+                                  ? "bg-rose-50/60 line-through opacity-75"
+                                  : "hover:bg-gray-55"
+                              }
+                            >
+                              <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">
+                                {format(new Date(sale.date), "HH:mm:ss")}
+                              </td>
+                              <td
+                                className="px-4 py-2.5 text-gray-700 font-semibold truncate max-w-[200px]"
+                                title={
+                                  sale.items && sale.items.length > 0
+                                    ? sale.items.map((i: any) => `${i.quantity}x ${i.name}`).join(", ")
+                                    : sale.description || ""
+                                }
+                              >
+                                {sale.items && sale.items.length > 0
+                                  ? sale.items.map((i: any) => `${i.quantity}x ${i.name}`).join(", ")
+                                  : sale.description?.replace("Venta en POS: ", "") || "Venta en POS"}
+                                {isCancelled && (
+                                  <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-black bg-rose-100 text-rose-700 not-italic no-underline">
+                                    ANULADA
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-4 py-2.5 text-center whitespace-nowrap">
+                                <span className="text-[9px] font-bold bg-gray-105 text-gray-600 px-1.5 py-0.5 rounded">
+                                  {sale.paymentMethod}
+                                </span>
+                              </td>
+                              <td
+                                className={`px-4 py-2.5 text-right font-bold ${
+                                  isCancelled
+                                    ? "text-rose-500 line-through"
+                                    : "text-emerald-600"
+                                }`}
+                              >
+                                S/ {Number(sale.amount).toFixed(2)}
+                              </td>
+                            </tr>
+                          );
+                        })
                       )}
                     </tbody>
                   </table>

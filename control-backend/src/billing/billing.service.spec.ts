@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BillingService } from './billing.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CcofactService } from '../ccofact/ccofact.service';
+import { CashShiftService } from '../cash-shift/cash-shift.service';
 import { BadRequestException } from '@nestjs/common';
 import { BillingDocTypeEnum } from './emit-billing.dto';
 
@@ -9,8 +10,12 @@ describe('BillingService (Unit Tests)', () => {
   let service: BillingService;
   let prismaMock: any;
   let ccofactMock: any;
+  let cashShiftMock: any;
 
   beforeEach(async () => {
+    cashShiftMock = {
+      recalculateShiftTotals: jest.fn().mockResolvedValue({ success: true }),
+    };
     prismaMock = {
       user: {
         findUnique: jest.fn(),
@@ -36,6 +41,7 @@ describe('BillingService (Unit Tests)', () => {
         BillingService,
         { provide: PrismaService, useValue: prismaMock },
         { provide: CcofactService, useValue: ccofactMock },
+        { provide: CashShiftService, useValue: cashShiftMock },
       ],
     }).compile();
 

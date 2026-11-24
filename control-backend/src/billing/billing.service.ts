@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CcofactService } from '../ccofact/ccofact.service';
+import { CashShiftService } from '../cash-shift/cash-shift.service';
 import {
   EmitBillingDto,
   IssueNoteDto,
@@ -17,6 +18,7 @@ export class BillingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ccofactService: CcofactService,
+    private readonly cashShiftService: CashShiftService,
   ) { }
 
   private mapDocType(dtoType: BillingDocTypeEnum): FiscalDocType {
@@ -1014,6 +1016,11 @@ export class BillingService {
             }
           }
         }
+
+        // Recalcular turno de caja asociado (incluso si la caja ya fue cerrada)
+        if (sale && sale.cashShiftId) {
+          await this.cashShiftService.recalculateShiftTotals(sale.cashShiftId).catch(() => {});
+        }
       }
     }
 
@@ -1301,6 +1308,12 @@ export class BillingService {
             });
           }
         }
+
+        // Recalcular turno de caja asociado (incluso si la caja ya fue cerrada)
+        const sale = await this.prisma.sale.findUnique({ where: { id: doc.saleId } });
+        if (sale?.cashShiftId) {
+          await this.cashShiftService.recalculateShiftTotals(sale.cashShiftId).catch(() => {});
+        }
       }
 
       if (options?.forceDelete) {
@@ -1528,16 +1541,70 @@ export class BillingService {
               },
             }).catch(() => {});
 
-            await this.prisma.sale.updateMany({
+            const affectedSales = await this.prisma.sale.findMany({
               where: {
                 user: { OR: [{ id: ownerId }, { parentId: ownerId }] },
                 billingSerie: refSerie,
                 billingNumber: refNumber,
               },
-              data: {
-                billingStatus: 'CANCELLED',
-              },
-            }).catch(() => {});
+              include: { items: true },
+            });
+
+            for (const affSale of affectedSales) {
+              await this.prisma.sale.update({
+                where: { id: affSale.id },
+                data: {
+                  billingStatus: 'CANCELLED',
+                  billingError: `Anulada ante SUNAT mediante Nota de Crédito ${note.full_number || ''}`,
+                },
+              }).catch(() => {});
+
+              // 1. Restaurar inventario/kardex si no se había restaurado ya
+              const alreadyRestored = await this.prisma.inventoryMovement.findFirst({
+                where: { documentId: affSale.id, reason: 'SALE_RETURN' },
+              });
+
+              if (!alreadyRestored && affSale.items && affSale.items.length > 0) {
+                for (const item of affSale.items) {
+                  if (item.productId) {
+                    if (affSale.branchId) {
+                      const bStock = await this.prisma.branchStock.findUnique({
+                        where: { productId_branchId: { productId: item.productId, branchId: affSale.branchId } },
+                      });
+                      if (bStock) {
+                        await this.prisma.branchStock.update({
+                          where: { id: bStock.id },
+                          data: { stock: { increment: item.quantity } },
+                        });
+                      }
+                    }
+                    await this.prisma.product.update({
+                      where: { id: item.productId },
+                      data: { stock: { increment: item.quantity } },
+                    });
+                    await this.prisma.inventoryMovement.create({
+                      data: {
+                        productId: item.productId,
+                        quantity: item.quantity,
+                        type: 'IN',
+                        reason: 'SALE_RETURN',
+                        userId: affSale.userId,
+                        unitCost: item.price,
+                        totalCost: Number((item.quantity * item.price).toFixed(2)),
+                        stockResult: 0,
+                        documentId: affSale.id,
+                        branchId: affSale.branchId,
+                      },
+                    }).catch(() => {});
+                  }
+                }
+              }
+
+              // 2. Recalcular turno de caja (incluso si la caja ya fue cerrada)
+              if (affSale.cashShiftId) {
+                await this.cashShiftService.recalculateShiftTotals(affSale.cashShiftId).catch(() => {});
+              }
+            }
           }
         }
       }

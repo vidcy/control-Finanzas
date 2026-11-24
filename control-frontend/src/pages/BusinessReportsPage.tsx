@@ -140,8 +140,9 @@ export default function BusinessReportsPage() {
     return true;
   }), [transactions, dateFrom, dateTo, selectedBranch, selectedWorker, selectedPaymentMethod, selectedAdvisor, selectedProduct]);
 
-  // POS Sales only
+  // POS Sales only (excluye ventas anuladas formalmente o dadas de baja)
   const filteredSales = useMemo(() => sales.filter((s: any) => {
+    if (s.billingStatus === "CANCELLED" || s.billingStatus === "ANNULLED" || s.status === "CANCELLED" || s.isAnnulledByNote) return false;
     if (!s.date) return true;
     const day = typeof s.date === "string" ? s.date.slice(0, 10) : "";
     if (dateFrom && day < dateFrom) return false;

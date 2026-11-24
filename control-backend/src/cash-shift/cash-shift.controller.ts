@@ -113,4 +113,9 @@ export class CashShiftController {
     const userRole = req.user.role;
     return this.cashShiftService.getShiftDetails(id, ownerId, workerId, userRole);
   }
+
+  @Post(':id/recalculate')
+  async recalculateShift(@Param('id') id: string) {
+    return this.cashShiftService.recalculateShiftTotals(id);
+  }
 }
