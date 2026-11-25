@@ -602,21 +602,40 @@ export class BillingService {
       },
     });
 
-    const notes = await this.prisma.fiscalDocument.findMany({
+    const relatedDocs = await this.prisma.fiscalDocument.findMany({
       where: {
         userId: ownerId,
-        docType: { in: [FiscalDocType.CREDIT_NOTE, FiscalDocType.DEBIT_NOTE] },
+        docType: { in: [FiscalDocType.CREDIT_NOTE, FiscalDocType.DEBIT_NOTE, FiscalDocType.DISPATCH_GUIDE] },
       },
       orderBy: { correlative: 'desc' },
     });
 
     return documents.map((doc) => {
-      const fullTag = `[REF:${doc.serie}-${String(doc.correlative).padStart(8, '0')}]`;
-      const fallbackTag = `${doc.serie}-${String(doc.correlative).padStart(8, '0')}`;
-      const docNotes = notes.filter(
-        (n) =>
-          n.id !== doc.id &&
-          (n.sunatDescription?.includes(fullTag) || n.sunatDescription?.includes(fallbackTag)),
+      const docSerieUpper = (doc.serie || '').toUpperCase();
+      const docNumPad = String(doc.correlative).padStart(8, '0');
+      const docNumShort = String(doc.correlative);
+      const fullNumUpper = (doc.fullNumber || `${docSerieUpper}-${docNumPad}`).toUpperCase();
+
+      const matchesDoc = (desc: string | null | undefined) => {
+        if (!desc) return false;
+        const upper = desc.toUpperCase();
+        if (upper.includes(fullNumUpper)) return true;
+        if (upper.includes(`${docSerieUpper}-${docNumPad}`)) return true;
+        if (upper.includes(`${docSerieUpper}-${docNumShort}`)) return true;
+        const m = upper.match(/\[REF:?\s*([A-Z0-9]+)-([0-9]+)\]/);
+        if (m) {
+          const s = m[1];
+          const n = parseInt(m[2], 10);
+          if (s === docSerieUpper && n === doc.correlative) return true;
+        }
+        return false;
+      };
+
+      const docNotes = relatedDocs.filter(
+        (n) => n.id !== doc.id && n.docType !== FiscalDocType.DISPATCH_GUIDE && matchesDoc(n.sunatDescription),
+      );
+      const docGuias = relatedDocs.filter(
+        (g) => g.id !== doc.id && g.docType === FiscalDocType.DISPATCH_GUIDE && matchesDoc(g.sunatDescription),
       );
 
       let sumCredits = 0;
@@ -658,6 +677,7 @@ export class BillingService {
         totalNotasCredito: sumCredits,
         totalNotasDebito: sumDebits,
         hasNotes: docNotes.length > 0,
+        hasGuias: docGuias.length > 0,
         notas: docNotes.map((n) => ({
           id: n.id,
           docType: n.docType,
@@ -671,6 +691,20 @@ export class BillingService {
           xmlUrl: n.xmlUrl,
           cdrUrl: n.cdrUrl,
           createdAt: n.createdAt,
+        })),
+        guias: docGuias.map((g) => ({
+          id: g.id,
+          docType: g.docType,
+          serie: g.serie,
+          correlative: g.correlative,
+          fullNumber: g.fullNumber,
+          totalAmount: Number(g.totalAmount),
+          status: g.status,
+          description: g.sunatDescription,
+          pdfUrl: g.pdfUrl,
+          xmlUrl: g.xmlUrl,
+          cdrUrl: g.cdrUrl,
+          createdAt: g.createdAt,
         })),
       };
     });
@@ -729,37 +763,78 @@ export class BillingService {
     // Si es comprobante independiente, reintentar a CCOFACT PRO
     if (owner.hasElectronicBilling && owner.ccofactUrl && owner.ccofactApiKey) {
       try {
-        const ccofactPayload = {
-          idempotency_key: `retry_${doc.id}_${Date.now()}`,
-          tipo_comprobante:
-            doc.docType === FiscalDocType.INVOICE
-              ? '01'
-              : doc.docType === FiscalDocType.BOLETA
-                ? '03'
-                : doc.docType === FiscalDocType.CREDIT_NOTE
-                  ? '07'
-                  : '08',
-          serie: doc.serie,
-          moneda: doc.currency || 'PEN',
-          forma_pago: 'Contado',
-          cliente: {
-            tipo_documento: doc.customerDocType,
-            numero_documento: doc.customerDocNum,
-            razon_social: doc.customerName,
-            direccion: doc.customerAddress || '',
-          },
-          items: [
-            {
-              codigo: 'SERV',
-              descripcion: 'Comprobante comercial',
-              unidad_medida: 'NIU',
-              cantidad: 1,
-              precio_unitario: doc.totalAmount,
-              tipo_afectacion_igv: (Number(doc.totalIgv || 0) === 0 && Number(doc.totalOpExonerada || 0) > 0) ? '20' : (Number(doc.totalIgv || 0) === 0 && Number(doc.totalOpInafecta || 0) > 0) ? '30' : '10',
-            },
-          ],
-          enviar_a_sunat_inmediato: true,
-        };
+        const isGuia = doc.docType === FiscalDocType.DISPATCH_GUIDE;
+        const ccofactPayload = isGuia
+          ? {
+              idempotency_key: `retry_${doc.id}_${Date.now()}`,
+              tipo_comprobante: '09',
+              serie: doc.serie,
+              numero: doc.correlative,
+              cliente: {
+                tipo_documento: doc.customerDocType,
+                numero_documento: doc.customerDocNum,
+                razon_social: doc.customerName,
+                direccion: doc.customerAddress || '',
+              },
+              guia_datos: {
+                motivo_traslado: '01',
+                motivo_traslado_descripcion: 'VENTA DE MERCADERIAS',
+                modalidad_transporte: '01',
+                peso_total: 1.0,
+                unidad_medida_peso: 'KGM',
+                bultos: 1,
+                punto_partida: {
+                  ubigeo: '150101',
+                  direccion: owner.businessAddress || 'PUNTO DE PARTIDA PRINCIPAL',
+                },
+                punto_llegada: {
+                  ubigeo: '150101',
+                  direccion: doc.customerAddress || 'PUNTO DE LLEGADA DESTINO',
+                },
+              },
+              items: [
+                {
+                  codigo: 'MERC-01',
+                  descripcion: 'Mercadería despachada',
+                  unidad_medida: 'NIU',
+                  cantidad: 1,
+                  precio_unitario: doc.totalAmount || 0,
+                  tipo_afectacion_igv: '10',
+                },
+              ],
+              enviar_a_sunat_inmediato: true,
+            }
+          : {
+              idempotency_key: `retry_${doc.id}_${Date.now()}`,
+              tipo_comprobante:
+                doc.docType === FiscalDocType.INVOICE
+                  ? '01'
+                  : doc.docType === FiscalDocType.BOLETA
+                    ? '03'
+                    : doc.docType === FiscalDocType.CREDIT_NOTE
+                      ? '07'
+                      : '08',
+              serie: doc.serie,
+              moneda: doc.currency || 'PEN',
+              forma_pago: 'Contado',
+              cliente: {
+                tipo_documento: doc.customerDocType,
+                numero_documento: doc.customerDocNum,
+                razon_social: doc.customerName,
+                direccion: doc.customerAddress || '',
+              },
+              items: [
+                {
+                  codigo: 'SERV',
+                  descripcion: 'Comprobante comercial',
+                  unidad_medida: 'NIU',
+                  cantidad: 1,
+                  precio_unitario: doc.totalAmount,
+                  tipo_afectacion_igv: (Number(doc.totalIgv || 0) === 0 && Number(doc.totalOpExonerada || 0) > 0) ? '20' : (Number(doc.totalIgv || 0) === 0 && Number(doc.totalOpInafecta || 0) > 0) ? '30' : '10',
+                },
+              ],
+              enviar_a_sunat_inmediato: true,
+            };
 
         const emitUrl = this.normalizeCcofactEmitUrl(owner.ccofactUrl);
         const resp = await fetch(emitUrl, {
@@ -1541,10 +1616,38 @@ export class BillingService {
     if (!owner?.ccofactUrl || !owner?.ccofactApiKey) return;
 
     try {
-      const [creditNotes, debitNotes] = await Promise.all([
+      const [creditNotes, debitNotes, guias] = await Promise.all([
         this.ccofactService.fetchDocumentsFromCcofact(owner, { document_type: '07' }),
         this.ccofactService.fetchDocumentsFromCcofact(owner, { document_type: '08' }),
+        this.ccofactService.fetchDocumentsFromCcofact(owner, { document_type: '09' }).catch(() => []),
       ]);
+
+      for (const g of (guias || [])) {
+        if (!g.series || !g.number) continue;
+        const fullNum = g.full_number || `${g.series}-${String(g.number).padStart(8, '0')}`;
+        let mappedStatus: FiscalStatus = FiscalStatus.ACCEPTED;
+        if (g.status === 'REJECTED') mappedStatus = FiscalStatus.REJECTED;
+        else if (g.status === 'ANULADO' || g.status === 'CANCELLED') mappedStatus = FiscalStatus.CANCELLED;
+        else if (g.status === 'QUEUED') mappedStatus = FiscalStatus.QUEUED_OUTBOX;
+
+        const existing = await this.prisma.fiscalDocument.findFirst({
+          where: { userId: ownerId, fullNumber: fullNum },
+        });
+
+        const refTag = (g.ref_series && g.ref_number) ? ` [Ref: ${g.ref_series}-${String(g.ref_number).padStart(8, '0')}]` : '';
+        const desc = `${g.sunat_description || 'Guía de Remisión'}${refTag}`;
+
+        if (existing) {
+          await this.prisma.fiscalDocument.update({
+            where: { id: existing.id },
+            data: {
+              status: mappedStatus,
+              sunatResponseCode: g.sunat_response_code || existing.sunatResponseCode,
+              sunatDescription: desc,
+            },
+          });
+        }
+      }
 
       const allNotes = [...creditNotes, ...debitNotes];
       for (const note of allNotes) {
@@ -1944,14 +2047,30 @@ export class BillingService {
   }
 
   /**
-   * EMISIÓN DE GUÍA DE REMISIÓN REMITENTE (GRE - Tipo 09) VINCULADA A COMPROBANTE
+   * EMISIÓN DE GUÍA DE REMISIÓN REMITENTE (GRE - Tipo 09) VINCULADA O INDEPENDIENTE
    */
   async emitGuiaRemisionForDocument(ownerId: string, id: string, dto: any) {
-    const doc = await this.prisma.fiscalDocument.findFirst({
-      where: { id, userId: ownerId },
-      include: { sale: { include: { items: true } } },
-    });
-    if (!doc) throw new NotFoundException('Comprobante original no encontrado para vincular la Guía de Remisión.');
+    let doc: any = null;
+    if (id && id !== 'standalone' && id !== 'null' && id !== 'undefined') {
+      doc = await this.prisma.fiscalDocument.findFirst({
+        where: { id, userId: ownerId },
+        include: { sale: { include: { items: true } } },
+      });
+      if (!doc) throw new NotFoundException('Comprobante original no encontrado para vincular la Guía de Remisión.');
+    } else {
+      // Emisión de Guía Independiente o con referencia opcional
+      if (dto.referenceDocId) {
+        doc = await this.prisma.fiscalDocument.findFirst({
+          where: { id: dto.referenceDocId, userId: ownerId },
+          include: { sale: { include: { items: true } } },
+        });
+      } else if (dto.referenceDoc) {
+        doc = await this.prisma.fiscalDocument.findFirst({
+          where: { fullNumber: dto.referenceDoc, userId: ownerId },
+          include: { sale: { include: { items: true } } },
+        });
+      }
+    }
 
     const owner = await this.prisma.user.findUnique({ where: { id: ownerId } });
     if (!owner) throw new NotFoundException('Usuario propietario no encontrado.');
@@ -1968,10 +2087,29 @@ export class BillingService {
     const correlative = Math.max(highestExisting, configuredFloor) + 1;
     const fullNumber = `${serieGuia}-${String(correlative).padStart(8, '0')}`;
 
+    const motivo = dto.motivo_traslado || '01';
+    const motivoDesc = dto.motivo_traslado_descripcion || (
+      motivo === '01' ? 'VENTA DE MERCADERIAS' :
+      motivo === '04' ? 'TRASLADO ENTRE ESTABLECIMIENTOS DE LA MISMA EMPRESA' :
+      motivo === '05' ? 'TRASLADO POR CONSIGNACION' :
+      motivo === '06' ? 'DEVOLUCION DE MERCADERIAS' :
+      motivo === '13' ? 'TRASLADO A FERIAS O EXHIBICIONES' :
+      motivo === '14' ? 'TRASLADO PARA REPARACION O MANTENIMIENTO' :
+      motivo === '02' ? 'COMPRA' : 'OTROS TRASLADOS'
+    );
+
+    const isSelfTransfer = motivo === '04';
+
+    // Determinar receptor / destinatario
+    const customerDocType = dto.destinatario?.tipo_documento || doc?.customerDocType || (isSelfTransfer ? '6' : '6');
+    const customerDocNum = dto.destinatario?.numero_documento || doc?.customerDocNum || (isSelfTransfer ? (owner.businessRuc || '20000000001') : '99999999999');
+    const customerName = dto.destinatario?.razon_social || doc?.customerName || (isSelfTransfer ? (owner.businessReason || owner.businessName || 'MISMA EMPRESA') : 'DESTINATARIO DE TRASLADO');
+    const customerAddress = dto.punto_llegada?.direccion || doc?.customerAddress || (isSelfTransfer ? (owner.businessAddress || 'PUNTO DE LLEGADA DESTINO') : 'PUNTO DE LLEGADA DESTINO');
+
     // Construir guía_datos oficiales UBL 2.1 DespatchAdvice
     const guiaDatos = {
-      motivo_traslado: dto.motivo_traslado || '01', // Venta
-      motivo_traslado_descripcion: dto.motivo_traslado_descripcion || 'VENTA DE MERCADERIAS',
+      motivo_traslado: motivo,
+      motivo_traslado_descripcion: motivoDesc,
       modalidad_transporte: dto.modalidad_transporte || '02', // 01 Público, 02 Privado
       fecha_inicio_traslado: dto.fecha_inicio_traslado || new Date().toISOString().split('T')[0],
       peso_total: Number(dto.peso_total || 1.0),
@@ -1983,20 +2121,20 @@ export class BillingService {
       },
       punto_llegada: {
         ubigeo: dto.punto_llegada?.ubigeo || '150101',
-        direccion: dto.punto_llegada?.direccion || doc.customerAddress || 'PUNTO DE LLEGADA DESTINO',
+        direccion: customerAddress,
       },
       transportista: dto.modalidad_transporte === '01' ? {
         tipo_documento: dto.transportista?.tipo_documento || '6',
         numero_documento: dto.transportista?.numero_documento || '',
         razon_social: dto.transportista?.razon_social || '',
       } : undefined,
-      conductor: dto.modalidad_transporte === '02' ? {
+      conductor: (dto.modalidad_transporte === '02' || dto.vehiculo_menor_2_toneladas) ? {
         tipo_documento: dto.conductor?.tipo_documento || '1',
         numero_documento: dto.conductor?.numero_documento || '00000000',
         nombre_completo: dto.conductor?.nombre_completo || 'CONDUCTOR ASIGNADO',
         licencia: dto.conductor?.licencia || '',
       } : undefined,
-      vehiculo: dto.modalidad_transporte === '02' ? {
+      vehiculo: (dto.modalidad_transporte === '02' || dto.vehiculo_menor_2_toneladas) ? {
         placa: (dto.vehiculo?.placa || 'ABC-123').toUpperCase(),
       } : undefined,
     };
@@ -2011,7 +2149,7 @@ export class BillingService {
           precio_unitario: Number(it.precio_unitario || it.unit_price || 0),
           tipo_afectacion_igv: '10',
         }))
-      : (doc.sale?.items && doc.sale.items.length > 0)
+      : (doc?.sale?.items && doc.sale.items.length > 0)
         ? doc.sale.items.map((it: any, idx: number) => ({
             codigo: it.productId || `ITEM-${idx + 1}`,
             descripcion: it.description || 'Mercadería en traslado',
@@ -2021,11 +2159,11 @@ export class BillingService {
             tipo_afectacion_igv: '10',
           }))
         : [{
-            codigo: 'PROD-01',
-            descripcion: 'Mercadería según comprobante de venta',
+            codigo: 'ITEM-01',
+            descripcion: doc ? `Mercadería según ${doc.fullNumber}` : 'Bienes y mercaderías de traslado',
             unidad_medida: 'NIU',
             cantidad: 1,
-            precio_unitario: doc.totalAmount,
+            precio_unitario: doc ? Number(doc.totalAmount || 0) : 0,
             tipo_afectacion_igv: '10',
           }];
 
@@ -2037,28 +2175,35 @@ export class BillingService {
     let sunatDescription = 'Guía de Remisión aceptada satisfactoriamente por SUNAT.';
     let status: FiscalStatus = FiscalStatus.ACCEPTED;
 
+    // Referencia de comprobante origen si existe
+    const refTag = doc ? doc.fullNumber : (dto.referenceDoc ? dto.referenceDoc.trim().toUpperCase() : null);
+    const refDocumento = refTag ? {
+      tipo: doc ? (doc.docType === FiscalDocType.INVOICE ? '01' : '03') : (refTag.startsWith('F') ? '01' : '03'),
+      serie: doc ? doc.serie : (refTag.split('-')[0] || 'B001'),
+      numero: doc ? doc.correlative : (parseInt(refTag.split('-')[1], 10) || 1),
+    } : undefined;
+
     if (owner.hasElectronicBilling && owner.ccofactUrl && owner.ccofactApiKey) {
       const emitUrl = this.normalizeCcofactEmitUrl(owner.ccofactUrl);
-      const ccofactPayload = {
+      const ccofactPayload: any = {
         tipo_comprobante: '09',
         serie: serieGuia,
         numero: correlative,
         fecha_emision: new Date().toISOString().split('T')[0],
         cliente: {
-          tipo_documento: doc.customerDocType,
-          numero_documento: doc.customerDocNum,
-          razon_social: doc.customerName,
-          direccion: doc.customerAddress || '',
-        },
-        ref_documento: {
-          tipo: doc.docType === FiscalDocType.INVOICE ? '01' : '03',
-          serie: doc.serie,
-          numero: doc.correlative,
+          tipo_documento: customerDocType,
+          numero_documento: customerDocNum,
+          razon_social: customerName,
+          direccion: customerAddress,
         },
         guia_datos: guiaDatos,
         items,
         enviar_a_sunat_inmediato: true,
       };
+
+      if (refDocumento) {
+        ccofactPayload.ref_documento = refDocumento;
+      }
 
       try {
         const resp = await fetch(emitUrl, {
@@ -2092,6 +2237,8 @@ export class BillingService {
       }
     }
 
+    const finalSunatDescription = refTag ? `${sunatDescription} [Ref: ${refTag}]` : sunatDescription;
+
     const guiaDoc = await this.prisma.fiscalDocument.create({
       data: {
         userId: ownerId,
@@ -2099,10 +2246,10 @@ export class BillingService {
         serie: serieGuia,
         correlative,
         fullNumber,
-        issuerRuc: doc.issuerRuc,
-        customerDocType: doc.customerDocType,
-        customerDocNum: doc.customerDocNum,
-        customerName: doc.customerName,
+        issuerRuc: owner.businessRuc || '20000000001',
+        customerDocType,
+        customerDocNum,
+        customerName,
         customerAddress: guiaDatos.punto_llegada.direccion,
         totalOpGravada: 0,
         totalOpExonerada: 0,
@@ -2116,15 +2263,57 @@ export class BillingService {
         xmlUrl,
         cdrUrl,
         sunatResponseCode,
-        sunatDescription: `${sunatDescription} [Ref: ${doc.fullNumber}]`,
-        branchId: doc.branchId,
+        sunatDescription: finalSunatDescription,
+        branchId: doc?.branchId,
       },
     });
 
     return {
       success: true,
-      message: `Guía de Remisión Remitente ${fullNumber} generada y vinculada a ${doc.fullNumber}.`,
+      message: refTag
+        ? `Guía de Remisión Remitente ${fullNumber} generada y vinculada a ${refTag}.`
+        : `Guía de Remisión Remitente ${fullNumber} emitida con éxito (operación independiente).`,
       document: guiaDoc,
+    };
+  }
+
+  /**
+   * REGISTRAR BAJA DE GUÍA DE REMISIÓN ELECTRÓNICA (SUNAT)
+   * En SUNAT no existe endpoint para anular GRE; el contribuyente debe generar la baja en portal SOL.
+   * Este método sincroniza el estado interno a CANCELLED y preserva la auditoría.
+   */
+  async bajaGuiaRemision(
+    ownerId: string,
+    id: string,
+    body: { motivo: string; constanciaTicket?: string },
+  ) {
+    const doc = await this.prisma.fiscalDocument.findFirst({
+      where: { id, userId: ownerId },
+    });
+    if (!doc) throw new NotFoundException('Guía de Remisión no encontrada');
+    if (doc.docType !== FiscalDocType.DISPATCH_GUIDE) {
+      throw new BadRequestException('El documento no es una Guía de Remisión');
+    }
+    if (doc.status === FiscalStatus.CANCELLED) {
+      throw new BadRequestException('La Guía de Remisión ya se encuentra registrada como dada de baja.');
+    }
+
+    const motivo = body.motivo || 'ANULACIÓN PREVIA AL INICIO DEL TRASLADO';
+    const ticketInfo = body.constanciaTicket ? ` [Ticket/Constancia SUNAT: ${body.constanciaTicket}]` : '';
+    const updatedDesc = `${doc.sunatDescription || ''} | BAJA EN PORTAL SUNAT: ${motivo}${ticketInfo}`.trim();
+
+    const updated = await this.prisma.fiscalDocument.update({
+      where: { id },
+      data: {
+        status: FiscalStatus.CANCELLED,
+        sunatDescription: updatedDesc,
+      },
+    });
+
+    return {
+      success: true,
+      message: `Guía ${doc.fullNumber} marcada como Dada de Baja en SUNAT con éxito.`,
+      document: updated,
     };
   }
 

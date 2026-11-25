@@ -185,8 +185,14 @@ export const manualNoteBillingDocumentRequest = async (id: string, payload: any)
   return data;
 };
 
-export const emitGuiaRemisionRequest = async (id: string, payload: any) => {
-  const { data } = await axios.post(`/billing/documents/${id}/guia-remision`, payload);
+export const emitGuiaRemisionRequest = async (id: string | null | undefined, payload: any) => {
+  const url = id ? `/billing/documents/${id}/guia-remision` : `/billing/guia-remision`;
+  const { data } = await axios.post(url, payload);
+  return data;
+};
+
+export const bajaGuiaRemisionRequest = async (id: string, payload: { motivo: string; constanciaTicket?: string }) => {
+  const { data } = await axios.post(`/billing/documents/${id}/baja-gre`, payload);
   return data;
 };
 

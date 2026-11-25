@@ -86,6 +86,13 @@ export class BillingController {
   }
 
   @UseGuards(AuthGuard('jwt'))
+  @Post(['guia-remision', 'documents/guia-remision'])
+  emitStandaloneGuiaRemision(@Req() req, @Body() body: any) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.billingService.emitGuiaRemisionForDocument(ownerId, 'standalone', body);
+  }
+
+  @UseGuards(AuthGuard('jwt'))
   @Post('simulate-sandbox')
   simulateSandbox(@Req() req) {
     const ownerId = req.user.parentId || req.user.id;
@@ -144,6 +151,17 @@ export class BillingController {
     return this.billingService.updateConfig(ownerId, body);
   }
 
+
+  @UseGuards(AuthGuard('jwt'))
+  @Post(['documents/:id/baja-gre', ':id/baja-gre'])
+  bajaGuiaRemision(
+    @Req() req,
+    @Param('id') id: string,
+    @Body() body: { motivo: string; constanciaTicket?: string },
+  ) {
+    const ownerId = req.user.parentId || req.user.id;
+    return this.billingService.bajaGuiaRemision(ownerId, id, body);
+  }
 
   @UseGuards(AuthGuard('jwt'))
   @Get('consultar-ruc/:ruc')

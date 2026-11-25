@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, Fragment } from "react";
 import Appshell from "../components/layout/Appshell";
 import { useAuth } from "../auth/AuthContext";
+import SunatTaxResponsibilityWidget from "../components/billing/SunatTaxResponsibilityWidget";
 import { getPeruTodayInputStr } from "../utils/date.utils";
 import {
   TAX_REGIMES,
@@ -54,6 +55,10 @@ import {
   Loader2,
   ChevronDown,
   Truck,
+  Package,
+  Copy,
+  AlertOctagon,
+  ShieldAlert,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import Modal from "../components/ui/Modal";
@@ -81,12 +86,14 @@ import {
   smartEditBillingDocumentRequest,
   manualNoteBillingDocumentRequest,
   emitGuiaRemisionRequest,
+  bajaGuiaRemisionRequest,
   testCcofactConnectionRequest,
   type FiscalDocument,
   type BillingStats,
   type BillingItem,
 } from "../services/billing.api";
 import { queryDocumentRequest } from "../services/user.api";
+import { getProductsRequest, type Product } from "../services/product.api";
 import QRCode from "qrcode";
 
 export default function BusinessBillingPage() {
@@ -225,12 +232,40 @@ export default function BusinessBillingPage() {
   const [guiaPeso, setGuiaPeso] = useState("1.0");
   const [guiaBultos, setGuiaBultos] = useState("1");
   const [guiaPuntoPartida, setGuiaPuntoPartida] = useState("");
+  const [guiaPuntoPartidaUbigeo, setGuiaPuntoPartidaUbigeo] = useState("150101");
   const [guiaPuntoLlegada, setGuiaPuntoLlegada] = useState("");
+  const [guiaPuntoLlegadaUbigeo, setGuiaPuntoLlegadaUbigeo] = useState("150101");
+  const [guiaReferenceDoc, setGuiaReferenceDoc] = useState("");
+  const [isSearchingRefDoc, setIsSearchingRefDoc] = useState(false);
+  const [refDocFound, setRefDocFound] = useState<FiscalDocument | null>(null);
+  const [refDocSearchError, setRefDocSearchError] = useState<string | null>(null);
+  const [guiaDestinatarioDocType, setGuiaDestinatarioDocType] = useState<"6" | "1" | "-">("6");
+  const [guiaDestinatarioDocNum, setGuiaDestinatarioDocNum] = useState("");
+  const [guiaDestinatarioName, setGuiaDestinatarioName] = useState("");
+  const [guiaDestinatarioAddress, setGuiaDestinatarioAddress] = useState("");
+  const [isConsultingDestinatario, setIsConsultingDestinatario] = useState(false);
   const [guiaCarrierRuc, setGuiaCarrierRuc] = useState("");
   const [guiaCarrierName, setGuiaCarrierName] = useState("");
+  const [isConsultingCarrier, setIsConsultingCarrier] = useState(false);
   const [guiaDriverDni, setGuiaDriverDni] = useState("");
   const [guiaDriverName, setGuiaDriverName] = useState("");
+  const [guiaDriverLicense, setGuiaDriverLicense] = useState("");
   const [guiaVehiclePlate, setGuiaVehiclePlate] = useState("");
+  const [guiaVehiculoMenor2Ton, setGuiaVehiculoMenor2Ton] = useState(false);
+  const [guiaVehicleCategory, setGuiaVehicleCategory] = useState("M1");
+  const [isConsultingDriver, setIsConsultingDriver] = useState(false);
+
+  // Modal Dar de Baja Guía de Remisión en SUNAT
+  const [bajaGreModalOpen, setBajaGreModalOpen] = useState(false);
+  const [bajaGreDoc, setBajaGreDoc] = useState<FiscalDocument | null>(null);
+  const [bajaGreMotivo, setBajaGreMotivo] = useState("01 - Anulación por no haberse realizado el traslado");
+  const [bajaGreTicket, setBajaGreTicket] = useState("");
+  const [isSubmittingBajaGre, setIsSubmittingBajaGre] = useState(false);
+  const [guiaItems, setGuiaItems] = useState<Array<{ codigo: string; descripcion: string; unidad: string; cantidad: number }>>([
+    { codigo: "ITEM-01", descripcion: "", unidad: "NIU", cantidad: 1 },
+  ]);
+  const [catalogProducts, setCatalogProducts] = useState<Product[]>([]);
+  const [isLoadingCatalog, setIsLoadingCatalog] = useState(false);
 
   // Success Result Smart Modal State
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
@@ -549,58 +584,419 @@ export default function BusinessBillingPage() {
     setIsManualNoteModalOpen(true);
   };
 
-  const handleOpenGuiaModal = (doc: FiscalDocument) => {
+  const handleOpenGuiaModal = async (doc: FiscalDocument | null) => {
     setSelectedDocForGuia(doc);
+    setRefDocFound(doc);
+    setRefDocSearchError(null);
     setGuiaMotivoTraslado("01");
     setGuiaModalidad("02");
     setGuiaPeso("1.0");
     setGuiaBultos("1");
     setGuiaPuntoPartida(user?.businessAddress || "");
-    setGuiaPuntoLlegada(doc.customerAddress || "");
+    setGuiaPuntoPartidaUbigeo("150101");
     setGuiaCarrierRuc("");
     setGuiaCarrierName("");
     setGuiaDriverDni("");
     setGuiaDriverName("");
+    setGuiaDriverLicense("");
     setGuiaVehiclePlate("");
+
+    if (doc) {
+      setGuiaReferenceDoc(doc.fullNumber);
+      setGuiaDestinatarioDocType((doc.customerDocType as any) || (doc.customerDocNum?.length === 11 ? "6" : "1"));
+      setGuiaDestinatarioDocNum(doc.customerDocNum || "");
+      setGuiaDestinatarioName(doc.customerName || "");
+      setGuiaDestinatarioAddress(doc.customerAddress || "");
+      setGuiaPuntoLlegada(doc.customerAddress || "");
+      setGuiaPuntoLlegadaUbigeo("150101");
+
+      if (doc.sale?.items && doc.sale.items.length > 0) {
+        setGuiaItems(
+          doc.sale.items.map((it: any, idx: number) => ({
+            codigo: it.productId || `ITEM-${idx + 1}`,
+            descripcion: it.description || "Mercadería trasladada",
+            unidad: "NIU",
+            cantidad: Number(it.quantity || 1),
+          }))
+        );
+      } else {
+        setGuiaItems([
+          {
+            codigo: "ITEM-01",
+            descripcion: `Mercadería amparada en ${doc.fullNumber}`,
+            unidad: "NIU",
+            cantidad: 1,
+          },
+        ]);
+      }
+    } else {
+      setGuiaReferenceDoc("");
+      setGuiaDestinatarioDocType("6");
+      setGuiaDestinatarioDocNum("");
+      setGuiaDestinatarioName("");
+      setGuiaDestinatarioAddress("");
+      setGuiaPuntoLlegada("");
+      setGuiaPuntoLlegadaUbigeo("150101");
+      setGuiaItems([
+        { codigo: "ITEM-01", descripcion: "", unidad: "NIU", cantidad: 1 },
+      ]);
+    }
+
     setIsGuiaModalOpen(true);
+
+    if (catalogProducts.length === 0) {
+      try {
+        setIsLoadingCatalog(true);
+        const prods = await getProductsRequest();
+        if (Array.isArray(prods)) setCatalogProducts(prods);
+      } catch {
+        // Ignorar si falla la carga diferida
+      } finally {
+        setIsLoadingCatalog(false);
+      }
+    }
+  };
+
+  const handleSearchReferenceDoc = async (termToSearch?: string) => {
+    const rawTerm = (termToSearch || guiaReferenceDoc).trim().toUpperCase();
+    if (!rawTerm) {
+      toast.error("Ingresa el número de boleta o factura a buscar (ej: B001-00000030 o 30)");
+      return;
+    }
+
+    setIsSearchingRefDoc(true);
+    setRefDocSearchError(null);
+
+    try {
+      // 1. Buscar en memoria local de documentos
+      let found: FiscalDocument | undefined = documents.find((d) => {
+        const full = d.fullNumber.toUpperCase();
+        if (full === rawTerm) return true;
+        if (rawTerm.includes("-")) {
+          const [s, n] = rawTerm.split("-");
+          const num = parseInt(n, 10);
+          if (d.serie.toUpperCase() === s.trim() && d.correlative === num) return true;
+        } else {
+          const num = parseInt(rawTerm, 10);
+          if (!isNaN(num) && d.correlative === num) return true;
+        }
+        return false;
+      });
+
+      // 2. Si no está en memoria local (ej. por paginación o fecha), consultar al backend
+      if (!found) {
+        const docsList = await getBillingDocumentsRequest({ search: rawTerm });
+        const list: FiscalDocument[] = Array.isArray(docsList) ? docsList : [];
+        found = list.find((d) => {
+          const full = d.fullNumber.toUpperCase();
+          if (full === rawTerm) return true;
+          if (rawTerm.includes("-")) {
+            const [s, n] = rawTerm.split("-");
+            const num = parseInt(n, 10);
+            if (d.serie.toUpperCase() === s.trim() && d.correlative === num) return true;
+          } else {
+            const num = parseInt(rawTerm, 10);
+            if (!isNaN(num) && d.correlative === num) return true;
+          }
+          return false;
+        }) || list[0];
+      }
+
+      if (found) {
+        setRefDocFound(found);
+        setSelectedDocForGuia(found);
+        setGuiaReferenceDoc(found.fullNumber);
+
+        // Autocompletar Destinatario
+        setGuiaDestinatarioDocType((found.customerDocType as any) || (found.customerDocNum?.length === 11 ? "6" : "1"));
+        setGuiaDestinatarioDocNum(found.customerDocNum || "");
+        setGuiaDestinatarioName(found.customerName || "");
+        if (found.customerAddress) {
+          setGuiaDestinatarioAddress(found.customerAddress);
+          setGuiaPuntoLlegada(found.customerAddress);
+        }
+
+        // Autocompletar Ítems
+        if (found.sale?.items && found.sale.items.length > 0) {
+          setGuiaItems(
+            found.sale.items.map((it: any, idx: number) => ({
+              codigo: it.productId || `ITEM-${idx + 1}`,
+              descripcion: it.description || "Mercadería trasladada",
+              unidad: "NIU",
+              cantidad: Number(it.quantity || 1),
+            }))
+          );
+        } else {
+          setGuiaItems([
+            {
+              codigo: "ITEM-01",
+              descripcion: `Mercadería amparada en ${found.fullNumber}`,
+              unidad: "NIU",
+              cantidad: 1,
+            },
+          ]);
+        }
+
+        toast.success(`✓ Comprobante ${found.fullNumber} encontrado y vinculado con éxito.`);
+      } else {
+        setRefDocFound(null);
+        setRefDocSearchError(`No se encontró ningún comprobante con "${rawTerm}". Verifica la serie y correlativo.`);
+        toast.error(`Comprobante "${rawTerm}" no encontrado.`);
+      }
+    } catch (err: any) {
+      setRefDocSearchError("Error al consultar comprobante en el sistema.");
+      toast.error(err.message || "Error al buscar comprobante");
+    } finally {
+      setIsSearchingRefDoc(false);
+    }
+  };
+
+  const handleClearReferenceDoc = () => {
+    setRefDocFound(null);
+    setSelectedDocForGuia(null);
+    setGuiaReferenceDoc("");
+    setRefDocSearchError(null);
+    toast.success("Comprobante desvinculado. Puedes emitir la guía de forma independiente.");
+  };
+
+  const handleLookupDestinatario = async (docToLookup?: string) => {
+    const clean = (docToLookup || guiaDestinatarioDocNum).trim().replace(/\D/g, "");
+    if (!clean) {
+      toast.error("Ingresa un número de documento para consultar");
+      return;
+    }
+    try {
+      setIsConsultingDestinatario(true);
+      toast.loading("Consultando receptor en padrón oficial...", { id: "dest-lookup" });
+      if (clean.length === 11) {
+        const res: any = await consultarRucRequest(clean);
+        if (res && res.success) {
+          const razon = (res.razonSocial || res.nombreComercial || "").trim();
+          if (razon) setGuiaDestinatarioName(razon);
+          if (res.direccion) {
+            setGuiaDestinatarioAddress(res.direccion);
+            if (!guiaPuntoLlegada) setGuiaPuntoLlegada(res.direccion);
+          }
+          toast.success(`✓ Receptor encontrado: ${razon}`, { id: "dest-lookup" });
+        } else {
+          toast.error(res?.message || "No se encontró el RUC en SUNAT.", { id: "dest-lookup" });
+        }
+      } else if (clean.length === 8) {
+        const data: any = await queryDocumentRequest("DNI", clean);
+        if (data && (data.nombre || data.nombres)) {
+          const fullName = data.nombre || `${data.nombres || ''} ${data.apellidoPaterno || ''} ${data.apellidoMaterno || ''}`.trim();
+          setGuiaDestinatarioName(fullName);
+          if (data.direccion) {
+            setGuiaDestinatarioAddress(data.direccion);
+            if (!guiaPuntoLlegada) setGuiaPuntoLlegada(data.direccion);
+          }
+          toast.success(`✓ Persona encontrada: ${fullName}`, { id: "dest-lookup" });
+        } else {
+          toast.error("No se encontró el DNI en RENIEC.", { id: "dest-lookup" });
+        }
+      } else {
+        toast.error("El documento debe ser RUC (11 dígitos) o DNI (8 dígitos).", { id: "dest-lookup" });
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || err.message || "Error al consultar", { id: "dest-lookup" });
+    } finally {
+      setIsConsultingDestinatario(false);
+    }
+  };
+
+  const handleLookupCarrierRuc = async (rucToLookup?: string) => {
+    const cleanRuc = (rucToLookup || guiaCarrierRuc).trim().replace(/\D/g, "").slice(0, 11);
+    if (!cleanRuc || cleanRuc.length !== 11) {
+      toast.error("Ingresa un RUC de 11 dígitos para consultar en SUNAT");
+      return;
+    }
+    try {
+      setIsConsultingCarrier(true);
+      toast.loading("Consultando transportista en padrón SUNAT...", { id: "carrier-ruc" });
+      const res: any = await consultarRucRequest(cleanRuc);
+      if (res && res.success) {
+        const razon = (res.razonSocial || res.nombreComercial || "").trim();
+        if (razon) {
+          setGuiaCarrierName(razon);
+          toast.success(`✓ Transportista encontrado: ${razon}`, { id: "carrier-ruc" });
+        } else {
+          toast.error("SUNAT no devolvió la razón social para este RUC.", { id: "carrier-ruc" });
+        }
+      } else {
+        toast.error(res?.message || "No se encontró la empresa transportista en SUNAT.", { id: "carrier-ruc" });
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || err.message || "Error consultando transportista en SUNAT", { id: "carrier-ruc" });
+    } finally {
+      setIsConsultingCarrier(false);
+    }
+  };
+
+  const formatVehiclePlate = (val: string) => {
+    const clean = val.replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 6);
+    if (clean.length > 3) {
+      return `${clean.slice(0, 3)}-${clean.slice(3)}`;
+    }
+    return clean;
+  };
+
+  const handleLookupDriverDni = async (dniToQuery?: string) => {
+    const dni = (dniToQuery || guiaDriverDni).trim().replace(/\D/g, "");
+    if (dni.length !== 8) {
+      toast.error("El DNI del chofer debe tener 8 dígitos");
+      return;
+    }
+    try {
+      setIsConsultingDriver(true);
+      toast.loading("Consultando conductor en RENIEC...", { id: "driver-dni" });
+      const res: any = await queryDocumentRequest("DNI", dni);
+      if (res) {
+        const fullName = res.nombre || `${res.nombres || ''} ${res.apellidoPaterno || ''} ${res.apellidoMaterno || ''}`.trim() || res.razonSocial;
+        if (fullName) {
+          setGuiaDriverName(fullName);
+          toast.success(`✓ Conductor identificado: ${fullName}`, { id: "driver-dni" });
+        } else {
+          toast.error("No se encontró el DNI en RENIEC", { id: "driver-dni" });
+        }
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || err.message || "Error al consultar DNI", { id: "driver-dni" });
+    } finally {
+      setIsConsultingDriver(false);
+    }
+  };
+
+  const handleDuplicateGuia = (guia: FiscalDocument) => {
+    setSelectedDocForGuia(null);
+    setRefDocFound(null);
+    const match = guia.sunatDescription ? guia.sunatDescription.match(/\[Ref:\s*([A-Za-z0-9]+-[A-Za-z0-9]+)\]/i) : null;
+    if (match) {
+      setGuiaReferenceDoc(match[1]);
+      handleSearchReferenceDoc(match[1]);
+    } else {
+      setGuiaReferenceDoc("");
+    }
+    setGuiaDestinatarioDocType((guia.customerDocType as any) || "6");
+    setGuiaDestinatarioDocNum(guia.customerDocNum || "");
+    setGuiaDestinatarioName(guia.customerName || "");
+    setGuiaDestinatarioAddress(guia.customerAddress || "");
+    setGuiaPuntoLlegada(guia.customerAddress || "");
+    setIsGuiaModalOpen(true);
+    toast(`📋 Borrador clonado a partir de ${guia.fullNumber}. Edita los datos antes de emitir.`);
+  };
+
+  const handleOpenBajaGreModal = (doc: FiscalDocument) => {
+    setBajaGreDoc(doc);
+    setBajaGreMotivo("01 - Anulación por no haberse realizado el traslado");
+    setBajaGreTicket("");
+    setBajaGreModalOpen(true);
+  };
+
+  const handleConfirmBajaGre = async () => {
+    if (!bajaGreDoc || isSubmittingBajaGre) return;
+    try {
+      setIsSubmittingBajaGre(true);
+      await bajaGuiaRemisionRequest(bajaGreDoc.id, {
+        motivo: bajaGreMotivo,
+        constanciaTicket: bajaGreTicket.trim() || undefined,
+      });
+      toast.success(`✓ Guía ${bajaGreDoc.fullNumber} marcada como Dada de Baja en SUNAT.`);
+      setBajaGreModalOpen(false);
+      setBajaGreDoc(null);
+      await loadData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || err.message || "Error al dar de baja la Guía");
+    } finally {
+      setIsSubmittingBajaGre(false);
+    }
   };
 
   const handleConfirmEmitGuia = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedDocForGuia || isSubmittingGuia) return;
+    if (isSubmittingGuia) return;
+
+    const validItems = guiaItems.filter((it) => it.descripcion.trim().length > 0 && it.cantidad > 0);
+    if (validItems.length === 0) {
+      toast.error("Debe ingresar al menos un producto o mercadería a trasladar.");
+      return;
+    }
+
+    const needsVehicleAndDriver = guiaModalidad === "02" || guiaVehiculoMenor2Ton;
+    if (needsVehicleAndDriver) {
+      const cleanPlate = guiaVehiclePlate.trim().toUpperCase();
+      if (!/^[A-Z0-9]{3}-?[A-Z0-9]{3}$/i.test(cleanPlate)) {
+        toast.error("La placa del vehículo debe tener formato oficial de 6 caracteres (ej: ABC-123 o A1B-234).");
+        return;
+      }
+      if (!guiaDriverDni.trim() || guiaDriverDni.trim().length < 8) {
+        toast.error("El DNI del conductor debe ser válido (8 dígitos).");
+        return;
+      }
+      if (!guiaDriverName.trim()) {
+        toast.error("Debe ingresar los nombres y apellidos del conductor.");
+        return;
+      }
+    }
+
     try {
       setIsSubmittingGuia(true);
-      const payload = {
+      const payload: any = {
         motivo_traslado: guiaMotivoTraslado,
-        motivo_traslado_descripcion: guiaMotivoTraslado === "01" ? "VENTA DE MERCADERIAS" : "TRASLADO ENTRE ESTABLECIMIENTOS",
+        motivo_traslado_descripcion:
+          guiaMotivoTraslado === "01" ? "VENTA DE MERCADERIAS" :
+          guiaMotivoTraslado === "04" ? "TRASLADO ENTRE ESTABLECIMIENTOS DE LA MISMA EMPRESA" :
+          guiaMotivoTraslado === "05" ? "TRASLADO POR CONSIGNACION" :
+          guiaMotivoTraslado === "06" ? "DEVOLUCION DE MERCADERIAS" :
+          guiaMotivoTraslado === "13" ? "TRASLADO A FERIAS O EXHIBICIONES" :
+          guiaMotivoTraslado === "14" ? "TRASLADO PARA REPARACION O MANTENIMIENTO" :
+          guiaMotivoTraslado === "02" ? "COMPRA" : "OTROS TRASLADOS",
         modalidad_transporte: guiaModalidad,
+        vehiculo_menor_2_toneladas: guiaVehiculoMenor2Ton,
+        categoria_vehiculo: guiaVehicleCategory,
         peso_total: Number(guiaPeso) || 1,
         unidad_medida_peso: "KGM",
         bultos: Number(guiaBultos) || 1,
         punto_partida: {
-          ubigeo: "150101",
+          ubigeo: (guiaPuntoPartidaUbigeo || "150101").trim(),
           direccion: (guiaPuntoPartida || user?.businessAddress || "PUNTO DE PARTIDA PRINCIPAL").trim(),
         },
         punto_llegada: {
-          ubigeo: "150101",
-          direccion: (guiaPuntoLlegada || selectedDocForGuia.customerAddress || "PUNTO DE LLEGADA DESTINO").trim(),
+          ubigeo: (guiaPuntoLlegadaUbigeo || "150101").trim(),
+          direccion: (guiaPuntoLlegada || guiaDestinatarioAddress || "PUNTO DE LLEGADA DESTINO").trim(),
         },
+        destinatario: {
+          tipo_documento: guiaDestinatarioDocType,
+          numero_documento: (guiaDestinatarioDocNum || "99999999999").trim(),
+          razon_social: (guiaDestinatarioName || "DESTINATARIO DE TRASLADO").trim(),
+          direccion: (guiaPuntoLlegada || guiaDestinatarioAddress || "PUNTO DE DESTINO").trim(),
+        },
+        referenceDoc: guiaReferenceDoc.trim() || undefined,
+        referenceDocId: selectedDocForGuia ? selectedDocForGuia.id : undefined,
         transportista: guiaModalidad === "01" ? {
           tipo_documento: "6",
           numero_documento: guiaCarrierRuc.trim(),
           razon_social: guiaCarrierName.trim(),
         } : undefined,
-        conductor: guiaModalidad === "02" ? {
+        conductor: needsVehicleAndDriver ? {
           tipo_documento: "1",
           numero_documento: (guiaDriverDni || "00000000").trim(),
           nombre_completo: (guiaDriverName || "CONDUCTOR DESIGNADO").trim(),
+          licencia: (guiaDriverLicense || "").trim(),
         } : undefined,
-        vehiculo: guiaModalidad === "02" ? {
+        vehiculo: needsVehicleAndDriver ? {
           placa: (guiaVehiclePlate || "ABC-123").trim().toUpperCase(),
         } : undefined,
+        items: validItems.map((it, idx) => ({
+          codigo: it.codigo || `ITEM-${idx + 1}`,
+          descripcion: it.descripcion.trim(),
+          unidad_medida: it.unidad || "NIU",
+          cantidad: Number(it.cantidad) || 1,
+          precio_unitario: 0,
+        })),
       };
 
-      const res = await emitGuiaRemisionRequest(selectedDocForGuia.id, payload);
+      const docId = selectedDocForGuia ? selectedDocForGuia.id : null;
+      const res = await emitGuiaRemisionRequest(docId, payload);
       toast.success(res.message || "Guía de Remisión Remitente (GRE) emitida con éxito");
       setIsGuiaModalOpen(false);
       setSelectedDocForGuia(null);
@@ -1117,44 +1513,114 @@ export default function BusinessBillingPage() {
     toast.success("Libro electrónico de ventas exportado en formato Excel");
   };
 
-  // Filtered documents
-  const filteredDocuments = useMemo(() => {
-    return documents
-      .filter((doc) => {
-        // En modo "Expedientes Tributarios" (Principal y por defecto):
-        // Si el filtro de tipo está en ALL, se muestran únicamente los comprobantes comerciales raíz
-        // (Boletas, Facturas y Guías de Remisión), ya que las notas de crédito y débito se gestionan
-        // formalmente dentro del expediente de su comprobante origen.
-        if (viewMode === "EXPEDIENTES" && selectedType === "ALL") {
-          const isRoot = doc.docType === "BOLETA" || doc.docType === "INVOICE" || doc.docType === "DISPATCH_GUIDE";
-          if (!isRoot) return false;
+  // Mapa de Guías de Remisión vinculadas indexadas por número de comprobante referenciado (padded y unpadded)
+  const docGuiasMap = useMemo(() => {
+    const map = new Map<string, any[]>();
+    for (const d of documents) {
+      if (d.docType === "DISPATCH_GUIDE") {
+        const desc = d.sunatDescription || "";
+        const m = desc.match(/\[Ref:?\s*([A-Za-z0-9]+-[A-Za-z0-9]+)\]/i);
+        const refSeries = (d as any).ref_series;
+        const refNumber = (d as any).ref_number;
+
+        let rawRef: string | null = null;
+        if (m) {
+          rawRef = m[1].toUpperCase();
+        } else if (refSeries && refNumber) {
+          rawRef = `${refSeries}-${refNumber}`.toUpperCase();
         }
 
-        // docType filter
-        if (selectedType !== "ALL" && doc.docType !== selectedType) return false;
-        // status filter
-        if (selectedStatus !== "ALL" && doc.status !== selectedStatus) return false;
-        // date filter
-        if (filterStartDate) {
-          const docDate = new Date(doc.createdAt).toISOString().substring(0, 10);
-          if (docDate < filterStartDate) return false;
+        if (rawRef) {
+          const parts = rawRef.split("-");
+          const s = parts[0];
+          const numInt = parseInt(parts[1], 10) || 1;
+          const padded = `${s}-${String(numInt).padStart(8, "0")}`;
+          const unpadded = `${s}-${numInt}`;
+
+          for (const k of [rawRef, padded, unpadded]) {
+            const list = map.get(k) || [];
+            if (!list.some(existing => existing.id === d.id || existing.fullNumber === d.fullNumber)) {
+              list.push(d);
+            }
+            map.set(k, list);
+          }
         }
-        if (filterEndDate) {
-          const docDate = new Date(doc.createdAt).toISOString().substring(0, 10);
-          if (docDate > filterEndDate) return false;
+      }
+    }
+    return map;
+  }, [documents]);
+
+  // Filtered documents
+  const filteredDocuments = documents
+    .filter((doc) => {
+      // En modo "Expedientes Tributarios" (Principal y por defecto):
+      // Si el filtro de tipo está en ALL, se muestran únicamente los comprobantes comerciales raíz
+      // (Boletas y Facturas, o Guías independientes sin comprobante previo).
+      // Si una Guía de Remisión o Nota está vinculada a una boleta o factura, se muestra dentro
+      // de la trazabilidad del expediente de dicho comprobante origen para evitar duplicados.
+      if (viewMode === "EXPEDIENTES" && selectedType === "ALL") {
+        if (doc.docType === "CREDIT_NOTE" || doc.docType === "DEBIT_NOTE") {
+          return false;
         }
-        // search term
-        if (searchTerm.trim()) {
-          const term = searchTerm.toLowerCase();
-          const matchNum = doc.fullNumber?.toLowerCase().includes(term);
-          const matchName = doc.customerName?.toLowerCase().includes(term);
-          const matchDoc = doc.customerDocNum?.toLowerCase().includes(term);
-          return matchNum || matchName || matchDoc;
+        if (doc.docType === "DISPATCH_GUIDE") {
+          // Si la guía está vinculada a un comprobante comercial existente, pertenece a ese expediente
+          const desc = doc.sunatDescription || "";
+          const m = desc.match(/\[Ref:?\s*([A-Za-z0-9]+-[A-Za-z0-9]+)\]/i);
+          const refSeries = (doc as any).ref_series;
+          const refNumber = (doc as any).ref_number;
+
+          let parentKey: string | null = null;
+          if (m) {
+            parentKey = m[1].toUpperCase();
+          } else if (refSeries && refNumber) {
+            parentKey = `${refSeries}-${refNumber}`.toUpperCase();
+          }
+
+          if (parentKey) {
+            const parts = parentKey.split("-");
+            const s = parts[0];
+            const numInt = parseInt(parts[1], 10) || 1;
+            const padded = `${s}-${String(numInt).padStart(8, "0")}`;
+            const unpadded = `${s}-${numInt}`;
+
+            const parentExists = documents.some((p) => {
+              if (p.docType !== "BOLETA" && p.docType !== "INVOICE") return false;
+              const pFull = (p.fullNumber || `${p.serie}-${String(p.correlative).padStart(8, "0")}`).toUpperCase();
+              const pShort = `${p.serie}-${p.correlative}`.toUpperCase();
+              return pFull === parentKey || pFull === padded || pFull === unpadded || pShort === parentKey || pShort === unpadded;
+            });
+
+            if (parentExists) return false;
+          }
         }
-        return true;
-      })
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [documents, selectedType, selectedStatus, searchTerm, filterStartDate, filterEndDate, viewMode]);
+        const isRoot = doc.docType === "BOLETA" || doc.docType === "INVOICE" || doc.docType === "DISPATCH_GUIDE";
+        if (!isRoot) return false;
+      }
+
+      // docType filter
+      if (selectedType !== "ALL" && doc.docType !== selectedType) return false;
+      // status filter
+      if (selectedStatus !== "ALL" && doc.status !== selectedStatus) return false;
+      // date filter
+      if (filterStartDate) {
+        const docDate = new Date(doc.createdAt).toISOString().substring(0, 10);
+        if (docDate < filterStartDate) return false;
+      }
+      if (filterEndDate) {
+        const docDate = new Date(doc.createdAt).toISOString().substring(0, 10);
+        if (docDate > filterEndDate) return false;
+      }
+      // search term
+      if (searchTerm.trim()) {
+        const term = searchTerm.toLowerCase();
+        const matchNum = doc.fullNumber?.toLowerCase().includes(term);
+        const matchName = doc.customerName?.toLowerCase().includes(term);
+        const matchDoc = doc.customerDocNum?.toLowerCase().includes(term);
+        return matchNum || matchName || matchDoc;
+      }
+      return true;
+    })
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   const handlePrintNoteTicket = (note: any, doc: any) => {
     const isCredit = note.docType === "CREDIT_NOTE" || (note.fullNumber && note.fullNumber.includes("C"));
@@ -1246,6 +1712,15 @@ export default function BusinessBillingPage() {
             </button>
 
             <button
+              onClick={() => handleOpenGuiaModal(null)}
+              className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-teal-600 via-teal-500 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 rounded-xl shadow-md shadow-teal-500/25 transition-all active:scale-95 cursor-pointer"
+              title="Emitir Guía de Remisión Remitente (GRE - Tipo 09) con o sin comprobante de origen"
+            >
+              <Truck className="h-4 w-4" />
+              Emitir Guía de Remisión (GRE)
+            </button>
+
+            <button
               onClick={() => setIsEmitModalOpen(true)}
               className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 rounded-xl shadow-md shadow-blue-500/25 transition-all active:scale-95"
             >
@@ -1313,78 +1788,104 @@ export default function BusinessBillingPage() {
         </div>
 
         {/* Executive Fiscal KPI Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          {/* Total Facturado */}
-          <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between text-slate-500 mb-2">
-              <span className="text-xs font-bold uppercase tracking-wider">Total Facturado</span>
-              <div className="h-9 w-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-                <DollarSign className="h-5 w-5" />
+        <div className="space-y-2.5">
+          <div className="flex items-center justify-between px-1">
+            <div className="flex items-center gap-2">
+              <span className="p-1.5 bg-blue-50 text-blue-700 rounded-xl">
+                <TrendingUp className="w-4 h-4" />
+              </span>
+              <div>
+                <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">
+                  Métricas de Facturación Comercial
+                </h3>
+                <p className="text-[11px] text-slate-400">
+                  Resumen de ventas facturadas, recaudación acumulada y comprobantes con CDR
+                </p>
               </div>
-            </div>
-            <div className="text-2xl font-black text-slate-900">
-              S/ {(stats?.totalInvoicedPen || 0).toLocaleString("es-PE", { minimumFractionDigits: 2 })}
-            </div>
-            {stats && stats.totalInvoicedUsd > 0 && (
-              <div className="text-xs font-semibold text-slate-500 mt-1">
-                + ${stats.totalInvoicedUsd.toLocaleString("es-PE", { minimumFractionDigits: 2 })} USD
-              </div>
-            )}
-            <div className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 mt-2">
-              <TrendingUp className="h-3.5 w-3.5" />
-              Total recaudado según comprobantes aceptados
             </div>
           </div>
 
-          {/* IGV Liquidado */}
-          <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between text-slate-500 mb-2">
-              <span className="text-xs font-bold uppercase tracking-wider">IGV Fiscal (18%)</span>
-              <div className="h-9 w-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
-                <Receipt className="h-5 w-5" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Total Facturado */}
+            <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between text-slate-500 mb-2">
+                <span className="text-xs font-bold uppercase tracking-wider">Total Facturado</span>
+                <div className="h-9 w-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                  <DollarSign className="h-5 w-5" />
+                </div>
+              </div>
+              <div className="text-2xl font-black text-slate-900">
+                S/ {(stats?.totalInvoicedPen || 0).toLocaleString("es-PE", { minimumFractionDigits: 2 })}
+              </div>
+              {stats && stats.totalInvoicedUsd > 0 && (
+                <div className="text-xs font-semibold text-slate-500 mt-1">
+                  + ${stats.totalInvoicedUsd.toLocaleString("es-PE", { minimumFractionDigits: 2 })} USD
+                </div>
+              )}
+              <div className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 mt-2">
+                <TrendingUp className="h-3.5 w-3.5" />
+                Total recaudado según comprobantes aceptados
               </div>
             </div>
-            <div className="text-2xl font-black text-indigo-950">
-              S/ {(stats?.totalIgvPen || 0).toLocaleString("es-PE", { minimumFractionDigits: 2 })}
-            </div>
-            <div className="text-xs font-medium text-slate-500 mt-2">
-              Base Gravada: S/ {(stats?.totalGravadaPen || 0).toLocaleString("es-PE", { minimumFractionDigits: 2 })}
-            </div>
-          </div>
 
-          {/* Aceptados con CDR */}
-          <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between text-slate-500 mb-2">
-              <span className="text-xs font-bold uppercase tracking-wider">Aceptados con CDR</span>
-              <div className="h-9 w-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-                <CheckCircle2 className="h-5 w-5" />
+            {/* IGV Liquidado */}
+            <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between text-slate-500 mb-2">
+                <span className="text-xs font-bold uppercase tracking-wider">IGV Fiscal (18%)</span>
+                <div className="h-9 w-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                  <Receipt className="h-5 w-5" />
+                </div>
+              </div>
+              <div className="text-2xl font-black text-indigo-950">
+                S/ {(stats?.totalIgvPen || 0).toLocaleString("es-PE", { minimumFractionDigits: 2 })}
+              </div>
+              <div className="text-xs font-medium text-slate-500 mt-2">
+                Base Gravada: S/ {(stats?.totalGravadaPen || 0).toLocaleString("es-PE", { minimumFractionDigits: 2 })}
               </div>
             </div>
-            <div className="text-2xl font-black text-emerald-700">
-              {stats?.acceptedCount || 0}
-            </div>
-            <div className="text-xs font-medium text-emerald-600 mt-2 flex items-center gap-1">
-              <ShieldCheck className="h-3.5 w-3.5" />
-              100% validados por la plataforma SUNAT
-            </div>
-          </div>
 
-          {/* Pendientes / Observados */}
-          <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between text-slate-500 mb-2">
-              <span className="text-xs font-bold uppercase tracking-wider">Pendientes / Alertas</span>
-              <div className="h-9 w-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
-                <AlertCircle className="h-5 w-5" />
+            {/* Aceptados con CDR */}
+            <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between text-slate-500 mb-2">
+                <span className="text-xs font-bold uppercase tracking-wider">Aceptados con CDR</span>
+                <div className="h-9 w-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                  <CheckCircle2 className="h-5 w-5" />
+                </div>
+              </div>
+              <div className="text-2xl font-black text-emerald-700">
+                {stats?.acceptedCount || 0}
+              </div>
+              <div className="text-xs font-medium text-emerald-600 mt-2 flex items-center gap-1">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                100% validados por la plataforma SUNAT
               </div>
             </div>
-            <div className="text-2xl font-black text-amber-700">
-              {(stats?.rejectedCount || 0) + (stats?.pendingCount || 0)}
-            </div>
-            <div className="text-xs font-medium text-slate-500 mt-2">
-              {stats?.rejectedCount || 0} con error • {stats?.pendingCount || 0} en cola
+
+            {/* Pendientes / Observados */}
+            <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between text-slate-500 mb-2">
+                <span className="text-xs font-bold uppercase tracking-wider">Pendientes / Alertas</span>
+                <div className="h-9 w-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+                  <AlertCircle className="h-5 w-5" />
+                </div>
+              </div>
+              <div className="text-2xl font-black text-amber-700">
+                {(stats?.rejectedCount || 0) + (stats?.pendingCount || 0)}
+              </div>
+              <div className="text-xs font-medium text-slate-500 mt-2">
+                {stats?.rejectedCount || 0} con error • {stats?.pendingCount || 0} en cola
+              </div>
             </div>
           </div>
         </div>
+
+        {/* RESPONSABILIDAD TRIBUTARIA SUNAT (FORMULARIO DECLARA FÁCIL 621) */}
+        <SunatTaxResponsibilityWidget
+          documents={documents}
+          issuerRuc={configRuc || user?.businessRuc}
+          issuerName={configName || user?.businessName}
+          defaultRegime={user?.taxRegime as any || "RMT"}
+        />
 
         {/* Filter Bar & Document Management Toolbar */}
         <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm space-y-4">
@@ -1563,6 +2064,16 @@ export default function BusinessBillingPage() {
                     const isInvoice = doc.docType === "INVOICE";
                     const isBoleta = doc.docType === "BOLETA";
                     const isCredit = doc.docType === "CREDIT_NOTE";
+                    const docFull = (doc.fullNumber || `${doc.serie}-${String(doc.correlative).padStart(8, "0")}`).toUpperCase();
+                    const docShort = `${doc.serie}-${doc.correlative}`.toUpperCase();
+                    const rawGuias = [
+                      ...(((doc as any).guias as any[]) || []),
+                      ...(docGuiasMap.get(docFull) || []),
+                      ...(docGuiasMap.get(docShort) || []),
+                    ];
+                    const linkedGuias: any[] = rawGuias.filter(
+                      (g, idx, arr) => arr.findIndex(x => (x.id && x.id === g.id) || (x.fullNumber && x.fullNumber === g.fullNumber)) === idx
+                    );
 
                     return (
                       <Fragment key={doc.id}>
@@ -1585,6 +2096,12 @@ export default function BusinessBillingPage() {
                             <span className="font-mono font-bold text-slate-900 text-xs">
                               {doc.fullNumber}
                             </span>
+                            {linkedGuias.length > 0 && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-sky-100 text-sky-800 border border-sky-300 shadow-2xs" title={`Comprobante con ${linkedGuias.length} Guía(s) de Remisión vinculada(s)`}>
+                                <Truck className="w-2.5 h-2.5 text-sky-700" />
+                                {linkedGuias.length} Vinculado(s) GRE
+                              </span>
+                            )}
                             <button
                               type="button"
                               onClick={() => setExpandedBillingDocIds(prev => ({ ...prev, [doc.id]: !prev[doc.id] }))}
@@ -1593,7 +2110,7 @@ export default function BusinessBillingPage() {
                                   ? "bg-indigo-600 text-white"
                                   : "bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200"
                               }`}
-                              title={expandedBillingDocIds[doc.id] ? "Ocultar diagnóstico oficial y notas" : "Ver diagnóstico oficial SUNAT y conciliación de notas"}
+                              title={expandedBillingDocIds[doc.id] ? "Ocultar diagnóstico oficial, notas y guías" : "Ver diagnóstico oficial SUNAT, notas y guías vinculadas"}
                             >
                               <Search className="w-3 h-3" />
                             </button>
@@ -1760,7 +2277,7 @@ export default function BusinessBillingPage() {
                                 )}
 
                                 {/* Botón Inteligente: Edición con Diff Engine */}
-                                {!isNote && doc.status === "ACCEPTED" && (
+                                {!isNote && doc.docType !== "DISPATCH_GUIDE" && doc.status === "ACCEPTED" && (
                                   <button
                                     onClick={() => handleOpenSmartEditModal(doc)}
                                     className="p-1 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
@@ -1771,7 +2288,7 @@ export default function BusinessBillingPage() {
                                 )}
 
                                 {/* Emisión Manual de Nota de Crédito / Débito */}
-                                {!isNote && doc.status === "ACCEPTED" && (
+                                {!isNote && doc.docType !== "DISPATCH_GUIDE" && doc.status === "ACCEPTED" && (
                                   <button
                                     onClick={() => handleOpenManualNoteModal(doc)}
                                     className="p-1 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded-lg transition-colors cursor-pointer"
@@ -1782,7 +2299,7 @@ export default function BusinessBillingPage() {
                                 )}
 
                                 {/* Emisión de Guía de Remisión (09 - GRE) */}
-                                {!isNote && doc.status === "ACCEPTED" && (
+                                {!isNote && doc.docType !== "DISPATCH_GUIDE" && doc.status === "ACCEPTED" && (
                                   <button
                                     onClick={() => handleOpenGuiaModal(doc)}
                                     className="p-1 text-cyan-600 hover:text-cyan-800 hover:bg-cyan-50 rounded-lg transition-colors cursor-pointer"
@@ -1792,8 +2309,30 @@ export default function BusinessBillingPage() {
                                   </button>
                                 )}
 
+                                {/* Duplicar / Reemitir Guía de Remisión */}
+                                {doc.docType === "DISPATCH_GUIDE" && (
+                                  <button
+                                    onClick={() => handleDuplicateGuia(doc)}
+                                    className="p-1 text-teal-600 hover:text-teal-800 hover:bg-teal-50 rounded-lg transition-colors cursor-pointer"
+                                    title="Duplicar o corregir guía (generar nuevo borrador)"
+                                  >
+                                    <Copy className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+
+                                {/* Dar de Baja Guía de Remisión en SUNAT */}
+                                {doc.docType === "DISPATCH_GUIDE" && doc.status !== "CANCELLED" && (
+                                  <button
+                                    onClick={() => handleOpenBajaGreModal(doc)}
+                                    className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                    title="Registrar Baja de Guía en SUNAT (Anular)"
+                                  >
+                                    <AlertOctagon className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+
                                 {/* Anular ante SUNAT con Nota de Crédito o Eliminar */}
-                                {!isNote && doc.status !== "CANCELLED" && !(doc as any).isAnnulledByNote && (
+                                {!isNote && doc.docType !== "DISPATCH_GUIDE" && doc.status !== "CANCELLED" && !(doc as any).isAnnulledByNote && (
                                   <button
                                     onClick={() => handleOpenDeleteModal(doc)}
                                     className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
@@ -2083,10 +2622,98 @@ export default function BusinessBillingPage() {
                                             </div>
                                           </div>
                                         );
-                                      })}                                    </div>
+                                      })}
+                                    </div>
                                   ) : (
-                                    <div className="text-center py-3 bg-white border border-dashed border-slate-200 rounded-lg text-slate-400 text-xs">
+                                    <div className="text-center py-2.5 bg-white border border-dashed border-slate-200 rounded-lg text-slate-400 text-xs">
                                       <span>Sin notas vinculadas emitidas para este comprobante.</span>
+                                    </div>
+                                  )}
+
+                                  {/* Listado de Guías de Remisión Vinculadas al Expediente */}
+                                  {linkedGuias && linkedGuias.length > 0 && (
+                                    <div className="pt-2.5 space-y-1.5 border-t border-slate-200">
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-[10px] font-black text-sky-900 flex items-center gap-1 uppercase tracking-wider">
+                                          <Truck className="w-3.5 h-3.5 text-sky-600" />
+                                          Guías de Remisión del Expediente ({linkedGuias.length})
+                                        </span>
+                                      </div>
+                                      <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+                                        {linkedGuias.map((g: any) => {
+                                          const [gSerie, gNum] = (g.fullNumber || "").split("-");
+                                          const parsedGNum = gNum ? parseInt(gNum, 10) : g.correlative;
+                                          const gPdf = g.pdfUrl || (g.fullNumber ? `http://localhost:4001/api/v1/documents/by-series-number/${gSerie}/${parsedGNum}/html?format=A4` : null);
+                                          const gXml = g.xmlUrl || (g.fullNumber ? `http://localhost:4001/api/v1/documents/by-series-number/${gSerie}/${parsedGNum}/xml` : null);
+                                          const gCdr = g.cdrUrl || (g.fullNumber ? `http://localhost:4001/api/v1/documents/by-series-number/${gSerie}/${parsedGNum}/cdr` : null);
+
+                                          return (
+                                            <div key={g.id || g.fullNumber} className="flex flex-wrap items-center justify-between text-xs p-2 bg-sky-50/60 rounded-lg border border-sky-200 hover:bg-sky-50 transition gap-1.5">
+                                              <div className="flex items-center gap-1.5 min-w-0">
+                                                <span className="text-sky-400 font-mono text-[10px]">↳</span>
+                                                <span className="text-[9px] font-black px-1.5 py-0.5 rounded uppercase bg-sky-600 text-white shadow-2xs">
+                                                  GRE Remitente
+                                                </span>
+                                                <span className="font-mono font-black text-sky-950 text-[11px]">{g.fullNumber}</span>
+                                                <span className="text-slate-500 text-[10px] truncate max-w-[140px]">
+                                                  {new Date(g.createdAt).toLocaleDateString("es-PE")} • Traslado
+                                                </span>
+                                              </div>
+                                              <div className="flex items-center gap-1.5 flex-wrap">
+                                                <span className={`text-[8px] font-bold border px-1.5 py-0.5 rounded-full uppercase ${
+                                                  g.status === 'ACCEPTED' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
+                                                  g.status === 'REJECTED' ? 'bg-rose-100 text-rose-800 border-rose-300' :
+                                                  'bg-amber-100 text-amber-800 border-amber-300'
+                                                }`}>
+                                                  SUNAT: {g.status}
+                                                </span>
+                                                <div className="flex items-center gap-1">
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleDuplicateGuia(g)}
+                                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-white hover:bg-teal-50 border border-teal-200 text-teal-800 rounded text-[9px] font-bold transition shadow-2xs cursor-pointer"
+                                                    title="Duplicar o corregir datos de la guía"
+                                                  >
+                                                    <Copy className="w-3 h-3 text-teal-600" />
+                                                    <span>Duplicar</span>
+                                                  </button>
+
+                                                  {g.status !== 'CANCELLED' && (
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => handleOpenBajaGreModal(g)}
+                                                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-white hover:bg-rose-50 border border-rose-200 text-rose-700 rounded text-[9px] font-bold transition shadow-2xs cursor-pointer"
+                                                      title="Registrar Baja de Guía en SUNAT"
+                                                    >
+                                                      <AlertOctagon className="w-3 h-3 text-rose-600" />
+                                                      <span>Baja SUNAT</span>
+                                                    </button>
+                                                  )}
+
+                                                  {gPdf && (
+                                                    <a href={gPdf} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-white hover:bg-sky-50 border border-sky-200 text-sky-800 rounded text-[9px] font-bold transition shadow-2xs" title="Ver Guía PDF A4">
+                                                      <FileText className="w-3 h-3 text-sky-600" />
+                                                      <span>PDF</span>
+                                                    </a>
+                                                  )}
+                                                  {gXml && (
+                                                    <a href={gXml} target="_blank" rel="noreferrer" download={`${g.fullNumber || 'guia'}.xml`} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-white hover:bg-amber-50 border border-amber-200 text-amber-800 rounded text-[9px] font-bold transition shadow-2xs" title="Descargar XML Guía">
+                                                      <FileCode2 className="w-3 h-3 text-amber-600" />
+                                                      <span>XML</span>
+                                                    </a>
+                                                  )}
+                                                  {gCdr && (
+                                                    <a href={gCdr} target="_blank" rel="noreferrer" download={`R-${g.fullNumber || 'guia'}.xml`} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-white hover:bg-teal-50 border border-teal-200 text-teal-800 rounded text-[9px] font-bold transition shadow-2xs" title="Descargar CDR Guía">
+                                                      <FileCheck2 className="w-3 h-3 text-teal-600" />
+                                                      <span>CDR</span>
+                                                    </a>
+                                                  )}
+                                                </div>
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
                                     </div>
                                   )}
                                 </div>
@@ -3687,18 +4314,36 @@ export default function BusinessBillingPage() {
         )}
 
         {/* Modal Guía de Remisión Remitente (GRE - 09) */}
-        {isGuiaModalOpen && selectedDocForGuia && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
-            <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
-                <div className="flex items-center gap-2">
-                  <div className="p-2 bg-cyan-50 text-cyan-700 rounded-xl">
-                    <Truck className="w-5 h-5" />
+        {isGuiaModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in overflow-y-auto">
+            <div className="bg-white rounded-3xl max-w-3xl w-full p-5 sm:p-7 shadow-2xl border border-slate-200/80 my-8 max-h-[92vh] flex flex-col">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-gradient-to-br from-teal-500 to-emerald-600 text-white rounded-2xl shadow-md shadow-teal-500/20">
+                    <Truck className="w-6 h-6" />
                   </div>
                   <div>
-                    <h3 className="text-base font-black text-slate-800">Emitir Guía de Remisión (GRE)</h3>
-                    <p className="text-xs text-slate-500">
-                      Vinculada al comprobante <span className="font-bold text-slate-700">{selectedDocForGuia.fullNumber}</span>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base sm:text-lg font-black text-slate-900">
+                        Emitir Guía de Remisión Remitente (GRE)
+                      </h3>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black tracking-wider bg-teal-100 text-teal-800 border border-teal-200 uppercase">
+                        Tipo 09 SUNAT
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {selectedDocForGuia ? (
+                        <span>
+                          Vinculada a comprobante comercial:{" "}
+                          <strong className="text-slate-800 font-bold">{selectedDocForGuia.fullNumber}</strong>{" "}
+                          ({selectedDocForGuia.customerName})
+                        </span>
+                      ) : (
+                        <span>
+                          Operación de traslado independiente (sin venta o previa a facturación)
+                        </span>
+                      )}
                     </p>
                   </div>
                 </div>
@@ -3708,42 +4353,551 @@ export default function BusinessBillingPage() {
                     setIsGuiaModalOpen(false);
                     setSelectedDocForGuia(null);
                   }}
-                  className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
+                  className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <form onSubmit={handleConfirmEmitGuia} className="space-y-4 text-xs">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-slate-600 font-bold mb-1">Motivo de Traslado</label>
-                    <select
-                      value={guiaMotivoTraslado}
-                      onChange={(e) => setGuiaMotivoTraslado(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-cyan-500 font-medium"
-                    >
-                      <option value="01">01 - Venta de mercaderías</option>
-                      <option value="02">02 - Compra</option>
-                      <option value="04">04 - Traslado entre establecimientos de la misma empresa</option>
-                      <option value="13">13 - Otros</option>
-                    </select>
+              {/* Modal Form Scrollable Body */}
+              <form onSubmit={handleConfirmEmitGuia} className="space-y-5 overflow-y-auto pr-1 text-xs flex-1">
+                {/* 1. Motivo y Modalidad */}
+                <div className="bg-gradient-to-r from-teal-50/60 via-slate-50 to-emerald-50/40 p-4 rounded-2xl border border-teal-100/80 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-teal-600 text-white font-black text-[11px] flex items-center justify-center">1</span>
+                    <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider">
+                      Datos de la Operación y Motivo SUNAT
+                    </h4>
                   </div>
-                  <div>
-                    <label className="block text-slate-600 font-bold mb-1">Modalidad de Transporte</label>
-                    <select
-                      value={guiaModalidad}
-                      onChange={(e) => setGuiaModalidad(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-cyan-500 font-medium"
-                    >
-                      <option value="02">Transporte Privado (Vehículo Propio)</option>
-                      <option value="01">Transporte Público (Empresa Transportista)</option>
-                    </select>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-slate-700 font-bold mb-1">
+                        Motivo de Traslado (Catálogo 20 SUNAT)
+                      </label>
+                      <select
+                        value={guiaMotivoTraslado}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setGuiaMotivoTraslado(val);
+                          if (val === "04" && user) {
+                            setGuiaDestinatarioDocType("6");
+                            if (user.businessRuc) setGuiaDestinatarioDocNum(user.businessRuc);
+                            if (user.businessReason || user.businessName) setGuiaDestinatarioName(user.businessReason || user.businessName || "");
+                            if (user.businessAddress && !guiaPuntoLlegada) setGuiaPuntoLlegada(user.businessAddress);
+                          }
+                        }}
+                        className="w-full px-3 py-2 border border-slate-200 bg-white rounded-xl focus:ring-2 focus:ring-teal-500 font-medium text-slate-800 outline-none"
+                      >
+                        <option value="01">01 - Venta de mercaderías</option>
+                        <option value="04">04 - Traslado entre establecimientos de la misma empresa</option>
+                        <option value="05">05 - Traslado por consignación</option>
+                        <option value="06">06 - Devolución de mercaderías</option>
+                        <option value="13">13 - Traslado a ferias o exhibiciones</option>
+                        <option value="14">14 - Traslado para reparación o mantenimiento</option>
+                        <option value="02">02 - Compra de bienes</option>
+                        <option value="18">18 - Traslado emisor itinerante / Otros</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 font-bold mb-1">
+                        Modalidad de Transporte (Catálogo 18 SUNAT)
+                      </label>
+                      <select
+                        value={guiaModalidad}
+                        onChange={(e) => setGuiaModalidad(e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-200 bg-white rounded-xl focus:ring-2 focus:ring-teal-500 font-medium text-slate-800 outline-none"
+                      >
+                        <option value="02">02 - Transporte Privado (Vehículo Propio / Chofer)</option>
+                        <option value="01">01 - Transporte Público (Empresa Transportista)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Comprobante Vinculado Opcional con Búsqueda en Vivo */}
+                  <div className="space-y-2">
+                    <label className="block text-slate-700 font-bold">
+                      Comprobante de Referencia (Boleta o Factura de Origen)
+                    </label>
+
+                    {(refDocFound || selectedDocForGuia) ? (
+                      <div className="bg-emerald-50/90 border-2 border-emerald-300 rounded-2xl p-3.5 space-y-2 shadow-xs">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-emerald-200/70 pb-2">
+                          <div className="flex items-center gap-2.5">
+                            <span className="w-6 h-6 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-black text-xs shrink-0 shadow-xs">
+                              ✓
+                            </span>
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-black text-emerald-950 text-sm">
+                                  {(refDocFound || selectedDocForGuia)!.fullNumber}
+                                </span>
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-200/80 text-emerald-900 border border-emerald-300">
+                                  {(refDocFound || selectedDocForGuia)!.docType === 'INVOICE' ? 'Factura Electrónica' : 'Boleta de Venta'}
+                                </span>
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                                  Aceptado por SUNAT
+                                </span>
+                              </div>
+                              <span className="text-[11px] text-emerald-700 font-medium">
+                                Emisión: {(refDocFound || selectedDocForGuia)!.createdAt ? new Date((refDocFound || selectedDocForGuia)!.createdAt).toLocaleDateString('es-PE') : 'Fecha de registro'}
+                              </span>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={handleClearReferenceDoc}
+                            className="px-3 py-1 bg-white hover:bg-rose-50 text-slate-600 hover:text-rose-700 border border-slate-200 hover:border-rose-200 rounded-xl text-[11px] font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer shrink-0 self-start sm:self-auto"
+                            title="Quitar vinculación y emitir sin comprobante previo"
+                          >
+                            <X className="w-3.5 h-3.5 text-rose-500" />
+                            <span>Cambiar / Quitar</span>
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs pt-0.5">
+                          <div>
+                            <span className="text-slate-500 font-semibold block text-[10px] uppercase">Receptor / Cliente</span>
+                            <span className="font-bold text-slate-800 truncate block">
+                              {(refDocFound || selectedDocForGuia)!.customerDocNum} - {(refDocFound || selectedDocForGuia)!.customerName}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 font-semibold block text-[10px] uppercase">Monto Total</span>
+                            <span className="font-black text-emerald-800 font-mono">
+                              {(refDocFound || selectedDocForGuia)!.currency === 'USD' ? '$' : 'S/'} {Number((refDocFound || selectedDocForGuia)!.totalAmount).toFixed(2)}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 font-semibold block text-[10px] uppercase">Carga Vinculada</span>
+                            <span className="font-bold text-teal-800 flex items-center gap-1">
+                              <Package className="w-3.5 h-3.5 text-teal-600" />
+                              {guiaItems.length} {guiaItems.length === 1 ? 'producto cargado' : 'productos cargados'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="flex gap-2 items-center">
+                          <div className="relative flex-1">
+                            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            <input
+                              type="text"
+                              placeholder="Ingresa número de Boleta o Factura (ej: B001-00000030 o 30)..."
+                              value={guiaReferenceDoc}
+                              onChange={(e) => {
+                                setGuiaReferenceDoc(e.target.value.toUpperCase());
+                                setRefDocSearchError(null);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  handleSearchReferenceDoc();
+                                }
+                              }}
+                              className="w-full pl-9 pr-3 py-2 border border-slate-200 bg-white rounded-xl focus:ring-2 focus:ring-teal-500 font-medium text-slate-800 outline-none text-xs"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleSearchReferenceDoc()}
+                            disabled={isSearchingRefDoc || !guiaReferenceDoc.trim()}
+                            className="px-4 py-2 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-bold rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 text-xs shrink-0 active:scale-95"
+                          >
+                            {isSearchingRefDoc ? (
+                              <>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                <span>Buscando...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Search className="w-3.5 h-3.5" />
+                                <span>Buscar y Vincular</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+
+                        {refDocSearchError && (
+                          <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-[11px] flex items-center gap-2">
+                            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                            <span>{refDocSearchError}</span>
+                          </div>
+                        )}
+                        <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
+                          💡 <strong>Opcional:</strong> Si trasladas mercaderías sin venta (entre almacenes, consignación o reparación), deja este campo vacío para emitir la guía de forma independiente.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
+                {/* 2. Destinatario / Receptor de la Carga */}
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-slate-700 text-white font-black text-[11px] flex items-center justify-center">2</span>
+                      <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider">
+                        Destinatario / Receptor de los Bienes
+                      </h4>
+                    </div>
+                    {guiaMotivoTraslado === "04" && (
+                      <span className="text-[10px] font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200">
+                        Misma Empresa (Traslado Interno)
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                    <div className="sm:col-span-3">
+                      <label className="block text-slate-600 font-bold mb-1">Tipo Doc.</label>
+                      <select
+                        value={guiaDestinatarioDocType}
+                        onChange={(e: any) => setGuiaDestinatarioDocType(e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-200 bg-white rounded-xl font-medium text-slate-800 outline-none"
+                      >
+                        <option value="6">RUC (6)</option>
+                        <option value="1">DNI (1)</option>
+                        <option value="-">Sin Documento (-)</option>
+                      </select>
+                    </div>
+
+                    <div className="sm:col-span-4 relative">
+                      <label className="block text-slate-600 font-bold mb-1">Número de Doc.</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="RUC o DNI"
+                        value={guiaDestinatarioDocNum}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\D/g, "");
+                          setGuiaDestinatarioDocNum(val);
+                          if (val.length === 11 || val.length === 8) {
+                            handleLookupDestinatario(val);
+                          }
+                        }}
+                        className="w-full px-3 py-2 pr-9 border border-slate-200 bg-white rounded-xl font-mono font-bold text-slate-800 outline-none focus:ring-2 focus:ring-teal-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleLookupDestinatario()}
+                        disabled={isConsultingDestinatario || !guiaDestinatarioDocNum}
+                        className="absolute right-1.5 top-7 p-1 bg-teal-50 hover:bg-teal-100 text-teal-700 rounded-lg transition-all disabled:opacity-40 cursor-pointer"
+                        title="Consultar en padrón oficial SUNAT / RENIEC"
+                      >
+                        {isConsultingDestinatario ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Search className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="sm:col-span-5">
+                      <label className="block text-slate-600 font-bold mb-1">Razón Social / Nombre</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Razón Social o Nombre Completo"
+                        value={guiaDestinatarioName}
+                        onChange={(e) => setGuiaDestinatarioName(e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-200 bg-white rounded-xl font-medium text-slate-800 outline-none focus:ring-2 focus:ring-teal-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Puntos de Partida y Llegada */}
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-slate-700 text-white font-black text-[11px] flex items-center justify-center">3</span>
+                    <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider">
+                      Ruta: Punto de Partida y Punto de Llegada
+                    </h4>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                    <div className="sm:col-span-8">
+                      <label className="block text-slate-600 font-bold mb-1">Dirección de Partida (Origen)</label>
+                      <input
+                        type="text"
+                        required
+                        value={guiaPuntoPartida}
+                        onChange={(e) => setGuiaPuntoPartida(e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-200 bg-white rounded-xl font-medium text-slate-800 outline-none focus:ring-2 focus:ring-teal-500"
+                        placeholder="Dirección del almacén o punto de origen"
+                      />
+                    </div>
+                    <div className="sm:col-span-4">
+                      <label className="block text-slate-600 font-bold mb-1">Ubigeo Partida (6 dígitos)</label>
+                      <input
+                        type="text"
+                        maxLength={6}
+                        required
+                        value={guiaPuntoPartidaUbigeo}
+                        onChange={(e) => setGuiaPuntoPartidaUbigeo(e.target.value.replace(/\D/g, ""))}
+                        className="w-full px-3 py-2 border border-slate-200 bg-white rounded-xl font-mono font-bold text-slate-800 outline-none focus:ring-2 focus:ring-teal-500"
+                        placeholder="150101 (Lima)"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-8">
+                      <label className="block text-slate-600 font-bold mb-1">Dirección de Llegada (Destino)</label>
+                      <input
+                        type="text"
+                        required
+                        value={guiaPuntoLlegada}
+                        onChange={(e) => setGuiaPuntoLlegada(e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-200 bg-white rounded-xl font-medium text-slate-800 outline-none focus:ring-2 focus:ring-teal-500"
+                        placeholder="Dirección del cliente, sucursal o destino final"
+                      />
+                    </div>
+                    <div className="sm:col-span-4">
+                      <label className="block text-slate-600 font-bold mb-1">Ubigeo Llegada (6 dígitos)</label>
+                      <input
+                        type="text"
+                        maxLength={6}
+                        required
+                        value={guiaPuntoLlegadaUbigeo}
+                        onChange={(e) => setGuiaPuntoLlegadaUbigeo(e.target.value.replace(/\D/g, ""))}
+                        className="w-full px-3 py-2 border border-slate-200 bg-white rounded-xl font-mono font-bold text-slate-800 outline-none focus:ring-2 focus:ring-teal-500"
+                        placeholder="150101 (Lima)"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 4. Datos del Transporte */}
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-slate-700 text-white font-black text-[11px] flex items-center justify-center">4</span>
+                      <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider">
+                        {guiaModalidad === "01" ? "Datos del Transporte Público (Empresa Transportista)" : "Datos del Transporte Privado (Vehículo y Conductor)"}
+                      </h4>
+                    </div>
+                    {guiaModalidad === "02" && (
+                      <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md">
+                        Vehículo Propio
+                      </span>
+                    )}
+                  </div>
+
+                  {guiaModalidad === "01" ? (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                        <div className="sm:col-span-5 relative">
+                          <label className="block text-slate-600 font-bold mb-1">RUC Transportista</label>
+                          <input
+                            type="text"
+                            maxLength={11}
+                            required
+                            placeholder="RUC de 11 dígitos"
+                            value={guiaCarrierRuc}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/\D/g, "").slice(0, 11);
+                              setGuiaCarrierRuc(val);
+                              if (val.length === 11) {
+                                handleLookupCarrierRuc(val);
+                              }
+                            }}
+                            className="w-full px-3 py-2 pr-9 border border-slate-200 bg-white rounded-xl font-mono font-bold text-slate-800 outline-none focus:ring-2 focus:ring-teal-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleLookupCarrierRuc()}
+                            disabled={isConsultingCarrier || guiaCarrierRuc.length !== 11}
+                            className="absolute right-1.5 top-7 p-1 bg-teal-50 hover:bg-teal-100 text-teal-700 rounded-lg transition-all disabled:opacity-40 cursor-pointer"
+                            title="Consultar RUC en padrón oficial de SUNAT"
+                          >
+                            {isConsultingCarrier ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Search className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                        </div>
+                        <div className="sm:col-span-7">
+                          <label className="block text-slate-600 font-bold mb-1">Razón Social Transportista</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="Razón Social Empresa de Transporte"
+                            value={guiaCarrierName}
+                            onChange={(e) => setGuiaCarrierName(e.target.value)}
+                            className="w-full px-3 py-2 border border-slate-200 bg-white rounded-xl font-medium text-slate-800 outline-none focus:ring-2 focus:ring-teal-500"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Excepción SUNAT: Vehículo menor a 2 toneladas en transporte público */}
+                      <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-xl space-y-2.5">
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={guiaVehiculoMenor2Ton}
+                            onChange={(e) => setGuiaVehiculoMenor2Ton(e.target.checked)}
+                            className="w-4 h-4 rounded text-teal-600 focus:ring-teal-500 border-slate-300 cursor-pointer"
+                          />
+                          <span className="font-bold text-amber-950 text-xs">
+                            ¿Vehículo de transporte público menor a 2 toneladas (Categoría M1/N1)?
+                          </span>
+                        </label>
+                        <p className="text-[11px] text-amber-800 leading-tight">
+                          Normativa SUNAT (R.S. 123-2022): Si el vehículo de la empresa transportista tiene capacidad menor a 2 toneladas (ej. furgón liviano o camioneta), es <strong>obligatorio</strong> declarar la placa del vehículo y los datos del conductor.
+                        </p>
+
+                        {guiaVehiculoMenor2Ton && (
+                          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-2 border-t border-amber-200/60">
+                            <div>
+                              <label className="block text-slate-600 font-bold mb-1">Placa Vehículo</label>
+                              <input
+                                type="text"
+                                maxLength={7}
+                                required={guiaVehiculoMenor2Ton}
+                                placeholder="ABC-123"
+                                value={guiaVehiclePlate}
+                                onChange={(e) => setGuiaVehiclePlate(formatVehiclePlate(e.target.value))}
+                                className="w-full px-3 py-2 border border-slate-200 bg-white rounded-xl font-mono font-bold text-slate-800 outline-none focus:ring-2 focus:ring-teal-500"
+                              />
+                            </div>
+                            <div className="relative">
+                              <label className="block text-slate-600 font-bold mb-1">DNI Conductor</label>
+                              <input
+                                type="text"
+                                maxLength={8}
+                                required={guiaVehiculoMenor2Ton}
+                                placeholder="DNI (8 dígitos)"
+                                value={guiaDriverDni}
+                                onChange={(e) => {
+                                  const val = e.target.value.replace(/\D/g, "");
+                                  setGuiaDriverDni(val);
+                                  if (val.length === 8) handleLookupDriverDni(val);
+                                }}
+                                className="w-full px-3 py-2 pr-8 border border-slate-200 bg-white rounded-xl font-mono font-bold text-slate-800 outline-none focus:ring-2 focus:ring-teal-500"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleLookupDriverDni()}
+                                disabled={isConsultingDriver || guiaDriverDni.length !== 8}
+                                className="absolute right-1 top-7 p-1 text-teal-700 hover:bg-teal-100 rounded-lg transition disabled:opacity-40"
+                                title="Consultar DNI en RENIEC"
+                              >
+                                {isConsultingDriver ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                              </button>
+                            </div>
+                            <div>
+                              <label className="block text-slate-600 font-bold mb-1">Nombre Conductor</label>
+                              <input
+                                type="text"
+                                required={guiaVehiculoMenor2Ton}
+                                placeholder="Nombre y Apellidos"
+                                value={guiaDriverName}
+                                onChange={(e) => setGuiaDriverName(e.target.value)}
+                                className="w-full px-3 py-2 border border-slate-200 bg-white rounded-xl font-medium text-slate-800 outline-none focus:ring-2 focus:ring-teal-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-slate-600 font-bold mb-1">Licencia de Conducir</label>
+                              <input
+                                type="text"
+                                placeholder="Ej. Q12345678"
+                                value={guiaDriverLicense}
+                                onChange={(e) => setGuiaDriverLicense(e.target.value.toUpperCase())}
+                                className="w-full px-3 py-2 border border-slate-200 bg-white rounded-xl font-mono font-bold text-slate-800 outline-none focus:ring-2 focus:ring-teal-500"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
+                        <div className="sm:col-span-2">
+                          <label className="block text-slate-600 font-bold mb-1">Categoría del Vehículo</label>
+                          <select
+                            value={guiaVehicleCategory}
+                            onChange={(e) => setGuiaVehicleCategory(e.target.value)}
+                            className="w-full px-3 py-2 border border-slate-200 bg-white rounded-xl font-medium text-slate-800 outline-none focus:ring-2 focus:ring-teal-500"
+                          >
+                            <option value="M1">M1 / N1 (Menor a 2 Toneladas)</option>
+                            <option value="N2">N2 / N3 (Mayor o igual a 2 Toneladas)</option>
+                            <option value="L5">L5 (Motofurgón de Carga)</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-slate-600 font-bold mb-1">Placa Vehículo</label>
+                          <input
+                            type="text"
+                            maxLength={7}
+                            required
+                            placeholder="ABC-123"
+                            value={guiaVehiclePlate}
+                            onChange={(e) => setGuiaVehiclePlate(formatVehiclePlate(e.target.value))}
+                            className="w-full px-3 py-2 border border-slate-200 bg-white rounded-xl font-mono font-bold text-slate-800 outline-none focus:ring-2 focus:ring-teal-500"
+                          />
+                        </div>
+                        <div className="relative">
+                          <label className="block text-slate-600 font-bold mb-1">DNI Conductor</label>
+                          <input
+                            type="text"
+                            maxLength={8}
+                            required
+                            placeholder="DNI (8 dígitos)"
+                            value={guiaDriverDni}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/\D/g, "");
+                              setGuiaDriverDni(val);
+                              if (val.length === 8) handleLookupDriverDni(val);
+                            }}
+                            className="w-full px-3 py-2 pr-8 border border-slate-200 bg-white rounded-xl font-mono font-bold text-slate-800 outline-none focus:ring-2 focus:ring-teal-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleLookupDriverDni()}
+                            disabled={isConsultingDriver || guiaDriverDni.length !== 8}
+                            className="absolute right-1 top-7 p-1 text-teal-700 hover:bg-teal-100 rounded-lg transition disabled:opacity-40"
+                            title="Consultar DNI en RENIEC"
+                          >
+                            {isConsultingDriver ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+                        <div>
+                          <label className="block text-slate-600 font-bold mb-1">Licencia de Conducir</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="Ej. Q12345678"
+                            value={guiaDriverLicense}
+                            onChange={(e) => setGuiaDriverLicense(e.target.value.toUpperCase())}
+                            className="w-full px-3 py-2 border border-slate-200 bg-white rounded-xl font-mono font-bold text-slate-800 outline-none focus:ring-2 focus:ring-teal-500"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                        <div className="sm:col-span-12">
+                          <label className="block text-slate-600 font-bold mb-1">Nombres y Apellidos del Conductor</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="Nombres y Apellidos completos del chofer"
+                            value={guiaDriverName}
+                            onChange={(e) => setGuiaDriverName(e.target.value)}
+                            className="w-full px-3 py-2 border border-slate-200 bg-white rounded-xl font-medium text-slate-800 outline-none focus:ring-2 focus:ring-teal-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 5. Carga y Despacho */}
                 <div className="grid grid-cols-2 gap-3">
-                  <div>
+                  <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
                     <label className="block text-slate-600 font-bold mb-1">Peso Bruto Total (KGM)</label>
                     <input
                       type="number"
@@ -3752,11 +4906,11 @@ export default function BusinessBillingPage() {
                       required
                       value={guiaPeso}
                       onChange={(e) => setGuiaPeso(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-cyan-500 font-medium"
+                      className="w-full px-3 py-2 border border-slate-200 bg-white rounded-xl font-mono font-bold text-slate-800 outline-none focus:ring-2 focus:ring-teal-500"
                       placeholder="1.0"
                     />
                   </div>
-                  <div>
+                  <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
                     <label className="block text-slate-600 font-bold mb-1">Cantidad de Bultos</label>
                     <input
                       type="number"
@@ -3764,93 +4918,144 @@ export default function BusinessBillingPage() {
                       required
                       value={guiaBultos}
                       onChange={(e) => setGuiaBultos(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-cyan-500 font-medium"
+                      className="w-full px-3 py-2 border border-slate-200 bg-white rounded-xl font-mono font-bold text-slate-800 outline-none focus:ring-2 focus:ring-teal-500"
                       placeholder="1"
                     />
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-slate-600 font-bold mb-1">Punto de Partida (Origen)</label>
-                  <input
-                    type="text"
-                    required
-                    value={guiaPuntoPartida}
-                    onChange={(e) => setGuiaPuntoPartida(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-cyan-500 font-medium"
-                    placeholder="Dirección del almacén o punto de partida"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-slate-600 font-bold mb-1">Punto de Llegada (Destino del Cliente)</label>
-                  <input
-                    type="text"
-                    required
-                    value={guiaPuntoLlegada}
-                    onChange={(e) => setGuiaPuntoLlegada(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-cyan-500 font-medium"
-                    placeholder="Dirección del cliente o destino final"
-                  />
-                </div>
-
-                {guiaModalidad === "01" ? (
-                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-                    <span className="font-bold text-slate-700 block text-[11px] uppercase">Datos del Transportista (Público)</span>
-                    <div className="grid grid-cols-2 gap-2">
-                      <input
-                        type="text"
-                        maxLength={11}
-                        required
-                        placeholder="RUC Transportista (11 dígitos)"
-                        value={guiaCarrierRuc}
-                        onChange={(e) => setGuiaCarrierRuc(e.target.value.replace(/\D/g, ""))}
-                        className="px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs"
-                      />
-                      <input
-                        type="text"
-                        required
-                        placeholder="Razón Social Empresa de Transporte"
-                        value={guiaCarrierName}
-                        onChange={(e) => setGuiaCarrierName(e.target.value)}
-                        className="px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs"
-                      />
+                {/* 6. Bienes / Mercaderías a Trasladar */}
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-teal-600 text-white font-black text-[11px] flex items-center justify-center">5</span>
+                      <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider">
+                        Bienes y Mercaderías a Trasladar ({guiaItems.length})
+                      </h4>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {catalogProducts.length > 0 && (
+                        <select
+                          onChange={(e) => {
+                            const pId = e.target.value;
+                            if (!pId) return;
+                            const prod = catalogProducts.find((p) => p.id === pId);
+                            if (prod) {
+                              setGuiaItems((prev) => [
+                                ...prev,
+                                {
+                                  codigo: prod.sku || `PROD-${prev.length + 1}`,
+                                  descripcion: prod.name,
+                                  unidad: prod.unit || "NIU",
+                                  cantidad: 1,
+                                },
+                              ]);
+                            }
+                            e.target.value = "";
+                          }}
+                          className="px-2.5 py-1.5 text-[11px] bg-teal-50 text-teal-800 border border-teal-200 rounded-xl font-bold cursor-pointer outline-none hover:bg-teal-100 transition-colors"
+                        >
+                          <option value="">+ Cargar desde Inventario...</option>
+                          {catalogProducts.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name} {p.sku ? `(${p.sku})` : ""}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setGuiaItems((prev) => [
+                            ...prev,
+                            { codigo: `ITEM-${prev.length + 1}`, descripcion: "", unidad: "NIU", cantidad: 1 },
+                          ])
+                        }
+                        className="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-bold rounded-xl shadow-xs transition-colors flex items-center gap-1 cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        Agregar Ítem
+                      </button>
                     </div>
                   </div>
-                ) : (
-                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-                    <span className="font-bold text-slate-700 block text-[11px] uppercase">Datos de Conductor y Vehículo (Privado)</span>
-                    <div className="grid grid-cols-3 gap-2">
-                      <input
-                        type="text"
-                        maxLength={8}
-                        required
-                        placeholder="DNI Conductor"
-                        value={guiaDriverDni}
-                        onChange={(e) => setGuiaDriverDni(e.target.value.replace(/\D/g, ""))}
-                        className="px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs"
-                      />
-                      <input
-                        type="text"
-                        required
-                        placeholder="Nombre Conductor"
-                        value={guiaDriverName}
-                        onChange={(e) => setGuiaDriverName(e.target.value)}
-                        className="px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs"
-                      />
-                      <input
-                        type="text"
-                        required
-                        placeholder="Placa (ej. ABC-123)"
-                        value={guiaVehiclePlate}
-                        onChange={(e) => setGuiaVehiclePlate(e.target.value.toUpperCase())}
-                        className="px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs"
-                      />
-                    </div>
-                  </div>
-                )}
 
-                <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                  <div className="space-y-2">
+                    {guiaItems.map((item, idx) => (
+                      <div key={idx} className="flex items-center gap-2 bg-white p-2.5 rounded-xl border border-slate-200">
+                        <div className="w-24">
+                          <input
+                            type="text"
+                            placeholder="Código"
+                            value={item.codigo}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setGuiaItems((prev) => prev.map((it, i) => (i === idx ? { ...it, codigo: val } : it)));
+                            }}
+                            className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-[11px] font-mono font-bold text-slate-800"
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <input
+                            type="text"
+                            required
+                            placeholder="Descripción de la mercadería o bien transportado"
+                            value={item.descripcion}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setGuiaItems((prev) => prev.map((it, i) => (i === idx ? { ...it, descripcion: val } : it)));
+                            }}
+                            className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800"
+                          />
+                        </div>
+                        <div className="w-24">
+                          <select
+                            value={item.unidad}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setGuiaItems((prev) => prev.map((it, i) => (i === idx ? { ...it, unidad: val } : it)));
+                            }}
+                            className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-[11px] font-bold text-slate-700 bg-white"
+                          >
+                            <option value="NIU">NIU (Unid)</option>
+                            <option value="KGM">KGM (Kg)</option>
+                            <option value="BX">BX (Cajas)</option>
+                            <option value="MTR">MTR (Metros)</option>
+                            <option value="GLI">GLI (Galones)</option>
+                            <option value="SET">SET (Juego)</option>
+                          </select>
+                        </div>
+                        <div className="w-20">
+                          <input
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            required
+                            placeholder="Cant."
+                            value={item.cantidad}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              setGuiaItems((prev) => prev.map((it, i) => (i === idx ? { ...it, cantidad: val } : it)));
+                            }}
+                            className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-[11px] font-mono font-bold text-slate-800 text-right"
+                          />
+                        </div>
+                        {guiaItems.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => setGuiaItems((prev) => prev.filter((_, i) => i !== idx))}
+                            className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                            title="Eliminar este ítem"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Footer Actions */}
+                <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
                   <button
                     type="button"
                     disabled={isSubmittingGuia}
@@ -3858,29 +5063,146 @@ export default function BusinessBillingPage() {
                       setIsGuiaModalOpen(false);
                       setSelectedDocForGuia(null);
                     }}
-                    className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl font-bold cursor-pointer transition-colors"
+                    className="px-4 py-2.5 text-slate-600 hover:bg-slate-100 rounded-xl font-bold cursor-pointer transition-colors text-xs"
                   >
                     Cancelar
                   </button>
                   <button
                     type="submit"
                     disabled={isSubmittingGuia}
-                    className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-xl font-bold cursor-pointer transition-colors flex items-center gap-1.5 shadow-md shadow-cyan-600/20"
+                    className="px-5 py-2.5 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white rounded-xl font-bold cursor-pointer transition-all flex items-center gap-2 shadow-md shadow-teal-600/20 active:scale-95 text-xs"
                   >
                     {isSubmittingGuia ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Transmitiendo a SUNAT...</span>
+                        <span>Transmitiendo GRE a SUNAT...</span>
                       </>
                     ) : (
                       <>
                         <Truck className="w-4 h-4" />
-                        <span>Emitir Guía de Remisión</span>
+                        <span>Emitir Guía de Remisión Oficial</span>
                       </>
                     )}
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* Modal Baja de Guía de Remisión Electrónica en SUNAT */}
+        {bajaGreModalOpen && bajaGreDoc && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+            <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-rose-100 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-rose-50 text-rose-600 rounded-2xl border border-rose-200">
+                    <ShieldAlert className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900">
+                      Baja de Guía de Remisión (GRE)
+                    </h3>
+                    <p className="text-xs text-slate-500 font-mono">
+                      {bajaGreDoc.fullNumber} • Tipo 09 SUNAT
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBajaGreModalOpen(false);
+                    setBajaGreDoc(null);
+                  }}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Instrucciones Oficiales SUNAT */}
+              <div className="bg-gradient-to-br from-amber-50/80 to-rose-50/50 border border-amber-200/80 rounded-2xl p-4 text-xs space-y-2">
+                <div className="flex items-center gap-1.5 font-bold text-amber-950">
+                  <AlertOctagon className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>Procedimiento Normativo SUNAT:</span>
+                </div>
+                <p className="text-slate-700 leading-relaxed">
+                  SUNAT no dispone de servicio web (API) para anular Guías de Remisión directamente. La baja oficial debe registrarse en el portal SUNAT antes de iniciar el traslado:
+                </p>
+                <ol className="list-decimal pl-4 space-y-1 text-slate-800 font-medium text-[11px]">
+                  <li>Ingresa al Portal SOL con Clave SOL (Mis Trámites y Consultas).</li>
+                  <li>Dirígete a: <strong>Empresas &gt; Comprobantes de Pago &gt; Guía de Remisión &gt; Baja de GRE</strong>.</li>
+                  <li>Selecciona la serie <code className="bg-white px-1 py-0.5 rounded border border-amber-300 font-mono">{bajaGreDoc.serie}</code> y correlativo <code className="bg-white px-1 py-0.5 rounded border border-amber-300 font-mono">{bajaGreDoc.correlative}</code>.</li>
+                  <li>Confirma la baja en SUNAT y copia el número de ticket o constancia.</li>
+                </ol>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">
+                    Motivo de la Baja en SUNAT
+                  </label>
+                  <select
+                    value={bajaGreMotivo}
+                    onChange={(e) => setBajaGreMotivo(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 bg-white rounded-xl font-medium text-slate-800 outline-none focus:ring-2 focus:ring-rose-500"
+                  >
+                    <option value="01 - Anulación por no haberse realizado el traslado">01 - No se realizó el traslado físico de los bienes</option>
+                    <option value="02 - Error en datos del destinatario o punto de llegada">02 - Error en datos del destinatario o punto de llegada</option>
+                    <option value="03 - Cambio de modalidad de transporte o transportista">03 - Cambio de modalidad de transporte o transportista</option>
+                    <option value="04 - Anulación por error en los bienes o cantidades declaradas">04 - Error en los bienes o cantidades declaradas</option>
+                    <option value="05 - Cancelación de la operación comercial">05 - Cancelación de la operación comercial</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">
+                    Ticket / Constancia de Baja SUNAT (Opcional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ej. TICKET-SUNAT-2026-89412"
+                    value={bajaGreTicket}
+                    onChange={(e) => setBajaGreTicket(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 bg-white rounded-xl font-mono text-slate-800 outline-none focus:ring-2 focus:ring-rose-500"
+                  />
+                  <span className="text-[10px] text-slate-400 block mt-1">
+                    Al confirmar, el sistema registrará la baja interna en auditoría y liberará el comprobante vinculado para emitir una nueva guía corregida.
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  disabled={isSubmittingBajaGre}
+                  onClick={() => {
+                    setBajaGreModalOpen(false);
+                    setBajaGreDoc(null);
+                  }}
+                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl font-bold cursor-pointer text-xs"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={isSubmittingBajaGre}
+                  onClick={handleConfirmBajaGre}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold cursor-pointer transition flex items-center gap-1.5 shadow-sm shadow-rose-600/20 text-xs"
+                >
+                  {isSubmittingBajaGre ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Registrando Baja...</span>
+                    </>
+                  ) : (
+                    <>
+                      <AlertOctagon className="w-3.5 h-3.5" />
+                      <span>Confirmar Baja de GRE</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         )}

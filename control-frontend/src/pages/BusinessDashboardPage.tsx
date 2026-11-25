@@ -354,7 +354,7 @@ export default function BusinessDashboardPage() {
                   className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white px-5 py-3 rounded-2xl font-bold flex items-center gap-2 hover:shadow-xl hover:shadow-indigo-500/20 transition-all duration-300 active:scale-95 border border-indigo-500/10"
                 >
                   <DollarSign className="w-4 h-4 text-white" />
-                  Punto de Venta POS
+                  Punto de Ventann
                 </Link>
               </div>
             </div>
